@@ -12,6 +12,14 @@ const EXPECTED_COMMANDS = [...COMMAND_NAMES].sort();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
+const localCliPath = resolve(repoRoot, "packages/cli/bin/fvtt-world-cli.js");
+const localCliConfigHome =
+  process.env.FVTT_WORLD_CLI_TEST_XDG_CONFIG_HOME || resolve(repoRoot, ".local/testing/xdg-config");
+const localCliEnvironment = {
+  ...process.env,
+  FVTT_WORLD_CLI_FORCE_SRC: "1",
+  XDG_CONFIG_HOME: localCliConfigHome
+};
 
 function parseArgs(argv) {
   const options = {
@@ -92,12 +100,13 @@ function commandLabel(args) {
 }
 
 function runFoundryctl(args) {
-  const commandArgs = ["fvtt-world-cli", ...args, "--json"];
+  const commandArgs = [localCliPath, ...args, "--json"];
 
   try {
-    const stdout = execFileSync("npx", commandArgs, {
+    const stdout = execFileSync(process.execPath, commandArgs, {
       cwd: repoRoot,
       encoding: "utf8",
+      env: localCliEnvironment,
 
       maxBuffer: 64 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"]
@@ -136,7 +145,7 @@ function runFoundryctlPair(argsA, argsB) {
   const dir = mkdtempSync(join(tmpdir(), "fvtt-world-cli-smoke-pair-"));
   const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
   const childLine = (args, outPath) =>
-    `npx fvtt-world-cli ${args.map(shellQuote).join(" ")} --json > ${shellQuote(outPath)} 2>${shellQuote(`${outPath}.err`)}`;
+    `${shellQuote(process.execPath)} ${shellQuote(localCliPath)} ${args.map(shellQuote).join(" ")} --json > ${shellQuote(outPath)} 2>${shellQuote(`${outPath}.err`)}`;
   const outA = join(dir, "a.json");
   const outB = join(dir, "b.json");
 
@@ -144,6 +153,7 @@ function runFoundryctlPair(argsA, argsB) {
     execFileSync("bash", ["-c", `${childLine(argsA, outA)} & ${childLine(argsB, outB)} & wait`], {
       cwd: repoRoot,
       encoding: "utf8",
+      env: localCliEnvironment,
       maxBuffer: 64 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -11573,6 +11583,7 @@ async function main() {
     environment: {
       actorId: options.actorId,
       baseUrl: options.baseUrl,
+      cliConfigHome: localCliConfigHome,
       foundryDataDir: options.foundryDataDir,
       worldId: null
     },
