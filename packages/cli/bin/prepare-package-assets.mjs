@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const packageDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageDirectory, "../..");
-const assets = ["LICENSE", "docs", "skills"];
+const assets = ["LICENSE", "README.md", "docs", "skills"];
 
 const clean = process.argv.includes("--clean");
 
