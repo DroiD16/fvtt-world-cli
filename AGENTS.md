@@ -145,6 +145,7 @@ in repository-scoped memory or version control.
   preparation, sanitization, capability, confirmation, and dispatch behavior
 - `packages/foundry-module/tests/`: runtime and regression contracts
 - `scripts/live-smoke.mjs`: live coverage and cleanup behavior
+- `scripts/build-release-artifacts.mjs`: release artifact assembly and version-consistency checks
 - `docs/commands.md`: user-facing command behavior
 - `docs/protocol.md`: wire protocol and result shapes
 - `docs/security.md`: trust boundaries, permissions, and security rationale

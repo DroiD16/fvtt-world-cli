@@ -20,6 +20,7 @@
     "generate:protocol:check": "node scripts/generate-protocol.mjs --check",
     "generate:skill-checksum": "node scripts/generate-skill-checksum.mjs",
     "generate:skill-checksum:check": "node scripts/generate-skill-checksum.mjs --check",
+    "release:artifacts": "node scripts/build-release-artifacts.mjs",
     "smoke:live": "node scripts/live-smoke.mjs",
     "test": "npm run format:check && vitest run",
     "test:watch": "vitest",
