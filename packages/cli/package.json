@@ -3,6 +3,14 @@
   "version": "0.16.0",
   "license": "MIT",
   "author": "DroiD16",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DroiD16/fvtt-world-cli.git"
+  },
+  "homepage": "https://github.com/DroiD16/fvtt-world-cli#readme",
+  "bugs": {
+    "url": "https://github.com/DroiD16/fvtt-world-cli/issues"
+  },
   "type": "module",
   "bin": {
     "fvtt-world-cli": "./bin/fvtt-world-cli.js",

@@ -64,7 +64,7 @@ agent works with the world.
    *Install Module* dialog, then enable the module in the target world:
 
    ```
-   [MANIFEST-URL — GitHub release manifest, filled at first release]
+   https://github.com/DroiD16/fvtt-world-cli/releases/latest/download/module.json
    ```
 
 3. Start the daemon and leave it running:
@@ -133,4 +133,4 @@ differences that matter to operators.
 compatibility, and the agent skill. The same documents ship inside the package and are printed by
 `fvtt-world-cli docs [document]`, so the installed CLI is self-describing offline.
 
-Bug reports and questions go to GitHub Issues (`[REPO-URL — filled at first release]`).
+Bug reports and questions go to [GitHub Issues](https://github.com/DroiD16/fvtt-world-cli/issues).
