@@ -1,0 +1,54 @@
+{
+  "collection": "cards",
+  "embedded": {
+    "cards": "cards"
+  },
+  "documents": [
+    {
+      "_id": "fctlpackdeck0001",
+      "name": "fvtt-world-cli Fixture Deck",
+      "type": "deck",
+      "description": "Import fixture for cards.import-from-compendium.",
+      "img": "icons/svg/card-hand.svg",
+      "rotation": 0,
+      "displayCount": false,
+      "folder": "fctlpackcfolder1",
+      "sort": 400,
+      "system": {},
+      "flags": {
+        "fvtt-world-cli-test-packs": {
+          "fixture": "cards"
+        }
+      },
+      "cards": [
+        {
+          "_id": "fctlpackcard0001",
+          "name": "fvtt-world-cli Fixture Ace",
+          "description": "",
+          "type": "base",
+          "suit": "spades",
+          "value": 1,
+          "back": {
+            "name": "",
+            "text": "",
+            "img": null
+          },
+          "faces": [
+            {
+              "name": "Ace",
+              "text": "",
+              "img": "icons/svg/card-joker.svg"
+            }
+          ],
+          "face": 0,
+          "drawn": true,
+          "origin": null,
+          "rotation": 0,
+          "sort": 0,
+          "system": {},
+          "flags": {}
+        }
+      ]
+    }
+  ]
+}

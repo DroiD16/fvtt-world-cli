@@ -1,0 +1,35 @@
+{
+  "name": "fvtt-world-cli-root",
+  "version": "0.16.0",
+  "private": true,
+  "license": "MIT",
+  "author": "DroiD16",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "format": "prettier --write \"**/*.{js,mjs,ts,json}\"",
+    "format:check": "prettier --check \"**/*.{js,mjs,ts,json}\"",
+    "prepare": "npm run build",
+    "generate:protocol": "node scripts/generate-protocol.mjs",
+    "generate:protocol:check": "node scripts/generate-protocol.mjs --check",
+    "generate:skill-checksum": "node scripts/generate-skill-checksum.mjs",
+    "generate:skill-checksum:check": "node scripts/generate-skill-checksum.mjs --check",
+    "smoke:live": "node scripts/live-smoke.mjs",
+    "test": "npm run format:check && vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "esbuild": "0.27.7",
+    "prettier": "3.9.6",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  }
+}

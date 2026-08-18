@@ -1,0 +1,287 @@
+export const PROTOCOL_VERSION = "3.0";
+export const MODULE_ID = "fvtt-world-cli";
+export const MODULE_TITLE = "World CLI for Foundry VTT";
+export const DEFAULT_DAEMON_URL = "ws://127.0.0.1:47833";
+export const RECONNECT_BASE_DELAY_MS = 1_000;
+export const RECONNECT_MAX_DELAY_MS = 30_000;
+export const AUTH_FIRST_MESSAGE_TIMEOUT_MS = 5_000;
+export const PAIRING_REQUEST_TTL_MS = 5 * 60 * 1_000;
+export const PAIRING_PENDING_MAX = 10;
+export const AUTH_AWAIT_PARK_CAP_MS = 25_000;
+export const AUTH_PRUNE_DEFAULT_DAYS = 30;
+
+export function pairingPruneCutoffAt(olderThanDays, now = Date.now()) {
+  return now - olderThanDays * 24 * 60 * 60 * 1000;
+}
+export const BRIDGE_LEASE_MS = 30_000;
+export const BRIDGE_TAKEOVER_CLOSE_CODE = 4001;
+export const BRIDGE_TAKEOVER_CLOSE_REASON = "Bridge session taken over by the same pairing";
+export const BRIDGE_RELEASE_CLOSE_CODE = 4002;
+export const BRIDGE_RELEASE_CLOSE_REASON = "Bridge released";
+
+export const CLIENT_ID_MIN_LENGTH = 8;
+export const CLIENT_ID_MAX_LENGTH = 64;
+export const CLIENT_ID_PATTERN = "^[0-9a-fA-F-]+$";
+
+export const CLIENT_LABEL_MAX_LENGTH = 64;
+
+const CLIENT_LABEL_CHARACTER_CLASS = [
+  "[^",
+  "\\u0000-\\u001f",
+  "\\u007f-\\u009f",
+  "\\u00ad",
+  "\\u061c",
+  "\\u180e",
+  "\\u200b-\\u200f",
+  "\\u2028\\u2029",
+  "\\u202a-\\u202e",
+  "\\u2060-\\u2064",
+  "\\u2066-\\u2069",
+  "\\ufeff",
+  "\\ufff9-\\ufffb",
+  "\\u{e0000}-\\u{e007f}",
+  "]"
+].join("");
+
+export const CLIENT_LABEL_CHARACTER_PATTERN = `^${CLIENT_LABEL_CHARACTER_CLASS}+$`;
+
+export const CLIENT_LABEL_PATTERN = `^(?=.*\\S)${CLIENT_LABEL_CHARACTER_CLASS}+$`;
+
+export const DEFAULT_UPLOAD_SIZE_LIMIT_BYTES = 100 * 1024 * 1024;
+
+export const UPLOAD_SIZE_LIMIT_MAX_BYTES = 512 * 1024 * 1024;
+
+export function wsMaxPayloadForUploadLimit(limitBytes) {
+  return Math.ceil((limitBytes * 4) / 3) + 1024 * 1024;
+}
+
+export const DEFAULT_WS_MAX_PAYLOAD_BYTES = wsMaxPayloadForUploadLimit(DEFAULT_UPLOAD_SIZE_LIMIT_BYTES);
+
+export function resolveEffectiveLimits(uploadLimitBytes = DEFAULT_UPLOAD_SIZE_LIMIT_BYTES) {
+  return {
+    uploadBytes: uploadLimitBytes,
+    wsMaxPayloadBytes: Math.max(wsMaxPayloadForUploadLimit(uploadLimitBytes), DEFAULT_WS_MAX_PAYLOAD_BYTES)
+  };
+}
+
+export const BATCH_GET_MAX_IDS = 100;
+
+export const BATCH_WRITE_MAX_ITEMS = 100;
+
+export const BATCH_WRITE_STATUSES = Object.freeze([
+  "created",
+  "updated",
+  "deleted",
+  "unchanged",
+  "alreadyDeleted",
+  "dropped",
+  "unknown"
+]);
+
+export const BATCH_WRITE_SUCCESS_STATUSES = Object.freeze([
+  "created",
+  "updated",
+  "deleted",
+  "unchanged",
+  "alreadyDeleted"
+]);
+
+export const BATCH_WRITE_PERSISTED_STATUSES = Object.freeze(["created", "updated", "deleted"]);
+
+export const CARDS_PASS_MAX_IDS = 100;
+
+export const AUDIT_FILES_MAX_DIRS = 500;
+
+export const SCENE_THUMBNAIL_MIN_DIMENSION = 16;
+export const SCENE_THUMBNAIL_MAX_DIMENSION = 1024;
+
+export const SCENE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
+
+export const SCENE_THUMBNAIL_RESPONSE_MAX_BYTES = 1024 * 1024;
+
+export const FOG_RESET_CONFIRM_TIMEOUT_MS = 5_000;
+export const FOG_RESET_CONFIRM_POLL_INTERVAL_MS = 250;
+
+export const TABLE_DRAW_MAX_COUNT = 100;
+
+export const SETTING_VALUE_MAX_DEPTH = 32;
+export const SETTING_VALUE_MAX_NODES = 20_000;
+export const SETTING_VALUE_MAX_BYTES = 256 * 1024;
+
+export const SEARCH_MODES = Object.freeze(["name", "full"]);
+
+export const SEARCH_SOURCES = Object.freeze(["world", "pack"]);
+
+export const SEARCH_SNIPPET_FIELDS = Object.freeze(["text", "systemText", "name"]);
+
+export const SEARCH_RESULT_SOURCES = Object.freeze(["world", "compendium"]);
+
+export const SEARCH_CORPUS_STATUSES = Object.freeze(["ready", "overflow"]);
+
+export const SEARCH_INDEXED_TYPES = Object.freeze([
+  "Actor",
+  "Item",
+  "ActiveEffect",
+  "JournalEntry",
+  "JournalEntryPage",
+  "JournalEntryCategory",
+  "Scene",
+  "Token",
+  "Region",
+  "RegionBehavior",
+  "Macro",
+  "Playlist",
+  "PlaylistSound",
+  "RollTable",
+  "TableResult",
+  "Cards",
+  "Card",
+  "Folder"
+]);
+
+export const SEARCH_INDEX_BYTES_PER_ENTRY = 160;
+export const SEARCH_INDEX_BYTES_PER_CHAR = 1.2;
+
+export function estimateSearchIndexBytes(entryCount, indexedChars) {
+  return SEARCH_INDEX_BYTES_PER_ENTRY * entryCount + SEARCH_INDEX_BYTES_PER_CHAR * indexedChars;
+}
+
+export const SEARCH_WORLD_INDEX_MAX_BYTES = 32 * 1024 * 1024;
+
+export const SEARCH_WORLD_INDEX_MAX_ENTRIES = 100_000;
+
+export const SEARCH_COMPENDIUM_INDEX_MAX_BYTES = 48 * 1024 * 1024;
+export const SEARCH_COMPENDIUM_INDEX_MAX_ENTRIES = 300_000;
+
+export const SEARCH_DOC_TEXT_MAX_CHARS = 32_768;
+
+export const SEARCH_SYSTEM_WALK_MAX_BYTES = 8_192;
+export const SEARCH_SYSTEM_WALK_MAX_NODES = 2_000;
+export const SEARCH_SYSTEM_WALK_MAX_DEPTH = 8;
+
+export const SEARCH_MAX_MATCHES = 20_000;
+
+export const SEARCH_SNIPPET_MAX_CHARS = 240;
+export const SEARCH_SNIPPET_MAX_MATCHES = 5;
+
+export const SEARCH_SNIPPET_RADIUS = 60;
+
+export const SEARCH_QUERY_MIN_LENGTH = 2;
+export const SEARCH_QUERY_MAX_LENGTH = 256;
+
+export const SEARCH_RESULT_MAX_LIMIT = 100;
+export const SEARCH_RESULT_DEFAULT_LIMIT = 20;
+
+export const SEARCH_RESPONSE_MAX_BYTES = 256 * 1024;
+
+export const MESSAGE_TYPES = Object.freeze({
+  CLIENT_HELLO: "client.hello",
+  CLIENT_HELLO_ACK: "client.hello.ack",
+  PAIRING_REQUEST: "pairing.request",
+  PAIRING_PENDING: "pairing.pending",
+  PAIRING_RESULT: "pairing.result",
+  DAEMON_REQUEST: "daemon.request",
+  DAEMON_RESPONSE: "daemon.response",
+  BRIDGE_HELLO: "bridge.hello",
+  BRIDGE_HELLO_ACK: "bridge.hello.ack",
+  BRIDGE_GOODBYE: "bridge.goodbye",
+  COMMAND_REQUEST: "command.request",
+  COMMAND_RESPONSE: "command.response"
+});
+
+export const ERROR_CODES = Object.freeze({
+  ACTOR_NOT_FOUND: "ACTOR_NOT_FOUND",
+  DAEMON_UNAVAILABLE: "DAEMON_UNAVAILABLE",
+  FILE_NOT_FOUND: "FILE_NOT_FOUND",
+  INVALID_MESSAGE: "INVALID_MESSAGE",
+  INVALID_PARAMS: "INVALID_PARAMS",
+  INTERNAL_ERROR: "INTERNAL_ERROR",
+  ITEM_NOT_FOUND: "ITEM_NOT_FOUND",
+  JOURNAL_NOT_FOUND: "JOURNAL_NOT_FOUND",
+  MACRO_NOT_FOUND: "MACRO_NOT_FOUND",
+  PATH_NOT_ALLOWED: "PATH_NOT_ALLOWED",
+  PAYLOAD_TOO_LARGE: "PAYLOAD_TOO_LARGE",
+  PERMISSION_DENIED: "PERMISSION_DENIED",
+  SCENE_NOT_FOUND: "SCENE_NOT_FOUND",
+  UNAUTHORIZED: "UNAUTHORIZED",
+  UNKNOWN_COMMAND: "UNKNOWN_COMMAND",
+  UNSUPPORTED_PROTOCOL_VERSION: "UNSUPPORTED_PROTOCOL_VERSION",
+  BRIDGE_NOT_READY: "BRIDGE_NOT_READY",
+  BRIDGE_TIMEOUT: "BRIDGE_TIMEOUT",
+  BRIDGE_DISCONNECTED: "BRIDGE_DISCONNECTED",
+  DELETE_FORBIDDEN: "DELETE_FORBIDDEN",
+  TOKEN_NOT_FOUND: "TOKEN_NOT_FOUND",
+  TILE_NOT_FOUND: "TILE_NOT_FOUND",
+  SOUND_NOT_FOUND: "SOUND_NOT_FOUND",
+  WALL_NOT_FOUND: "WALL_NOT_FOUND",
+  NOTE_NOT_FOUND: "NOTE_NOT_FOUND",
+  DRAWING_NOT_FOUND: "DRAWING_NOT_FOUND",
+  LIGHT_NOT_FOUND: "LIGHT_NOT_FOUND",
+  TEMPLATE_NOT_FOUND: "TEMPLATE_NOT_FOUND",
+  REGION_NOT_FOUND: "REGION_NOT_FOUND",
+
+  REGION_BEHAVIOR_NOT_FOUND: "REGION_BEHAVIOR_NOT_FOUND",
+  COMPENDIUM_NOT_FOUND: "COMPENDIUM_NOT_FOUND",
+  COMPENDIUM_ENTRY_NOT_FOUND: "COMPENDIUM_ENTRY_NOT_FOUND",
+  IDEMPOTENCY_KEY_CONFLICT: "IDEMPOTENCY_KEY_CONFLICT",
+  EFFECT_NOT_FOUND: "EFFECT_NOT_FOUND",
+  PLAYLIST_NOT_FOUND: "PLAYLIST_NOT_FOUND",
+  PLAYLIST_SOUND_NOT_FOUND: "PLAYLIST_SOUND_NOT_FOUND",
+
+  JOURNAL_CATEGORY_NOT_FOUND: "JOURNAL_CATEGORY_NOT_FOUND",
+  CHAT_MESSAGE_NOT_FOUND: "CHAT_MESSAGE_NOT_FOUND",
+
+  TABLE_NOT_FOUND: "TABLE_NOT_FOUND",
+
+  TABLE_RESULT_NOT_FOUND: "TABLE_RESULT_NOT_FOUND",
+
+  COMBAT_NOT_FOUND: "COMBAT_NOT_FOUND",
+
+  COMBAT_SCENE_MISMATCH: "COMBAT_SCENE_MISMATCH",
+
+  COMBAT_NOT_STARTED: "COMBAT_NOT_STARTED",
+
+  COMBAT_STATE_DIVERGED: "COMBAT_STATE_DIVERGED",
+
+  COMBATANT_NOT_FOUND: "COMBATANT_NOT_FOUND",
+
+  COMBATANT_GROUP_NOT_FOUND: "COMBATANT_GROUP_NOT_FOUND",
+
+  CARDS_NOT_FOUND: "CARDS_NOT_FOUND",
+
+  CARD_NOT_FOUND: "CARD_NOT_FOUND",
+
+  INSUFFICIENT_CARDS: "INSUFFICIENT_CARDS",
+
+  FOLDER_NOT_FOUND: "FOLDER_NOT_FOUND",
+
+  SETTING_NOT_FOUND: "SETTING_NOT_FOUND",
+
+  SETTING_READ_FAILED: "SETTING_READ_FAILED",
+
+  SETTING_VALUE_NOT_SERIALIZABLE: "SETTING_VALUE_NOT_SERIALIZABLE",
+
+  USER_NOT_FOUND: "USER_NOT_FOUND",
+
+  SEARCH_INDEX_OVERFLOW: "SEARCH_INDEX_OVERFLOW",
+
+  QUERY_TOO_BROAD: "QUERY_TOO_BROAD",
+
+  UNSUPPORTED_OPERATION: "UNSUPPORTED_OPERATION",
+
+  FILE_ALREADY_EXISTS: "FILE_ALREADY_EXISTS",
+
+  SCENE_NOT_VIEWED: "SCENE_NOT_VIEWED",
+
+  THUMBNAIL_RENDER_FAILED: "THUMBNAIL_RENDER_FAILED",
+
+  THUMBNAIL_UPLOAD_DENIED: "THUMBNAIL_UPLOAD_DENIED",
+
+  FOG_RESET_UNCONFIRMED: "FOG_RESET_UNCONFIRMED",
+
+  PRECONDITION_FAILED: "PRECONDITION_FAILED",
+  PAIRING_REQUIRED: "PAIRING_REQUIRED",
+  PAIRING_NOT_FOUND: "PAIRING_NOT_FOUND",
+  PAIRING_EXPIRED: "PAIRING_EXPIRED",
+  BRIDGE_BUSY: "BRIDGE_BUSY"
+});

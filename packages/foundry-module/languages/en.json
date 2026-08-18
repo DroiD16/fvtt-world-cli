@@ -1,0 +1,101 @@
+{
+  "FVTTWORLDCLI": {
+    "Controls": {
+      "Group": "World CLI",
+      "Status": "Bridge status",
+      "Authorization": "Authorization",
+      "Settings": "Module settings",
+      "Connect": "Connect bridge",
+      "Disconnect": "Disconnect bridge"
+    },
+    "BridgeStatus": {
+      "Title": "World CLI Bridge Status",
+      "MenuName": "Bridge Status",
+      "MenuLabel": "View Bridge Status",
+      "MenuHint": "Inspect the current connection between this browser and the local daemon.",
+      "Connection": "Connection",
+      "AwaitingHandshake": "Awaiting handshake",
+      "DaemonUrl": "Daemon URL",
+      "LastConnectedAt": "Last connected at",
+      "ReconnectAttempts": "Reconnect attempts",
+      "TerminalStopReason": "Terminal stop reason",
+      "LocalPairing": "Local pairing",
+      "Configured": "Configured",
+      "NotConfigured": "Not configured",
+      "StateDetail": "{state} ({detail})",
+      "State": {
+        "connected": "Connected",
+        "pending": "Connecting",
+        "offline": "Offline",
+        "unpaired": "Not paired"
+      },
+      "Raw": {
+        "stopped": "Stopped",
+        "error": "Error",
+        "disconnected": "Disconnected",
+        "idle": "Idle",
+        "reconnecting": "Reconnecting"
+      }
+    },
+    "Authorization": {
+      "Title": "World CLI Authorization",
+      "Connect": "Connect",
+      "Disconnect": "Disconnect",
+      "Pair": "Pair",
+      "Unpair": "Unpair",
+      "Forget": "Forget local",
+      "GMOnly": "Only a GM can manage authorization.",
+      "DefaultLabel": "{user}'s Browser",
+      "FallbackLabel": "Foundry Browser",
+      "ClientLabel": "Browser label",
+      "ClientLabelEditable": "Names this browser in the pairing approval and in the daemon's pairing list. Edit it before pairing.",
+      "ClientLabelFixed": "The label is fixed once this browser is paired. Unpair and pair again to change it.",
+      "ClientLabelGMOnly": "Names this browser in the pairing approval and in the daemon's pairing list. Only a GM can edit it."
+    },
+    "Notifications": {
+      "ConnectUnpaired": "World CLI is not paired yet. Pair this browser with the local daemon first.",
+      "BridgeConnectFailed": "Bridge connect failed: {error}",
+      "AuthorizationConnectFailed": "Connect failed: {error}",
+      "PairingCode": "Pairing code: {code}",
+      "PairingFailed": "Pairing failed: {error}",
+      "PairingRevoked": "Pairing revoked and local credential removed.",
+      "UnpairFailed": "Unpair failed; the local credential was retained so revocation can be retried. {error} Use Forget local only if you accept leaving the daemon profile active.",
+      "ForgetLocal": "Forgetting locally does not revoke the daemon profile. Revoke it later with auth revoke."
+    },
+    "Errors": {
+      "DaemonUnavailable": "Daemon unavailable",
+      "PairingInvalidJson": "Pairing response was not valid JSON",
+      "PairingInvalidExpiry": "Pairing request returned an invalid expiry",
+      "PairingExpired": "Pairing request expired",
+      "PairingRejected": "Pairing failed",
+      "PairingClosed": "Pairing connection closed before authorization completed ({code}): {reason}",
+      "DaemonClosed": "Daemon connection closed ({code}): {reason}",
+      "NoCloseReason": "no reason",
+      "ClientIdChanged": "This browser now identifies itself as a different client ({current}) than the one the approved request carried ({asserted}), which the daemon would reject on every connection, so the credential was discarded. Pair again from a single tab, then remove the unused profile with auth revoke.",
+      "ClientIdUnset": "none",
+      "RevokeUnavailable": "Authenticated daemon connection is not available",
+      "DaemonRequestTimeout": "Timed out waiting for daemon response to {operation}",
+      "RevokeFailed": "Pairing revocation failed"
+    },
+    "Startup": {
+      "DaemonUnavailable": "{module} stopped: the configured daemon is unavailable. Start the local daemon and reload the client.",
+      "RejectedCredential": "{module} stopped: the pairing credential was rejected. Open Authorization and pair again.",
+      "BridgeBusy": "{module} stopped: another pairing owns the daemon's active bridge slot. Release that bridge or use bridge release, then choose Connect in Authorization.",
+      "ProtocolVersionSkew": "{module} stopped: protocol version mismatch. This client speaks {expected} but the daemon speaks {actual}. Upgrade the daemon and module to matching versions and reload the client.",
+      "RejectedHandshake": "{module} stopped: the daemon rejected the bridge handshake. Fix the daemon configuration and reload the client.",
+      "RejectedHandshakeWithReason": "{module} stopped: the daemon rejected the bridge handshake ({reason}). Fix the daemon configuration and reload the client.",
+      "NotPaired": "{module} is not paired. Open Authorization from the World CLI scene-controls group, or from Configure Settings → Module Settings → Authorization."
+    },
+    "Settings": {
+      "DaemonUrlName": "Daemon URL",
+      "DaemonUrlHint": "WebSocket URL for the local fvtt-world-cli bridge daemon.",
+      "AutoConnectName": "Connect automatically",
+      "AutoConnectHint": "Connect to the local daemon when the world loads. When disabled, the bridge starts only from the Connect button in the World CLI scene controls or the Authorization window.",
+      "CredentialsName": "Browser pairing credentials",
+      "ClientIdName": "Browser client identifier",
+      "AuthorizationName": "Authorization",
+      "AuthorizationLabel": "Manage Authorization",
+      "AuthorizationHint": "Pair this browser, world, and GM with the local daemon."
+    }
+  }
+}

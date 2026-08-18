@@ -1,0 +1,37 @@
+<section class="standard-form">
+  <div class="form-group fvtt-world-cli-readonly">
+    <label>{{localize "FVTTWORLDCLI.BridgeStatus.Connection"}}</label>
+    <div class="form-fields">
+      <strong class="fvtt-world-cli-status--{{displayState}}">{{connectionLabel}}</strong>
+    </div>
+  </div>
+  <div class="form-group fvtt-world-cli-readonly">
+    <label>{{localize "FVTTWORLDCLI.BridgeStatus.DaemonUrl"}}</label>
+    <div class="form-fields"><strong>{{#if url}}{{url}}{{else}}&mdash;{{/if}}</strong></div>
+  </div>
+  <div class="form-group fvtt-world-cli-readonly">
+    <label>{{localize "FVTTWORLDCLI.BridgeStatus.LastConnectedAt"}}</label>
+    <div class="form-fields">
+      <strong>{{#if lastConnectedAt}}{{lastConnectedAt}}{{else}}&mdash;{{/if}}</strong>
+    </div>
+  </div>
+  <div class="form-group fvtt-world-cli-readonly">
+    <label>{{localize "FVTTWORLDCLI.BridgeStatus.ReconnectAttempts"}}</label>
+    <div class="form-fields"><strong>{{reconnectAttempts}}</strong></div>
+  </div>
+  <div class="form-group fvtt-world-cli-readonly">
+    <label>{{localize "FVTTWORLDCLI.BridgeStatus.TerminalStopReason"}}</label>
+    <div class="form-fields">
+      <strong>{{#if terminalStopReason}}{{terminalStopReason}}{{else}}&mdash;{{/if}}</strong>
+    </div>
+  </div>
+  <div class="form-group fvtt-world-cli-readonly">
+    <label>{{localize "FVTTWORLDCLI.BridgeStatus.LocalPairing"}}</label>
+    <div class="form-fields">
+      <strong>
+        {{#if paired}}{{localize "FVTTWORLDCLI.BridgeStatus.Configured"}}{{else}}{{localize
+          "FVTTWORLDCLI.BridgeStatus.NotConfigured"}}{{/if}}
+      </strong>
+    </div>
+  </div>
+</section>

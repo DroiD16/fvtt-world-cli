@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.npm/
+
+# Build and test output
+dist/
+build/
+coverage/
+*.tsbuildinfo
+test-results/
+
+# Runtime and local bridge artifacts
+tmp/
+.tmp/
+.cache/
+.runtime/
+.foundry-data/
+foundry-data/
+releases/
+artifacts/
+*.zip
+*.tgz
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+*.local
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Agents and local
+AGENTS.override.md
+CLAUDE.local.md
+.claude/
+.codex/
+.agent/
+.local/

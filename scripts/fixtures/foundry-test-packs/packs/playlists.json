@@ -1,0 +1,42 @@
+{
+  "collection": "playlists",
+  "embedded": {
+    "sounds": "sounds"
+  },
+  "documents": [
+    {
+      "_id": "fctlpackplist001",
+      "name": "fvtt-world-cli Fixture Playlist",
+      "description": "Import fixture for playlist.import-from-compendium.",
+      "mode": 0,
+      "playing": false,
+      "fade": null,
+      "channel": "music",
+      "sorting": "a",
+      "seed": 0,
+      "folder": "fctlpackpfolder1",
+      "sort": 200,
+      "flags": {
+        "fvtt-world-cli-test-packs": {
+          "fixture": "playlist"
+        }
+      },
+      "sounds": [
+        {
+          "_id": "fctlpacksound001",
+          "name": "fvtt-world-cli Fixture Tone",
+          "description": "",
+          "path": "sounds/notify.wav",
+          "channel": null,
+          "playing": false,
+          "pausedTime": null,
+          "repeat": false,
+          "volume": 0.4,
+          "fade": null,
+          "sort": 0,
+          "flags": {}
+        }
+      ]
+    }
+  ]
+}

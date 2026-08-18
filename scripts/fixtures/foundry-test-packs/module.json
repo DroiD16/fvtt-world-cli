@@ -1,0 +1,38 @@
+{
+  "id": "fvtt-world-cli-test-packs",
+  "title": "fvtt-world-cli Test Packs (fixture)",
+  "description": "Minimal Playlist, Cards and Scene compendium packs used by scripts/live-smoke.mjs to live-test *.import-from-compendium for the pack types no designated test instance ships. Installed and removed by scripts/fixtures/foundry-test-packs/install.mjs. NOT a release artifact — never deploy this to a real world.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "14"
+  },
+  "authors": [
+    {
+      "name": "fvtt-world-cli"
+    }
+  ],
+  "packs": [
+    {
+      "name": "playlists",
+      "label": "fvtt-world-cli Fixture Playlists",
+      "path": "packs/playlists",
+      "type": "Playlist",
+      "private": false
+    },
+    {
+      "name": "decks",
+      "label": "fvtt-world-cli Fixture Card Stacks",
+      "path": "packs/decks",
+      "type": "Cards",
+      "private": false
+    },
+    {
+      "name": "scenes",
+      "label": "fvtt-world-cli Fixture Scenes",
+      "path": "packs/scenes",
+      "type": "Scene",
+      "private": false
+    }
+  ]
+}

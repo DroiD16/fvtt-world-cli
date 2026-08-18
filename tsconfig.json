@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noImplicitAny": false,
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "packages/**/*.d.ts",
+    "packages/**/*.js",
+    "packages/**/*.ts",
+    "packages/**/*.json",
+    "vitest.config.js"
+  ],
+  "exclude": ["node_modules", "packages/*/dist"]
+}

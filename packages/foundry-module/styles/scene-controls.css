@@ -1,0 +1,60 @@
+#scene-controls button.control.fvtt-world-cli-status--connected {
+  --control-icon-color: var(--color-level-success);
+  --control-hover-icon-color: var(--color-level-success);
+  --control-active-icon-color: var(--color-level-success);
+}
+
+#scene-controls button.control.fvtt-world-cli-status--pending {
+  --control-icon-color: var(--color-level-warning);
+  --control-hover-icon-color: var(--color-level-warning);
+  --control-active-icon-color: var(--color-level-warning);
+}
+
+#scene-controls button.control.fvtt-world-cli-status--offline {
+  --control-icon-color: var(--color-level-error);
+  --control-hover-icon-color: var(--color-level-error);
+  --control-active-icon-color: var(--color-level-error);
+}
+
+#scene-controls button.control.fvtt-world-cli-status--unpaired {
+  --control-icon-color: var(--color-light-5);
+  --control-hover-icon-color: var(--color-light-5);
+  --control-active-icon-color: var(--color-light-5);
+}
+
+#scene-controls button.control[disabled] {
+  --control-icon-color: var(--color-light-5);
+  --control-hover-icon-color: var(--color-light-5);
+  --control-active-icon-color: var(--color-light-5);
+  --control-hover-border-color: var(--control-border-color);
+}
+
+#fvtt-world-cli-bridge-status .fvtt-world-cli-status--connected,
+#fvtt-world-cli-authorization .fvtt-world-cli-status--connected {
+  color: var(--color-level-success);
+}
+
+#fvtt-world-cli-bridge-status .fvtt-world-cli-status--pending,
+#fvtt-world-cli-authorization .fvtt-world-cli-status--pending {
+  color: var(--color-level-warning);
+}
+
+#fvtt-world-cli-bridge-status .fvtt-world-cli-status--offline,
+#fvtt-world-cli-authorization .fvtt-world-cli-status--offline {
+  color: var(--color-level-error);
+}
+
+#fvtt-world-cli-bridge-status .fvtt-world-cli-status--unpaired,
+#fvtt-world-cli-authorization .fvtt-world-cli-status--unpaired {
+  color: var(--color-text-subtle);
+}
+
+#fvtt-world-cli-bridge-status .form-group.fvtt-world-cli-readonly:hover > label,
+#fvtt-world-cli-authorization .form-group.fvtt-world-cli-readonly:hover > label {
+  color: var(--color-form-label);
+}
+
+#fvtt-world-cli-authorization .fvtt-world-cli-connection-action {
+  min-width: 12ch;
+  white-space: nowrap;
+}

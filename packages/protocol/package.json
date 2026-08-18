@@ -1,0 +1,15 @@
+{
+  "name": "@fvtt-world-cli/protocol",
+  "version": "0.16.0",
+  "private": true,
+  "license": "MIT",
+  "author": "DroiD16",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "build": "tsc --project ../../tsconfig.json",
+    "test": "vitest run packages/protocol/tests"
+  }
+}

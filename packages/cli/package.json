@@ -1,0 +1,35 @@
+{
+  "name": "fvtt-world-cli",
+  "version": "0.16.0",
+  "license": "MIT",
+  "author": "DroiD16",
+  "type": "module",
+  "bin": {
+    "fvtt-world-cli": "./bin/fvtt-world-cli.js",
+    "worldctl": "./bin/fvtt-world-cli.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "docs/",
+    "skills/"
+  ],
+  "scripts": {
+    "test": "vitest run packages/cli/tests",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --external:commander --external:pino --external:tsx --external:ws --external:zod --outfile=dist/index.js",
+    "typecheck": "tsc --project ../../tsconfig.json",
+    "prepack": "npm run build && node ./bin/prepare-package-assets.mjs",
+    "postpack": "node ./bin/prepare-package-assets.mjs --clean",
+    "postinstall": "node ./bin/sync-installed-skill.mjs"
+  },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "pino": "^9.6.0",
+    "tsx": "^4.19.4",
+    "ws": "^8.18.1",
+    "zod": "^3.24.3"
+  },
+  "devDependencies": {
+    "@fvtt-world-cli/protocol": "0.16.0"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "id": "fvtt-world-cli",
+  "title": "World CLI for Foundry VTT",
+  "description": "Local bridge module that exposes a narrow, authenticated automation surface for FoundryVTT.",
+  "version": "0.16.0",
+  "license": "LICENSE",
+  "authors": [
+    {
+      "name": "DroiD16",
+      "url": "https://github.com/DroiD16"
+    }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "14"
+  },
+  "esmodules": ["scripts/index.js"],
+  "styles": ["styles/scene-controls.css"],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "languages/en.json"
+    }
+  ]
+}

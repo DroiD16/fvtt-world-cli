@@ -1,0 +1,26 @@
+{
+  "collection": "scenes",
+  "embedded": {},
+  "documents": [
+    {
+      "_id": "fctlpackscene001",
+      "name": "fvtt-world-cli Fixture Scene",
+      "width": 2000,
+      "height": 1500,
+      "padding": 0.25,
+      "tokenVision": true,
+      "navName": "Fixture",
+      "folder": "fctlpacksfolder1",
+      "sort": 900,
+      "active": true,
+      "navigation": true,
+      "navOrder": 7,
+      "backgroundColor": "#101010",
+      "flags": {
+        "fvtt-world-cli-test-packs": {
+          "fixture": "scene"
+        }
+      }
+    }
+  ]
+}

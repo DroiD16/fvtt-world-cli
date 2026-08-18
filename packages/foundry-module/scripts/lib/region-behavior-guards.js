@@ -1,0 +1,244 @@
+import { ERROR_CODES } from "../generated/protocol.js";
+import { createBridgeError } from "./errors.js";
+
+import { payloadKeyField } from "./sanitize.js";
+
+const EXECUTABLE_REGION_BEHAVIOR_TYPES = Object.freeze(new Set(["executeScript", "executeMacro"]));
+
+/**
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+function suppliedRegionBehaviorTypeName(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+function executableRegionBehaviorTypeName(value) {
+  const name = suppliedRegionBehaviorTypeName(value);
+  return name !== null && EXECUTABLE_REGION_BEHAVIOR_TYPES.has(name) ? name : null;
+}
+
+const REGION_BEHAVIOR_NAMED_TYPE_KEYS = Object.freeze(["type", "==type"]);
+
+function resolveExistingBehaviorType(region, behaviorId) {
+  if (!region || behaviorId == null) {
+    return null;
+  }
+  const collection = region.behaviors;
+  if (collection && typeof collection.get === "function") {
+    const existing = collection.get(behaviorId);
+    if (existing?.type) {
+      return existing.type;
+    }
+  }
+  const list =
+    collection && typeof collection[Symbol.iterator] === "function"
+      ? Array.from(collection)
+      : Array.isArray(region.toObject?.().behaviors)
+        ? region.toObject().behaviors
+        : [];
+  for (const entry of list) {
+    const data = typeof entry?.toObject === "function" ? entry.toObject() : entry;
+    if (data && (data._id === behaviorId || data.id === behaviorId)) {
+      return data.type ?? null;
+    }
+  }
+  return null;
+}
+
+/** @param {Record<string, any> | null | undefined} payload */
+export function assertRegionBehaviorsSuppliedAsArray(payload) {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+  const supplied = Object.keys(payload).filter((key) => payloadKeyField(key) === "behaviors");
+  const offending = supplied.filter((key) => !(key === "behaviors" && Array.isArray(payload.behaviors)));
+  if (offending.length === 0) {
+    return;
+  }
+  throw createBridgeError(
+    ERROR_CODES.INVALID_PARAMS,
+    `A region's 'behaviors' may only be supplied as the plain 'behaviors' key carrying an ARRAY of behavior objects (found ${offending
+      .map((key) => `"${key}"`)
+      .join(
+        ", "
+      )}): DROP these keys and resend. Foundry's operator and dot-notation spellings are NOT equivalent to it — measured on both supported cores, a dotted 'behaviors.<n>.<field>' APPENDS a brand-new behavior instead of editing the row it appears to address (or is a silent no-op that changes nothing while the command reports success), and '==behaviors' REPLACES the whole collection; both of them also bypass the bridge's behavior guards, so a code-executing type ("executeScript"/"executeMacro") supplied that way would arm a self-firing JavaScript trigger (no arbitrary JavaScript execution from the CLI). On the plain array form each entry's type must be the plain 'type' key carrying a string, and a code-executing one is refused there. To ADD or REPLACE behaviors pass the plain 'behaviors' array (it appends declarative behaviors), to edit ONE behavior in place use scene.region.behavior.update, and to remove one use scene.region.behavior.delete`,
+    { field: "behaviors", suppliedKeys: offending }
+  );
+}
+
+/**
+ * @param {unknown} entry
+ * @param {number} index
+ */
+function assertRegionBehaviorEntryTypeShape(entry, index) {
+  if (!entry || typeof entry !== "object") {
+    return;
+  }
+  const supplied = /** @type {Record<string, any>} */ (entry);
+  const offending = Object.keys(supplied).filter(
+    (key) => payloadKeyField(key) === "type" && (key !== "type" || typeof supplied.type !== "string")
+  );
+  if (offending.length === 0) {
+    return;
+  }
+  throw createBridgeError(
+    ERROR_CODES.INVALID_PARAMS,
+    `A RegionBehavior entry in a region's 'behaviors' array must spell its type as the plain 'type' key carrying a STRING (entry ${index} supplies ${offending
+      .map((key) => `"${key}"`)
+      .join(
+        ", "
+      )}): send 'type' as a plain string and resend. No other spelling or value type does what it looks like — measured on both supported cores, Foundry's '==type' operator key APPENDS a fully ARMED behavior on the update path (and stores a forced-replacement operator OBJECT as the row's type on a v14 create, where every read of this collection promises a string), a dotted 'type.<sub>' either fails validation or silently changes nothing, and a non-string 'type' either fails validation or silently discards the ENTIRE behaviors write while the command reports success. The bridge cannot tell whether such a value names a code-executing type ("executeScript"/"executeMacro"), which it must refuse (no arbitrary JavaScript execution from the CLI), so it refuses the spelling instead of guessing — an array-wrapped type like ["pauseGame"] is refused for that reason as well; drop the wrapper and send the bare string`,
+    { field: "behaviors", behaviorIndex: index, suppliedKeys: offending }
+  );
+}
+
+export function assertRegionBehaviorsAllowed(behaviors, existingRegion = null) {
+  if (!Array.isArray(behaviors)) {
+    return;
+  }
+  for (const behavior of behaviors) {
+    let suppliedKey = null;
+    let type = null;
+    for (const key of REGION_BEHAVIOR_NAMED_TYPE_KEYS) {
+      const name = suppliedRegionBehaviorTypeName(
+        behavior && typeof behavior === "object" ? behavior[key] : undefined
+      );
+      if (name === null) continue;
+      if (type === null || EXECUTABLE_REGION_BEHAVIOR_TYPES.has(name)) {
+        suppliedKey = key;
+        type = name;
+      }
+      if (EXECUTABLE_REGION_BEHAVIOR_TYPES.has(name)) break;
+    }
+
+    if (type === null && behavior?._id != null && existingRegion) {
+      type = suppliedRegionBehaviorTypeName(resolveExistingBehaviorType(existingRegion, behavior._id));
+    }
+    if (type !== null && EXECUTABLE_REGION_BEHAVIOR_TYPES.has(type)) {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `Region behavior type "${type}" executes code when the region fires and is not allowed through the bridge (no arbitrary JavaScript execution from the CLI); only declarative RegionBehavior types are accepted`,
+        { field: "behaviors", ...(suppliedKey === null ? {} : { suppliedKey }), behaviorType: type }
+      );
+    }
+  }
+  for (const [index, behavior] of behaviors.entries()) {
+    assertRegionBehaviorEntryTypeShape(behavior, index);
+  }
+}
+
+/** @param {any} behavior */
+function storedRegionBehaviorType(behavior) {
+  if (!behavior) return null;
+  const source =
+    behavior._source ?? (typeof behavior.toObject === "function" ? behavior.toObject() : behavior);
+  return suppliedRegionBehaviorTypeName(source?.type ?? behavior.type ?? null);
+}
+
+/** @param {any} payload */
+function suppliedNonPlainRegionBehaviorTypeKeys(payload) {
+  if (!payload || typeof payload !== "object") return [];
+  return Object.keys(payload).filter((key) => key !== "type" && payloadKeyField(key) === "type");
+}
+
+/**
+ * @param {Record<string, any> | null | undefined} payload
+ * @param {Record<string, any>} details
+ */
+function assertSuppliedRegionBehaviorTypeAllowed(payload, details) {
+  for (const key of REGION_BEHAVIOR_NAMED_TYPE_KEYS) {
+    const type = executableRegionBehaviorTypeName(
+      payload && typeof payload === "object" ? payload[key] : undefined
+    );
+    if (type !== null) {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `Region behavior type "${type}" executes code when the region fires and is not allowed through the bridge (no arbitrary JavaScript execution from the CLI); only declarative RegionBehavior types are accepted`,
+        { ...details, field: "type", suppliedKey: key, behaviorType: type }
+      );
+    }
+  }
+}
+
+/**
+ * @param {any} behavior
+ * @param {Record<string, any>} details
+ * @param {{ verb: string }} context
+ */
+function assertRegionBehaviorTargetWritable(behavior, details, { verb }) {
+  const type = storedRegionBehaviorType(behavior);
+  if (type && EXECUTABLE_REGION_BEHAVIOR_TYPES.has(type)) {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      `RegionBehavior ${details.behaviorId} is a "${type}" behavior, which executes code when the region fires: scene.region.behavior.${verb} is refused for it in FULL — including a patch that only sets "disabled" — because the bridge does not author or edit self-arming JavaScript triggers (no arbitrary JavaScript execution from the CLI). Use scene.region.behavior.delete to remove it (that is allowed: it supplies no behavior data and removes the execution), edit it in the Foundry UI, or ${
+        verb === "clone"
+          ? "clone it with NO --patch (an unpatched duplicate of a GM-authored behavior is allowed)"
+          : "delete it and create a declarative replacement"
+      }`,
+      { ...details, field: "patch", behaviorType: type }
+    );
+  }
+}
+
+/**
+ * @param {Record<string, any> | null | undefined} payload
+ * @param {Record<string, any>} details
+ * @param {{ verb: string }} context
+ */
+function assertRegionBehaviorTypeSpellingRejected(payload, details, { verb }) {
+  const supplied = suppliedNonPlainRegionBehaviorTypeKeys(payload);
+  if (supplied.length === 0) return;
+  const found = supplied.map((key) => `"${key}"`).join(", ");
+  throw createBridgeError(
+    ERROR_CODES.INVALID_PARAMS,
+    verb === "create"
+      ? `A RegionBehavior create payload may spell 'type' ONLY as the plain 'type' key (found ${found}): drop the offending key and supply the plain 'type' instead. No other spelling is equivalent to it — measured on both supported cores, Foundry's forced-replacement '==type' beside a valid plain 'type' passes Foundry's own validation and stores something the caller did not ask for (a ForcedReplacement operator OBJECT in 'type' on v14, where scene.region.behavior.get promises a string; the junk '==type' key itself on v13), a forced-deletion '-=type' fails validation outright, and a dotted 'type.<sub>' is silently DROPPED on v13 while v14 fails with a bare TypeError that carries no field name.`
+      : `A RegionBehavior's 'type' is create-only on scene.region.behavior.${verb} in EVERY spelling — Foundry's forced-replacement/forced-deletion operator keys and any dotted 'type.<sub>' path included (found ${found}): DROP the key and resend. No spelling of 'type' reaches a stored type change here — measured on both supported cores, these keys raise a plain (unnamed) Foundry error before anything is written, and on the update path the client backend reports that refusal only as a UI notification while resolving the update, so a passed-through key would look like a success that wrote nothing. If you really want a behavior of a DIFFERENT type, author it with scene.region.behavior.create and remove this one with scene.region.behavior.delete.`,
+    { ...details, field: "type", suppliedKeys: supplied }
+  );
+}
+
+/**
+ * @param {Record<string, any>} patch
+ * @param {Record<string, any>} details
+ * @param {{ verb: string }} context
+ */
+function assertRegionBehaviorTypeImmutable(patch, details, { verb }) {
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "type")) {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      verb === "clone"
+        ? "A RegionBehavior clone cannot change 'type': the copy would carry the SOURCE type's 'system' payload into the new type with nothing reconciling the mismatch. Clone without a 'type' override to duplicate this behavior as-is, or use scene.region.behavior.create to author a new behavior of the desired type (with its own 'system' data)"
+        : "A RegionBehavior's 'type' is not accepted on an update patch, even when it restates the type the behavior already holds: DROP the 'type' key and resend. Nothing is lost by dropping it — an unchanged 'type' is an empty diff Foundry ignores (measured on both installs), so it can never have been what you were changing; scene.region.behavior.get emits the field, so a get/edit/update round-trip carries it harmlessly. Only an ACTUAL type change is impossible: Foundry permits one only when the 'system' field is force-replaced, and on the update path it reports the resulting validation failure as a UI notification while resolving the update without writing. If you really want a behavior of a DIFFERENT type, author it with scene.region.behavior.create and remove this one with scene.region.behavior.delete",
+      { ...details, field: "type" }
+    );
+  }
+}
+
+/**
+ * @param {object} args
+ * @param {"create" | "update" | "clone"} args.verb
+ * @param {Record<string, any>} [args.payload]
+ * @param {any} [args.behavior]
+ * @param {Record<string, any>} args.details
+ */
+export function assertRegionBehaviorWriteAllowed({ verb, payload, behavior = null, details }) {
+  assertSuppliedRegionBehaviorTypeAllowed(payload, details);
+
+  if (verb === "update" || (verb === "clone" && payload != null)) {
+    assertRegionBehaviorTargetWritable(behavior, details, { verb });
+  }
+
+  assertRegionBehaviorTypeSpellingRejected(payload, details, { verb });
+
+  if (verb === "update" || verb === "clone") {
+    assertRegionBehaviorTypeImmutable(payload ?? {}, details, { verb });
+  }
+}

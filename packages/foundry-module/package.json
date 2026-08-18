@@ -1,0 +1,11 @@
+{
+  "name": "@fvtt-world-cli/foundry-module",
+  "version": "0.16.0",
+  "private": true,
+  "license": "MIT",
+  "author": "DroiD16",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run packages/foundry-module/tests"
+  }
+}
