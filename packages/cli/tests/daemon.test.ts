@@ -7,8 +7,10 @@ import {
   AUTH_PRUNE_DEFAULT_DAYS,
   BRIDGE_LEASE_MS,
   BRIDGE_RELEASE_CLOSE_CODE,
+  COMMAND_NAMES,
   DAEMON_OPERATIONS,
   DAEMON_OPERATION_DEFINITIONS,
+  DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   MESSAGE_TYPES,
   PROTOCOL_VERSION,
@@ -770,6 +772,49 @@ describe("authorization daemon", () => {
     expect(await bridgeClosed).toMatchObject({ code: BRIDGE_RELEASE_CLOSE_CODE, reason: "Bridge released" });
     expect(daemon.activePairingId).toBeNull();
     expect(daemon.leasePairingId).toBeNull();
+  });
+
+  it("reports only advertised commands in the bridge session status while still forwarding the rest", async () => {
+    const credential = "b".repeat(43);
+    const config = createEmptyConfig();
+    addPairing(config, { pairingId: "pair-1", credential });
+    const daemon = createBridgeDaemon({
+      daemonUrl: `ws://127.0.0.1:${await freePort()}`,
+      config,
+      logger: pino({ level: "silent" })
+    });
+    daemons.push(daemon);
+    await daemon.start();
+    const bridge = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: [...COMMAND_NAMES]
+    });
+    const cli = await connectCli(daemon, config.deviceCredential);
+
+    const status = await control(cli, "status-1", "auth.status");
+
+    expect(status).toMatchObject({ ok: true });
+    const reported = (status as { result: { bridge: { session: { commands: string[] } } } }).result.bridge
+      .session.commands;
+    expect(reported).toEqual([...DISCOVERABLE_COMMAND_NAMES]);
+    const undiscoverable = COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name));
+    expect(undiscoverable.length).toBeGreaterThan(0);
+    for (const command of undiscoverable)
+      expect(reported, `${command} must not be advertised`).not.toContain(command);
+
+    expect(undiscoverable).toContain("policy.snapshot");
+    const forwarded = next(bridge.socket);
+    cli.send(
+      JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_REQUEST,
+        id: "hidden-1",
+        command: "policy.snapshot",
+        params: {}
+      })
+    );
+    expect(await forwarded).toMatchObject({ id: "hidden-1", command: "policy.snapshot" });
   });
 
   it("revokes an active pairing without creating a lease and never discloses stored secrets", async () => {

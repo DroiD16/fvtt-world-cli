@@ -1,6 +1,7 @@
 import {
   BRIDGE_TAKEOVER_CLOSE_CODE,
   BRIDGE_TAKEOVER_CLOSE_REASON,
+  DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   createErrorResponse,
   createProtocolError
@@ -58,6 +59,13 @@ function inFlightIndexKey(worldId: string, idempotencyKey: string) {
   return JSON.stringify([worldId, idempotencyKey]);
 }
 
+function advertisedSession(session: BridgeSessionInfo): BridgeSessionInfo {
+  return {
+    ...session,
+    commands: session.commands.filter((name) => DISCOVERABLE_COMMAND_NAMES.includes(name))
+  };
+}
+
 export class BridgeSessionStore {
   activeBridgeSocket: WebSocket | null;
   activeSession: BridgeSessionInfo | null;
@@ -93,7 +101,7 @@ export class BridgeSessionStore {
   getBridgeStatus() {
     return {
       connected: Boolean(this.activeBridgeSocket && this.activeSession),
-      session: this.activeSession
+      session: this.activeSession ? advertisedSession(this.activeSession) : null
     };
   }
 
