@@ -229,6 +229,9 @@ or publishing artifacts, agree with the user on the release scope, exact version
   updates these fields together, even when a component has no direct changes. Determine the release
   version from the highest-impact shipped change across the CLI, protocol, daemon, and Foundry module,
   then package and verify them as one compatible release set.
+- Every release sets the shared protocol version equal to the release version, even when the wire
+  contract did not change. Components from different releases must refuse each other at the
+  handshake; do not design, document, or test mixed-version compatibility.
 - Derive the changelog from the complete diff since the previous release tag, not only merge or commit
   subjects. Include only changes that ship in the release.
 - Write release notes in English. Keep them short, non-technical, and focused on user outcomes. Group
