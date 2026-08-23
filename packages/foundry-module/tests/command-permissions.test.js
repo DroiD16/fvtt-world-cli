@@ -14,6 +14,8 @@ import {
 } from "../scripts/command-permissions.js";
 import {
   APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+  APPROVAL_TIMEOUT_MAX_MINUTES,
+  APPROVAL_TIMEOUT_MIN_MINUTES,
   COMMAND_NAMES,
   DEFAULT_COMMAND_PROFILE,
   MODULE_ID,
@@ -39,10 +41,21 @@ const DEEP_NODE_PATH = DEEPEST_COMMAND.split(".").slice(0, -1).join(".");
 const ALLOWED_BY_PROFILE = COMMAND_NAMES.find(
   (command) => !EXEMPT_COMMANDS.has(command) && DEFAULT_COMMAND_PROFILE[command] === "allow"
 );
+const APPROVED_BY_PROFILE = COMMAND_NAMES.find(
+  (command) => !EXEMPT_COMMANDS.has(command) && DEFAULT_COMMAND_PROFILE[command] === "approve"
+);
 const EXEMPT_GROUP = POLICY_EXEMPT_COMMANDS[0].split(".")[0];
 const EXEMPT_ONLY_GROUPS = [...TOP_LEVEL_GROUPS].filter((group) =>
   listSubtreeCommands(group).every((command) => EXEMPT_COMMANDS.has(command))
 );
+const STORED_TIMEOUT_MINUTES =
+  APPROVAL_TIMEOUT_DEFAULT_MINUTES === APPROVAL_TIMEOUT_MAX_MINUTES
+    ? APPROVAL_TIMEOUT_MIN_MINUTES
+    : APPROVAL_TIMEOUT_DEFAULT_MINUTES + 1;
+
+function profileBehaviorOf(command) {
+  return EXEMPT_COMMANDS.has(command) ? "allow" : DEFAULT_COMMAND_PROFILE[command];
+}
 
 function* eachNode(nodes) {
   for (const node of nodes) {
@@ -124,6 +137,7 @@ function createNodeElement(path) {
   const badges = new Map(POLICY_BEHAVIORS.map((behavior) => [behavior, element()]));
   const node = element({
     querySelector: (/** @type {string} */ selector) => {
+      if (!selector.startsWith(":scope > summary ")) return null;
       const behavior = POLICY_BEHAVIORS.find((value) => selector.includes(`"${value}"`));
       return behavior === undefined ? null : badgeOf(badges, behavior);
     }
@@ -202,6 +216,11 @@ describe("Command permissions application", () => {
     return globalThis.game.settings.get(MODULE_ID, MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES);
   }
 
+  async function store(key, value) {
+    await globalThis.game.settings.set(MODULE_ID, key, value);
+    globalThis.game.settings.set.mockClear();
+  }
+
   function expectNoNotification() {
     expect(globalThis.ui.notifications.info).not.toHaveBeenCalled();
     expect(globalThis.ui.notifications.warn).not.toHaveBeenCalled();
@@ -231,6 +250,10 @@ describe("Command permissions application", () => {
     expect(TEMPLATE).toContain(`class="${NODE_SELECTOR.replace(".", "")}`);
     expect(TEMPLATE).toContain(`class="${ROW_SELECTOR.replace(".", "")}`);
     expect(TEMPLATE).toContain('data-action="fillNode" data-path="{{this.path}}"');
+    const summaryMarkup = TEMPLATE.slice(TEMPLATE.indexOf("<summary"), TEMPLATE.indexOf("</summary>"));
+    for (const behavior of POLICY_BEHAVIORS) {
+      expect(summaryMarkup).toContain(`data-count="${behavior}"`);
+    }
   });
 
   it("describes the registry's command total, groups and default approvals", async () => {
@@ -243,6 +266,47 @@ describe("Command permissions application", () => {
     expect(context.profileApproveCount).toBe(PROFILE_APPROVALS.length);
     expect(context.timeoutMinutes).toBe(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
     expect(context.dirty).toBe(false);
+  });
+
+  it("opens on the stored overrides and keeps them when another command changes", async () => {
+    await store(MODULE_SETTING_KEYS.COMMAND_POLICY, {
+      version: 1,
+      overrides: { [ALLOWED_BY_PROFILE]: "deny" }
+    });
+    const { app, dispatch } = application();
+
+    const context = await app._prepareContext();
+
+    expect(findRow(context.nodes, ALLOWED_BY_PROFILE)).toMatchObject({ behavior: "deny", changed: true });
+    const groupPath = ALLOWED_BY_PROFILE.split(".")[0];
+    const expectedCounts = { allow: 0, approve: 0, deny: 0 };
+    for (const command of listSubtreeCommands(groupPath)) {
+      expectedCounts[command === ALLOWED_BY_PROFILE ? "deny" : profileBehaviorOf(command)] += 1;
+    }
+    expect(findNode(context.nodes, groupPath).counts).toEqual(expectedCounts);
+    expect(findNode(context.nodes, groupPath).changed).toBe(1);
+    expect(context.dirty).toBe(false);
+
+    await dispatch("setBehavior", { command: APPROVED_BY_PROFILE, behavior: "deny" });
+    await dispatch("savePolicy");
+
+    expect(storedPolicy()).toEqual({
+      version: 1,
+      overrides: { [ALLOWED_BY_PROFILE]: "deny", [APPROVED_BY_PROFILE]: "deny" }
+    });
+  });
+
+  it("opens the timeout on the stored value rather than the registered default", async () => {
+    await store(MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES, STORED_TIMEOUT_MINUTES);
+    const { app } = application();
+
+    const context = await app._prepareContext();
+
+    expect(STORED_TIMEOUT_MINUTES).not.toBe(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
+    expect(context.timeoutMinutes).toBe(STORED_TIMEOUT_MINUTES);
+    expect(context.dirty).toBe(false);
+    expect(TEMPLATE).toContain('name="approvalTimeout"');
+    expect(TEMPLATE).toContain('value="{{timeoutMinutes}}"');
   });
 
   it("nests every name segment before the verb as its own level", async () => {
