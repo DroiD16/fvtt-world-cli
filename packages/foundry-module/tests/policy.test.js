@@ -95,24 +95,20 @@ describe("normalizeStoredPolicy", () => {
   });
 
   it("keeps the valid entries next to prototype-polluting keys and leaves the prototype alone", () => {
-    const policy = normalizeStoredPolicy(
-      JSON.parse(
-        JSON.stringify({
-          version: 1,
-          overrides: {
-            __proto__: "deny",
-            constructor: "deny",
-            prototype: "deny",
-            [ALLOW_BY_DEFAULT]: "approve"
-          }
-        })
-      )
+    const stored = JSON.parse(
+      `{"version":1,"overrides":{"__proto__":"deny","constructor":"deny","prototype":"deny",${JSON.stringify(
+        ALLOW_BY_DEFAULT
+      )}:"approve"}}`
     );
+    expect(Object.hasOwn(stored.overrides, "__proto__")).toBe(true);
+
+    const policy = normalizeStoredPolicy(stored);
 
     expect(policy.overrides).toEqual({ [ALLOW_BY_DEFAULT]: "approve" });
     expect(Object.getPrototypeOf(policy.overrides)).toBe(Object.prototype);
     expect(Object.hasOwn(policy.overrides, "__proto__")).toBe(false);
     expect(Object.hasOwn(policy.overrides, "constructor")).toBe(false);
+    expect(behaviorOf(policy, "__proto__")).toBe("deny");
     expect(behaviorOf(policy, "constructor")).toBe("deny");
   });
 
@@ -154,13 +150,18 @@ describe("resolveCommandPolicy", () => {
     }
   });
 
-  it("resolves every registered command to a known behavior with no overrides stored", () => {
-    const behaviors = POLICY_BEHAVIORS;
-
+  it("resolves every registered command to its profile behavior with no overrides stored", () => {
     for (const command of COMMAND_NAMES) {
       const { behavior, baseBehavior } = resolveCommandPolicy(null, command);
-      expect(behaviors, command).toContain(behavior);
-      expect(behaviors, command).toContain(baseBehavior);
+      expect(POLICY_BEHAVIORS, command).toContain(behavior);
+
+      if (EXEMPT.has(command)) {
+        expect(baseBehavior, command).toBe("allow");
+        continue;
+      }
+
+      expect(Object.hasOwn(DEFAULT_COMMAND_PROFILE, command), command).toBe(true);
+      expect(baseBehavior, command).toBe(DEFAULT_COMMAND_PROFILE[command]);
     }
   });
 
