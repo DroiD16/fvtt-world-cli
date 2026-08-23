@@ -31,9 +31,13 @@ import { MODULE_SETTING_KEYS } from "./lib/validators.js";
  *   saveError: string
  * }} PolicyDraft
  */
+/** @typedef {{ nodes: Map<string, any>, rows: Map<string, any>, fills: Map<string, any[]> }} PaintTargets */
 
 export const FILTER_FIELD_SELECTOR = 'input[name="commandFilter"]';
 export const TIMEOUT_FIELD_SELECTOR = 'input[name="approvalTimeout"]';
+export const NODE_SELECTOR = ".fvtt-world-cli-policy-node";
+export const ROW_SELECTOR = ".fvtt-world-cli-policy-row";
+export const NODE_FILL_SELECTOR = 'button[data-action="fillNode"]';
 
 const SAVE_FAILURE_KEYS = Object.freeze({
   commandPolicy: "FVTTWORLDCLI.Permissions.SaveFailedPolicy",
@@ -106,12 +110,35 @@ function* eachNode(nodes) {
 }
 
 /**
+ * A row and its behavior buttons both carry `data-command`, so each element is looked up by the
+ * class that only its own kind of element has.
  * @param {any} root
+ * @returns {PaintTargets}
+ */
+function collectTargets(root) {
+  const nodes = new Map();
+  const rows = new Map();
+  const fills = new Map();
+
+  for (const element of root?.querySelectorAll(NODE_SELECTOR) ?? []) nodes.set(element.dataset.node, element);
+  for (const element of root?.querySelectorAll(ROW_SELECTOR) ?? [])
+    rows.set(element.dataset.command, element);
+  for (const button of root?.querySelectorAll(NODE_FILL_SELECTOR) ?? []) {
+    const group = fills.get(button.dataset.path);
+    if (group) group.push(button);
+    else fills.set(button.dataset.path, [button]);
+  }
+
+  return { nodes, rows, fills };
+}
+
+/**
+ * @param {PaintTargets} targets
  * @param {ReturnType<typeof buildContext>} context
  */
-function paintBehaviors(root, context) {
+function paintBehaviors(targets, context) {
   for (const node of eachNode(context.nodes)) {
-    const element = root?.querySelector(`[data-node="${node.path}"]`);
+    const element = targets.nodes.get(node.path);
     if (element) {
       for (const behavior of POLICY_BEHAVIORS) {
         const badge = element.querySelector(`:scope > summary [data-count="${behavior}"]`);
@@ -119,14 +146,14 @@ function paintBehaviors(root, context) {
         badge.textContent = String(node.counts[behavior]);
         badge.classList.toggle("fvtt-world-cli-policy-count--empty", node.counts[behavior] === 0);
       }
-      for (const button of element.querySelectorAll(':scope > summary button[data-action="fillNode"]')) {
+      for (const button of targets.fills.get(node.path) ?? []) {
         button.setAttribute("aria-pressed", String(node.pressed[button.dataset.behavior] === true));
       }
       element.classList.toggle("fvtt-world-cli-policy-node--changed", node.changed > 0);
     }
 
     for (const command of node.commands) {
-      const row = root?.querySelector(`[data-command="${command.name}"]`);
+      const row = targets.rows.get(command.name);
       if (!row) continue;
       row.dataset.behavior = command.behavior;
       row.classList.toggle("fvtt-world-cli-policy-row--changed", command.changed);
@@ -139,18 +166,19 @@ function paintBehaviors(root, context) {
 
 /**
  * @param {any} root
+ * @param {PaintTargets} targets
  * @param {ReturnType<typeof buildContext>} context
  */
-function paintVisibility(root, context) {
+function paintVisibility(root, targets, context) {
   for (const node of eachNode(context.nodes)) {
-    const element = root?.querySelector(`[data-node="${node.path}"]`);
+    const element = targets.nodes.get(node.path);
     if (element) {
       element.hidden = node.hidden;
       element.open = node.open;
     }
 
     for (const command of node.commands) {
-      const row = root?.querySelector(`[data-command="${command.name}"]`);
+      const row = targets.rows.get(command.name);
       if (!row) continue;
       row.hidden = command.hidden;
       row.classList.toggle("fvtt-world-cli-policy-row--odd", command.band);
@@ -185,7 +213,7 @@ function paintFooter(root, context) {
  */
 function paintState(root, draft) {
   const context = buildContext(draft);
-  paintBehaviors(root, context);
+  paintBehaviors(collectTargets(root), context);
   paintFooter(root, context);
 }
 
@@ -195,8 +223,9 @@ function paintState(root, draft) {
  */
 function paintAll(root, draft) {
   const context = buildContext(draft);
-  paintBehaviors(root, context);
-  paintVisibility(root, context);
+  const targets = collectTargets(root);
+  paintBehaviors(targets, context);
+  paintVisibility(root, targets, context);
   paintFooter(root, context);
 }
 
@@ -205,7 +234,7 @@ function paintAll(root, draft) {
  * @param {boolean} open
  */
 function setTreeOpen(root, open) {
-  for (const node of root?.querySelectorAll("[data-node]") ?? []) node.open = open;
+  for (const node of root?.querySelectorAll(NODE_SELECTOR) ?? []) node.open = open;
 }
 
 /** @param {unknown} error */

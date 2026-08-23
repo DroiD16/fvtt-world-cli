@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   FILTER_FIELD_SELECTOR,
+  NODE_FILL_SELECTOR,
+  NODE_SELECTOR,
+  ROW_SELECTOR,
   TIMEOUT_FIELD_SELECTOR,
   createCommandPermissionsApplication
 } from "../scripts/command-permissions.js";
@@ -105,22 +108,24 @@ function pressedBehavior(buttons) {
   return buttons.find((button) => button.attributes.get("aria-pressed") === "true")?.dataset.behavior;
 }
 
-function createRowElement() {
+function createRowElement(name) {
   const buttons = behaviorButtons("setBehavior");
   const row = element({ querySelectorAll: () => buttons });
+  row.dataset.command = name;
   return { row, buttons };
 }
 
-function createNodeElement() {
+function createNodeElement(path) {
   const buttons = behaviorButtons("fillNode");
+  for (const button of buttons) button.dataset.path = path;
   const badges = new Map(POLICY_BEHAVIORS.map((behavior) => [behavior, element()]));
   const node = element({
     querySelector: (/** @type {string} */ selector) => {
       const behavior = POLICY_BEHAVIORS.find((value) => selector.includes(`"${value}"`));
       return behavior === undefined ? null : badgeOf(badges, behavior);
-    },
-    querySelectorAll: () => buttons
+    }
   });
+  node.dataset.node = path;
   return { node, buttons, badges };
 }
 
@@ -217,6 +222,12 @@ describe("Command permissions application", () => {
       "modules/fvtt-world-cli/templates/command-permissions.hbs"
     );
     expect(Application.PARTS.permissions.scrollable).toEqual([".fvtt-world-cli-policy-list"]);
+  });
+
+  it("keys its repaint on the class hooks and node paths the template renders", () => {
+    expect(TEMPLATE).toContain(`class="${NODE_SELECTOR.replace(".", "")}`);
+    expect(TEMPLATE).toContain(`class="${ROW_SELECTOR.replace(".", "")}`);
+    expect(TEMPLATE).toContain('data-action="fillNode" data-path="{{this.path}}"');
   });
 
   it("describes the registry's command total, groups and default approvals", async () => {
@@ -524,30 +535,31 @@ describe("Command permissions application", () => {
       const { app, dispatch } = application();
       const filterField = element();
       const timeoutField = element();
-      const { row, buttons: rowButtons } = createRowElement();
-      const { node, buttons: nodeButtons, badges } = createNodeElement();
+      const { row, buttons: rowButtons } = createRowElement(ALLOWED_BY_PROFILE);
+      const { node, buttons: nodeButtons, badges } = createNodeElement(ALLOWED_BY_PROFILE.split(".")[0]);
       const fillLabel = element();
       const emptyNotice = element();
       const dirtyMarker = element();
       const saveButton = element();
       const saveError = element();
-      const rowSelector = `[data-command="${ALLOWED_BY_PROFILE}"]`;
-      const nodeSelector = `[data-node="${ALLOWED_BY_PROFILE.split(".")[0]}"]`;
       const map = new Map([
         [FILTER_FIELD_SELECTOR, filterField],
         [TIMEOUT_FIELD_SELECTOR, timeoutField],
-        [rowSelector, row],
-        [nodeSelector, node],
         ["[data-fill-label]", fillLabel],
         ["[data-empty-notice]", emptyNotice],
         ["[data-dirty-marker]", dirtyMarker],
         ['button[data-action="savePolicy"]', saveButton],
         ["[data-save-error]", saveError]
       ]);
+      const lists = new Map([
+        [NODE_SELECTOR, [node]],
+        [ROW_SELECTOR, [row]],
+        [NODE_FILL_SELECTOR, nodeButtons]
+      ]);
 
       app.element = {
         querySelector: (selector) => map.get(selector) ?? null,
-        querySelectorAll: (selector) => (selector === "[data-node]" ? [node] : [])
+        querySelectorAll: (selector) => lists.get(selector) ?? []
       };
 
       return {
