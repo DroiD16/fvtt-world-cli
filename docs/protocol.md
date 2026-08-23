@@ -17,7 +17,7 @@ size limits are defined by the protocol package and discoverable at runtime:
 
 The protocol is versioned. Every transport message carries the protocol version, and an unsupported
 version is rejected at the bridge handshake and during command handling rather than degraded
-silently. The current version is `3.0`; matching is exact, so a daemon and a Foundry module from
+silently. The current version is `1.1.0`; matching is exact, so a daemon and a Foundry module from
 different releases refuse each other at the handshake instead of negotiating a subset.
 
 ## Transport model

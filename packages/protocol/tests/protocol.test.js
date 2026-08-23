@@ -8,6 +8,12 @@ import { OUTPUT_PATH, buildGeneratedSource } from "../../../scripts/generate-pro
 import * as moduleProtocol from "../../foundry-module/scripts/generated/protocol.js";
 import * as protocol from "../src/index.js";
 import {
+  APPROVAL_AWAIT_PARK_CAP_MS,
+  APPROVAL_PENDING_MAX,
+  APPROVAL_RESULT_RETENTION_MS,
+  APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+  APPROVAL_TIMEOUT_MAX_MINUTES,
+  APPROVAL_TIMEOUT_MIN_MINUTES,
   AUTH_AWAIT_PARK_CAP_MS,
   AUTH_PRUNE_DEFAULT_DAYS,
   BATCH_GET_MAX_IDS,
@@ -15,6 +21,7 @@ import {
   BATCH_WRITE_PERSISTED_STATUSES,
   BATCH_WRITE_STATUSES,
   BATCH_WRITE_SUCCESS_STATUSES,
+  BRIDGE_LEASE_MS,
   COMMAND_DEFINITIONS,
   COMMAND_NAMES,
   DAEMON_OPERATION_DEFINITIONS,
@@ -27,7 +34,11 @@ import {
   SETTING_VALUE_MAX_DEPTH,
   SETTING_VALUE_MAX_NODES,
   MESSAGE_TYPES,
+  POLICY_BEHAVIORS,
+  POLICY_DISCOVERY_TIMEOUT_MS,
+  POLICY_EXEMPT_COMMANDS,
   PROTOCOL_VERSION,
+  isDestructiveCommand,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
   FOG_RESET_CONFIRM_TIMEOUT_MS,
   SCENE_THUMBNAIL_MAX_BYTES,
@@ -1449,7 +1460,7 @@ describe("protocol contract", () => {
     });
 
     it("pins the protocol version the daemon and module must share exactly", () => {
-      expect(PROTOCOL_VERSION).toBe("3.0");
+      expect(PROTOCOL_VERSION).toBe("1.1.0");
     });
   });
 
@@ -1927,6 +1938,113 @@ describe("protocol contract", () => {
     expect(lockfile.packages["packages/protocol"].version).toBe(version);
     expect(lockfile.packages["packages/foundry-module"].version).toBe(version);
     expect(lockfile.packages["packages/cli"].devDependencies["@fvtt-world-cli/protocol"]).toBe(version);
+  });
+
+  it("keeps every error code a self-named entry with no duplicate value", () => {
+    for (const [key, value] of Object.entries(ERROR_CODES)) {
+      expect(value, `${key} must name itself`).toBe(key);
+      expect(key).toMatch(/^[A-Z][A-Z0-9_]*$/);
+    }
+
+    expect(new Set(Object.values(ERROR_CODES)).size).toBe(Object.keys(ERROR_CODES).length);
+  });
+
+  describe("command policy primitives", () => {
+    const DESTRUCTIVE_EXTRAS = ["file.move", "scene.fog.reset"];
+    const finalSegment = (name) => name.slice(name.lastIndexOf(".") + 1);
+
+    it("exposes a code for the deny verdict and for every approval outcome", () => {
+      for (const code of [
+        "COMMAND_DENIED",
+        "APPROVAL_PENDING",
+        "APPROVAL_DENIED",
+        "APPROVAL_TIMEOUT",
+        "APPROVAL_CANCELLED",
+        "APPROVAL_QUEUE_FULL",
+        "APPROVAL_UNKNOWN"
+      ]) {
+        expect(ERROR_CODES[code]).toBe(code);
+      }
+    });
+
+    it("pins the tri-state behavior list", () => {
+      expect(POLICY_BEHAVIORS).toEqual(["allow", "approve", "deny"]);
+      expect(Object.isFrozen(POLICY_BEHAVIORS)).toBe(true);
+    });
+
+    it("keeps the exempt command list frozen, duplicate-free, and inclusive of the status reads", () => {
+      expect(Object.isFrozen(POLICY_EXEMPT_COMMANDS)).toBe(true);
+      expect(new Set(POLICY_EXEMPT_COMMANDS).size).toBe(POLICY_EXEMPT_COMMANDS.length);
+      expect(POLICY_EXEMPT_COMMANDS).toContain("system.ping");
+      expect(POLICY_EXEMPT_COMMANDS).toContain("system.info");
+    });
+
+    it("classifies registry commands as destructive by delete verb plus the explicit extras", () => {
+      const deleteVerbs = COMMAND_NAMES.filter((name) =>
+        ["delete", "delete-many"].includes(finalSegment(name))
+      );
+
+      for (const name of COMMAND_NAMES) {
+        const expected =
+          ["delete", "delete-many"].includes(finalSegment(name)) || DESTRUCTIVE_EXTRAS.includes(name);
+
+        expect(isDestructiveCommand(name), name).toBe(expected);
+      }
+
+      for (const name of DESTRUCTIVE_EXTRAS) {
+        expect(COMMAND_NAMES).toContain(name);
+        expect(deleteVerbs).not.toContain(name);
+      }
+
+      expect(deleteVerbs.length).toBeGreaterThan(0);
+      expect(COMMAND_NAMES.filter(isDestructiveCommand).length).toBe(
+        deleteVerbs.length + DESTRUCTIVE_EXTRAS.length
+      );
+    });
+
+    it("reads only the final dot-separated segment, so malformed names are not destructive", () => {
+      for (const name of ["", "delete", "actor.deleted", "actor.delete.extra"]) {
+        expect(isDestructiveCommand(name), name).toBe(false);
+      }
+
+      expect(isDestructiveCommand("actor.delete")).toBe(true);
+      expect(isDestructiveCommand("actor.item.delete-many")).toBe(true);
+    });
+
+    it("parks an approval poll for the same ceiling the pairing wait uses", () => {
+      expect(APPROVAL_AWAIT_PARK_CAP_MS).toBe(AUTH_AWAIT_PARK_CAP_MS);
+      expect(APPROVAL_AWAIT_PARK_CAP_MS).toBeLessThan(BRIDGE_LEASE_MS);
+      expect(APPROVAL_RESULT_RETENTION_MS).toBeGreaterThan(APPROVAL_AWAIT_PARK_CAP_MS);
+    });
+
+    it("keeps the configurable approval timeout inside the browser timer ceiling", () => {
+      const timerCeilingMs = 2 ** 31 - 1;
+
+      expect(APPROVAL_TIMEOUT_MIN_MINUTES).toBeLessThanOrEqual(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
+      expect(APPROVAL_TIMEOUT_DEFAULT_MINUTES).toBeLessThanOrEqual(APPROVAL_TIMEOUT_MAX_MINUTES);
+      expect(APPROVAL_TIMEOUT_MAX_MINUTES * 60_000).toBeLessThan(timerCeilingMs);
+      expect((APPROVAL_TIMEOUT_MAX_MINUTES + 1) * 60_000).toBeGreaterThan(timerCeilingMs);
+    });
+
+    it("carries the approval and policy primitives into the module mirror", () => {
+      const numeric = /** @type {Record<string, number>} */ ({
+        APPROVAL_AWAIT_PARK_CAP_MS,
+        APPROVAL_RESULT_RETENTION_MS,
+        APPROVAL_PENDING_MAX,
+        APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+        APPROVAL_TIMEOUT_MIN_MINUTES,
+        APPROVAL_TIMEOUT_MAX_MINUTES,
+        POLICY_DISCOVERY_TIMEOUT_MS
+      });
+
+      for (const [key, value] of Object.entries(numeric)) {
+        expect(moduleProtocol[key], `${key} must reach the module mirror`).toBe(value);
+      }
+
+      expect(moduleProtocol.POLICY_BEHAVIORS).toEqual([...POLICY_BEHAVIORS]);
+      expect(moduleProtocol.POLICY_EXEMPT_COMMANDS).toEqual([...POLICY_EXEMPT_COMMANDS]);
+      expect(moduleProtocol.isDestructiveCommand("scene.fog.reset")).toBe(true);
+    });
   });
 
   describe("editable flags / prototypeToken on world documents", () => {

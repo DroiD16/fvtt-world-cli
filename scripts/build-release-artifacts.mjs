@@ -15,6 +15,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { PROTOCOL_VERSION } from "../packages/protocol/src/index.js";
+
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const moduleDirectory = join(repositoryRoot, "packages", "foundry-module");
 const cliDirectory = join(repositoryRoot, "packages", "cli");
@@ -41,7 +43,8 @@ const versionFields = [
   ],
   ["packages/foundry-module version", readJson(join(moduleDirectory, "package.json")).version],
   ["packages/cli @fvtt-world-cli/protocol pin", cliManifest.devDependencies["@fvtt-world-cli/protocol"]],
-  ["module.json version", moduleManifest.version]
+  ["module.json version", moduleManifest.version],
+  ["shared protocol version", PROTOCOL_VERSION]
 ];
 const mismatches = versionFields
   .filter(([, actual]) => actual !== version)

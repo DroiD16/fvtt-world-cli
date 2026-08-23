@@ -3,7 +3,7 @@
 // The bundler strips the JSDoc that types the canonical source, so this copy is not type-checked.
 
 // packages/protocol/src/constants.js
-var PROTOCOL_VERSION = "3.0";
+var PROTOCOL_VERSION = "1.1.0";
 var MODULE_ID = "fvtt-world-cli";
 var MODULE_TITLE = "World CLI for Foundry VTT";
 var DEFAULT_DAEMON_URL = "ws://127.0.0.1:47833";
@@ -22,6 +22,13 @@ var BRIDGE_TAKEOVER_CLOSE_CODE = 4001;
 var BRIDGE_TAKEOVER_CLOSE_REASON = "Bridge session taken over by the same pairing";
 var BRIDGE_RELEASE_CLOSE_CODE = 4002;
 var BRIDGE_RELEASE_CLOSE_REASON = "Bridge released";
+var APPROVAL_AWAIT_PARK_CAP_MS = 25e3;
+var APPROVAL_RESULT_RETENTION_MS = 5 * 60 * 1e3;
+var APPROVAL_PENDING_MAX = 20;
+var APPROVAL_TIMEOUT_DEFAULT_MINUTES = 60;
+var APPROVAL_TIMEOUT_MIN_MINUTES = 1;
+var APPROVAL_TIMEOUT_MAX_MINUTES = 35791;
+var POLICY_DISCOVERY_TIMEOUT_MS = 1500;
 var CLIENT_ID_MIN_LENGTH = 8;
 var CLIENT_ID_MAX_LENGTH = 64;
 var CLIENT_ID_PATTERN = "^[0-9a-fA-F-]+$";
@@ -216,7 +223,14 @@ var ERROR_CODES = Object.freeze({
   PAIRING_REQUIRED: "PAIRING_REQUIRED",
   PAIRING_NOT_FOUND: "PAIRING_NOT_FOUND",
   PAIRING_EXPIRED: "PAIRING_EXPIRED",
-  BRIDGE_BUSY: "BRIDGE_BUSY"
+  BRIDGE_BUSY: "BRIDGE_BUSY",
+  COMMAND_DENIED: "COMMAND_DENIED",
+  APPROVAL_PENDING: "APPROVAL_PENDING",
+  APPROVAL_DENIED: "APPROVAL_DENIED",
+  APPROVAL_TIMEOUT: "APPROVAL_TIMEOUT",
+  APPROVAL_CANCELLED: "APPROVAL_CANCELLED",
+  APPROVAL_QUEUE_FULL: "APPROVAL_QUEUE_FULL",
+  APPROVAL_UNKNOWN: "APPROVAL_UNKNOWN"
 });
 
 // packages/protocol/src/schemas/shared.js
@@ -4825,6 +4839,23 @@ function getInvalidCommandError(command) {
   };
 }
 
+// packages/protocol/src/policy.js
+var POLICY_BEHAVIORS = Object.freeze(["allow", "approve", "deny"]);
+var POLICY_EXEMPT_COMMANDS = Object.freeze([
+  "system.ping",
+  "system.info",
+  "approval.await",
+  "approval.cancel",
+  "policy.snapshot"
+]);
+var DESTRUCTIVE_VERBS = Object.freeze(["delete", "delete-many"]);
+var DESTRUCTIVE_COMMANDS = Object.freeze(["file.delete", "file.move", "scene.fog.reset"]);
+function isDestructiveCommand(name) {
+  const separator = name.lastIndexOf(".");
+  const verb = separator === -1 ? "" : name.slice(separator + 1);
+  return DESTRUCTIVE_VERBS.includes(verb) || DESTRUCTIVE_COMMANDS.includes(name);
+}
+
 // packages/protocol/src/validation.js
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -5201,6 +5232,12 @@ function parseBridgeMessage(rawMessage) {
   }
 }
 export {
+  APPROVAL_AWAIT_PARK_CAP_MS,
+  APPROVAL_PENDING_MAX,
+  APPROVAL_RESULT_RETENTION_MS,
+  APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+  APPROVAL_TIMEOUT_MAX_MINUTES,
+  APPROVAL_TIMEOUT_MIN_MINUTES,
   AUDIT_FILES_MAX_DIRS,
   AUDIT_FILE_SCOPES,
   AUTH_AWAIT_PARK_CAP_MS,
@@ -5265,6 +5302,9 @@ export {
   PAIRING_REQUEST_SCHEMA,
   PAIRING_REQUEST_TTL_MS,
   PAIRING_RESULT_SCHEMA,
+  POLICY_BEHAVIORS,
+  POLICY_DISCOVERY_TIMEOUT_MS,
+  POLICY_EXEMPT_COMMANDS,
   PROTOCOL_VERSION,
   RECONNECT_BASE_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
@@ -5318,6 +5358,7 @@ export {
   getInvalidMessageError,
   getInvalidParamsError,
   getProtocolVersionError,
+  isDestructiveCommand,
   isKnownCommand,
   isWriteCommand,
   pairingPruneCutoffAt,
