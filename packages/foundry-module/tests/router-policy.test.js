@@ -425,14 +425,14 @@ describe("command policy gate", () => {
     it("lists both of them, the hidden one included", async () => {
       const response = await router().route(createRequest("setting.list", {}));
 
-      const listed = response.result.settings.filter(
-        (row) => row.namespace === MODULE_ID && row.key !== undefined
-      );
-      expect(listed.map((row) => row.key)).toEqual(
-        expect.arrayContaining(["commandPolicy", "approvalTimeoutMinutes"])
-      );
-      for (const row of listed) {
-        expect(row, row.key).not.toHaveProperty("valueRedacted");
+      const policyKeys = [MODULE_SETTING_KEYS.COMMAND_POLICY, MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES];
+
+      for (const key of policyKeys) {
+        const row = response.result.settings.find(
+          (candidate) => candidate.namespace === MODULE_ID && candidate.key === key
+        );
+        expect(row, key).toBeDefined();
+        expect(row, key).not.toHaveProperty("valueRedacted");
       }
     });
 

@@ -145,12 +145,12 @@ The CLI does not expose setting writes because settings can alter global securit
 behavior and frequently invoke module callbacks.
 
 The command policy lives in two of this module's own client-scoped settings, `commandPolicy` and
-`approvalTimeoutMinutes`, and both stay readable through `setting.list` and `setting.get`. They hold
-no secrets, and a caller that can see which commands are denied has less reason to keep attempting
-them. Because no setting-write command exists, the policy is beyond the CLI's reach by construction:
-only a human editing it in Foundry can change it. Client scope means the policy belongs to the
-browser profile that holds the bridge, so another browser, profile, or machine applies its own policy
-rather than the one configured here.
+`approvalTimeoutMinutes`. Neither value is redacted: `setting.list` shows their registration and
+`setting.get` returns their value. They hold no secrets, and a caller that can see which commands
+are denied has less reason to keep attempting them. Because no setting-write command exists, the
+policy is beyond the CLI's reach by construction: only a human editing it in Foundry can change it.
+Client scope means the policy belongs to the browser profile that holds the bridge, so another
+browser, profile, or machine applies its own policy rather than the one configured here.
 
 ## Search
 
