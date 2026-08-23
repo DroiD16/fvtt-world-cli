@@ -1620,18 +1620,19 @@ describe("protocol contract", () => {
     });
 
     it("refuses to guess when a version cannot be ordered or a side is unidentified", () => {
-      expect(
-        getProtocolVersionError("9.9", {
-          peer: CLI_DAEMON,
-          reporter: MODULE,
-          handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
-        }).details
-      ).toEqual({
+      const uncomparable = getProtocolVersionError("9.9", {
+        peer: CLI_DAEMON,
+        reporter: MODULE,
+        handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
+      });
+
+      expect(uncomparable.details).toEqual({
         expectedVersion: PROTOCOL_VERSION,
         actualVersion: "9.9",
         staleComponent: UNKNOWN,
         handshake: "command-request"
       });
+      expect(uncomparable.message).toContain("cannot be ordered");
 
       for (const options of [
         { peer: UNKNOWN, reporter: MODULE, handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST },
@@ -1659,6 +1660,7 @@ describe("protocol contract", () => {
         handshake: "unknown"
       });
       expect(error.message).toContain("bring the fvtt-world-cli package and the Foundry module");
+      expect(error.message).not.toContain("cannot be ordered");
     });
 
     it("carries the comparison and the enriched error into the module mirror", () => {

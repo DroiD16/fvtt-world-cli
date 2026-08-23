@@ -5583,29 +5583,28 @@ function compareReleaseVersions(left, right) {
 function isNamedComponent(component) {
   return component === PROTOCOL_COMPONENTS.MODULE || component === PROTOCOL_COMPONENTS.CLI_DAEMON;
 }
-function resolveStaleComponent(actualVersion, peer, reporter) {
+function resolveStaleness(actualVersion, peer, reporter) {
   const actual = normalizeComparableProtocolVersion(actualVersion);
   const expected = normalizeComparableProtocolVersion(PROTOCOL_VERSION);
   if (actual === null || expected === null) {
-    return PROTOCOL_COMPONENTS.UNKNOWN;
+    return { staleComponent: PROTOCOL_COMPONENTS.UNKNOWN, comparable: false };
   }
   const order = compareReleaseVersions(actual, expected);
-  if (order < 0) {
-    return isNamedComponent(peer) ? peer : PROTOCOL_COMPONENTS.UNKNOWN;
-  }
-  if (order > 0) {
-    return isNamedComponent(reporter) ? reporter : PROTOCOL_COMPONENTS.UNKNOWN;
-  }
-  return PROTOCOL_COMPONENTS.UNKNOWN;
+  const older = order < 0 ? peer : order > 0 ? reporter : PROTOCOL_COMPONENTS.UNKNOWN;
+  return {
+    staleComponent: isNamedComponent(older) ? older : PROTOCOL_COMPONENTS.UNKNOWN,
+    comparable: true
+  };
 }
-function describeStaleComponent(staleComponent) {
+function describeStaleness({ staleComponent, comparable }) {
   if (staleComponent === PROTOCOL_COMPONENTS.MODULE) {
     return "the Foundry module is the older component, so update the module in Foundry until both halves come from the same release, then reload the GM client";
   }
   if (staleComponent === PROTOCOL_COMPONENTS.CLI_DAEMON) {
     return "the CLI and daemon are the older component, so update the fvtt-world-cli package until both halves come from the same release, then restart the daemon";
   }
-  return "these versions cannot be ordered, so the older component is unknown: bring the fvtt-world-cli package and the Foundry module to the same release, restart the daemon, and reload the GM client";
+  const cause = comparable ? "the older component is not identified here" : "these versions cannot be ordered, so the older component is unknown";
+  return `${cause}: bring the fvtt-world-cli package and the Foundry module to the same release, restart the daemon, and reload the GM client`;
 }
 function getProtocolVersionError(actualVersion, options = {}) {
   const {
@@ -5613,14 +5612,14 @@ function getProtocolVersionError(actualVersion, options = {}) {
     reporter = PROTOCOL_COMPONENTS.UNKNOWN,
     handshake = PROTOCOL_HANDSHAKES.UNKNOWN
   } = options;
-  const staleComponent = resolveStaleComponent(actualVersion, peer, reporter);
+  const staleness = resolveStaleness(actualVersion, peer, reporter);
   return createProtocolError({
     code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
-    message: `Unsupported protocol version: ${actualVersion} (expected ${PROTOCOL_VERSION}); ${describeStaleComponent(staleComponent)}. Components from different releases are refused by design.`,
+    message: `Unsupported protocol version: ${actualVersion} (expected ${PROTOCOL_VERSION}); ${describeStaleness(staleness)}. Components from different releases are refused by design.`,
     details: {
       expectedVersion: PROTOCOL_VERSION,
       actualVersion,
-      staleComponent,
+      staleComponent: staleness.staleComponent,
       handshake
     }
   });
