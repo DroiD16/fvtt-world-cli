@@ -15,6 +15,8 @@ import {
   MODULE_ID,
   PAIRING_PENDING_MAX,
   PAIRING_REQUEST_TTL_MS,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
   createErrorResponse,
   createProtocolError,
@@ -55,6 +57,26 @@ interface ConnectionState {
   pairingId: string | null;
 
   isAlive: boolean;
+}
+
+function resolveProtocolMismatchOrigin(
+  role: ConnectionState["role"],
+  messageType: unknown
+): { peer: string; handshake: string } {
+  if (role === "cli" || messageType === MESSAGE_TYPES.CLIENT_HELLO) {
+    return { peer: PROTOCOL_COMPONENTS.CLI_DAEMON, handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON };
+  }
+
+  if (
+    role === "bridge" ||
+    role === "pairing" ||
+    messageType === MESSAGE_TYPES.BRIDGE_HELLO ||
+    messageType === MESSAGE_TYPES.PAIRING_REQUEST
+  ) {
+    return { peer: PROTOCOL_COMPONENTS.MODULE, handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON };
+  }
+
+  return { peer: PROTOCOL_COMPONENTS.UNKNOWN, handshake: PROTOCOL_HANDSHAKES.UNKNOWN };
 }
 
 function createBridgeHelloAck({
@@ -420,7 +442,10 @@ export class BridgeDaemon {
     if (!validationResult.ok) {
       const protocolError =
         message.protocolVersion !== undefined && message.protocolVersion !== PROTOCOL_VERSION
-          ? getProtocolVersionError(String(message.protocolVersion))
+          ? getProtocolVersionError(String(message.protocolVersion), {
+              ...resolveProtocolMismatchOrigin(state.role, message.type),
+              reporter: PROTOCOL_COMPONENTS.CLI_DAEMON
+            })
           : createProtocolError({
               code: ERROR_CODES.INVALID_MESSAGE,
               message: "Invalid transport message",

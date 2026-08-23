@@ -7,7 +7,8 @@ import {
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
   DISCOVERABLE_COMMAND_NAMES,
-  ERROR_CODES
+  ERROR_CODES,
+  PROTOCOL_VERSION
 } from "../scripts/generated/protocol.js";
 
 import {
@@ -54,6 +55,25 @@ describe("command router", () => {
       uploadBytes: DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
       wsMaxPayloadBytes: DEFAULT_WS_MAX_PAYLOAD_BYTES,
       uploadSource: "default"
+    });
+  });
+
+  it("rejects a request from a daemon on another release and names the older component", async () => {
+    const router = createCommandRouter({
+      bridgeClient: {
+        getStatus: () => ({ status: "connected" })
+      }
+    });
+
+    const response = await router.route({ ...createRequest("system.info"), protocolVersion: "3.0" });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION);
+    expect(response.error.details).toEqual({
+      expectedVersion: PROTOCOL_VERSION,
+      actualVersion: "3.0",
+      staleComponent: "cli-daemon",
+      handshake: "command-request"
     });
   });
 

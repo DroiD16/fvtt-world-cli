@@ -1,4 +1,18 @@
 export const PROTOCOL_VERSION = "1.1.0";
+
+export const PROTOCOL_COMPONENTS = Object.freeze({
+  MODULE: "module",
+  CLI_DAEMON: "cli-daemon",
+  UNKNOWN: "unknown"
+});
+
+export const PROTOCOL_HANDSHAKES = Object.freeze({
+  CLI_DAEMON: "cli-daemon",
+  MODULE_DAEMON: "module-daemon",
+  COMMAND_REQUEST: "command-request",
+  UNKNOWN: "unknown"
+});
+
 export const MODULE_ID = "fvtt-world-cli";
 export const MODULE_TITLE = "World CLI for Foundry VTT";
 export const DEFAULT_DAEMON_URL = "ws://127.0.0.1:47833";

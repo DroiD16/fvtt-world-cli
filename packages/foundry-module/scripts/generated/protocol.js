@@ -4,6 +4,17 @@
 
 // packages/protocol/src/constants.js
 var PROTOCOL_VERSION = "1.1.0";
+var PROTOCOL_COMPONENTS = Object.freeze({
+  MODULE: "module",
+  CLI_DAEMON: "cli-daemon",
+  UNKNOWN: "unknown"
+});
+var PROTOCOL_HANDSHAKES = Object.freeze({
+  CLI_DAEMON: "cli-daemon",
+  MODULE_DAEMON: "module-daemon",
+  COMMAND_REQUEST: "command-request",
+  UNKNOWN: "unknown"
+});
 var MODULE_ID = "fvtt-world-cli";
 var MODULE_TITLE = "World CLI for Foundry VTT";
 var DEFAULT_DAEMON_URL = "ws://127.0.0.1:47833";
@@ -5547,13 +5558,69 @@ function createProtocolError({ code, message, details = {} }) {
     details
   };
 }
-function getProtocolVersionError(actualVersion) {
+var LEGACY_PROTOCOL_RELEASES = Object.freeze({ "3.0": "1.0.0" });
+var RELEASE_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+function normalizeComparableProtocolVersion(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  if (Object.hasOwn(LEGACY_PROTOCOL_RELEASES, value)) {
+    return LEGACY_PROTOCOL_RELEASES[value];
+  }
+  return RELEASE_VERSION_PATTERN.test(value) ? value : null;
+}
+function compareReleaseVersions(left, right) {
+  const leftParts = left.split(".").map(Number);
+  const rightParts = right.split(".").map(Number);
+  for (let index = 0; index < leftParts.length; index += 1) {
+    if (leftParts[index] !== rightParts[index]) {
+      return leftParts[index] < rightParts[index] ? -1 : 1;
+    }
+  }
+  return 0;
+}
+function isNamedComponent(component) {
+  return component === PROTOCOL_COMPONENTS.MODULE || component === PROTOCOL_COMPONENTS.CLI_DAEMON;
+}
+function resolveStaleComponent(actualVersion, peer, reporter) {
+  const actual = normalizeComparableProtocolVersion(actualVersion);
+  const expected = normalizeComparableProtocolVersion(PROTOCOL_VERSION);
+  if (actual === null || expected === null) {
+    return PROTOCOL_COMPONENTS.UNKNOWN;
+  }
+  const order = compareReleaseVersions(actual, expected);
+  if (order < 0) {
+    return isNamedComponent(peer) ? peer : PROTOCOL_COMPONENTS.UNKNOWN;
+  }
+  if (order > 0) {
+    return isNamedComponent(reporter) ? reporter : PROTOCOL_COMPONENTS.UNKNOWN;
+  }
+  return PROTOCOL_COMPONENTS.UNKNOWN;
+}
+function describeStaleComponent(staleComponent) {
+  if (staleComponent === PROTOCOL_COMPONENTS.MODULE) {
+    return "the Foundry module is the older component, so update the module in Foundry until both halves come from the same release, then reload the GM client";
+  }
+  if (staleComponent === PROTOCOL_COMPONENTS.CLI_DAEMON) {
+    return "the CLI and daemon are the older component, so update the fvtt-world-cli package until both halves come from the same release, then restart the daemon";
+  }
+  return "these versions cannot be ordered, so the older component is unknown: bring the fvtt-world-cli package and the Foundry module to the same release, restart the daemon, and reload the GM client";
+}
+function getProtocolVersionError(actualVersion, options = {}) {
+  const {
+    peer = PROTOCOL_COMPONENTS.UNKNOWN,
+    reporter = PROTOCOL_COMPONENTS.UNKNOWN,
+    handshake = PROTOCOL_HANDSHAKES.UNKNOWN
+  } = options;
+  const staleComponent = resolveStaleComponent(actualVersion, peer, reporter);
   return createProtocolError({
     code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
-    message: `Unsupported protocol version: ${actualVersion}`,
+    message: `Unsupported protocol version: ${actualVersion} (expected ${PROTOCOL_VERSION}); ${describeStaleComponent(staleComponent)}. Components from different releases are refused at the handshake by design.`,
     details: {
       expectedVersion: PROTOCOL_VERSION,
-      actualVersion
+      actualVersion,
+      staleComponent,
+      handshake
     }
   });
 }
@@ -5665,6 +5732,8 @@ export {
   POLICY_BEHAVIORS,
   POLICY_DISCOVERY_TIMEOUT_MS,
   POLICY_EXEMPT_COMMANDS,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
   RECONNECT_BASE_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
@@ -5722,6 +5791,7 @@ export {
   isDestructiveCommand,
   isKnownCommand,
   isWriteCommand,
+  normalizeComparableProtocolVersion,
   pairingPruneCutoffAt,
   parseBridgeMessage,
   resolveEffectiveLimits,

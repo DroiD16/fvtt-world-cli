@@ -304,13 +304,15 @@ describe("BridgeClient handshake reliability", () => {
     await client.handleMessage(
       createHelloAck({
         ok: false,
-        protocolVersion: "9.9",
+        protocolVersion: "9.9.0",
         error: {
           code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
           message: `Unsupported protocol version: ${PROTOCOL_VERSION}`,
           details: {
-            expectedVersion: "9.9",
-            actualVersion: PROTOCOL_VERSION
+            expectedVersion: "9.9.0",
+            actualVersion: PROTOCOL_VERSION,
+            staleComponent: "module",
+            handshake: "module-daemon"
           }
         }
       })
@@ -320,7 +322,7 @@ describe("BridgeClient handshake reliability", () => {
     expect(globalThis.ui.notifications.warn).toHaveBeenCalledTimes(1);
 
     expect(globalThis.ui.notifications.warn).toHaveBeenCalledWith(
-      getProtocolVersionSkewWarningMessage(PROTOCOL_VERSION, "9.9"),
+      getProtocolVersionSkewWarningMessage(PROTOCOL_VERSION, "9.9.0"),
       { permanent: true }
     );
     const skewWarning = globalThis.ui.notifications.warn.mock.calls[0][0];
@@ -340,10 +342,10 @@ describe("BridgeClient handshake reliability", () => {
     await client.handleMessage(
       createHelloAck({
         ok: false,
-        protocolVersion: "9.9",
+        protocolVersion: "9.9.0",
         error: {
           code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
-          message: "Unsupported protocol version: 9.9"
+          message: "Unsupported protocol version: 9.9.0"
         }
       })
     );

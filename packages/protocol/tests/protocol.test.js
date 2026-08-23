@@ -45,6 +45,8 @@ import {
   POLICY_BEHAVIORS,
   POLICY_DISCOVERY_TIMEOUT_MS,
   POLICY_EXEMPT_COMMANDS,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
   defaultProfile,
   isDestructiveCommand,
@@ -101,7 +103,9 @@ import {
   UPLOAD_SIZE_LIMIT_MAX_BYTES,
   WRITE_COMMANDS,
   createBridgeHello,
+  getProtocolVersionError,
   isWriteCommand,
+  normalizeComparableProtocolVersion,
   resolveEffectiveLimits,
   validateCommandRequest,
   validateDaemonRequest,
@@ -1470,6 +1474,194 @@ describe("protocol contract", () => {
 
     it("pins the protocol version the daemon and module must share exactly", () => {
       expect(PROTOCOL_VERSION).toBe("1.1.0");
+    });
+  });
+
+  describe("protocol version mismatch details", () => {
+    const { MODULE, CLI_DAEMON, UNKNOWN } = PROTOCOL_COMPONENTS;
+    const LEGACY_VERSION = "3.0";
+    const HIGHER_VERSION = "9.9.0";
+
+    it("maps the one pre-lockstep protocol value onto its release and passes releases through", () => {
+      expect(normalizeComparableProtocolVersion(LEGACY_VERSION)).toBe("1.0.0");
+      expect(normalizeComparableProtocolVersion(PROTOCOL_VERSION)).toBe(PROTOCOL_VERSION);
+      expect(normalizeComparableProtocolVersion("2.10.3")).toBe("2.10.3");
+    });
+
+    it("reports every other spelling as not comparable instead of parsing it", () => {
+      for (const value of [
+        "3.1",
+        "abc",
+        "",
+        "1.1",
+        "1.1.0-rc1",
+        "1.1.0.1",
+        "v1.1.0",
+        " 1.1.0",
+        undefined,
+        null,
+        1.1
+      ]) {
+        expect(normalizeComparableProtocolVersion(value), String(value)).toBeNull();
+      }
+    });
+
+    it("pins the component and handshake literals callers may report", () => {
+      expect(PROTOCOL_COMPONENTS).toEqual({
+        MODULE: "module",
+        CLI_DAEMON: "cli-daemon",
+        UNKNOWN: "unknown"
+      });
+      expect(PROTOCOL_HANDSHAKES).toEqual({
+        CLI_DAEMON: "cli-daemon",
+        MODULE_DAEMON: "module-daemon",
+        COMMAND_REQUEST: "command-request",
+        UNKNOWN: "unknown"
+      });
+      expect(Object.isFrozen(PROTOCOL_COMPONENTS)).toBe(true);
+      expect(Object.isFrozen(PROTOCOL_HANDSHAKES)).toBe(true);
+      expect(moduleProtocol.PROTOCOL_COMPONENTS).toEqual({ ...PROTOCOL_COMPONENTS });
+      expect(moduleProtocol.PROTOCOL_HANDSHAKES).toEqual({ ...PROTOCOL_HANDSHAKES });
+    });
+
+    it("blames the peer that reports the lower release, on either side of the connection", () => {
+      const fromModule = getProtocolVersionError(LEGACY_VERSION, {
+        peer: CLI_DAEMON,
+        reporter: MODULE,
+        handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
+      });
+      expect(fromModule.code).toBe(ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION);
+      expect(fromModule.details).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_VERSION,
+        staleComponent: CLI_DAEMON,
+        handshake: "command-request"
+      });
+      expect(fromModule.message).toContain("update the fvtt-world-cli package");
+
+      const fromDaemon = getProtocolVersionError(LEGACY_VERSION, {
+        peer: MODULE,
+        reporter: CLI_DAEMON,
+        handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+      });
+      expect(fromDaemon.details).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_VERSION,
+        staleComponent: MODULE,
+        handshake: "module-daemon"
+      });
+      expect(fromDaemon.message).toContain("update the module in Foundry");
+      expect(fromDaemon.message).toContain("refused at the handshake by design");
+    });
+
+    it("blames the reporting side when the peer reports the higher release", () => {
+      expect(
+        getProtocolVersionError(HIGHER_VERSION, {
+          peer: MODULE,
+          reporter: CLI_DAEMON,
+          handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+        }).details
+      ).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: HIGHER_VERSION,
+        staleComponent: CLI_DAEMON,
+        handshake: "module-daemon"
+      });
+
+      expect(
+        getProtocolVersionError("1.2.0", {
+          peer: CLI_DAEMON,
+          reporter: MODULE,
+          handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
+        }).details
+      ).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: "1.2.0",
+        staleComponent: MODULE,
+        handshake: "command-request"
+      });
+    });
+
+    it("names the same component on both ends of a CLI-to-daemon skew", () => {
+      expect(
+        getProtocolVersionError(LEGACY_VERSION, {
+          peer: CLI_DAEMON,
+          reporter: CLI_DAEMON,
+          handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON
+        }).details
+      ).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_VERSION,
+        staleComponent: CLI_DAEMON,
+        handshake: "cli-daemon"
+      });
+
+      expect(
+        getProtocolVersionError(HIGHER_VERSION, {
+          peer: CLI_DAEMON,
+          reporter: CLI_DAEMON,
+          handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON
+        }).details.staleComponent
+      ).toBe(CLI_DAEMON);
+    });
+
+    it("refuses to guess when a version cannot be ordered or a side is unidentified", () => {
+      expect(
+        getProtocolVersionError("9.9", {
+          peer: CLI_DAEMON,
+          reporter: MODULE,
+          handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
+        }).details
+      ).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: "9.9",
+        staleComponent: UNKNOWN,
+        handshake: "command-request"
+      });
+
+      for (const options of [
+        { peer: UNKNOWN, reporter: MODULE, handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST },
+        { peer: "browser", reporter: MODULE, handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST }
+      ]) {
+        expect(getProtocolVersionError(LEGACY_VERSION, options).details.staleComponent).toBe(UNKNOWN);
+      }
+
+      expect(
+        getProtocolVersionError(HIGHER_VERSION, {
+          peer: MODULE,
+          handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+        }).details.staleComponent
+      ).toBe(UNKNOWN);
+    });
+
+    it("still reports both versions when the caller identifies nothing", () => {
+      const error = getProtocolVersionError(LEGACY_VERSION);
+
+      expect(error.code).toBe(ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION);
+      expect(error.details).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_VERSION,
+        staleComponent: UNKNOWN,
+        handshake: "unknown"
+      });
+      expect(error.message).toContain("bring the fvtt-world-cli package and the Foundry module");
+    });
+
+    it("carries the comparison and the enriched error into the module mirror", () => {
+      expect(moduleProtocol.normalizeComparableProtocolVersion(LEGACY_VERSION)).toBe("1.0.0");
+      expect(moduleProtocol.normalizeComparableProtocolVersion("1.1")).toBeNull();
+      expect(
+        moduleProtocol.getProtocolVersionError(LEGACY_VERSION, {
+          peer: CLI_DAEMON,
+          reporter: MODULE,
+          handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
+        }).details
+      ).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_VERSION,
+        staleComponent: CLI_DAEMON,
+        handshake: "command-request"
+      });
     });
   });
 

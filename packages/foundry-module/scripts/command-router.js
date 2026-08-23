@@ -2,6 +2,8 @@ import {
   COMMAND_DEFINITIONS,
   ERROR_CODES,
   MESSAGE_TYPES,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
   createCommandResponse,
   createErrorResponse,
@@ -120,7 +122,11 @@ export function createCommandRouter({ bridgeClient }) {
       if (message.protocolVersion !== PROTOCOL_VERSION) {
         return createErrorResponse({
           id: messageId,
-          error: getProtocolVersionError(message.protocolVersion)
+          error: getProtocolVersionError(message.protocolVersion, {
+            peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
+            reporter: PROTOCOL_COMPONENTS.MODULE,
+            handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
+          })
         });
       }
 

@@ -406,6 +406,58 @@ describe("authorization daemon", () => {
     expect(await next(socket)).toMatchObject({ type: MESSAGE_TYPES.CLIENT_HELLO_ACK, ok: true });
   });
 
+  it("names the older component when a hello arrives from another release", async () => {
+    const daemon = await startPairingDaemon();
+
+    const client = await open(daemon.daemonUrl);
+    sockets.push(client);
+    const clientAck = next(client);
+    client.send(
+      JSON.stringify({ ...createClientHello({ credential: "c".repeat(43) }), protocolVersion: "3.0" })
+    );
+    expect(await clientAck).toMatchObject({
+      type: MESSAGE_TYPES.CLIENT_HELLO_ACK,
+      ok: false,
+      error: {
+        code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+        details: {
+          expectedVersion: PROTOCOL_VERSION,
+          actualVersion: "3.0",
+          staleComponent: "cli-daemon",
+          handshake: "cli-daemon"
+        }
+      }
+    });
+
+    const browser = await open(daemon.daemonUrl, "http://localhost:30000");
+    sockets.push(browser);
+    const bridgeAck = next(browser);
+    browser.send(
+      JSON.stringify({
+        ...createBridgeHello({
+          pairingId: "pair-1",
+          credential: "d".repeat(43),
+          clientId: DEFAULT_CLIENT_ID,
+          session: session()
+        }),
+        protocolVersion: "3.0"
+      })
+    );
+    expect(await bridgeAck).toMatchObject({
+      type: MESSAGE_TYPES.BRIDGE_HELLO_ACK,
+      ok: false,
+      error: {
+        code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+        details: {
+          expectedVersion: PROTOCOL_VERSION,
+          actualVersion: "3.0",
+          staleComponent: "module",
+          handshake: "module-daemon"
+        }
+      }
+    });
+  });
+
   it("accepts the configured localhost authority after binding and rejects unrelated Host authorities", async () => {
     const port = await freePort();
     const configuredUrl = `ws://localhost:${port}`;
