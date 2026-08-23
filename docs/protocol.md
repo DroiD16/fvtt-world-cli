@@ -67,7 +67,7 @@ applied to the transport only after the daemon restarts.
 Pairing is the one-time exchange that lets a GM browser become a bridge. Its guarantees:
 
 - a pending request is bound to the socket that made it and disappears when that socket closes;
-- approval codes expire after a bounded interval;
+- pairing codes expire after a bounded interval;
 - the daemon persists only a digest of the bridge credential; the clear credential is delivered
   exactly once, to the requesting socket, only after the digest has been persisted;
 - approving the same Origin/world/user/client again re-pairs that client's existing profile by
@@ -241,7 +241,9 @@ The wait is two-phase, because a decision can outlast any request timeout:
 - The ordinary request is answered at once with `APPROVAL_PENDING`, whose details carry `approvalId`,
   `expiresAt`, and `command`. The request is not held open, so a decision taken an hour later does not
   depend on one socket surviving. That the phase-one answer is an error envelope is deliberate: a
-  consumer that does not implement the wait loop fails safe instead of reporting success.
+  consumer that does not implement the wait loop fails safe instead of reporting success. The CLI is
+  the supported consumer of this flow and converts the pending answer into a blocking wait, so a
+  caller using the CLI never branches on the code itself.
 - `approval.await` polls that id. A poll parks in the Foundry module for at most
   `APPROVAL_AWAIT_PARK_CAP_MS`, and its optional `waitMs` may ask for less, so a parked poll stays
   inside the caller's own request timeout. The result echoes the id and is either

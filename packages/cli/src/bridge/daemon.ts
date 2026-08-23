@@ -63,16 +63,19 @@ function resolveProtocolMismatchOrigin(
   role: ConnectionState["role"],
   messageType: unknown
 ): { peer: string; handshake: string } {
-  if (role === "cli" || messageType === MESSAGE_TYPES.CLIENT_HELLO) {
+  if (role === "cli") {
     return { peer: PROTOCOL_COMPONENTS.CLI_DAEMON, handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON };
   }
 
-  if (
-    role === "bridge" ||
-    role === "pairing" ||
-    messageType === MESSAGE_TYPES.BRIDGE_HELLO ||
-    messageType === MESSAGE_TYPES.PAIRING_REQUEST
-  ) {
+  if (role === "bridge" || role === "pairing") {
+    return { peer: PROTOCOL_COMPONENTS.MODULE, handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON };
+  }
+
+  if (messageType === MESSAGE_TYPES.CLIENT_HELLO) {
+    return { peer: PROTOCOL_COMPONENTS.CLI_DAEMON, handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON };
+  }
+
+  if (messageType === MESSAGE_TYPES.BRIDGE_HELLO || messageType === MESSAGE_TYPES.PAIRING_REQUEST) {
     return { peer: PROTOCOL_COMPONENTS.MODULE, handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON };
   }
 
