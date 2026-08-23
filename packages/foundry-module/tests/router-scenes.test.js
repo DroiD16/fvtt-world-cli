@@ -1072,7 +1072,8 @@ describe("command router", () => {
 
         confirmation: "not-dispatched",
         viewedSceneId: "scene-2",
-        dryRun: true
+        dryRun: true,
+        approvalRequired: true
       });
       expect(reset).not.toHaveBeenCalled();
     });
@@ -1136,7 +1137,8 @@ describe("command router", () => {
         clearedCount: 1,
         confirmation: "not-dispatched",
         viewedSceneId: null,
-        dryRun: true
+        dryRun: true,
+        approvalRequired: true
       });
 
       expect(real.ok).toBe(false);

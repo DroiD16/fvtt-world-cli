@@ -269,7 +269,8 @@ The wait is two-phase, because a decision can outlast any request timeout:
   — the command may never have started or may have completed — so world state is the only authority,
   and a read comes before any re-request.
 - A dry run is not gated by an approval: the preview of an approval-listed command runs without a
-  decision, while a command the policy denies is refused in preview too.
+  decision, while a command the policy denies is refused in preview too. Such a preview result
+  carries `approvalRequired: true`, so the caller knows the real call reaches the GM.
 - `policy.snapshot` takes no parameters and reports the effective policy as
   `{ approve: [names], deny: [names] }`, resolved by the same rules the dispatch-time gate applies.
   It is advisory; the policy can change between the snapshot and the next call, and the gate at

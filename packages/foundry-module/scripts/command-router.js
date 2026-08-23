@@ -48,6 +48,7 @@ import { createSceneTokenHandlers } from "./handlers/scene-tokens.js";
 import { createSceneHandlers } from "./handlers/scenes.js";
 import { createSearchHandlers } from "./handlers/search.js";
 import { createSettingHandlers } from "./handlers/settings.js";
+import { createPolicyHandlers } from "./handlers/policy.js";
 import { createSystemHandlers } from "./handlers/system.js";
 import { createTableHandlers, withQueuedTableOwnership } from "./handlers/tables.js";
 import {
@@ -56,10 +57,31 @@ import {
   toFoundryValidationError,
   toProtocolError
 } from "./lib/errors.js";
+import { readStoredCommandPolicy, resolveCommandPolicy } from "./lib/policy.js";
 import { assertFoundryReady, assertWritePermission, validateCommandParams } from "./lib/validators.js";
 
+const COMMAND_DENIED_MESSAGE_TAIL =
+  "Nothing was executed and no world state changed: the refusal happens before the command runs, in a " +
+  "dry run exactly as in a real call. The verdict is terminal for this invocation, and it is not a " +
+  "transient failure to retry or to route around with a different command that reaches the same effect. " +
+  "Treat the command as unavailable, and report the refusal to the user: only a human editing that GM " +
+  "client's command policy in Foundry can lift it.";
+
 function isPlainObject(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function withApprovalRequired(result) {
+  if (!isPlainObject(result) || Object.hasOwn(result, "approvalRequired")) {
+    return result;
+  }
+
+  return { ...result, approvalRequired: true };
 }
 
 export function createCommandRouter({ bridgeClient }) {
@@ -89,6 +111,7 @@ export function createCommandRouter({ bridgeClient }) {
     ...createPlaylistHandlers(),
     ...createTableHandlers(),
     ...createSystemHandlers({ bridgeClient }),
+    ...createPolicyHandlers(),
     ...createSceneHandlers(),
     ...createSceneThumbnailHandlers(),
     ...createSceneFogHandlers(),
@@ -109,9 +132,9 @@ export function createCommandRouter({ bridgeClient }) {
   });
 
   /**
-   * @param {{ command: string, params: any, messageId: string }} request
+   * @param {{ command: string, params: any, messageId: string, skipPolicyGate?: boolean }} request
    */
-  async function executeGuardedCommand({ command, params, messageId }) {
+  async function executeGuardedCommand({ command, params, messageId, skipPolicyGate = false }) {
     try {
       assertFoundryReady();
       if (!globalThis.game?.user?.isGM) {
@@ -124,6 +147,20 @@ export function createCommandRouter({ bridgeClient }) {
       validateCommandParams(command, params, COMMAND_DEFINITIONS);
       assertWritePermission(command);
 
+      const dryRun = params?.dryRun === true;
+      const policy = skipPolicyGate
+        ? null
+        : resolveCommandPolicy(readStoredCommandPolicy(), command, { dryRun });
+
+      if (policy?.behavior === "deny") {
+        throw createBridgeError(
+          ERROR_CODES.COMMAND_DENIED,
+          `Command ${command} is denied by the command policy of the GM client holding this bridge. ` +
+            COMMAND_DENIED_MESSAGE_TAIL,
+          { command }
+        );
+      }
+
       const handler = handlers[command];
       if (!handler) {
         return createErrorResponse({
@@ -133,7 +170,10 @@ export function createCommandRouter({ bridgeClient }) {
       }
 
       const result = await handler(params, { bridgeClient });
-      return createCommandResponse({ id: messageId, result });
+      return createCommandResponse({
+        id: messageId,
+        result: dryRun && policy?.baseBehavior === "approve" ? withApprovalRequired(result) : result
+      });
     } catch (error) {
       const bridgeError = /** @type {any} */ (error);
 
