@@ -98,7 +98,58 @@
       "AuthorizationHint": "Pair this browser, world, and GM with the local daemon.",
       "CommandPolicyName": "Command policy",
       "ApprovalTimeoutMinutesName": "Approval timeout (minutes)",
-      "ApprovalTimeoutMinutesHint": "How long a command that needs your approval waits for a decision in this browser. When the time runs out the command is refused without being executed, and the agent is told it can ask again."
+      "ApprovalTimeoutMinutesHint": "How long a command that needs your approval waits for a decision in this browser. When the time runs out the command is refused without being executed, and the agent is told it can ask again.",
+      "CommandPermissionsName": "Command permissions",
+      "CommandPermissionsLabel": "Configure Command Permissions",
+      "CommandPermissionsHint": "Choose which CLI commands run on their own, which wait for your approval in Foundry, and which are refused."
+    },
+    "Permissions": {
+      "Title": "World CLI Command Permissions",
+      "Timeout": "Approval timeout (minutes)",
+      "TimeoutHint": "How long a command waits for your decision before it is refused. The waiting command is never executed after the timeout.",
+      "Filter": "Filter commands",
+      "FilterPlaceholder": "actor.item, delete, upload",
+      "MasterFill": "Set every command to",
+      "MasterFillFiltered": "Set the {count} filtered commands to",
+      "MasterFillHint": "Applies to whatever the filter leaves visible; with an empty filter that is every command.",
+      "TreeControls": "Groups",
+      "ExpandAll": "Expand all",
+      "ExpandAllHint": "Open every group and subgroup.",
+      "CollapseAll": "Collapse all",
+      "CollapseAllHint": "Close every group back to the top level.",
+      "Profile": "{commands} commands in {groups} top-level groups. By default {approve} of them wait for your approval and the rest run on their own.",
+      "Behavior": {
+        "Allow": "Allow",
+        "Approve": "Ask me",
+        "Deny": "Deny"
+      },
+      "BehaviorHint": {
+        "Allow": "Runs without asking.",
+        "Approve": "Waits for your approval in Foundry before it runs.",
+        "Deny": "Refused, and hidden from the agent's command list."
+      },
+      "NodeFillHint": {
+        "Allow": "Set this whole group, subgroups included, to run without asking.",
+        "Approve": "Set this whole group, subgroups included, to wait for your approval.",
+        "Deny": "Set this whole group, subgroups included, to refused."
+      },
+      "NodeSizeHint": "Commands in this group, including its subgroups.",
+      "Changed": "Something below this level differs from the defaults.",
+      "Destructive": "Destructive. This command deletes or overwrites content and waits for approval by default.",
+      "Exempt": "Always allowed",
+      "ExemptHint": "Status commands stay allowed so a policy can never lock the bridge out of answering.",
+      "NoMatches": "No command matches this filter.",
+      "Dirty": "Unsaved changes",
+      "Reset": "Reset to defaults",
+      "ResetHint": "Drops every change back to the defaults. Nothing is stored until you save.",
+      "ResetConfirmTitle": "Reset command permissions",
+      "ResetConfirmContent": "Every command in the whole list returns to its default, whatever the filter shows: destructive commands wait for your approval and the rest run on their own. Nothing is stored until you save.",
+      "Save": "Save",
+      "SaveFailedPolicy": "Foundry refused to store the command permissions: {error}. Your changes are still here, and nothing was saved.",
+      "SaveFailedTimeout": "The command permissions were stored, but Foundry refused the approval timeout: {error}.",
+      "Close": "Close",
+      "DiscardTitle": "Discard unsaved changes",
+      "DiscardContent": "This window has unsaved changes. Close it and discard them?"
     }
   }
 }

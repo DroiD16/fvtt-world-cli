@@ -20,6 +20,7 @@ const WIRE_TEXT_FILES = ["lib/errors.js", "lib/batch-guards.js", "command-router
 const GM_TEXT_FILES = [
   "authorization.js",
   "bridge-client.js",
+  "command-permissions.js",
   "index.js",
   "lib/bridge-status.js",
   "lib/startup.js",

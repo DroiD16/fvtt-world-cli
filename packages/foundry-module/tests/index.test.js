@@ -257,19 +257,20 @@ describe("module settings registration", () => {
     }
   });
 
-  it("registers Authorization and Bridge Status as GM-only ApplicationV2 settings submenus", async () => {
+  it("registers every GM-only ApplicationV2 settings submenu the module ships", async () => {
     await import("../scripts/index.js");
 
     hookCallbacks.get("init")();
 
     const menus = globalThis.game.settings.registerMenu.mock.calls;
-    expect(menus.map(([, key]) => key)).toEqual(["authorization", "bridgeStatus"]);
+    expect(menus.map(([, key]) => key)).toEqual(["authorization", "bridgeStatus", "commandPermissions"]);
     for (const [, , registration] of menus) {
       expect(registration.restricted).toBe(true);
       expect(registration.type.prototype).toBeInstanceOf(globalThis.foundry.applications.api.ApplicationV2);
     }
     expect(menus[0][2].icon).toBe("fa-solid fa-key-skeleton");
     expect(menus[1][2].icon).toBe("fa-solid fa-plug");
+    expect(menus[2][2].icon).toBe("fa-solid fa-shield-halved");
   });
 
   it("registers the scene-controls group and indicator hooks on init", async () => {

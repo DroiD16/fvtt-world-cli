@@ -12,6 +12,7 @@ import {
 } from "./generated/protocol.js";
 import { createCommandRouter } from "./command-router.js";
 import { createAuthorizationApplication, ensureClientId, getCurrentCredential } from "./authorization.js";
+import { createCommandPermissionsApplication } from "./command-permissions.js";
 import { createBridgeStatusApplication, registerSceneControls } from "./scene-controls.js";
 import { getNotPairedWarningMessage, warnBridgeDisabled } from "./lib/startup.js";
 import { publishStatus } from "./lib/status-signal.js";
@@ -159,6 +160,15 @@ function registerSettings() {
     hint: "FVTTWORLDCLI.BridgeStatus.MenuHint",
     icon: "fa-solid fa-plug",
     type: BridgeStatusApplication,
+    restricted: true
+  });
+
+  globalThis.game.settings.registerMenu(MODULE_ID, "commandPermissions", {
+    name: "FVTTWORLDCLI.Settings.CommandPermissionsName",
+    label: "FVTTWORLDCLI.Settings.CommandPermissionsLabel",
+    hint: "FVTTWORLDCLI.Settings.CommandPermissionsHint",
+    icon: "fa-solid fa-shield-halved",
+    type: createCommandPermissionsApplication(),
     restricted: true
   });
 

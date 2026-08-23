@@ -149,6 +149,8 @@ The command policy lives in two of this module's own client-scoped settings, `co
 `setting.get` returns their value. They hold no secrets, and a caller that can see which commands
 are denied has less reason to keep attempting them. Because no setting-write command exists, the
 policy is beyond the CLI's reach by construction: only a human editing it in Foundry can change it.
+That edit happens in the GM-only Command permissions window, reachable from Configure Settings →
+Module Settings, which is the only writer of both settings.
 Client scope means the policy belongs to the browser profile that holds the bridge, so another
 browser, profile, or machine applies its own policy rather than the one configured here.
 

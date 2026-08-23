@@ -18,7 +18,7 @@
     "verified": "14"
   },
   "esmodules": ["scripts/index.js"],
-  "styles": ["styles/scene-controls.css"],
+  "styles": ["styles/scene-controls.css", "styles/command-policy.css"],
   "languages": [
     {
       "lang": "en",
