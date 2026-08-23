@@ -458,6 +458,35 @@ describe("authorization daemon", () => {
     });
   });
 
+  it("names the client as the older component when an authorized client sends another release", async () => {
+    const config = createEmptyConfig();
+    const daemon = createBridgeDaemon({
+      daemonUrl: `ws://127.0.0.1:${await freePort()}`,
+      config,
+      logger: pino({ level: "silent" })
+    });
+    daemons.push(daemon);
+    await daemon.start();
+    const cli = await connectCli(daemon, config.deviceCredential);
+
+    const response = next(cli);
+    cli.send(JSON.stringify({ ...itemCreateRequest("req-skew", "key-skew"), protocolVersion: "3.0" }));
+    expect(await response).toMatchObject({
+      type: MESSAGE_TYPES.COMMAND_RESPONSE,
+      id: "req-skew",
+      ok: false,
+      error: {
+        code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+        details: {
+          expectedVersion: PROTOCOL_VERSION,
+          actualVersion: "3.0",
+          staleComponent: "cli-daemon",
+          handshake: "cli-daemon"
+        }
+      }
+    });
+  });
+
   it("accepts the configured localhost authority after binding and rejects unrelated Host authorities", async () => {
     const port = await freePort();
     const configuredUrl = `ws://localhost:${port}`;
