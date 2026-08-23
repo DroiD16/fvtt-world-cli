@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { COMMAND_NAMES, DISCOVERABLE_COMMAND_NAMES } from "../scripts/generated/protocol.js";
+import {
+  APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+  APPROVAL_TIMEOUT_MAX_MINUTES,
+  APPROVAL_TIMEOUT_MIN_MINUTES,
+  COMMAND_NAMES,
+  DISCOVERABLE_COMMAND_NAMES
+} from "../scripts/generated/protocol.js";
 
 describe("module settings registration", () => {
   let hookCallbacks;
@@ -142,6 +148,44 @@ describe("module settings registration", () => {
       type: Boolean,
       default: true
     });
+  });
+
+  it("keeps the command policy in a hidden client-scoped setting the window is the only editor of", async () => {
+    await import("../scripts/index.js");
+
+    hookCallbacks.get("init")();
+
+    const registration = globalThis.game.settings.register.mock.calls.find(
+      ([, key]) => key === "commandPolicy"
+    );
+
+    expect(registration).toBeDefined();
+    expect(registration[2]).toMatchObject({
+      scope: "client",
+      config: false,
+      type: Object,
+      default: {}
+    });
+  });
+
+  it("bounds the visible approval timeout setting without turning its field into a slider", async () => {
+    await import("../scripts/index.js");
+
+    hookCallbacks.get("init")();
+
+    const registration = globalThis.game.settings.register.mock.calls.find(
+      ([, key]) => key === "approvalTimeoutMinutes"
+    );
+
+    expect(registration).toBeDefined();
+    expect(registration[2]).toMatchObject({
+      scope: "client",
+      config: true,
+      type: Number,
+      default: APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+      range: { min: APPROVAL_TIMEOUT_MIN_MINUTES, max: APPROVAL_TIMEOUT_MAX_MINUTES }
+    });
+    expect(registration[2].range).not.toHaveProperty("step");
   });
 
   it("skips bridge startup on ready when auto-connect is disabled", async () => {

@@ -1,5 +1,8 @@
 import { BridgeClient } from "./bridge-client.js";
 import {
+  APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+  APPROVAL_TIMEOUT_MAX_MINUTES,
+  APPROVAL_TIMEOUT_MIN_MINUTES,
   COMMAND_NAMES,
   DEFAULT_DAEMON_URL,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
@@ -119,6 +122,24 @@ function registerSettings() {
     config: false,
     type: String,
     default: ""
+  });
+
+  globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.COMMAND_POLICY, {
+    name: "FVTTWORLDCLI.Settings.CommandPolicyName",
+    scope: "client",
+    config: false,
+    type: Object,
+    default: {}
+  });
+
+  globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES, {
+    name: "FVTTWORLDCLI.Settings.ApprovalTimeoutMinutesName",
+    hint: "FVTTWORLDCLI.Settings.ApprovalTimeoutMinutesHint",
+    scope: "client",
+    config: true,
+    type: Number,
+    range: { min: APPROVAL_TIMEOUT_MIN_MINUTES, max: APPROVAL_TIMEOUT_MAX_MINUTES },
+    default: APPROVAL_TIMEOUT_DEFAULT_MINUTES
   });
 
   const AuthorizationApplication = createAuthorizationApplication({ connect: startBridge });
