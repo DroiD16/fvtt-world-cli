@@ -244,9 +244,9 @@ The wait is two-phase, because a decision can outlast any request timeout:
   consumer that does not implement the wait loop fails safe instead of reporting success. The CLI is
   the supported consumer of this flow and converts the pending answer into a blocking wait, so a
   caller using the CLI never branches on the code itself.
-- `approval.await` polls that id. A poll parks in the Foundry module for at most
-  `APPROVAL_AWAIT_PARK_CAP_MS`, and its optional `waitMs` may ask for less, so a parked poll stays
-  inside the caller's own request timeout. The result echoes the id and is either
+- `approval.await { approvalId, waitMs? }` polls that id. A poll parks in the Foundry module for at
+  most `APPROVAL_AWAIT_PARK_CAP_MS`, and its optional `waitMs` may ask for less, so a parked poll
+  stays inside the caller's own request timeout. The result echoes the id and is either
   `{ approvalId, status: "pending", expiresAt }` or `{ approvalId, status: "resolved", outcome,
   response? }`.
 - The terminal outcomes are `approved`, `denied`, `timeout`, and `cancelled`. `approved` carries the
@@ -257,7 +257,7 @@ The wait is two-phase, because a decision can outlast any request timeout:
 - A terminal outcome is not consumed by the first waiter. It stays available for
   `APPROVAL_RESULT_RETENTION_MS`, which covers a lost poll response and several waiters on one id,
   and then expires.
-- `approval.cancel` asks for a still-pending decision to be abandoned and answers
+- `approval.cancel { approvalId }` asks for a still-pending decision to be abandoned and answers
   `{ approvalId, status }`, where `status` is `cancelled`, `executing`, `resolved`, or `unknown`. Only
   `cancelled` guarantees that the command will not run: `executing` means the GM's decision already
   won the race, and a started handler cannot be recalled.
@@ -269,9 +269,14 @@ The wait is two-phase, because a decision can outlast any request timeout:
   re-request.
 - A dry run is not gated by an approval: the preview of an approval-listed command runs without a
   decision, while a command the policy denies is refused in preview too.
-- `policy.snapshot` reports the effective policy as `{ approve: [names], deny: [names] }`, resolved by
-  the same rules the dispatch-time gate applies. It is advisory; the policy can change between the
-  snapshot and the next call, and the gate at dispatch time is the authority.
+- `policy.snapshot` takes no parameters and reports the effective policy as
+  `{ approve: [names], deny: [names] }`, resolved by the same rules the dispatch-time gate applies.
+  It is advisory; the policy can change between the snapshot and the next call, and the gate at
+  dispatch time is the authority.
+
+An `approvalId` is an opaque token the pending answer supplies rather than a value a caller
+constructs, and all three request schemas are closed, so an unrecognized parameter is rejected
+before the command is dispatched.
 
 ## Delivery states and retries
 
