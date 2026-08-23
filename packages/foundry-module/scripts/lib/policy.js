@@ -63,18 +63,18 @@ export function normalizeStoredPolicy(value) {
 }
 
 /**
- * @param {unknown} storedPolicy
+ * The parameter is a normalized policy, so a caller resolving many commands normalizes once.
+ * @param {CommandPolicy} policy
  * @param {string} command
  * @returns {PolicyBehavior}
  */
-function resolveBaseBehavior(storedPolicy, command) {
+export function resolveNormalizedBehavior(policy, command) {
   if (EXEMPT_COMMANDS.has(command)) {
     return "allow";
   }
 
-  const { overrides } = normalizeStoredPolicy(storedPolicy);
-  if (Object.hasOwn(overrides, command)) {
-    return overrides[command];
+  if (Object.hasOwn(policy.overrides, command)) {
+    return policy.overrides[command];
   }
 
   const profileBehavior = defaultProfile(command);
@@ -88,7 +88,7 @@ function resolveBaseBehavior(storedPolicy, command) {
  * @returns {{ behavior: PolicyBehavior, baseBehavior: PolicyBehavior }}
  */
 export function resolveCommandPolicy(storedPolicy, command, { dryRun = false } = {}) {
-  const baseBehavior = resolveBaseBehavior(storedPolicy, command);
+  const baseBehavior = resolveNormalizedBehavior(normalizeStoredPolicy(storedPolicy), command);
   const behavior = baseBehavior === "approve" && dryRun === true ? "allow" : baseBehavior;
 
   return { behavior, baseBehavior };

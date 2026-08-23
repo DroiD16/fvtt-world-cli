@@ -5,7 +5,7 @@ import {
   defaultProfile,
   isDestructiveCommand
 } from "../generated/protocol.js";
-import { normalizeStoredPolicy, resolveCommandPolicy } from "./policy.js";
+import { normalizeStoredPolicy, resolveNormalizedBehavior } from "./policy.js";
 
 const EXEMPT_COMMANDS = new Set(POLICY_EXEMPT_COMMANDS);
 
@@ -209,7 +209,7 @@ export function buildPolicyView(storedPolicy, { filter = "" } = {}) {
       branch = /** @type {ReturnType<typeof createBranch>} */ (branch.children.get(segment));
     }
 
-    const { baseBehavior } = resolveCommandPolicy(policy, command);
+    const baseBehavior = resolveNormalizedBehavior(policy, command);
     const hidden = !matchesFilterTerm(command, term);
     if (!hidden) visibleCount += 1;
 

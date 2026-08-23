@@ -16,7 +16,8 @@ import {
   readApprovalTimeoutMinutes,
   readStoredCommandPolicy,
   resolveApprovalTimeoutMinutes,
-  resolveCommandPolicy
+  resolveCommandPolicy,
+  resolveNormalizedBehavior
 } from "../scripts/lib/policy.js";
 import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 
@@ -154,6 +155,22 @@ describe("normalizeStoredPolicy", () => {
     const once = normalizeStoredPolicy(storedPolicy({ [ALLOW_BY_DEFAULT]: "deny" }));
 
     expect(normalizeStoredPolicy(once)).toEqual(once);
+  });
+});
+
+describe("resolveNormalizedBehavior", () => {
+  it("agrees with resolveCommandPolicy for every registered command", () => {
+    const overrides = Object.fromEntries(GOVERNED_COMMANDS.map((command) => [command, "deny"]));
+    const policy = normalizeStoredPolicy(storedPolicy(overrides));
+
+    for (const command of COMMAND_NAMES) {
+      expect(resolveNormalizedBehavior(policy, command), command).toBe(
+        resolveCommandPolicy(policy, command).baseBehavior
+      );
+      expect(resolveNormalizedBehavior(normalizeStoredPolicy(null), command), command).toBe(
+        resolveCommandPolicy(null, command).baseBehavior
+      );
+    }
   });
 });
 
