@@ -108,7 +108,56 @@ export function createCommandRouter({ bridgeClient }) {
     ...createCompendiumImportHandlers()
   });
 
+  /**
+   * @param {{ command: string, params: any, messageId: string }} request
+   */
+  async function executeGuardedCommand({ command, params, messageId }) {
+    try {
+      assertFoundryReady();
+      if (!globalThis.game?.user?.isGM) {
+        throw createBridgeError(
+          ERROR_CODES.PERMISSION_DENIED,
+          `Command ${command} requires a current GM session`,
+          { command }
+        );
+      }
+      validateCommandParams(command, params, COMMAND_DEFINITIONS);
+      assertWritePermission(command);
+
+      const handler = handlers[command];
+      if (!handler) {
+        return createErrorResponse({
+          id: messageId,
+          error: getInvalidCommandError(command)
+        });
+      }
+
+      const result = await handler(params, { bridgeClient });
+      return createCommandResponse({ id: messageId, result });
+    } catch (error) {
+      const bridgeError = /** @type {any} */ (error);
+
+      let protocolError;
+      if (isFoundryValidationError(error)) {
+        protocolError = toFoundryValidationError(error);
+      } else {
+        protocolError = toProtocolError(bridgeError);
+      }
+
+      if (protocolError.code === ERROR_CODES.INTERNAL_ERROR) {
+        console.error(`[fvtt-world-cli] command ${command} failed:`, error);
+      }
+
+      return createErrorResponse({
+        id: messageId,
+        error: protocolError
+      });
+    }
+  }
+
   return {
+    executeGuardedCommand,
+
     async route(message) {
       if (!isPlainObject(message)) {
         return createErrorResponse({
@@ -165,47 +214,11 @@ export function createCommandRouter({ bridgeClient }) {
         });
       }
 
-      try {
-        assertFoundryReady();
-        if (!globalThis.game?.user?.isGM) {
-          throw createBridgeError(
-            ERROR_CODES.PERMISSION_DENIED,
-            `Command ${message.command} requires a current GM session`,
-            { command: message.command }
-          );
-        }
-        validateCommandParams(message.command, message.params, COMMAND_DEFINITIONS);
-        assertWritePermission(message.command);
-
-        const handler = handlers[message.command];
-        if (!handler) {
-          return createErrorResponse({
-            id: messageId,
-            error: getInvalidCommandError(message.command)
-          });
-        }
-
-        const result = await handler(message.params, { bridgeClient });
-        return createCommandResponse({ id: messageId, result });
-      } catch (error) {
-        const bridgeError = /** @type {any} */ (error);
-
-        let protocolError;
-        if (isFoundryValidationError(error)) {
-          protocolError = toFoundryValidationError(error);
-        } else {
-          protocolError = toProtocolError(bridgeError);
-        }
-
-        if (protocolError.code === ERROR_CODES.INTERNAL_ERROR) {
-          console.error(`[fvtt-world-cli] command ${message.command} failed:`, error);
-        }
-
-        return createErrorResponse({
-          id: messageId,
-          error: protocolError
-        });
-      }
+      return executeGuardedCommand({
+        command: message.command,
+        params: message.params,
+        messageId
+      });
     }
   };
 }
