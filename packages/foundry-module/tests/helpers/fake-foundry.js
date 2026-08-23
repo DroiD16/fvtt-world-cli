@@ -3065,6 +3065,8 @@ export function installFakeFoundry() {
     ["worlds/world-1/maps/dungeon.webp", Uint8Array.from([1, 2, 3, 4])]
   ]);
   const fetchOverrides = new Map();
+  const settingRegistrations = new Map();
+  const settingValues = new Map();
 
   const scene = createSceneDocument("scene-1", {
     name: "Dungeon Level 1",
@@ -3764,7 +3766,25 @@ export function installFakeFoundry() {
       }
     ]),
     settings: {
-      get: vi.fn(() => "")
+      settings: settingRegistrations,
+      register: vi.fn((namespace, key, config) => {
+        const id = `${namespace}.${key}`;
+        settingRegistrations.set(id, { ...config, namespace, key, id });
+      }),
+      registerMenu: vi.fn(),
+      get: vi.fn((namespace, key) => {
+        const id = `${namespace}.${key}`;
+        if (settingValues.has(id)) {
+          return settingValues.get(id);
+        }
+
+        const registration = settingRegistrations.get(id);
+        return registration && registration.default !== undefined ? registration.default : "";
+      }),
+      set: vi.fn(async (namespace, key, value) => {
+        settingValues.set(`${namespace}.${key}`, value);
+        return value;
+      })
     },
     scenes: createCollection([scene, inactiveScene]),
     items: createCollection([item]),
@@ -3860,7 +3880,8 @@ export function installFakeFoundry() {
   globalThis.__routerTestState = {
     directoryContents,
     fileContents,
-    fetchOverrides
+    fetchOverrides,
+    settingValues
   };
 
   globalThis.Item = makeDocumentClass({
