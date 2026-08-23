@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +19,26 @@ import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 import { createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
 
 const MODULE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const HANDLERS_DIR = join(MODULE_ROOT, "scripts", "handlers");
+const SCRIPTS_DIR = join(MODULE_ROOT, "scripts");
+const EXCLUDED_SCRIPT_DIRS = new Set(["generated", "vendor"]);
+const MARKER_SOURCE = join("scripts", "command-router.js");
+
+function listModuleScripts(dir) {
+  const files = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!EXCLUDED_SCRIPT_DIRS.has(entry.name)) {
+        files.push(...listModuleScripts(path));
+      }
+      continue;
+    }
+    if (entry.name.endsWith(".js")) {
+      files.push(relative(MODULE_ROOT, path));
+    }
+  }
+  return files;
+}
 
 const EXEMPT = new Set(POLICY_EXEMPT_COMMANDS);
 const GOVERNED_COMMANDS = COMMAND_NAMES.filter((command) => !EXEMPT.has(command));
@@ -58,6 +77,23 @@ function router() {
   return createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 }
 
+function registerPolicySettings() {
+  globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.COMMAND_POLICY, {
+    name: "FVTTWORLDCLI.Settings.CommandPolicyName",
+    scope: "client",
+    config: false,
+    type: Object,
+    default: {}
+  });
+  globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES, {
+    name: "FVTTWORLDCLI.Settings.ApprovalTimeoutMinutesName",
+    scope: "client",
+    config: true,
+    type: Number,
+    default: APPROVAL_TIMEOUT_DEFAULT_MINUTES
+  });
+}
+
 async function storePolicy(overrides) {
   await globalThis.game.settings.set(MODULE_ID, MODULE_SETTING_KEYS.COMMAND_POLICY, {
     version: 1,
@@ -81,6 +117,7 @@ function actorName(id) {
 describe("command policy gate", () => {
   beforeEach(() => {
     installFakeFoundry();
+    registerPolicySettings();
   });
 
   describe("with no stored policy", () => {
@@ -177,7 +214,7 @@ describe("command policy gate", () => {
       expect(actorName("actor-1")).toBe(before);
     });
 
-    it("is refused after the write-permission guard, which answers a non-GM session first", async () => {
+    it("is refused for a non-GM session before the policy verdict", async () => {
       await storePolicy({ "actor.update": "deny" });
       globalThis.game.user.isGM = false;
 
@@ -290,10 +327,10 @@ describe("command policy gate", () => {
       );
     });
 
-    it("is answered by handlers that never claim to need approval themselves", () => {
-      const producers = readdirSync(HANDLERS_DIR)
-        .filter((entry) => entry.endsWith(".js"))
-        .filter((entry) => readFileSync(join(HANDLERS_DIR, entry), "utf8").includes("approvalRequired"));
+    it("is marked by the gate alone, nowhere else in the module", () => {
+      const producers = listModuleScripts(SCRIPTS_DIR)
+        .filter((path) => path !== MARKER_SOURCE)
+        .filter((path) => readFileSync(join(MODULE_ROOT, path), "utf8").includes("approvalRequired"));
 
       expect(producers).toEqual([]);
     });
@@ -357,7 +394,7 @@ describe("command policy gate", () => {
     });
 
     it("falls back to the default profile for a value that is not a policy at all", async () => {
-      for (const value of ["deny", ["actor.get"], null, { overrides: { "actor.get": "deny" } }]) {
+      for (const value of ["deny", ["actor.get"], null, {}, { overrides: { "actor.get": "deny" } }]) {
         await storeRawPolicy(value);
 
         const read = await router().route(createRequest("actor.get", { actorId: "actor-1" }));
@@ -385,26 +422,7 @@ describe("command policy gate", () => {
   });
 
   describe("the settings the policy lives in", () => {
-    function registerPolicySettings() {
-      globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.COMMAND_POLICY, {
-        name: "FVTTWORLDCLI.Settings.CommandPolicyName",
-        scope: "client",
-        config: false,
-        type: Object,
-        default: {}
-      });
-      globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES, {
-        name: "FVTTWORLDCLI.Settings.ApprovalTimeoutMinutesName",
-        scope: "client",
-        config: true,
-        type: Number,
-        default: APPROVAL_TIMEOUT_DEFAULT_MINUTES
-      });
-    }
-
     it("lists both of them, the hidden one included", async () => {
-      registerPolicySettings();
-
       const response = await router().route(createRequest("setting.list", {}));
 
       const listed = response.result.settings.filter(
@@ -419,7 +437,6 @@ describe("command policy gate", () => {
     });
 
     it("reads the stored policy and timeout back unredacted", async () => {
-      registerPolicySettings();
       await storePolicy({ "actor.get": "deny" });
       await globalThis.game.settings.set(MODULE_ID, MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES, 5);
 
@@ -458,6 +475,19 @@ describe("command policy gate", () => {
   });
 
   describe("an invocation that skips the gate", () => {
+    it("cannot be asked for by a request arriving over the transport", async () => {
+      await storePolicy({ "actor.update": "deny" });
+
+      const response = await router().route({
+        ...createRequest("actor.update", { actorId: "actor-1", patch: { name: "Smuggled Rename" } }),
+        skipPolicyGate: true
+      });
+
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe(ERROR_CODES.COMMAND_DENIED);
+      expect(actorName("actor-1")).toBe("Valeros");
+    });
+
     it("dispatches a command the stored policy denies", async () => {
       await storePolicy({ "actor.update": "deny" });
 
