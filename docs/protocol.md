@@ -22,9 +22,10 @@ than degraded silently. Both halves of an installation therefore come from the s
 daemon and a Foundry module from different releases refuse each other instead of negotiating a
 subset. The current version is `1.1.0`.
 
-Recovering from a refusal is an operator action rather than a retry: the rejected module load does not
-reconnect on its own, so the bridge returns only after both halves are on the same release, the daemon
-has been restarted, and the GM client has been reloaded.
+Recovering from a refusal is an operator action rather than a retry: the older half is brought to
+the current release, the daemon is restarted when the CLI and daemon half changed, and the GM client
+is reloaded when its module load was the refused one, because a refused load does not reconnect on
+its own.
 
 `3.0` is the one protocol version published before the release-lockstep rule, and it is compared as
 release `1.0.0`, so the accepted `3.0` → `1.1.0` step is ordered like any other release step. A
@@ -72,8 +73,8 @@ Pairing is the one-time exchange that lets a GM browser become a bridge. Its gua
   exactly once, to the requesting socket, only after the digest has been persisted;
 - approving the same Origin/world/user/client again re-pairs that client's existing profile by
   rotating its credential instead of accumulating duplicates;
-- expiry, denial, socket close, and approval all end the attempt through one idempotent path, so
-  the browser-side authorization UI is never left waiting after daemon shutdown or expiry.
+- expiry, denial, socket close, and a granted pairing all end the attempt through one idempotent
+  path, so the browser-side authorization UI is never left waiting after daemon shutdown or expiry.
 
 ### Client identity
 
@@ -276,7 +277,10 @@ The wait is two-phase, because a decision can outlast any request timeout:
 
 An `approvalId` is an opaque token the pending answer supplies rather than a value a caller
 constructs, and all three request schemas are closed, so an unrecognized parameter is rejected
-before the command is dispatched.
+before the command is dispatched. `approval.await`, `approval.cancel`, and `policy.snapshot` are CLI
+plumbing rather than world-editing commands, so they are absent from the `commands` listing and from
+the session command set the daemon reports, while `schema <command>` still returns their request
+schemas.
 
 ## Delivery states and retries
 

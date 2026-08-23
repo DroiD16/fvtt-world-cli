@@ -513,8 +513,12 @@ function describeStaleComponent(staleComponent) {
 }
 
 /**
+ * @typedef {(typeof PROTOCOL_HANDSHAKES)[keyof typeof PROTOCOL_HANDSHAKES]} ProtocolHandshake
+ */
+
+/**
  * @param {unknown} actualVersion
- * @param {{ peer?: string, reporter?: string, handshake?: string }} [options]
+ * @param {{ peer?: string, reporter?: string, handshake?: ProtocolHandshake }} [options]
  */
 export function getProtocolVersionError(actualVersion, options = {}) {
   const {

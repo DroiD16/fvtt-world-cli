@@ -10,6 +10,7 @@ export const PROTOCOL_HANDSHAKES = Object.freeze({
   CLI_DAEMON: "cli-daemon",
   MODULE_DAEMON: "module-daemon",
   COMMAND_REQUEST: "command-request",
+  DAEMON_REQUEST: "daemon-request",
   UNKNOWN: "unknown"
 });
 

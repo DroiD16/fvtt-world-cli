@@ -481,7 +481,30 @@ describe("authorization daemon", () => {
           expectedVersion: PROTOCOL_VERSION,
           actualVersion: "3.0",
           staleComponent: "cli-daemon",
-          handshake: "cli-daemon"
+          handshake: "command-request"
+        }
+      }
+    });
+
+    const controlResponse = next(cli);
+    cli.send(
+      JSON.stringify({
+        protocolVersion: "3.0",
+        type: MESSAGE_TYPES.DAEMON_REQUEST,
+        id: "ctl-skew",
+        operation: "auth.pending",
+        params: {}
+      })
+    );
+    expect(await controlResponse).toMatchObject({
+      type: MESSAGE_TYPES.DAEMON_RESPONSE,
+      id: "ctl-skew",
+      ok: false,
+      error: {
+        code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+        details: {
+          staleComponent: "cli-daemon",
+          handshake: "daemon-request"
         }
       }
     });

@@ -1516,6 +1516,7 @@ describe("protocol contract", () => {
         CLI_DAEMON: "cli-daemon",
         MODULE_DAEMON: "module-daemon",
         COMMAND_REQUEST: "command-request",
+        DAEMON_REQUEST: "daemon-request",
         UNKNOWN: "unknown"
       });
       expect(Object.isFrozen(PROTOCOL_COMPONENTS)).toBe(true);
@@ -1603,6 +1604,19 @@ describe("protocol contract", () => {
           handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON
         }).details.staleComponent
       ).toBe(CLI_DAEMON);
+
+      expect(
+        getProtocolVersionError(LEGACY_VERSION, {
+          peer: CLI_DAEMON,
+          reporter: CLI_DAEMON,
+          handshake: PROTOCOL_HANDSHAKES.DAEMON_REQUEST
+        }).details
+      ).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_VERSION,
+        staleComponent: CLI_DAEMON,
+        handshake: "daemon-request"
+      });
     });
 
     it("refuses to guess when a version cannot be ordered or a side is unidentified", () => {

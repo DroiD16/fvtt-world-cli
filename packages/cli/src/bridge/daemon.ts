@@ -59,12 +59,29 @@ interface ConnectionState {
   isAlive: boolean;
 }
 
+type ProtocolHandshake = (typeof PROTOCOL_HANDSHAKES)[keyof typeof PROTOCOL_HANDSHAKES];
+
+function resolveCliRequestHandshake(messageType: unknown): ProtocolHandshake {
+  if (messageType === MESSAGE_TYPES.COMMAND_REQUEST) {
+    return PROTOCOL_HANDSHAKES.COMMAND_REQUEST;
+  }
+
+  if (messageType === MESSAGE_TYPES.DAEMON_REQUEST) {
+    return PROTOCOL_HANDSHAKES.DAEMON_REQUEST;
+  }
+
+  return PROTOCOL_HANDSHAKES.CLI_DAEMON;
+}
+
 function resolveProtocolMismatchOrigin(
   role: ConnectionState["role"],
   messageType: unknown
-): { peer: string; handshake: string } {
+): { peer: string; handshake: ProtocolHandshake } {
   if (role === "cli") {
-    return { peer: PROTOCOL_COMPONENTS.CLI_DAEMON, handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON };
+    return {
+      peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
+      handshake: resolveCliRequestHandshake(messageType)
+    };
   }
 
   if (role === "bridge" || role === "pairing") {
