@@ -2067,16 +2067,16 @@ describe("protocol contract", () => {
       expect(hiddenNames()).toEqual([...HIDDEN_COMMANDS]);
       expect(DISCOVERABLE_COMMAND_NAMES).toHaveLength(COMMAND_NAMES.length - HIDDEN_COMMANDS.length);
       for (const command of HIDDEN_COMMANDS) {
-        expect(DISCOVERABLE_COMMAND_NAMES, `${command} must not be advertised`).not.toContain(command);
+        expect(DISCOVERABLE_COMMAND_NAMES, `${command} must not be discoverable`).not.toContain(command);
       }
       expect(DISCOVERABLE_COMMAND_NAMES).toContain("system.info");
     });
 
-    it("carries no discovery field on an advertised command", () => {
+    it("carries no discovery field on a discoverable command", () => {
       const annotated = DISCOVERABLE_COMMAND_NAMES.filter(
         (command) => "discovery" in COMMAND_DEFINITIONS[command]
       );
-      expect(annotated, "the flag marks hidden entries only, never every advertised one").toEqual([]);
+      expect(annotated, "the flag marks hidden entries only, never every discoverable one").toEqual([]);
     });
 
     it("keeps the discoverable set frozen and in registry order", () => {

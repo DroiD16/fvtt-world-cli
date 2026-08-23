@@ -47,7 +47,7 @@ describe("command router", () => {
 
     expect(response.result.commands).toEqual([...DISCOVERABLE_COMMAND_NAMES]);
     for (const hidden of COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name))) {
-      expect(response.result.commands, `${hidden} must not be advertised`).not.toContain(hidden);
+      expect(response.result.commands, `${hidden} must not be discoverable`).not.toContain(hidden);
     }
 
     expect(response.result.limits).toEqual({

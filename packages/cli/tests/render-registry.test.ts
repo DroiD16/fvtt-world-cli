@@ -8,7 +8,7 @@ const INTENTIONAL_FALLBACK_JSON: readonly string[] = COMMAND_NAMES.filter(
 );
 
 describe("human-output renderer registry", () => {
-  it("registers a renderer for every advertised command and none for internal plumbing", () => {
+  it("registers a renderer for every discoverable command and none for internal plumbing", () => {
     const expected = COMMAND_NAMES.filter((name) => !INTENTIONAL_FALLBACK_JSON.includes(name)).sort();
     expect(expected.length).toBeGreaterThan(0);
     expect(INTENTIONAL_FALLBACK_JSON.length).toBeGreaterThan(0);

@@ -774,7 +774,7 @@ describe("authorization daemon", () => {
     expect(daemon.leasePairingId).toBeNull();
   });
 
-  it("reports only advertised commands in the bridge session status while still forwarding the rest", async () => {
+  it("omits undiscoverable commands from the bridge session status while still forwarding them", async () => {
     const credential = "b".repeat(43);
     const config = createEmptyConfig();
     addPairing(config, { pairingId: "pair-1", credential });
@@ -801,7 +801,7 @@ describe("authorization daemon", () => {
     const undiscoverable = COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name));
     expect(undiscoverable.length).toBeGreaterThan(0);
     for (const command of undiscoverable)
-      expect(reported, `${command} must not be advertised`).not.toContain(command);
+      expect(reported, `${command} must not be discoverable`).not.toContain(command);
 
     expect(undiscoverable).toContain("policy.snapshot");
     const forwarded = next(bridge.socket);
@@ -815,6 +815,32 @@ describe("authorization daemon", () => {
       })
     );
     expect(await forwarded).toMatchObject({ id: "hidden-1", command: "policy.snapshot" });
+  });
+
+  it("keeps a session command this CLI's registry does not contain in the bridge session status", async () => {
+    const credential = "b".repeat(43);
+    const config = createEmptyConfig();
+    addPairing(config, { pairingId: "pair-1", credential });
+    const daemon = createBridgeDaemon({
+      daemonUrl: `ws://127.0.0.1:${await freePort()}`,
+      config,
+      logger: pino({ level: "silent" })
+    });
+    daemons.push(daemon);
+    await daemon.start();
+    await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: [...COMMAND_NAMES, "future.command"]
+    });
+    const cli = await connectCli(daemon, config.deviceCredential);
+
+    const status = await control(cli, "status-1", "auth.status");
+
+    const reported = (status as { result: { bridge: { session: { commands: string[] } } } }).result.bridge
+      .session.commands;
+    expect(reported).toContain("future.command");
+    expect(reported).not.toContain("policy.snapshot");
   });
 
   it("revokes an active pairing without creating a lease and never discloses stored secrets", async () => {

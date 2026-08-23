@@ -11,7 +11,7 @@ afterEach(() => {
 
 describe("fvtt-world-cli commands", () => {
   describe("discovery commands", () => {
-    it("lists each advertised command with its mutation flag as JSON", async () => {
+    it("lists each discoverable command with its mutation flag as JSON", async () => {
       const result = await runCommand(["--json", "commands"]);
 
       expect(result.error).toBeNull();
@@ -44,8 +44,8 @@ describe("fvtt-world-cli commands", () => {
       const human = await runCommand(["commands"]);
       expect(human.error).toBeNull();
       for (const command of hidden) {
-        expect(listed, `${command} must not be advertised`).not.toContain(command);
-        expect(human.stdout, `${command} must not be advertised`).not.toContain(command);
+        expect(listed, `${command} must not be discoverable`).not.toContain(command);
+        expect(human.stdout, `${command} must not be discoverable`).not.toContain(command);
       }
     });
 

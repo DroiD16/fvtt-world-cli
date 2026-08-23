@@ -1,6 +1,7 @@
 import {
   BRIDGE_TAKEOVER_CLOSE_CODE,
   BRIDGE_TAKEOVER_CLOSE_REASON,
+  COMMAND_NAMES,
   DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   createErrorResponse,
@@ -59,10 +60,14 @@ function inFlightIndexKey(worldId: string, idempotencyKey: string) {
   return JSON.stringify([worldId, idempotencyKey]);
 }
 
-function advertisedSession(session: BridgeSessionInfo): BridgeSessionInfo {
+const UNDISCOVERABLE_COMMANDS = new Set(
+  COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name))
+);
+
+function withoutUndiscoverableCommands(session: BridgeSessionInfo): BridgeSessionInfo {
   return {
     ...session,
-    commands: session.commands.filter((name) => DISCOVERABLE_COMMAND_NAMES.includes(name))
+    commands: session.commands.filter((name) => !UNDISCOVERABLE_COMMANDS.has(name))
   };
 }
 
@@ -101,7 +106,7 @@ export class BridgeSessionStore {
   getBridgeStatus() {
     return {
       connected: Boolean(this.activeBridgeSocket && this.activeSession),
-      session: this.activeSession ? advertisedSession(this.activeSession) : null
+      session: this.activeSession ? withoutUndiscoverableCommands(this.activeSession) : null
     };
   }
 
