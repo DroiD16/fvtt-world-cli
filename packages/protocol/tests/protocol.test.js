@@ -2189,11 +2189,23 @@ describe("protocol contract", () => {
       expect(Object.isFrozen(POLICY_BEHAVIORS)).toBe(true);
     });
 
-    it("keeps the exempt command list frozen, duplicate-free, and inclusive of the status reads", () => {
+    it("exempts exactly the status reads and the plumbing commands, and nothing that mutates", () => {
       expect(Object.isFrozen(POLICY_EXEMPT_COMMANDS)).toBe(true);
       expect(new Set(POLICY_EXEMPT_COMMANDS).size).toBe(POLICY_EXEMPT_COMMANDS.length);
-      expect(POLICY_EXEMPT_COMMANDS).toContain("system.ping");
-      expect(POLICY_EXEMPT_COMMANDS).toContain("system.info");
+      expect(POLICY_EXEMPT_COMMANDS).toEqual([
+        "system.ping",
+        "system.info",
+        "approval.await",
+        "approval.cancel",
+        "policy.snapshot"
+      ]);
+
+      for (const command of POLICY_EXEMPT_COMMANDS) {
+        expect(
+          COMMAND_DEFINITIONS[command].mutation,
+          `${command} bypasses the policy gate, so it must not mutate`
+        ).toBe(false);
+      }
     });
 
     it("classifies registry commands as destructive by delete verb plus the explicit extras", () => {
