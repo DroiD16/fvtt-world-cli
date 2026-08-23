@@ -246,8 +246,8 @@ The wait is two-phase, because a decision can outlast any request timeout:
   the supported consumer of this flow and converts the pending answer into a blocking wait, so a
   caller using the CLI never branches on the code itself.
 - `approval.await { approvalId, waitMs? }` polls that id. A poll parks in the Foundry module for at
-  most `APPROVAL_AWAIT_PARK_CAP_MS`, and its optional `waitMs` may ask for less, so a parked poll
-  stays inside the caller's own request timeout. The result echoes the id and is either
+  most `APPROVAL_AWAIT_PARK_CAP_MS`; its optional `waitMs` may ask for a shorter park and is bounded
+  by the cap. The result echoes the id and is either
   `{ approvalId, status: "pending", expiresAt }` or `{ approvalId, status: "resolved", outcome,
   response? }`.
 - The terminal outcomes are `approved`, `denied`, `timeout`, and `cancelled`. `approved` carries the
@@ -278,9 +278,12 @@ The wait is two-phase, because a decision can outlast any request timeout:
 An `approvalId` is an opaque token the pending answer supplies rather than a value a caller
 constructs, and all three request schemas are closed, so an unrecognized parameter is rejected
 before the command is dispatched. `approval.await`, `approval.cancel`, and `policy.snapshot` are CLI
-plumbing rather than world-editing commands, so they are absent from the `commands` listing and from
-the session command set the daemon reports, while `schema <command>` still returns their request
-schemas.
+plumbing rather than world-editing commands, so the discovery surfaces omit them: they are absent
+from the `commands` listing, from the command inventory in `system.info`, and from the session
+command set the daemon echoes in bridge status, while `schema <command>` still returns their request
+schemas. The handshake set is deliberately wider than those surfaces, because it is the daemon's
+forwarding gate rather than a display: a session advertises every command it can execute, including
+the plumbing, and a command missing from that set is unreachable.
 
 ## Delivery states and retries
 
