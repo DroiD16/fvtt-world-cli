@@ -72,19 +72,19 @@ function readArtifact(path) {
   }
 }
 
+function reportStale(path) {
+  process.stderr.write(`${relative(REPO_ROOT, path)} out of date. Run \`npm run generate:protocol\`.\n`);
+  process.exit(1);
+}
+
 function main() {
   const check = process.argv.includes("--check");
   const profile = buildDefaultCommandProfileSource();
 
   if (check) {
-    const stale = [];
-    if (readArtifact(PROFILE_PATH) !== profile) stale.push(relative(REPO_ROOT, PROFILE_PATH));
-    if (readArtifact(OUTPUT_PATH) !== buildGeneratedSource()) stale.push(relative(REPO_ROOT, OUTPUT_PATH));
-
-    if (stale.length > 0) {
-      process.stderr.write(`${stale.join(" and ")} out of date. Run \`npm run generate:protocol\`.\n`);
-      process.exit(1);
-    }
+    // The mirror bundle resolves the profile from disk, so the profile verdict comes first.
+    if (readArtifact(PROFILE_PATH) !== profile) reportStale(PROFILE_PATH);
+    if (readArtifact(OUTPUT_PATH) !== buildGeneratedSource()) reportStale(OUTPUT_PATH);
 
     process.stdout.write("Generated protocol artifacts are up to date.\n");
     return;
