@@ -47,7 +47,7 @@ export function normalizeStoredPolicy(value) {
 
   if (isRecord(value) && value.version === POLICY_STORAGE_VERSION && isRecord(value.overrides)) {
     for (const [command, behavior] of Object.entries(value.overrides)) {
-      if (!KNOWN_COMMANDS.has(command) || !isPolicyBehavior(behavior)) {
+      if (EXEMPT_COMMANDS.has(command) || !KNOWN_COMMANDS.has(command) || !isPolicyBehavior(behavior)) {
         continue;
       }
 

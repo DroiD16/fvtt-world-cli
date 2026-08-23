@@ -126,6 +126,18 @@ describe("normalizeStoredPolicy", () => {
     expect(behaviorOf(policy, APPROVE_BY_DEFAULT)).toBe("approve");
   });
 
+  it("drops an override stored for an exempt command, which could never take effect", () => {
+    for (const command of POLICY_EXEMPT_COMMANDS) {
+      for (const behavior of ["deny", "approve", "allow"]) {
+        const policy = normalizeStoredPolicy(
+          storedPolicy({ [command]: behavior, [ALLOW_BY_DEFAULT]: "deny" })
+        );
+
+        expect(policy.overrides, `${command}=${behavior}`).toEqual({ [ALLOW_BY_DEFAULT]: "deny" });
+      }
+    }
+  });
+
   it("leaves its input untouched", () => {
     const stored = storedPolicy({ [ALLOW_BY_DEFAULT]: "deny", [APPROVE_BY_DEFAULT]: "approve" });
     const before = structuredClone(stored);
