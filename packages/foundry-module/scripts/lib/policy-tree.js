@@ -38,6 +38,7 @@ const EXEMPT_COMMANDS = new Set(POLICY_EXEMPT_COMMANDS);
  *   changed: number,
  *   commandCount: number,
  *   pressed: Record<string, boolean>,
+ *   exempt: boolean,
  *   hidden: boolean,
  *   open: boolean
  * }} PolicyNode
@@ -148,6 +149,7 @@ function finalizeBranch(branch, depth) {
   }
 
   const commandCount = branch.commands.length + nodes.reduce((total, node) => total + node.commandCount, 0);
+  const exempt = branch.commands.every((command) => command.exempt) && nodes.every((node) => node.exempt);
   const visible = branch.commands.some((command) => !command.hidden) || nodes.some((node) => !node.hidden);
 
   let band = 0;
@@ -169,6 +171,7 @@ function finalizeBranch(branch, depth) {
     pressed: Object.fromEntries(
       POLICY_BEHAVIORS.map((behavior) => [behavior, counts[behavior] === commandCount])
     ),
+    exempt,
     hidden: !visible,
     open: false
   };

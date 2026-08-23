@@ -40,6 +40,9 @@ const ALLOWED_BY_PROFILE = COMMAND_NAMES.find(
   (command) => !EXEMPT_COMMANDS.has(command) && DEFAULT_COMMAND_PROFILE[command] === "allow"
 );
 const EXEMPT_GROUP = POLICY_EXEMPT_COMMANDS[0].split(".")[0];
+const EXEMPT_ONLY_GROUPS = [...TOP_LEVEL_GROUPS].filter((group) =>
+  listSubtreeCommands(group).every((command) => EXEMPT_COMMANDS.has(command))
+);
 
 function* eachNode(nodes) {
   for (const node of nodes) {
@@ -307,6 +310,23 @@ describe("Command permissions application", () => {
     expect(Object.keys(draftOf(app).policy.overrides)).not.toContain(POLICY_EXEMPT_COMMANDS[0]);
     expect(TEMPLATE).toMatch(
       /{{#if this\.exempt}}[\s\S]*FVTTWORLDCLI\.Permissions\.Exempt"}}[\s\S]*{{else}}[\s\S]*data-action="setBehavior"/
+    );
+  });
+
+  it("marks a group that holds only always-allowed commands and gives it no switch", async () => {
+    const { app } = application();
+    expect(EXEMPT_ONLY_GROUPS.length).toBeGreaterThan(0);
+
+    const context = await app._prepareContext();
+
+    for (const group of EXEMPT_ONLY_GROUPS) {
+      expect(findNode(context.nodes, group).exempt).toBe(true);
+    }
+    for (const node of eachNode(context.nodes)) {
+      expect(node.exempt).toBe(eachRow([node]).every((row) => row.exempt));
+    }
+    expect(TEMPLATE).toMatch(
+      /{{#if this\.exempt}}[\s\S]*FVTTWORLDCLI\.Permissions\.Exempt"}}[\s\S]*{{else}}[\s\S]*data-action="fillNode"/
     );
   });
 
