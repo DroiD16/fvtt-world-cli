@@ -1,9 +1,9 @@
 import { BridgeClient } from "./bridge-client.js";
 import {
+  COMMAND_NAMES,
   DEFAULT_DAEMON_URL,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
-  DISCOVERABLE_COMMAND_NAMES,
   MODULE_ID,
   MODULE_TITLE
 } from "./generated/protocol.js";
@@ -79,7 +79,7 @@ function createBridgeRuntime(credential, clientId) {
         name: globalThis.game.user?.name ?? "Unknown User",
         isGM: Boolean(globalThis.game.user?.isGM)
       },
-      commands: DISCOVERABLE_COMMAND_NAMES
+      commands: COMMAND_NAMES
     })
   });
 

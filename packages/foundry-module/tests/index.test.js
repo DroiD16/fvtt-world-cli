@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { COMMAND_NAMES, DISCOVERABLE_COMMAND_NAMES } from "../scripts/generated/protocol.js";
+
 describe("module settings registration", () => {
   let hookCallbacks;
   let hookHandlers;
@@ -186,6 +188,29 @@ describe("module settings registration", () => {
 
     expect(openedSockets).toBe(1);
     expect(globalThis.foundryCliBridge.getStatus().status).toBe("connecting");
+  });
+
+  it("advertises every executable command in the handshake so undiscoverable plumbing stays callable", async () => {
+    globalThis.game.user = { id: "gm-1", isGM: true };
+    storedSettings.autoConnect = true;
+    storedSettings.credentials = { "world-1:gm-1": { pairingId: "pair-1", credential: "secret" } };
+    class FakeSocket {
+      addEventListener() {}
+      close() {}
+    }
+    globalThis.WebSocket = /** @type {any} */ (FakeSocket);
+
+    await import("../scripts/index.js");
+    await hookCallbacks.get("ready")();
+
+    const undiscoverable = COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name));
+    expect(undiscoverable.length).toBeGreaterThan(0);
+
+    const { commands } = globalThis.foundryCliBridge.getSession();
+    expect(commands).toEqual([...COMMAND_NAMES]);
+    for (const command of undiscoverable) {
+      expect(commands, `${command} must remain forwardable`).toContain(command);
+    }
   });
 
   it("registers Authorization and Bridge Status as GM-only ApplicationV2 settings submenus", async () => {
