@@ -5616,7 +5616,7 @@ function getProtocolVersionError(actualVersion, options = {}) {
   const staleComponent = resolveStaleComponent(actualVersion, peer, reporter);
   return createProtocolError({
     code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
-    message: `Unsupported protocol version: ${actualVersion} (expected ${PROTOCOL_VERSION}); ${describeStaleComponent(staleComponent)}. Components from different releases are refused at the handshake by design.`,
+    message: `Unsupported protocol version: ${actualVersion} (expected ${PROTOCOL_VERSION}); ${describeStaleComponent(staleComponent)}. Components from different releases are refused by design.`,
     details: {
       expectedVersion: PROTOCOL_VERSION,
       actualVersion,

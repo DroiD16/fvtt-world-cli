@@ -59,45 +59,27 @@ interface ConnectionState {
   isAlive: boolean;
 }
 
-type ProtocolHandshake = (typeof PROTOCOL_HANDSHAKES)[keyof typeof PROTOCOL_HANDSHAKES];
+type ProtocolMismatchOrigin = {
+  peer: string;
+  handshake: (typeof PROTOCOL_HANDSHAKES)[keyof typeof PROTOCOL_HANDSHAKES];
+};
 
-function resolveCliRequestHandshake(messageType: unknown): ProtocolHandshake {
-  if (messageType === MESSAGE_TYPES.COMMAND_REQUEST) {
-    return PROTOCOL_HANDSHAKES.COMMAND_REQUEST;
-  }
-
-  if (messageType === MESSAGE_TYPES.DAEMON_REQUEST) {
-    return PROTOCOL_HANDSHAKES.DAEMON_REQUEST;
-  }
-
-  return PROTOCOL_HANDSHAKES.CLI_DAEMON;
-}
-
-function resolveProtocolMismatchOrigin(
-  role: ConnectionState["role"],
-  messageType: unknown
-): { peer: string; handshake: ProtocolHandshake } {
-  if (role === "cli") {
-    return {
-      peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
-      handshake: resolveCliRequestHandshake(messageType)
-    };
-  }
-
-  if (role === "bridge" || role === "pairing") {
-    return { peer: PROTOCOL_COMPONENTS.MODULE, handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON };
-  }
-
-  if (messageType === MESSAGE_TYPES.CLIENT_HELLO) {
-    return { peer: PROTOCOL_COMPONENTS.CLI_DAEMON, handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON };
-  }
-
-  if (messageType === MESSAGE_TYPES.BRIDGE_HELLO || messageType === MESSAGE_TYPES.PAIRING_REQUEST) {
-    return { peer: PROTOCOL_COMPONENTS.MODULE, handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON };
-  }
-
-  return { peer: PROTOCOL_COMPONENTS.UNKNOWN, handshake: PROTOCOL_HANDSHAKES.UNKNOWN };
-}
+const CLI_HELLO_ORIGIN: ProtocolMismatchOrigin = {
+  peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
+  handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON
+};
+const MODULE_HELLO_ORIGIN: ProtocolMismatchOrigin = {
+  peer: PROTOCOL_COMPONENTS.MODULE,
+  handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+};
+const CLI_COMMAND_ORIGIN: ProtocolMismatchOrigin = {
+  peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
+  handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
+};
+const CLI_CONTROL_ORIGIN: ProtocolMismatchOrigin = {
+  peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
+  handshake: PROTOCOL_HANDSHAKES.DAEMON_REQUEST
+};
 
 function createBridgeHelloAck({
   ok,
@@ -460,10 +442,10 @@ export class BridgeDaemon {
 
     const validationResult = validateTransportMessage(message);
     if (!validationResult.ok) {
-      const protocolError =
+      const rejection = (origin: ProtocolMismatchOrigin) =>
         message.protocolVersion !== undefined && message.protocolVersion !== PROTOCOL_VERSION
           ? getProtocolVersionError(String(message.protocolVersion), {
-              ...resolveProtocolMismatchOrigin(state.role, message.type),
+              ...origin,
               reporter: PROTOCOL_COMPONENTS.CLI_DAEMON
             })
           : createProtocolError({
@@ -476,23 +458,23 @@ export class BridgeDaemon {
           protocolVersion: PROTOCOL_VERSION,
           type: MESSAGE_TYPES.CLIENT_HELLO_ACK,
           ok: false,
-          error: protocolError
+          error: rejection(CLI_HELLO_ORIGIN)
         });
       } else if (state.role === "unknown" && message.type === MESSAGE_TYPES.PAIRING_REQUEST) {
         sendJson(socket, {
           protocolVersion: PROTOCOL_VERSION,
           type: MESSAGE_TYPES.PAIRING_RESULT,
           ok: false,
-          error: protocolError
+          error: rejection(MODULE_HELLO_ORIGIN)
         });
       } else if (state.role === "unknown" && message.type === MESSAGE_TYPES.BRIDGE_HELLO) {
-        sendJson(socket, createBridgeHelloAck({ ok: false, error: protocolError }));
+        sendJson(socket, createBridgeHelloAck({ ok: false, error: rejection(MODULE_HELLO_ORIGIN) }));
       } else if (state.role === "cli" && message.type === MESSAGE_TYPES.COMMAND_REQUEST) {
         sendJson(
           socket,
           createErrorResponse({
             id: typeof message.id === "string" ? message.id : `invalid_${randomUUID()}`,
-            error: protocolError
+            error: rejection(CLI_COMMAND_ORIGIN)
           })
         );
         return;
@@ -502,7 +484,14 @@ export class BridgeDaemon {
           typeof message.operation === "string" && message.operation ? message.operation : "unknown";
         sendJson(
           socket,
-          daemonEnvelope(MESSAGE_TYPES.DAEMON_RESPONSE, id, operation, false, undefined, protocolError)
+          daemonEnvelope(
+            MESSAGE_TYPES.DAEMON_RESPONSE,
+            id,
+            operation,
+            false,
+            undefined,
+            rejection(CLI_CONTROL_ORIGIN)
+          )
         );
         return;
       }

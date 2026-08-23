@@ -1552,7 +1552,7 @@ describe("protocol contract", () => {
         handshake: "module-daemon"
       });
       expect(fromDaemon.message).toContain("update the module in Foundry");
-      expect(fromDaemon.message).toContain("refused at the handshake by design");
+      expect(fromDaemon.message).toContain("refused by design");
     });
 
     it("blames the reporting side when the peer reports the higher release", () => {

@@ -264,10 +264,10 @@ The wait is two-phase, because a decision can outlast any request timeout:
   won the race, and a started handler cannot be recalled.
 - `APPROVAL_QUEUE_FULL` is admission control. The bounded pending store refused the request before
   anything was displayed or executed, so nothing ran.
-- `APPROVAL_UNKNOWN` answers an id nobody holds. Approval state is runtime state: it does not survive
-  a GM client reload, and a retained outcome expires. It is indeterminate — the command may never have
-  started or may have completed — so world state is the only authority, and a read comes before any
-  re-request.
+- `APPROVAL_UNKNOWN` answers an id the module has no approval state for. Approval state is runtime
+  state: it does not survive a GM client reload, and a retained outcome expires. It is indeterminate
+  — the command may never have started or may have completed — so world state is the only authority,
+  and a read comes before any re-request.
 - A dry run is not gated by an approval: the preview of an approval-listed command runs without a
   decision, while a command the policy denies is refused in preview too.
 - `policy.snapshot` takes no parameters and reports the effective policy as
@@ -302,8 +302,8 @@ protocol and CLI constants; runtime flags can override the client and daemon req
 ## Compatibility rules
 
 - One release ships the CLI, the daemon, and the Foundry module as a compatible set, and the protocol
-  version they share is that release's version. Mixed-release operation is refused at the handshake
-  rather than supported, so there is no negotiated subset to reason about.
+  version they share is that release's version. Mixed-release operation is refused rather than
+  supported, so there is no negotiated subset to reason about.
 - Within a release line, additive result and handshake fields are how the contract evolves without
   changing the meaning of existing fields; request schemas remain explicit and versioned.
 - A bridge advertises the command set it can execute; the daemon forwards only advertised commands.

@@ -458,6 +458,34 @@ describe("authorization daemon", () => {
     });
   });
 
+  it("names the module as the older component when a pairing request arrives from another release", async () => {
+    const daemon = await startPairingDaemon();
+
+    const browser = await open(daemon.daemonUrl, "http://localhost:30000");
+    sockets.push(browser);
+    const result = next(browser);
+    browser.send(
+      JSON.stringify({
+        protocolVersion: "3.0",
+        type: MESSAGE_TYPES.PAIRING_REQUEST,
+        identity: pairingIdentity()
+      })
+    );
+    expect(await result).toMatchObject({
+      type: MESSAGE_TYPES.PAIRING_RESULT,
+      ok: false,
+      error: {
+        code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+        details: {
+          expectedVersion: PROTOCOL_VERSION,
+          actualVersion: "3.0",
+          staleComponent: "module",
+          handshake: "module-daemon"
+        }
+      }
+    });
+  });
+
   it("names the client as the older component when an authorized client sends another release", async () => {
     const config = createEmptyConfig();
     const daemon = createBridgeDaemon({
