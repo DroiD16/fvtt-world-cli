@@ -51,6 +51,7 @@ import { createSettingHandlers } from "./handlers/settings.js";
 import { createPolicyHandlers } from "./handlers/policy.js";
 import { createSystemHandlers } from "./handlers/system.js";
 import { createTableHandlers, withQueuedTableOwnership } from "./handlers/tables.js";
+import { isDryRun } from "./lib/dry-run.js";
 import {
   createBridgeError,
   isFoundryValidationError,
@@ -147,7 +148,7 @@ export function createCommandRouter({ bridgeClient }) {
       validateCommandParams(command, params, COMMAND_DEFINITIONS);
       assertWritePermission(command);
 
-      const dryRun = params?.dryRun === true;
+      const dryRun = isDryRun(params);
       const policy = skipPolicyGate
         ? null
         : resolveCommandPolicy(readStoredCommandPolicy(), command, { dryRun });
