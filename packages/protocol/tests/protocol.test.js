@@ -4,7 +4,12 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { OUTPUT_PATH, buildGeneratedSource } from "../../../scripts/generate-protocol.mjs";
+import {
+  OUTPUT_PATH,
+  PROFILE_PATH,
+  buildDefaultCommandProfileSource,
+  buildGeneratedSource
+} from "../../../scripts/generate-protocol.mjs";
 import * as moduleProtocol from "../../foundry-module/scripts/generated/protocol.js";
 import * as protocol from "../src/index.js";
 import {
@@ -28,6 +33,7 @@ import {
   DAEMON_OPERATION_DEFINITIONS,
   DAEMON_REQUEST_SCHEMA,
   DAEMON_REQUEST_VARIANT_SCHEMAS,
+  DEFAULT_COMMAND_PROFILE,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
   DISCOVERABLE_COMMAND_NAMES,
@@ -40,6 +46,7 @@ import {
   POLICY_DISCOVERY_TIMEOUT_MS,
   POLICY_EXEMPT_COMMANDS,
   PROTOCOL_VERSION,
+  defaultProfile,
   isDestructiveCommand,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
   FOG_RESET_CONFIRM_TIMEOUT_MS,
@@ -2055,6 +2062,69 @@ describe("protocol contract", () => {
       expect(moduleProtocol.POLICY_BEHAVIORS).toEqual([...POLICY_BEHAVIORS]);
       expect(moduleProtocol.POLICY_EXEMPT_COMMANDS).toEqual([...POLICY_EXEMPT_COMMANDS]);
       expect(moduleProtocol.isDestructiveCommand("scene.fog.reset")).toBe(true);
+    });
+  });
+
+  describe("default command profile", () => {
+    const expectedBehavior = (command) => (isDestructiveCommand(command) ? "approve" : "allow");
+
+    it("stays byte-identical to what the generator emits", () => {
+      expect(
+        readFileSync(PROFILE_PATH, "utf8"),
+        "the snapshot is stale; run `npm run generate:protocol`"
+      ).toBe(buildDefaultCommandProfileSource());
+    });
+
+    it("covers every registry command exactly once, in registry order", () => {
+      expect(Object.keys(DEFAULT_COMMAND_PROFILE)).toEqual([...COMMAND_NAMES]);
+    });
+
+    it("assigns every command the behavior the destructive rule dictates", () => {
+      for (const command of COMMAND_NAMES) {
+        expect(POLICY_BEHAVIORS, command).toContain(DEFAULT_COMMAND_PROFILE[command]);
+        expect(DEFAULT_COMMAND_PROFILE[command], command).toBe(expectedBehavior(command));
+      }
+    });
+
+    it("puts exactly the destructive commands in the approve bucket", () => {
+      const approved = COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === "approve");
+
+      expect(approved).toEqual(COMMAND_NAMES.filter(isDestructiveCommand));
+      expect(approved.length).toBeGreaterThan(0);
+      expect(approved.length).toBeLessThan(COMMAND_NAMES.length);
+      for (const command of ["actor.delete", "actor.delete-many", "file.move", "scene.fog.reset"]) {
+        expect(DEFAULT_COMMAND_PROFILE[command], command).toBe("approve");
+      }
+      expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
+    });
+
+    it("cannot be mutated in place", () => {
+      const table = /** @type {Record<string, string>} */ (DEFAULT_COMMAND_PROFILE);
+
+      expect(Object.isFrozen(DEFAULT_COMMAND_PROFILE)).toBe(true);
+      expect(() => {
+        table["actor.delete"] = "allow";
+      }).toThrow(TypeError);
+      expect(() => {
+        table["bogus.command"] = "deny";
+      }).toThrow(TypeError);
+    });
+
+    it("looks up a command and reports nothing for a name the registry does not carry", () => {
+      for (const command of COMMAND_NAMES) {
+        expect(defaultProfile(command), command).toBe(expectedBehavior(command));
+      }
+
+      for (const name of ["bogus.command", "", "toString", "constructor", "__proto__"]) {
+        expect(defaultProfile(name), name).toBeUndefined();
+      }
+    });
+
+    it("reaches the module mirror with the same table and lookup", () => {
+      expect(moduleProtocol.DEFAULT_COMMAND_PROFILE).toEqual({ ...DEFAULT_COMMAND_PROFILE });
+      expect(moduleProtocol.defaultProfile("actor.delete")).toBe("approve");
+      expect(moduleProtocol.defaultProfile("actor.get")).toBe("allow");
+      expect(moduleProtocol.defaultProfile("bogus.command")).toBeUndefined();
     });
   });
 

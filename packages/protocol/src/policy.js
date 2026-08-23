@@ -1,3 +1,8 @@
+import { DEFAULT_COMMAND_PROFILE } from "./generated/default-command-profile.js";
+
+export { isDestructiveCommand } from "./destructive-commands.js";
+export { DEFAULT_COMMAND_PROFILE } from "./generated/default-command-profile.js";
+
 export const POLICY_BEHAVIORS = Object.freeze(["allow", "approve", "deny"]);
 
 export const POLICY_EXEMPT_COMMANDS = Object.freeze([
@@ -8,13 +13,7 @@ export const POLICY_EXEMPT_COMMANDS = Object.freeze([
   "policy.snapshot"
 ]);
 
-const DESTRUCTIVE_VERBS = Object.freeze(["delete", "delete-many"]);
-
-const DESTRUCTIVE_COMMANDS = Object.freeze(["file.delete", "file.move", "scene.fog.reset"]);
-
 /** @param {string} name */
-export function isDestructiveCommand(name) {
-  const separator = name.lastIndexOf(".");
-  const verb = separator === -1 ? "" : name.slice(separator + 1);
-  return DESTRUCTIVE_VERBS.includes(verb) || DESTRUCTIVE_COMMANDS.includes(name);
+export function defaultProfile(name) {
+  return Object.hasOwn(DEFAULT_COMMAND_PROFILE, name) ? DEFAULT_COMMAND_PROFILE[name] : undefined;
 }
