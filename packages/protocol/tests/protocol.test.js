@@ -2014,12 +2014,20 @@ describe("protocol contract", () => {
     it("parks an approval poll for the same ceiling the pairing wait uses", () => {
       expect(APPROVAL_AWAIT_PARK_CAP_MS).toBe(AUTH_AWAIT_PARK_CAP_MS);
       expect(APPROVAL_AWAIT_PARK_CAP_MS).toBeLessThan(BRIDGE_LEASE_MS);
+      expect(APPROVAL_RESULT_RETENTION_MS).toBe(300_000);
       expect(APPROVAL_RESULT_RETENTION_MS).toBeGreaterThan(APPROVAL_AWAIT_PARK_CAP_MS);
+    });
+
+    it("bounds the pending approval count and the policy discovery wait", () => {
+      expect(APPROVAL_PENDING_MAX).toBe(20);
+      expect(POLICY_DISCOVERY_TIMEOUT_MS).toBe(1_500);
     });
 
     it("keeps the configurable approval timeout inside the browser timer ceiling", () => {
       const timerCeilingMs = 2 ** 31 - 1;
 
+      expect(APPROVAL_TIMEOUT_MIN_MINUTES).toBe(1);
+      expect(APPROVAL_TIMEOUT_DEFAULT_MINUTES).toBe(60);
       expect(APPROVAL_TIMEOUT_MIN_MINUTES).toBeLessThanOrEqual(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
       expect(APPROVAL_TIMEOUT_DEFAULT_MINUTES).toBeLessThanOrEqual(APPROVAL_TIMEOUT_MAX_MINUTES);
       expect(APPROVAL_TIMEOUT_MAX_MINUTES * 60_000).toBeLessThan(timerCeilingMs);
