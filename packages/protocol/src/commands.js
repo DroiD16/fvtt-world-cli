@@ -11,6 +11,7 @@ import {
   PROTOCOL_VERSION
 } from "./constants.js";
 import { actorCommands, actorCompendiumImportCommands } from "./schemas/actor.js";
+import { approvalCommands } from "./schemas/approval.js";
 import { cardsCommands } from "./schemas/cards.js";
 import { chatCommands } from "./schemas/chat.js";
 import { combatCommands } from "./schemas/combat.js";
@@ -71,7 +72,8 @@ export const COMMAND_DEFINITIONS = deepFreeze(
     settingCommands,
     actorCompendiumImportCommands,
     worldAuditCommands,
-    worldSearchCommands
+    worldSearchCommands,
+    approvalCommands
   ])
 );
 
@@ -79,6 +81,10 @@ export const COMMAND_NAMES = deepFreeze(Object.keys(COMMAND_DEFINITIONS));
 
 export const WRITE_COMMANDS = deepFreeze(
   COMMAND_NAMES.filter((command) => COMMAND_DEFINITIONS[command].mutation === true)
+);
+
+export const DISCOVERABLE_COMMAND_NAMES = deepFreeze(
+  COMMAND_NAMES.filter((command) => COMMAND_DEFINITIONS[command].discovery !== false)
 );
 
 export const REQUEST_SCHEMA = {

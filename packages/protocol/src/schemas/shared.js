@@ -1,6 +1,10 @@
 import { BATCH_GET_MAX_IDS, BATCH_WRITE_MAX_ITEMS } from "../constants.js";
 
-export const cmd = (paramsSchema, { mutation = false } = {}) => ({ mutation, paramsSchema });
+export const cmd = (paramsSchema, { mutation = false, discovery = true } = {}) => ({
+  mutation,
+  ...(discovery ? {} : { discovery: false }),
+  paramsSchema
+});
 
 /**
  * @param {Record<string, object>[]} families

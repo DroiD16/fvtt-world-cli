@@ -1,3 +1,4 @@
+import { COMMAND_NAMES, DISCOVERABLE_COMMAND_NAMES } from "@fvtt-world-cli/protocol";
 import { CommanderError } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -30,6 +31,31 @@ describe("fvtt-world-cli commands", () => {
       expect(result.error).toBeNull();
       expect(result.stdout).toContain("scene.update\twrite");
       expect(result.stdout).toContain("scene.get\tread");
+    });
+
+    it("omits internal plumbing commands from the list in both output modes", async () => {
+      const hidden = COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name));
+      expect(hidden.length).toBeGreaterThan(0);
+
+      const json = await runCommand(["--json", "commands"]);
+      const listed = JSON.parse(json.stdout).result.map((entry: { command: string }) => entry.command);
+      expect(listed).toEqual([...DISCOVERABLE_COMMAND_NAMES]);
+
+      const human = await runCommand(["commands"]);
+      for (const command of hidden) {
+        expect(listed, `${command} must not be advertised`).not.toContain(command);
+        expect(human.stdout, `${command} must not be advertised`).not.toContain(command);
+      }
+    });
+
+    it("prints the schema of a command that discovery omits", async () => {
+      const result = await runCommand(["--json", "schema", "approval.await"]);
+
+      expect(result.error).toBeNull();
+      const payload = JSON.parse(result.stdout).result;
+      expect(payload.command).toBe("approval.await");
+      expect(payload.mutation).toBe(false);
+      expect(payload.paramsSchema.required).toEqual(["approvalId"]);
     });
 
     it("prints a command's param schema as JSON", async () => {

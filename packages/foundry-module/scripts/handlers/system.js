@@ -1,7 +1,7 @@
 import {
-  COMMAND_NAMES,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
+  DISCOVERABLE_COMMAND_NAMES,
   MODULE_ID,
   MODULE_TITLE
 } from "../generated/protocol.js";
@@ -59,7 +59,7 @@ export function createSystemHandlers({ bridgeClient }) {
           wsMaxPayloadBytes: DEFAULT_WS_MAX_PAYLOAD_BYTES,
           uploadSource: "default"
         },
-        commands: COMMAND_NAMES
+        commands: DISCOVERABLE_COMMAND_NAMES
       };
     }
   };

@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 
 import {
   COMMAND_DEFINITIONS,
-  COMMAND_NAMES,
+  DISCOVERABLE_COMMAND_NAMES,
   getCommandDefinition,
   isKnownCommand
 } from "@fvtt-world-cli/protocol";
@@ -17,9 +17,9 @@ import { write } from "../deps.js";
 export function registerDiscovery({ program, dependencies }: RegistrationContext) {
   program
     .command("commands")
-    .description("List all protocol commands and whether each mutates world state")
+    .description("List discoverable protocol commands and whether each mutates world state")
     .action(function listCommands() {
-      const payload = COMMAND_NAMES.map((name) => ({
+      const payload = DISCOVERABLE_COMMAND_NAMES.map((name) => ({
         command: name,
         mutation: COMMAND_DEFINITIONS[name].mutation
       }));

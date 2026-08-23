@@ -47,7 +47,7 @@ fvtt-world-cli actor update --help
 fvtt-world-cli docs protocol
 ```
 
-`commands --json` enumerates the command registry and identifies mutations. `schema` returns the
+`commands --json` enumerates the available commands and identifies mutations. `schema` returns the
 request schema used by local validation. Command help maps protocol parameters to CLI flags. `docs`
 lists and prints these documentation files as shipped with the installed CLI.
 

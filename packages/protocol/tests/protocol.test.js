@@ -24,11 +24,13 @@ import {
   BRIDGE_LEASE_MS,
   COMMAND_DEFINITIONS,
   COMMAND_NAMES,
+  DAEMON_OPERATIONS,
   DAEMON_OPERATION_DEFINITIONS,
   DAEMON_REQUEST_SCHEMA,
   DAEMON_REQUEST_VARIANT_SCHEMAS,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
+  DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   SETTING_VALUE_MAX_BYTES,
   SETTING_VALUE_MAX_DEPTH,
@@ -2053,6 +2055,107 @@ describe("protocol contract", () => {
       expect(moduleProtocol.POLICY_BEHAVIORS).toEqual([...POLICY_BEHAVIORS]);
       expect(moduleProtocol.POLICY_EXEMPT_COMMANDS).toEqual([...POLICY_EXEMPT_COMMANDS]);
       expect(moduleProtocol.isDestructiveCommand("scene.fog.reset")).toBe(true);
+    });
+  });
+
+  describe("approval and policy plumbing commands", () => {
+    const HIDDEN_COMMANDS = Object.freeze(["approval.await", "approval.cancel", "policy.snapshot"]);
+    const APPROVAL_ID = "AbCdEf0123456789_-wxyZ";
+    const hiddenNames = () => COMMAND_NAMES.filter((name) => COMMAND_DEFINITIONS[name].discovery === false);
+
+    it("hides exactly the plumbing commands from discovery", () => {
+      expect(hiddenNames()).toEqual([...HIDDEN_COMMANDS]);
+      expect(DISCOVERABLE_COMMAND_NAMES).toHaveLength(COMMAND_NAMES.length - HIDDEN_COMMANDS.length);
+      for (const command of HIDDEN_COMMANDS) {
+        expect(DISCOVERABLE_COMMAND_NAMES, `${command} must not be advertised`).not.toContain(command);
+      }
+      expect(DISCOVERABLE_COMMAND_NAMES).toContain("system.info");
+    });
+
+    it("carries no discovery field on an advertised command", () => {
+      const annotated = DISCOVERABLE_COMMAND_NAMES.filter(
+        (command) => "discovery" in COMMAND_DEFINITIONS[command]
+      );
+      expect(annotated, "the flag marks hidden entries only, never every advertised one").toEqual([]);
+    });
+
+    it("keeps the discoverable set frozen and in registry order", () => {
+      expect(Object.isFrozen(DISCOVERABLE_COMMAND_NAMES)).toBe(true);
+      expect(() => {
+        DISCOVERABLE_COMMAND_NAMES.push("bogus.command");
+      }).toThrow(TypeError);
+
+      const positions = DISCOVERABLE_COMMAND_NAMES.map((command) => COMMAND_NAMES.indexOf(command));
+      expect(positions).toEqual([...positions].sort((left, right) => left - right));
+      expect(positions).not.toContain(-1);
+      expect(moduleProtocol.DISCOVERABLE_COMMAND_NAMES).toEqual([...DISCOVERABLE_COMMAND_NAMES]);
+    });
+
+    it("keeps every hidden command exempt read-only plumbing", () => {
+      for (const command of hiddenNames()) {
+        expect(POLICY_EXEMPT_COMMANDS, `${command} must be exempt`).toContain(command);
+        expect(COMMAND_DEFINITIONS[command].mutation, `${command} must not mutate`).toBe(false);
+      }
+    });
+
+    it("keeps every exempt name a module command, since daemon operations never reach the module", () => {
+      for (const command of POLICY_EXEMPT_COMMANDS) {
+        expect(COMMAND_NAMES, `${command} must be a registry command`).toContain(command);
+        expect(command.startsWith("auth."), `${command} must not be a daemon operation`).toBe(false);
+      }
+
+      for (const operation of DAEMON_OPERATIONS) {
+        expect(COMMAND_NAMES, `${operation} is a daemon operation, not a module command`).not.toContain(
+          operation
+        );
+        expect(POLICY_EXEMPT_COMMANDS, `${operation} is exempt by construction`).not.toContain(operation);
+      }
+    });
+
+    it("keeps a hidden command callable and validated", () => {
+      for (const command of HIDDEN_COMMANDS) {
+        expect(protocol.REQUEST_SCHEMA.properties.command.enum).toContain(command);
+        expect(protocol.isKnownCommand(command)).toBe(true);
+        expect(protocol.getCommandDefinition(command).paramsSchema.additionalProperties).toBe(false);
+        expect(WRITE_COMMANDS).not.toContain(command);
+      }
+    });
+
+    it("accepts an approval id of the generated shape, with or without a park duration", () => {
+      expectValid("approval.await", { approvalId: APPROVAL_ID });
+      expectValid("approval.await", { approvalId: APPROVAL_ID, waitMs: 0 });
+      expectValid("approval.await", { approvalId: APPROVAL_ID, waitMs: APPROVAL_AWAIT_PARK_CAP_MS });
+      expectValid("approval.cancel", { approvalId: APPROVAL_ID });
+      expectValid("policy.snapshot", {});
+    });
+
+    it("rejects an approval id outside the base64url shape the store generates", () => {
+      for (const command of ["approval.await", "approval.cancel"]) {
+        expectRejected(command, {}, "approvalId");
+        expectRejected(command, { approvalId: "" }, "approvalId");
+        expectRejected(command, { approvalId: APPROVAL_ID.slice(0, 21) }, "approvalId");
+        expectRejected(command, { approvalId: `${APPROVAL_ID}A` }, "approvalId");
+        expectRejected(command, { approvalId: `${APPROVAL_ID.slice(0, 20)}+/` }, "approvalId");
+        expectRejected(command, { approvalId: 1 }, "approvalId");
+        expectRejected(command, { approvalId: APPROVAL_ID, extra: true }, "extra");
+      }
+    });
+
+    it("rejects a park duration outside the poll ceiling", () => {
+      expectRejected("approval.await", { approvalId: APPROVAL_ID, waitMs: -1 }, "waitMs");
+      expectRejected(
+        "approval.await",
+        { approvalId: APPROVAL_ID, waitMs: APPROVAL_AWAIT_PARK_CAP_MS + 1 },
+        "waitMs"
+      );
+      expectRejected("approval.await", { approvalId: APPROVAL_ID, waitMs: 1.5 }, "waitMs");
+      expectRejected("approval.cancel", { approvalId: APPROVAL_ID, waitMs: 0 }, "waitMs");
+    });
+
+    it("takes no parameters for the policy snapshot", () => {
+      expect(COMMAND_DEFINITIONS["policy.snapshot"].paramsSchema.required).toEqual([]);
+      expect(Object.keys(COMMAND_DEFINITIONS["policy.snapshot"].paramsSchema.properties)).toEqual([]);
+      expectRejected("policy.snapshot", { approvalId: APPROVAL_ID }, "approvalId");
     });
   });
 

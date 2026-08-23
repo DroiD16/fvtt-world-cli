@@ -162,7 +162,7 @@ on the CLI:
 | Tokens embedded in a scene | `scene.token.*` | `fvtt-world-cli scene token …` |
 | Effects on a placed token | `scene.token.effect.*` | `fvtt-world-cli scene token effect …` |
 
-Use `fvtt-world-cli commands --json` for the complete current inventory. The exact operation set
+Use `fvtt-world-cli commands --json` for the current inventory. The exact operation set
 varies by family, so a nearby document family is not a reliable guide to what another one supports.
 
 ## Capability map

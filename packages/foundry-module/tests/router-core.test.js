@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCommandRouter } from "../scripts/command-router.js";
 
 import {
+  COMMAND_NAMES,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
+  DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES
 } from "../scripts/generated/protocol.js";
 
@@ -42,6 +44,11 @@ describe("command router", () => {
     ]);
     expect(response.result.commands).toContain("journal.update");
     expect(response.result.commands).toContain("actor.item.update");
+
+    expect(response.result.commands).toEqual([...DISCOVERABLE_COMMAND_NAMES]);
+    for (const hidden of COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name))) {
+      expect(response.result.commands, `${hidden} must not be advertised`).not.toContain(hidden);
+    }
 
     expect(response.result.limits).toEqual({
       uploadBytes: DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,

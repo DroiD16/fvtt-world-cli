@@ -1,14 +1,17 @@
-import { COMMAND_NAMES } from "@fvtt-world-cli/protocol";
+import { COMMAND_NAMES, DISCOVERABLE_COMMAND_NAMES } from "@fvtt-world-cli/protocol";
 import { describe, expect, it } from "vitest";
 
 import { humanizeCommandResult, RENDERERS, registerRenderers } from "../src/render/registry.js";
 
-const INTENTIONAL_FALLBACK_JSON: readonly string[] = [];
+const INTENTIONAL_FALLBACK_JSON: readonly string[] = COMMAND_NAMES.filter(
+  (name) => !DISCOVERABLE_COMMAND_NAMES.includes(name)
+);
 
 describe("human-output renderer registry", () => {
-  it("registers a renderer for every protocol command except the intentional JSON fallbacks", () => {
+  it("registers a renderer for every advertised command and none for internal plumbing", () => {
     const expected = COMMAND_NAMES.filter((name) => !INTENTIONAL_FALLBACK_JSON.includes(name)).sort();
     expect(expected.length).toBeGreaterThan(0);
+    expect(INTENTIONAL_FALLBACK_JSON.length).toBeGreaterThan(0);
     expect(Object.keys(RENDERERS).sort()).toEqual(expected);
   });
 

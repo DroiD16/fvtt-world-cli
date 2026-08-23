@@ -5,10 +5,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { COMMAND_NAMES, ERROR_CODES, MODULE_ID } from "../packages/protocol/src/index.js";
+import { DISCOVERABLE_COMMAND_NAMES, ERROR_CODES, MODULE_ID } from "../packages/protocol/src/index.js";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:30000";
-const EXPECTED_COMMANDS = [...COMMAND_NAMES].sort();
+const EXPECTED_COMMANDS = [...DISCOVERABLE_COMMAND_NAMES].sort();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");

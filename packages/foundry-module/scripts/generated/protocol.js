@@ -234,7 +234,11 @@ var ERROR_CODES = Object.freeze({
 });
 
 // packages/protocol/src/schemas/shared.js
-var cmd = (paramsSchema, { mutation = false } = {}) => ({ mutation, paramsSchema });
+var cmd = (paramsSchema, { mutation = false, discovery = true } = {}) => ({
+  mutation,
+  ...discovery ? {} : { discovery: false },
+  paramsSchema
+});
 function mergeCommandFamilies(families) {
   const merged = {};
   for (const family of families) {
@@ -902,6 +906,31 @@ var actorCommands = {
 };
 var actorCompendiumImportCommands = {
   "actor.import-from-compendium": cmd(compendiumImportSchema(actorPatchSchema), { mutation: true })
+};
+
+// packages/protocol/src/schemas/approval.js
+var approvalIdProperty = {
+  approvalId: { type: "string", minLength: 22, maxLength: 22, pattern: "^[A-Za-z0-9_-]{22}$" }
+};
+var approvalAwaitSchema = {
+  type: "object",
+  required: ["approvalId"],
+  properties: {
+    ...approvalIdProperty,
+    waitMs: { type: "integer", minimum: 0, maximum: APPROVAL_AWAIT_PARK_CAP_MS }
+  },
+  additionalProperties: false
+};
+var approvalCancelSchema = {
+  type: "object",
+  required: ["approvalId"],
+  properties: { ...approvalIdProperty },
+  additionalProperties: false
+};
+var approvalCommands = {
+  "approval.await": cmd(approvalAwaitSchema, { discovery: false }),
+  "approval.cancel": cmd(approvalCancelSchema, { discovery: false }),
+  "policy.snapshot": cmd(emptyObjectSchema, { discovery: false })
 };
 
 // packages/protocol/src/schemas/cards.js
@@ -4485,12 +4514,16 @@ var COMMAND_DEFINITIONS = deepFreeze(
     settingCommands,
     actorCompendiumImportCommands,
     worldAuditCommands,
-    worldSearchCommands
+    worldSearchCommands,
+    approvalCommands
   ])
 );
 var COMMAND_NAMES = deepFreeze(Object.keys(COMMAND_DEFINITIONS));
 var WRITE_COMMANDS = deepFreeze(
   COMMAND_NAMES.filter((command) => COMMAND_DEFINITIONS[command].mutation === true)
+);
+var DISCOVERABLE_COMMAND_NAMES = deepFreeze(
+  COMMAND_NAMES.filter((command) => COMMAND_DEFINITIONS[command].discovery !== false)
 );
 var REQUEST_SCHEMA = {
   type: "object",
@@ -5290,6 +5323,7 @@ export {
   DEFAULT_DAEMON_URL,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
+  DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
   FOG_RESET_CONFIRM_TIMEOUT_MS,
