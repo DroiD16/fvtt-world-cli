@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createCommandRouter } from "../scripts/command-router.js";
 import {
+  APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+  COMMAND_DEFINITIONS,
   COMMAND_NAMES,
   DEFAULT_COMMAND_PROFILE,
   ERROR_CODES,
@@ -24,6 +26,24 @@ const GOVERNED_COMMANDS = COMMAND_NAMES.filter((command) => !EXEMPT.has(command)
 const APPROVE_BY_PROFILE = GOVERNED_COMMANDS.filter(
   (command) => DEFAULT_COMMAND_PROFILE[command] === "approve"
 );
+
+const PREVIEWABLE_APPROVE_COMMANDS = APPROVE_BY_PROFILE.filter(
+  (command) => COMMAND_DEFINITIONS[command].paramsSchema.properties?.dryRun
+);
+const PREVIEW_FIXTURES = {
+  ids: ["missing-fixture-id-1"],
+  sceneId: "scene-1",
+  tokenId: "token-a",
+  actorId: "actor-1",
+  itemId: "item-1",
+  journalId: "journal-1",
+  macroId: "macro-1",
+  playlistId: "playlist-1",
+  tableId: "table-1",
+  combatId: "combat-1",
+  folderId: "folder-actors-test"
+};
+const PREVIEWS_REACHING_A_HANDLER = 23;
 
 const APPROVAL_ID = "aaaaaaaaaaaaaaaaaaaaaa";
 const EXEMPT_PARAMS = {
@@ -241,6 +261,35 @@ describe("command policy gate", () => {
       expect(response.error.details).not.toHaveProperty("approvalRequired");
     });
 
+    it("is marked in every family whose preview the fake world can reach", async () => {
+      const marked = [];
+      const unmarked = [];
+
+      for (const command of PREVIEWABLE_APPROVE_COMMANDS) {
+        const required = COMMAND_DEFINITIONS[command].paramsSchema.required ?? [];
+        if (required.some((key) => !Object.hasOwn(PREVIEW_FIXTURES, key))) {
+          continue;
+        }
+
+        const params = { dryRun: true };
+        for (const key of required) {
+          params[key] = PREVIEW_FIXTURES[key];
+        }
+
+        const response = await router().route(createRequest(command, params));
+        if (!response.ok) {
+          continue;
+        }
+
+        (response.result?.approvalRequired === true ? marked : unmarked).push(command);
+      }
+
+      expect(unmarked).toEqual([]);
+      expect(marked.length, `only ${marked.length} previews reached a handler`).toBeGreaterThanOrEqual(
+        PREVIEWS_REACHING_A_HANDLER
+      );
+    });
+
     it("is answered by handlers that never claim to need approval themselves", () => {
       const producers = readdirSync(HANDLERS_DIR)
         .filter((entry) => entry.endsWith(".js"))
@@ -335,17 +384,76 @@ describe("command policy gate", () => {
     });
   });
 
+  describe("the settings the policy lives in", () => {
+    function registerPolicySettings() {
+      globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.COMMAND_POLICY, {
+        name: "FVTTWORLDCLI.Settings.CommandPolicyName",
+        scope: "client",
+        config: false,
+        type: Object,
+        default: {}
+      });
+      globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES, {
+        name: "FVTTWORLDCLI.Settings.ApprovalTimeoutMinutesName",
+        scope: "client",
+        config: true,
+        type: Number,
+        default: APPROVAL_TIMEOUT_DEFAULT_MINUTES
+      });
+    }
+
+    it("lists both of them, the hidden one included", async () => {
+      registerPolicySettings();
+
+      const response = await router().route(createRequest("setting.list", {}));
+
+      const listed = response.result.settings.filter(
+        (row) => row.namespace === MODULE_ID && row.key !== undefined
+      );
+      expect(listed.map((row) => row.key)).toEqual(
+        expect.arrayContaining(["commandPolicy", "approvalTimeoutMinutes"])
+      );
+      for (const row of listed) {
+        expect(row, row.key).not.toHaveProperty("valueRedacted");
+      }
+    });
+
+    it("reads the stored policy and timeout back unredacted", async () => {
+      registerPolicySettings();
+      await storePolicy({ "actor.get": "deny" });
+      await globalThis.game.settings.set(MODULE_ID, MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES, 5);
+
+      const policy = await router().route(
+        createRequest("setting.get", { namespace: MODULE_ID, key: MODULE_SETTING_KEYS.COMMAND_POLICY })
+      );
+      const timeout = await router().route(
+        createRequest("setting.get", {
+          namespace: MODULE_ID,
+          key: MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES
+        })
+      );
+
+      expect(policy.result.setting.value).toEqual({ version: 1, overrides: { "actor.get": "deny" } });
+      expect(policy.result.setting).not.toHaveProperty("valueRedacted");
+      expect(timeout.result.setting.value).toBe(5);
+    });
+  });
+
   describe("the params the gate reads", () => {
     it("leaves them untouched on a refusal and on a marked preview", async () => {
       await storePolicy({ "actor.update": "deny" });
       const denied = { actorId: "actor-1", patch: { name: "Denied Rename" }, dryRun: true };
       const previewed = { actorId: await createDeletableActor(), dryRun: true };
+      const deniedBefore = structuredClone(denied);
+      const previewedBefore = structuredClone(previewed);
 
-      await router().route({ ...createRequest("actor.update", denied), params: denied });
-      await router().route({ ...createRequest("actor.delete", previewed), params: previewed });
+      const refusal = await router().route(createRequest("actor.update", denied));
+      const preview = await router().route(createRequest("actor.delete", previewed));
 
-      expect(denied).toEqual({ actorId: "actor-1", patch: { name: "Denied Rename" }, dryRun: true });
-      expect(previewed).toEqual({ actorId: "actor-created", dryRun: true });
+      expect(refusal.error.code).toBe(ERROR_CODES.COMMAND_DENIED);
+      expect(preview.result.approvalRequired).toBe(true);
+      expect(denied).toEqual(deniedBefore);
+      expect(previewed).toEqual(previewedBefore);
     });
   });
 
