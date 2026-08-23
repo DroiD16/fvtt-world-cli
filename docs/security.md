@@ -150,7 +150,10 @@ The command policy lives in two of this module's own client-scoped settings, `co
 are denied has less reason to keep attempting them. Because no setting-write command exists, the
 policy is beyond the CLI's reach by construction: only a human editing it in Foundry can change it.
 That edit happens in the GM-only Command permissions window, reachable from Configure Settings →
-Module Settings, which is the only writer of both settings.
+Module Settings, which is the only writer of the policy itself. The approval timeout is also a plain
+number field in the same Module Settings form. Every read resolves that setting against the
+protocol's bounds, and a value outside them falls back to the default, so an edit there cannot put
+an approval wait outside the supported range.
 Client scope means the policy belongs to the browser profile that holds the bridge, so another
 browser, profile, or machine applies its own policy rather than the one configured here.
 
