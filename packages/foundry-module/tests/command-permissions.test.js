@@ -175,13 +175,15 @@ describe("Command permissions application", () => {
   function application() {
     const Application = createCommandPermissionsApplication();
     const app = new Application();
-    const dispatch = (action, dataset = {}) =>
-      Application.DEFAULT_OPTIONS.actions[action].call(
-        app,
-        { preventDefault: vi.fn() },
-        { dataset: { action, ...dataset } }
-      );
-    return { app, Application, dispatch };
+    const events = [];
+    const dispatch = (action, dataset = {}) => {
+      const event = { preventDefault: vi.fn() };
+      events.push(event);
+      return Application.DEFAULT_OPTIONS.actions[action].call(app, event, {
+        dataset: { action, ...dataset }
+      });
+    };
+    return { app, Application, dispatch, events };
   }
 
   function storedPolicy() {
@@ -211,6 +213,9 @@ describe("Command permissions application", () => {
     expect(Application.DEFAULT_OPTIONS.window.contentClasses).toEqual(["standard-form"]);
     expect(Application.DEFAULT_OPTIONS.classes).toEqual(["fvtt-world-cli-policy"]);
     expect(Application.DEFAULT_OPTIONS.position).toMatchObject({ width: 760, height: 720 });
+    expect(Application.PARTS.permissions.template).toBe(
+      "modules/fvtt-world-cli/templates/command-permissions.hbs"
+    );
     expect(Application.PARTS.permissions.scrollable).toEqual([".fvtt-world-cli-policy-list"]);
   });
 
@@ -326,6 +331,14 @@ describe("Command permissions application", () => {
     for (const command of subtree) {
       expect(findRow(context.nodes, command).behavior).toBe("approve");
     }
+  });
+
+  it("keeps a node switch inside its summary from toggling that group open", async () => {
+    const { dispatch, events } = application();
+
+    await dispatch("fillNode", { path: DEEP_NODE_PATH, behavior: "deny" });
+
+    expect(events.at(-1).preventDefault).toHaveBeenCalled();
   });
 
   it("counts an exempt command at its allowed value, so its group never reads as uniform", async () => {
