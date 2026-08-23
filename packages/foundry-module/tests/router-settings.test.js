@@ -835,6 +835,37 @@ describe("settings state in the fake Foundry", () => {
     expect(globalThis.__routerTestState.settingValues.get("test-module.mode")).toBe("deny");
   });
 
+  it("hands out a separate copy of an object value on every read", async () => {
+    globalThis.game.settings.register("test-module", "policy", {
+      scope: "world",
+      config: false,
+      type: Object,
+      default: { version: 1, overrides: {} }
+    });
+
+    const fromDefault = globalThis.game.settings.get("test-module", "policy");
+    fromDefault.overrides["actor.delete"] = "deny";
+
+    expect(globalThis.game.settings.get("test-module", "policy")).toEqual({ version: 1, overrides: {} });
+
+    const written = { version: 1, overrides: { "actor.create": "allow" } };
+    await globalThis.game.settings.set("test-module", "policy", written);
+    written.overrides["actor.create"] = "deny";
+
+    expect(globalThis.game.settings.get("test-module", "policy")).toEqual({
+      version: 1,
+      overrides: { "actor.create": "allow" }
+    });
+
+    const fromStore = globalThis.game.settings.get("test-module", "policy");
+    fromStore.overrides["actor.delete"] = "deny";
+
+    expect(globalThis.game.settings.get("test-module", "policy")).toEqual({
+      version: 1,
+      overrides: { "actor.create": "allow" }
+    });
+  });
+
   it("returns an empty string for a pair no package registered", () => {
     expect(globalThis.game.settings.get("test-module", "unknown")).toBe("");
   });

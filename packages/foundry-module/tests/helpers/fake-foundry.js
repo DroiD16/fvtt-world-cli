@@ -1007,6 +1007,10 @@ function createTableResultDocument(id, data) {
   return row;
 }
 
+function copySettingValue(value) {
+  return value !== null && typeof value === "object" ? JSON.parse(JSON.stringify(value)) : value;
+}
+
 function isSameStoredValue(current, next) {
   return JSON.stringify(current ?? null) === JSON.stringify(next ?? null);
 }
@@ -3775,15 +3779,18 @@ export function installFakeFoundry() {
       get: vi.fn((namespace, key) => {
         const id = `${namespace}.${key}`;
         if (settingValues.has(id)) {
-          return settingValues.get(id);
+          return copySettingValue(settingValues.get(id));
         }
 
         const registration = settingRegistrations.get(id);
-        return registration && registration.default !== undefined ? registration.default : "";
+        return registration && registration.default !== undefined
+          ? copySettingValue(registration.default)
+          : "";
       }),
       set: vi.fn(async (namespace, key, value) => {
-        settingValues.set(`${namespace}.${key}`, value);
-        return value;
+        const stored = copySettingValue(value);
+        settingValues.set(`${namespace}.${key}`, stored);
+        return copySettingValue(stored);
       })
     },
     scenes: createCollection([scene, inactiveScene]),
