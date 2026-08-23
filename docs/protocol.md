@@ -15,10 +15,21 @@ size limits are defined by the protocol package and discoverable at runtime:
 
 ## Versioning
 
-The protocol is versioned. Every transport message carries the protocol version, and an unsupported
-version is rejected at the bridge handshake and during command handling rather than degraded
-silently. The current version is `1.1.0`; matching is exact, so a daemon and a Foundry module from
-different releases refuse each other at the handshake instead of negotiating a subset.
+The protocol version is the product release version: every release sets it to that release's number,
+even when the wire contract did not change. Every transport message carries it, matching is exact,
+and an unsupported version is rejected at the bridge handshake and during command handling rather
+than degraded silently. Both halves of an installation therefore come from the same release; a
+daemon and a Foundry module from different releases refuse each other instead of negotiating a
+subset. The current version is `1.1.0`.
+
+Recovering from a refusal is an operator action rather than a retry: the rejected module load does not
+reconnect on its own, so the bridge returns only after both halves are on the same release, the daemon
+has been restarted, and the GM client has been reloaded.
+
+`3.0` is the one protocol version published before the release-lockstep rule, and it is compared as
+release `1.0.0`, so the accepted `3.0` → `1.1.0` step is ordered like any other release step. A
+component built before the mismatch details described under the error model cannot present them when
+it is the side reporting the failure; that gap is specific to the `3.0` transition.
 
 ## Transport model
 
@@ -199,16 +210,66 @@ code set is exported by the protocol package. The classes consumers act on:
 | Safety/policy | `DELETE_FORBIDDEN`, `PATH_NOT_ALLOWED` | Change the requested operation |
 | Capability | `UNSUPPORTED_OPERATION` | Choose a supported workflow or runtime |
 | Size/resource | `PAYLOAD_TOO_LARGE`, `QUERY_TOO_BROAD` | Reduce or page the request |
+| Command policy | `COMMAND_DENIED` | Treat the command as unavailable on that GM client |
+| Approval | `APPROVAL_PENDING`, `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED`, `APPROVAL_QUEUE_FULL`, `APPROVAL_UNKNOWN` | Apply the approval rules below |
 | Bridge state | `BRIDGE_NOT_READY`, `BRIDGE_TIMEOUT`, `BRIDGE_DISCONNECTED` | Apply the delivery rules below |
 | Unexpected | `INTERNAL_ERROR` | Preserve details and investigate |
 
 Foundry DataModel validation failures surface as parameter errors and are distinguished in details
 where available. A failed nested lookup identifies the level that failed.
 
+`UNSUPPORTED_PROTOCOL_VERSION` details carry `expectedVersion`, `actualVersion`, the `handshake` that
+refused the message, and `staleComponent` — `module`, `cli-daemon`, or `unknown` — so a consumer can
+name the half that has to be updated. The ordering is the comparison described under versioning;
+`unknown` is reported whenever a version cannot be ordered or the peer is unidentified, in place of a
+guess.
+
 With JSON output, a failed command emits one structured error envelope on stdout and exits
 non-zero. The exit code is a coarse process classification; the structured error code is the
 authoritative automation signal. `exec --stdin` reports per-line errors and uses its own aggregate
 exit status.
+
+## Approval flow
+
+A GM client's command policy can require human approval before a command runs. An approval is a
+decision about one invocation, taken by the GM in Foundry: it is unrelated to pairing, and it is not
+the post-write confirmation that a mutation persisted. The policy that governs an invocation belongs
+to the GM client holding the bridge.
+
+The wait is two-phase, because a decision can outlast any request timeout:
+
+- The ordinary request is answered at once with `APPROVAL_PENDING`, whose details carry `approvalId`,
+  `expiresAt`, and `command`. The request is not held open, so a decision taken an hour later does not
+  depend on one socket surviving. That the phase-one answer is an error envelope is deliberate: a
+  consumer that does not implement the wait loop fails safe instead of reporting success.
+- `approval.await` polls that id. A poll parks in the Foundry module for at most
+  `APPROVAL_AWAIT_PARK_CAP_MS`, and its optional `waitMs` may ask for less, so a parked poll stays
+  inside the caller's own request timeout. The result echoes the id and is either
+  `{ approvalId, status: "pending", expiresAt }` or `{ approvalId, status: "resolved", outcome,
+  response? }`.
+- The terminal outcomes are `approved`, `denied`, `timeout`, and `cancelled`. `approved` carries the
+  original command's full outcome — success or handler error — as `response`, so the caller learns
+  what a direct call would have returned. `denied`, `timeout`, and `cancelled` mean the command was
+  not executed and the same request is safe to send again; they reach the caller as
+  `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, and `APPROVAL_CANCELLED`.
+- A terminal outcome is not consumed by the first waiter. It stays available for
+  `APPROVAL_RESULT_RETENTION_MS`, which covers a lost poll response and several waiters on one id,
+  and then expires.
+- `approval.cancel` asks for a still-pending decision to be abandoned and answers
+  `{ approvalId, status }`, where `status` is `cancelled`, `executing`, `resolved`, or `unknown`. Only
+  `cancelled` guarantees that the command will not run: `executing` means the GM's decision already
+  won the race, and a started handler cannot be recalled.
+- `APPROVAL_QUEUE_FULL` is admission control. The bounded pending store refused the request before
+  anything was displayed or executed, so nothing ran.
+- `APPROVAL_UNKNOWN` answers an id nobody holds. Approval state is runtime state: it does not survive
+  a GM client reload, and a retained outcome expires. It is indeterminate — the command may never have
+  started or may have completed — so world state is the only authority, and a read comes before any
+  re-request.
+- A dry run is not gated by an approval: the preview of an approval-listed command runs without a
+  decision, while a command the policy denies is refused in preview too.
+- `policy.snapshot` reports the effective policy as `{ approve: [names], deny: [names] }`, resolved by
+  the same rules the dispatch-time gate applies. It is advisory; the policy can change between the
+  snapshot and the next call, and the gate at dispatch time is the authority.
 
 ## Delivery states and retries
 
@@ -229,8 +290,11 @@ protocol and CLI constants; runtime flags can override the client and daemon req
 
 ## Compatibility rules
 
-- Additive result and handshake fields are preferred for compatible evolution.
-- Request schemas remain explicit and versioned.
+- One release ships the CLI, the daemon, and the Foundry module as a compatible set, and the protocol
+  version they share is that release's version. Mixed-release operation is refused at the handshake
+  rather than supported, so there is no negotiated subset to reason about.
+- Within a release line, additive result and handshake fields are how the contract evolves without
+  changing the meaning of existing fields; request schemas remain explicit and versioned.
 - A bridge advertises the command set it can execute; the daemon forwards only advertised commands.
 - Unsupported version-dependent behavior produces a predictable error rather than a false success.
 
