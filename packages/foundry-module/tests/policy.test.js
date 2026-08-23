@@ -8,8 +8,7 @@ import {
   DEFAULT_COMMAND_PROFILE,
   MODULE_ID,
   POLICY_BEHAVIORS,
-  POLICY_EXEMPT_COMMANDS,
-  isDestructiveCommand
+  POLICY_EXEMPT_COMMANDS
 } from "../scripts/generated/protocol.js";
 import {
   buildPolicySnapshot,
@@ -25,20 +24,24 @@ const EXEMPT = new Set(POLICY_EXEMPT_COMMANDS);
 
 const GOVERNED_COMMANDS = COMMAND_NAMES.filter((command) => !EXEMPT.has(command));
 
-function firstCommandWithProfile(behavior) {
-  const command = GOVERNED_COMMANDS.find((name) => DEFAULT_COMMAND_PROFILE[name] === behavior);
+function commandsWithProfile(behavior) {
+  return GOVERNED_COMMANDS.filter((name) => DEFAULT_COMMAND_PROFILE[name] === behavior);
+}
+
+function commandWithProfile(behavior, index = 0) {
+  const command = commandsWithProfile(behavior)[index];
   if (!command) {
-    throw new Error(`the default profile assigns no governed command the behavior ${behavior}`);
+    throw new Error(
+      `the default profile assigns fewer than ${index + 1} governed commands the behavior ${behavior}`
+    );
   }
 
   return command;
 }
 
-const APPROVE_BY_DEFAULT = firstCommandWithProfile("approve");
-const ALLOW_BY_DEFAULT = firstCommandWithProfile("allow");
-const SECOND_ALLOW_BY_DEFAULT = GOVERNED_COMMANDS.filter(
-  (name) => DEFAULT_COMMAND_PROFILE[name] === "allow"
-)[1];
+const APPROVE_BY_DEFAULT = commandWithProfile("approve");
+const ALLOW_BY_DEFAULT = commandWithProfile("allow");
+const SECOND_ALLOW_BY_DEFAULT = commandWithProfile("allow", 1);
 
 function storedPolicy(overrides) {
   return { version: 1, overrides };
@@ -261,10 +264,10 @@ describe("resolveApprovalTimeoutMinutes", () => {
 });
 
 describe("buildPolicySnapshot", () => {
-  const DESTRUCTIVE_COMMANDS = GOVERNED_COMMANDS.filter((command) => isDestructiveCommand(command));
+  const APPROVE_BY_PROFILE = commandsWithProfile("approve");
 
-  it("lists the destructive commands as approve and nothing as deny for an empty policy", () => {
-    expect(buildPolicySnapshot(null)).toEqual({ approve: DESTRUCTIVE_COMMANDS, deny: [] });
+  it("lists the commands the profile marks approve and nothing as deny for an empty policy", () => {
+    expect(buildPolicySnapshot(null)).toEqual({ approve: APPROVE_BY_PROFILE, deny: [] });
   });
 
   it("reflects overrides in both lists and keeps registry order", () => {
@@ -272,13 +275,14 @@ describe("buildPolicySnapshot", () => {
       storedPolicy({
         [ALLOW_BY_DEFAULT]: "approve",
         [SECOND_ALLOW_BY_DEFAULT]: "deny",
-        [DESTRUCTIVE_COMMANDS[0]]: "allow"
+        [APPROVE_BY_DEFAULT]: "allow"
       })
     );
 
     const expectedApprove = GOVERNED_COMMANDS.filter(
       (command) =>
-        command === ALLOW_BY_DEFAULT || (isDestructiveCommand(command) && command !== DESTRUCTIVE_COMMANDS[0])
+        command === ALLOW_BY_DEFAULT ||
+        (DEFAULT_COMMAND_PROFILE[command] === "approve" && command !== APPROVE_BY_DEFAULT)
     );
 
     expect(snapshot.approve).toEqual(expectedApprove);
