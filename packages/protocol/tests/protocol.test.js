@@ -2012,6 +2012,7 @@ describe("protocol contract", () => {
     });
 
     it("parks an approval poll for the same ceiling the pairing wait uses", () => {
+      expect(APPROVAL_AWAIT_PARK_CAP_MS).toBe(25_000);
       expect(APPROVAL_AWAIT_PARK_CAP_MS).toBe(AUTH_AWAIT_PARK_CAP_MS);
       expect(APPROVAL_AWAIT_PARK_CAP_MS).toBeLessThan(BRIDGE_LEASE_MS);
       expect(APPROVAL_RESULT_RETENTION_MS).toBe(300_000);
