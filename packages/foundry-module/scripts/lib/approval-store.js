@@ -22,7 +22,8 @@ export const APPROVAL_UNKNOWN_REASONS = Object.freeze({
 
 export const APPROVAL_REFUSAL_REASONS = Object.freeze({
   PENDING_COUNT: "pending-count",
-  PENDING_BYTES: "pending-bytes"
+  PENDING_BYTES: "pending-bytes",
+  RETAINED_COUNT: "retained-count"
 });
 
 /** @typedef {"pending" | "executing" | "resolved" | "denied" | "timeout" | "cancelled"} ApprovalState */
@@ -31,7 +32,7 @@ export const APPROVAL_REFUSAL_REASONS = Object.freeze({
 /** @typedef {{ approvalId: string, command: string, params: unknown, targets: unknown[], requestBytes: number }} ApprovalExecution */
 /** @typedef {(execution: ApprovalExecution) => Promise<unknown> | unknown} ApprovalExecutor */
 /**
- * @typedef {{ approvalId: string, status: "pending", expiresAt: number }
+ * @typedef {{ approvalId: string, status: "pending", expiresAt?: number }
  *   | { approvalId: string, status: "resolved", outcome: ApprovalOutcome, response?: unknown }
  *   | { approvalId: string, status: "unknown", reason?: string }} ApprovalReport
  */
@@ -125,12 +126,14 @@ function resolveByteBudget(provider) {
     : DEFAULT_WS_MAX_PAYLOAD_BYTES;
 }
 
+// The byte budget is the only bound between a caller's frame and this store's memory, so a weight it
+// cannot express is charged the whole budget rather than nothing, and refuses the request.
 /**
  * @param {unknown} value
  * @returns {number}
  */
 function normalizeByteWeight(value) {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : Number.POSITIVE_INFINITY;
 }
 
 export class ApprovalStore {
@@ -189,12 +192,11 @@ export class ApprovalStore {
   }
 
   /**
-   * @param {{ command: string, params: unknown, targets?: unknown[], requestBytes?: number }} request
+   * @param {{ command: string, params: unknown, targets?: unknown[], requestBytes: number }} request
    * @returns {ApprovalAdmission}
    */
-  admit({ command, params, targets = [], requestBytes = 0 }) {
+  admit({ command, params, targets = [], requestBytes }) {
     this.#pruneExpired();
-    this.#forgetOldestSettled();
 
     const bytes = normalizeByteWeight(requestBytes);
     if (this.#countPending() >= this.pendingMax) {
@@ -203,6 +205,10 @@ export class ApprovalStore {
 
     if (this.#pendingBytes + bytes > resolveByteBudget(this.pendingByteBudgetProvider)) {
       return { admitted: false, reason: APPROVAL_REFUSAL_REASONS.PENDING_BYTES };
+    }
+
+    if (!this.#reclaimRecordSlot()) {
+      return { admitted: false, reason: APPROVAL_REFUSAL_REASONS.RETAINED_COUNT };
     }
 
     const approvalId = createApprovalId();
@@ -279,6 +285,9 @@ export class ApprovalStore {
 
     if (record.state === "pending") {
       this.#settleTerminal(record, "cancelled");
+      // The client that asked to cancel receives this verdict as the return value, so it is already
+      // delivered; without that, a cancel loop would fill the record table with unreclaimable slots.
+      record.delivered = true;
       return "cancelled";
     }
 
@@ -489,7 +498,8 @@ export class ApprovalStore {
   }
 
   // An outcome nobody has read yet is worth more than one already handed to a waiter, so a new
-  // response displaces retained responses that were already delivered before it gives up its own.
+  // response displaces retained responses that were already delivered before it gives up its own —
+  // but only once their combined weight is known to be enough, so no outcome is spent for nothing.
   /**
    * @param {ApprovalRecord} record
    * @param {number} responseBytes
@@ -501,17 +511,26 @@ export class ApprovalStore {
       return false;
     }
 
-    for (const candidate of this.#requests.values()) {
-      if (this.#retainedResponseBytes + responseBytes <= budget) {
-        return true;
-      }
+    if (this.#retainedResponseBytes + responseBytes <= budget) {
+      return true;
+    }
 
-      if (candidate !== record && candidate.hasResponse && candidate.delivered) {
-        this.#releaseResponse(candidate);
+    const candidates = [...this.#requests.values()].filter(
+      (candidate) => candidate !== record && candidate.hasResponse && candidate.delivered
+    );
+    const reclaimable = candidates.reduce((total, candidate) => total + candidate.responseBytes, 0);
+    if (this.#retainedResponseBytes - reclaimable + responseBytes > budget) {
+      return false;
+    }
+
+    for (const candidate of candidates) {
+      this.#releaseResponse(candidate);
+      if (this.#retainedResponseBytes + responseBytes <= budget) {
+        break;
       }
     }
 
-    return this.#retainedResponseBytes + responseBytes <= budget;
+    return true;
   }
 
   /**
@@ -527,28 +546,31 @@ export class ApprovalStore {
 
   // Terminal records outlive their request for the whole retention window, so their number is
   // capped too: without this, a client that requests and cancels in a loop grows the store freely.
-  #forgetOldestSettled() {
+  // Only an outcome its client already holds, or one already reduced to a tombstone, is forgotten to
+  // make room; an answer nobody has read is never traded for a new request, which is refused instead.
+  /**
+   * @returns {boolean}
+   */
+  #reclaimRecordSlot() {
     if (this.#requests.size < this.recordMax) {
-      return;
+      return true;
     }
 
     const settled = [...this.#requests.values()].filter((record) => record.terminalAt !== null);
-    const order = [
-      settled.filter((record) => record.delivered),
-      settled.filter((record) => !record.delivered && !record.hasResponse),
-      settled.filter((record) => !record.delivered && record.hasResponse)
+    const reclaimable = [
+      ...settled.filter((record) => record.delivered),
+      ...settled.filter((record) => !record.delivered && record.unknownReason !== null)
     ];
 
-    for (const candidates of order) {
-      for (const candidate of candidates) {
-        if (this.#requests.size < this.recordMax) {
-          return;
-        }
-
-        this.#releaseResponse(candidate);
-        this.#requests.delete(candidate.approvalId);
+    for (const candidate of reclaimable) {
+      this.#retainedResponseBytes -= candidate.responseBytes;
+      this.#requests.delete(candidate.approvalId);
+      if (this.#requests.size < this.recordMax) {
+        return true;
       }
     }
+
+    return false;
   }
 
   /**
@@ -579,8 +601,11 @@ export class ApprovalStore {
 
     switch (record.state) {
       case "pending":
-      case "executing":
         return { approvalId: record.approvalId, status: "pending", expiresAt: record.expiresAt };
+      // An approved command that is already running can no longer expire, and its former deadline may
+      // be long past, so the report carries no deadline a caller could mistake for a live one.
+      case "executing":
+        return { approvalId: record.approvalId, status: "pending" };
       case "resolved":
         record.delivered = true;
         return {

@@ -248,8 +248,9 @@ The wait is two-phase, because a decision can outlast any request timeout:
 - `approval.await { approvalId, waitMs? }` polls that id. A poll parks in the Foundry module for at
   most `APPROVAL_AWAIT_PARK_CAP_MS`; its optional `waitMs` may ask for a shorter park and is bounded
   by the cap. The result echoes the id and is either
-  `{ approvalId, status: "pending", expiresAt }` or `{ approvalId, status: "resolved", outcome,
-  response? }`.
+  `{ approvalId, status: "pending", expiresAt? }` or `{ approvalId, status: "resolved", outcome,
+  response? }`. The deadline is reported while the decision is still open; an approved command that is
+  already running can no longer time out, and its answer carries no deadline.
 - The terminal outcomes are `approved`, `denied`, `timeout`, and `cancelled`. `approved` carries the
   original command's full outcome — success or handler error — as `response`, so the caller learns
   what a direct call would have returned. `denied`, `timeout`, and `cancelled` mean the command was
@@ -262,8 +263,9 @@ The wait is two-phase, because a decision can outlast any request timeout:
   `{ approvalId, status }`, where `status` is `cancelled`, `executing`, `resolved`, or `unknown`. Only
   `cancelled` guarantees that the command will not run: `executing` means the GM's decision already
   won the race, and a started handler cannot be recalled.
-- `APPROVAL_QUEUE_FULL` is admission control. The bounded pending store refused the request before
-  anything was displayed or executed, so nothing ran.
+- `APPROVAL_QUEUE_FULL` is admission control. The bounded store refused the request before anything
+  was displayed or executed, so nothing ran. It refuses on the number and weight of the decisions
+  still awaiting the GM, and also rather than discard a retained outcome no client has read yet.
 - `APPROVAL_UNKNOWN` answers an id the module has no approval state for. Approval state is runtime
   state: it does not survive a GM client reload, and a retained outcome expires. It is indeterminate
   — the command may never have started or may have completed — so world state is the only authority,

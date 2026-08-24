@@ -57,6 +57,10 @@ function createClock() {
       return timers.size;
     },
 
+    liveHandlers() {
+      return [...timers.values()].map((timer) => timer.handler);
+    },
+
     /** @param {number} ms */
     async advance(ms) {
       const target = now + ms;
@@ -219,8 +223,8 @@ describe("approval store admission", () => {
     const first = admitRequest(store);
     const second = admitRequest(store);
 
-    store.cancel(first.approvalId);
-    store.cancel(second.approvalId);
+    await store.decide(first.approvalId, "deny");
+    await store.decide(second.approvalId, "deny");
     await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
     admitRequest(store);
     admitRequest(store);
@@ -232,19 +236,43 @@ describe("approval store admission", () => {
     await expect(store.awaitOutcome({ approvalId: second.approvalId, waitMs: 0 })).resolves.toEqual({
       approvalId: second.approvalId,
       status: "resolved",
-      outcome: "cancelled"
+      outcome: "denied"
     });
   });
 
-  it("caps the number of settled requests it remembers even when none was polled", async () => {
+  it("refuses a new request rather than forget a verdict no client has read", async () => {
+    const { store } = createHarness({ recordMax: 2 });
+    const first = admitRequest(store);
+    const second = admitRequest(store);
+    await store.decide(first.approvalId, "deny");
+    await store.decide(second.approvalId, "deny");
+
+    expect(store.admit({ command: "actor.update", params: {}, requestBytes: 1 })).toEqual({
+      admitted: false,
+      reason: APPROVAL_REFUSAL_REASONS.RETAINED_COUNT
+    });
+    await expect(store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: first.approvalId,
+      status: "resolved",
+      outcome: "denied"
+    });
+    await expect(store.awaitOutcome({ approvalId: second.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: second.approvalId,
+      status: "resolved",
+      outcome: "denied"
+    });
+  });
+
+  it("keeps admitting while a client requests and cancels in a loop", async () => {
     const { store } = createHarness({ recordMax: 2 });
     const first = admitRequest(store);
     store.cancel(first.approvalId);
     const second = admitRequest(store);
     store.cancel(second.approvalId);
 
-    admitRequest(store);
+    const third = admitRequest(store);
 
+    expect(third.approvalId).toMatch(APPROVAL_ID_PATTERN);
     await expect(store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 })).resolves.toEqual({
       approvalId: first.approvalId,
       status: "unknown"
@@ -254,6 +282,17 @@ describe("approval store admission", () => {
       status: "resolved",
       outcome: "cancelled"
     });
+  });
+
+  it("refuses a request whose byte weight cannot be measured", () => {
+    const { store } = createHarness({ pendingByteBudgetProvider: () => 1_000 });
+
+    for (const requestBytes of [Number.POSITIVE_INFINITY, Number.NaN, -1]) {
+      expect(store.admit({ command: "actor.update", params: {}, requestBytes })).toEqual({
+        admitted: false,
+        reason: APPROVAL_REFUSAL_REASONS.PENDING_BYTES
+      });
+    }
   });
 
   it("reads the byte budget again for every admission", () => {
@@ -444,16 +483,27 @@ describe("approval store races", () => {
     expect(executions).toEqual([]);
   });
 
-  it("ignores a timeout that fires while the approved command executes", async () => {
+  it("ignores an expiry that fires after the allow claimed the request", async () => {
     const executor = createDeferred();
     const { store, clock } = createHarness({
       timeoutMinutesProvider: () => 1,
       execute: () => executor.promise
     });
     const admission = admitRequest(store);
+    const [expire] = clock.liveHandlers();
 
     const allow = track(store.decide(admission.approvalId, "allow"));
+    await flush();
+    expect(clock.liveTimers()).toBe(0);
+
+    expire();
     await clock.advance(MS_PER_MINUTE * 2);
+
+    await expect(store.awaitOutcome({ approvalId: admission.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: admission.approvalId,
+      status: "pending"
+    });
+
     executor.settle({ ok: true });
     await flush();
 
@@ -618,7 +668,7 @@ describe("approval store waiters", () => {
     expect(second.value).toEqual(expected);
   });
 
-  it("answers pending as soon as execution starts, so a poll never waits on a handler", async () => {
+  it("answers pending without a deadline once execution starts, so a poll never waits on a handler", async () => {
     const executor = createDeferred();
     const { store } = createHarness({ execute: () => executor.promise });
     const admission = admitRequest(store);
@@ -630,8 +680,7 @@ describe("approval store waiters", () => {
 
     expect(poll.value).toEqual({
       approvalId: admission.approvalId,
-      status: "pending",
-      expiresAt: admission.expiresAt
+      status: "pending"
     });
 
     executor.settle({ ok: true });
@@ -774,6 +823,36 @@ describe("approval store retention", () => {
       approvalId: first.approvalId,
       status: "unknown",
       reason: APPROVAL_UNKNOWN_REASONS.RESULT_RETENTION_CAP
+    });
+  });
+
+  it("keeps a read outcome that could not have made room for the newer one anyway", async () => {
+    const { store } = createHarness({ ...weighedByRequestBytes, resultByteBudgetProvider: () => 100 });
+    const read = admitRequest(store, { requestBytes: 40 });
+    const unread = admitRequest(store, { requestBytes: 50 });
+    const oversized = admitRequest(store, { requestBytes: 60 });
+
+    await store.decide(read.approvalId, "allow");
+    await store.awaitOutcome({ approvalId: read.approvalId, waitMs: 0 });
+    await store.decide(unread.approvalId, "allow");
+    await store.decide(oversized.approvalId, "allow");
+
+    await expect(store.awaitOutcome({ approvalId: oversized.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: oversized.approvalId,
+      status: "unknown",
+      reason: APPROVAL_UNKNOWN_REASONS.RESULT_RETENTION_CAP
+    });
+    await expect(store.awaitOutcome({ approvalId: read.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: read.approvalId,
+      status: "resolved",
+      outcome: "approved",
+      response: { ok: true, weight: 40 }
+    });
+    await expect(store.awaitOutcome({ approvalId: unread.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: unread.approvalId,
+      status: "resolved",
+      outcome: "approved",
+      response: { ok: true, weight: 50 }
     });
   });
 
