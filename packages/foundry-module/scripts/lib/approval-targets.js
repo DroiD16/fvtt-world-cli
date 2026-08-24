@@ -23,6 +23,7 @@ import { getTableById, getTableResultById } from "./table-docs.js";
 /** @typedef {"resolved" | "not-found" | "unspecified" | "proposed" | "path"} ApprovalTargetState */
 /** @typedef {{ idField: string, type: string, resolve: (ids: string[]) => any }} ApprovalTargetNode */
 /** @typedef {{ path: string, node: ApprovalTargetNode }} ApprovalTargetLink */
+/** @typedef {{ property: string, node: ApprovalTargetNode }} ApprovalTargetReference */
 /**
  * @typedef {{
  *   kind: ApprovalTargetKind,
@@ -31,6 +32,7 @@ import { getTableById, getTableResultById } from "./table-docs.js";
  *   elementProperty: string | null,
  *   payloadProperty: string | null,
  *   pathProperties: string[],
+ *   references: ApprovalTargetReference[],
  *   descriptorProperties: string[]
  * }} ApprovalTargetStrategy
  */
@@ -84,6 +86,15 @@ const FILE_PATH_PROPERTIES = Object.freeze(["path", "from", "to"]);
 const DESCRIPTOR_EXCLUDED_PROPERTIES = new Set(["dryRun", "idempotencyKey", "contentBase64"]);
 
 const CREATE_VERBS = new Set(["create", "import-from-compendium"]);
+
+// A card movement command writes to a counterpart stack of its own family that no segment of the
+// command name declares; without this the summary would omit a document the command changes.
+/** @type {Readonly<Record<string, string>>} */
+const COUNTERPART_PROPERTIES = Object.freeze({
+  "cards.deal": "to",
+  "cards.draw": "from",
+  "cards.pass": "to"
+});
 
 /**
  * @param {string} idField
@@ -277,12 +288,20 @@ function buildStrategy(command) {
       ? FILE_PATH_PROPERTIES.filter((property) => declares(property))
       : [];
 
+  const counterpartProperty = COUNTERPART_PROPERTIES[command] ?? null;
+  /** @type {ApprovalTargetReference[]} */
+  const references = counterpartProperty
+    ? [{ property: counterpartProperty, node: TARGET_NODES[segments[0]] }]
+    : [];
+  const referenceProperties = new Set(references.map((reference) => reference.property));
+
   const descriptorProperties = required.filter(
     (property) =>
       properties[property]?.type === "string" &&
       !chainFields.has(property) &&
       property !== elementProperty &&
       !pathProperties.includes(property) &&
+      !referenceProperties.has(property) &&
       !DESCRIPTOR_EXCLUDED_PROPERTIES.has(property)
   );
 
@@ -306,6 +325,7 @@ function buildStrategy(command) {
     elementProperty,
     payloadProperty,
     pathProperties,
+    references,
     descriptorProperties
   });
 }
@@ -469,6 +489,38 @@ function resolveFileTargets(strategy, params) {
 }
 
 /**
+ * @param {ApprovalTargetReference[]} references
+ * @param {Record<string, unknown>} params
+ * @returns {ApprovalTarget[]}
+ */
+function resolveReferenceTargets(references, params) {
+  return references.flatMap((reference) => {
+    const raw = params[reference.property];
+    const values = Array.isArray(raw) ? raw : [raw];
+    /** @type {ApprovalTarget[]} */
+    const targets = [];
+    for (const value of values) {
+      const id = readId(value);
+      if (id === null) {
+        continue;
+      }
+
+      const document = resolveDocument(reference.node, [id]);
+      targets.push({
+        role: reference.property,
+        type: reference.node.type,
+        id,
+        name: readDisplayName(document),
+        state: document ? "resolved" : "not-found",
+        parents: []
+      });
+    }
+
+    return targets;
+  });
+}
+
+/**
  * @param {ApprovalTargetStrategy} strategy
  * @param {Record<string, unknown>} params
  * @returns {{ key: string, value: string }[]}
@@ -484,6 +536,38 @@ function resolveDescriptor(strategy, params) {
   }
 
   return descriptor;
+}
+
+/**
+ * @param {ApprovalTargetStrategy} strategy
+ * @param {Record<string, unknown>} params
+ * @param {ApprovalTarget[]} chainTargets
+ * @param {string | null} collection
+ * @returns {{ targets: ApprovalTarget[], totalCount: number, omittedCount: number }}
+ */
+function resolveKindTargets(strategy, params, chainTargets, collection) {
+  if (strategy.kind === "bulk") {
+    return resolveBulkTargets(strategy, params, chainTargets.map(toParent));
+  }
+
+  if (strategy.kind === "create") {
+    const payload = strategy.payloadProperty ? params[strategy.payloadProperty] : null;
+    const targets = [
+      {
+        role: strategy.payloadProperty ?? "data",
+        type: collection,
+        id: null,
+        name: readDisplayName(payload),
+        state: /** @type {ApprovalTargetState} */ ("proposed"),
+        parents: chainTargets.map(toParent)
+      }
+    ];
+    return { targets, totalCount: 1, omittedCount: 0 };
+  }
+
+  const targets = strategy.kind === "file-path" ? resolveFileTargets(strategy, params) : chainTargets;
+
+  return { targets, totalCount: targets.length, omittedCount: 0 };
 }
 
 /**
@@ -509,39 +593,17 @@ export function resolveApprovalTargets(command, params) {
   const chainTargets = resolveChainTargets(strategy.chain, source);
   const collection = strategy.collection?.node.type ?? null;
   const descriptor = resolveDescriptor(strategy, source);
+  const base = resolveKindTargets(strategy, source, chainTargets, collection);
 
-  if (strategy.kind === "bulk") {
-    const { targets, totalCount, omittedCount } = resolveBulkTargets(
-      strategy,
-      source,
-      chainTargets.map(toParent)
-    );
-    return { kind: strategy.kind, collection, targets, totalCount, omittedCount, descriptor };
-  }
-
-  if (strategy.kind === "create") {
-    const payload = strategy.payloadProperty ? source[strategy.payloadProperty] : null;
-    const targets = [
-      {
-        role: strategy.payloadProperty ?? "data",
-        type: collection,
-        id: null,
-        name: readDisplayName(payload),
-        state: /** @type {ApprovalTargetState} */ ("proposed"),
-        parents: chainTargets.map(toParent)
-      }
-    ];
-    return { kind: strategy.kind, collection, targets, totalCount: 1, omittedCount: 0, descriptor };
-  }
-
-  const targets = strategy.kind === "file-path" ? resolveFileTargets(strategy, source) : chainTargets;
+  const references = resolveReferenceTargets(strategy.references, source);
+  const shownReferences = references.slice(0, APPROVAL_TARGET_DISPLAY_MAX);
 
   return {
     kind: strategy.kind,
     collection,
-    targets,
-    totalCount: targets.length,
-    omittedCount: 0,
+    targets: [...base.targets, ...shownReferences],
+    totalCount: base.totalCount + references.length,
+    omittedCount: base.omittedCount + (references.length - shownReferences.length),
     descriptor
   };
 }

@@ -9,7 +9,9 @@ import {
 } from "../scripts/lib/approval-targets.js";
 import { createDocument, installFakeFoundry } from "./helpers/fake-foundry.js";
 
-const ID_PARAMETER_PATTERN = /Ids?$/;
+// An id-suffixed property, plus the two names a command uses for the counterpart document or path
+// of a move, which carry no suffix.
+const ID_PARAMETER_PATTERN = /^(?:.+Ids?|from|to)$/;
 
 // The ids a summary shows only inside the parameter block: a compendium source outside the world
 // document graph, the opaque approval correlation id, and a sibling or child no segment of the
@@ -45,9 +47,12 @@ function idParameters(command) {
 function resolvedIdParameters(command) {
   const strategy = getApprovalTargetStrategy(command);
   return new Set(
-    [...(strategy?.chain ?? []).map((link) => link.node.idField), strategy?.elementProperty].filter(
-      (property) => typeof property === "string"
-    )
+    [
+      ...(strategy?.chain ?? []).map((link) => link.node.idField),
+      ...(strategy?.pathProperties ?? []),
+      ...(strategy?.references ?? []).map((reference) => reference.property),
+      strategy?.elementProperty
+    ].filter((property) => typeof property === "string")
   );
 }
 
@@ -59,6 +64,23 @@ describe("approval target strategies", () => {
     });
 
     expect(unrecognized).toEqual([]);
+  });
+
+  it("names a document collection for every command that changes the world", () => {
+    const undescribed = COMMAND_NAMES.filter((command) => {
+      if (!COMMAND_DEFINITIONS[command].mutation) {
+        return false;
+      }
+
+      const strategy = getApprovalTargetStrategy(command);
+      return (
+        !strategy ||
+        strategy.kind === "none" ||
+        (strategy.chain.length === 0 && strategy.collection === null && strategy.pathProperties.length === 0)
+      );
+    });
+
+    expect(undescribed).toEqual([]);
   });
 
   it("resolves every id a command declares, or names it as one only the parameters carry", () => {
@@ -191,6 +213,41 @@ describe("approval target resolution", () => {
     expect(summary.totalCount).toBe(ids.length);
     expect(summary.targets).toHaveLength(APPROVAL_TARGET_DISPLAY_MAX);
     expect(summary.omittedCount).toBe(6);
+    expect(summary.totalCount - summary.omittedCount).toBe(summary.targets.length);
+  });
+
+  it("names both stacks a card movement addresses", () => {
+    const deal = resolveApprovalTargets("cards.deal", {
+      cardsId: "cards-deck",
+      to: ["cards-hand", "cards-gone"],
+      count: 2
+    });
+
+    expect(deal.kind).toBe("world-document");
+    expect(deal.targets.map((target) => [target.role, target.name, target.state])).toEqual([
+      ["cardsId", "Poker Deck", "resolved"],
+      ["to", "Player Hand", "resolved"],
+      ["to", null, "not-found"]
+    ]);
+    expect(deal.totalCount - deal.omittedCount).toBe(deal.targets.length);
+    expect(deal.descriptor).toEqual([]);
+
+    const draw = resolveApprovalTargets("cards.draw", { cardsId: "cards-hand", from: "cards-deck" });
+
+    expect(draw.targets.map((target) => [target.role, target.type, target.name])).toEqual([
+      ["cardsId", "Cards", "Player Hand"],
+      ["from", "Cards", "Poker Deck"]
+    ]);
+    expect(draw.descriptor).toEqual([]);
+  });
+
+  it("reports how many counterpart stacks the list leaves out", () => {
+    const to = Array.from({ length: APPROVAL_TARGET_DISPLAY_MAX + 3 }, () => "cards-hand");
+    const summary = resolveApprovalTargets("cards.deal", { cardsId: "cards-deck", to });
+
+    expect(summary.totalCount).toBe(to.length + 1);
+    expect(summary.omittedCount).toBe(3);
+    expect(summary.totalCount - summary.omittedCount).toBe(summary.targets.length);
   });
 
   it("takes the proposed names of a bulk create from its payload", () => {
