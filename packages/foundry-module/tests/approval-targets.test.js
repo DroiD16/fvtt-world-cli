@@ -13,28 +13,28 @@ import { createDocument, installFakeFoundry } from "./helpers/fake-foundry.js";
 // of a move, which carry no suffix.
 const ID_PARAMETER_PATTERN = /^(?:.+Ids?|from|to)$/;
 
-// The ids a summary shows only inside the parameter block: a compendium source outside the world
-// document graph, the opaque approval correlation id, and a sibling or child no segment of the
-// command name declares. A new command whose id is missing here has no resolved target.
+// The ids a summary shows only inside the parameter block: an entry in a compendium, which lies
+// outside the world document graph, and the opaque approval correlation id. A new command whose id
+// is missing here has no resolved target.
 const UNRESOLVED_ID_PARAMETERS = [
   "actor.import-from-compendium entryId",
   "actor.item.import-from-compendium entryId",
   "approval.await approvalId",
   "approval.cancel approvalId",
   "cards.import-from-compendium entryId",
-  "cards.pass cardIds",
-  "combat.roll-initiative combatantIds",
-  "combat.set-initiative combatantId",
   "compendium.get entryId",
   "item.import-from-compendium entryId",
   "journal.import-from-compendium entryId",
-  "journal.ownership.set pageId",
   "macro.import-from-compendium entryId",
   "playlist.import-from-compendium entryId",
-  "playlist.playNext soundId",
   "scene.import-from-compendium entryId",
   "table.import-from-compendium entryId"
 ];
+
+// Families whose commands address no world document: the approval plumbing, compendium sources,
+// managed files, the policy layer, world settings, and world-wide queries. A family in neither this
+// set nor the resolver's node map would reach the GM with no target summary at all.
+const DOCUMENT_FREE_FAMILIES = ["approval", "compendium", "file", "policy", "setting", "system", "world"];
 
 /** @param {string} command */
 function idParameters(command) {
@@ -57,13 +57,24 @@ function resolvedIdParameters(command) {
 }
 
 describe("approval target strategies", () => {
-  it("gives every command the registry defines exactly one recognized strategy", () => {
-    const unrecognized = COMMAND_NAMES.filter((command) => {
+  it("gives every command the registry defines one recognized strategy over the documents of its family", () => {
+    const documentFree = new Set(DOCUMENT_FREE_FAMILIES);
+    const misplaced = COMMAND_NAMES.filter((command) => {
       const strategy = getApprovalTargetStrategy(command);
-      return !strategy || !APPROVAL_TARGET_KINDS.includes(strategy.kind);
+      if (!strategy || !APPROVAL_TARGET_KINDS.includes(strategy.kind)) {
+        return true;
+      }
+
+      const namesDocuments = strategy.chain.length > 0 || strategy.collection !== null;
+      return namesDocuments === documentFree.has(command.split(".")[0]);
     });
 
-    expect(unrecognized).toEqual([]);
+    expect(misplaced).toEqual([]);
+    expect(
+      DOCUMENT_FREE_FAMILIES.filter(
+        (family) => !COMMAND_NAMES.some((command) => command.startsWith(`${family}.`))
+      )
+    ).toEqual([]);
   });
 
   it("names a document collection for every command that changes the world", () => {
@@ -248,6 +259,70 @@ describe("approval target resolution", () => {
     expect(summary.totalCount).toBe(to.length + 1);
     expect(summary.omittedCount).toBe(3);
     expect(summary.totalCount - summary.omittedCount).toBe(summary.targets.length);
+  });
+
+  it("names the cards a pass moves out of the stack that holds them", () => {
+    const summary = resolveApprovalTargets("cards.pass", {
+      cardsId: "cards-deck",
+      to: "cards-hand",
+      cardIds: ["card-ace"]
+    });
+
+    expect(summary.targets.map((target) => [target.role, target.type, target.name, target.state])).toEqual([
+      ["cardsId", "Cards", "Poker Deck", "resolved"],
+      ["to", "Cards", "Player Hand", "resolved"],
+      ["cardIds", "Card", "Face One", "resolved"]
+    ]);
+    expect(summary.targets[2].parents).toEqual([
+      { type: "Cards", id: "cards-deck", name: "Poker Deck", state: "resolved" }
+    ]);
+  });
+
+  it("names the journal page an ownership change addresses", () => {
+    const page = resolveApprovalTargets("journal.ownership.set", {
+      journalId: "journal-1",
+      pageId: "page-1",
+      default: 3
+    });
+
+    expect(page.targets.map((target) => [target.role, target.type, target.name, target.state])).toEqual([
+      ["journalId", "JournalEntry", "GM Notes", "resolved"],
+      ["pageId", "JournalEntryPage", "Overview", "resolved"]
+    ]);
+    expect(page.targets[1].parents).toEqual([
+      { type: "JournalEntry", id: "journal-1", name: "GM Notes", state: "resolved" }
+    ]);
+    expect(page.descriptor).toEqual([]);
+
+    const entry = resolveApprovalTargets("journal.ownership.set", { journalId: "journal-1", default: 3 });
+
+    expect(entry.targets.map((target) => target.type)).toEqual(["JournalEntry"]);
+  });
+
+  it("names the combatants an initiative change addresses", () => {
+    const one = resolveApprovalTargets("combat.set-initiative", {
+      combatId: "combat-1",
+      combatantId: "combatant-1",
+      initiative: 12
+    });
+
+    expect(one.targets.map((target) => [target.role, target.type, target.name, target.state])).toEqual([
+      ["combatId", "Combat", null, "resolved"],
+      ["combatantId", "Combatant", "Hero", "resolved"]
+    ]);
+    expect(one.descriptor).toEqual([]);
+
+    const several = resolveApprovalTargets("combat.roll-initiative", {
+      combatId: "combat-1",
+      combatantIds: ["combatant-1", "combatant-gone"]
+    });
+
+    expect(several.targets.map((target) => [target.id, target.name, target.state])).toEqual([
+      ["combat-1", null, "resolved"],
+      ["combatant-1", "Hero", "resolved"],
+      ["combatant-gone", null, "not-found"]
+    ]);
+    expect(several.totalCount).toBe(3);
   });
 
   it("takes the proposed names of a bulk create from its payload", () => {

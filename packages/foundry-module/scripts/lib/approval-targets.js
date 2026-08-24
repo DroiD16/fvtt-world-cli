@@ -23,7 +23,7 @@ import { getTableById, getTableResultById } from "./table-docs.js";
 /** @typedef {"resolved" | "not-found" | "unspecified" | "proposed" | "path"} ApprovalTargetState */
 /** @typedef {{ idField: string, type: string, resolve: (ids: string[]) => any }} ApprovalTargetNode */
 /** @typedef {{ path: string, node: ApprovalTargetNode }} ApprovalTargetLink */
-/** @typedef {{ property: string, node: ApprovalTargetNode }} ApprovalTargetReference */
+/** @typedef {{ property: string, node: ApprovalTargetNode, chain: ApprovalTargetLink[] }} ApprovalTargetReference */
 /**
  * @typedef {{
  *   kind: ApprovalTargetKind,
@@ -166,6 +166,11 @@ const TARGET_NODES = Object.freeze({
     type: "JournalEntryCategory",
     resolve: (ids) => getJournalCategoryById(ids[0], ids[1]).category
   },
+  "journal.page": {
+    idField: "pageId",
+    type: "JournalEntryPage",
+    resolve: (ids) => getJournalById(ids[0]).pages?.get?.(ids[1]) ?? null
+  },
   macro: { idField: "macroId", type: "Macro", resolve: (ids) => getMacroById(ids[0]) },
   playlist: { idField: "playlistId", type: "Playlist", resolve: (ids) => getPlaylistById(ids[0]) },
   "playlist.sound": {
@@ -200,6 +205,24 @@ const TARGET_NODES = Object.freeze({
   folder: { idField: "folderId", type: "Folder", resolve: (ids) => getFolderById(ids[0]) },
   user: { idField: "userId", type: "User", resolve: (ids) => getUserById(ids[0]) }
 });
+
+/** @type {Map<string, ApprovalTargetLink>} */
+const CHILD_NODES = new Map(
+  Object.entries(TARGET_NODES)
+    .filter(([path]) => path.includes("."))
+    .map(([path, node]) => [
+      `${path.slice(0, path.lastIndexOf("."))}/${node.idField}`,
+      Object.freeze({ path, node })
+    ])
+);
+
+/**
+ * @param {string} property
+ * @returns {string}
+ */
+function singularIdProperty(property) {
+  return property.endsWith("Ids") ? property.slice(0, -1) : property;
+}
 
 /**
  * @param {unknown} value
@@ -291,8 +314,23 @@ function buildStrategy(command) {
   const counterpartProperty = COUNTERPART_PROPERTIES[command] ?? null;
   /** @type {ApprovalTargetReference[]} */
   const references = counterpartProperty
-    ? [{ property: counterpartProperty, node: TARGET_NODES[segments[0]] }]
+    ? [{ property: counterpartProperty, node: TARGET_NODES[segments[0]], chain: [] }]
     : [];
+
+  const parentPath = chain.length > 0 ? chain[chain.length - 1].path : null;
+  if (parentPath !== null) {
+    for (const property of Object.keys(properties)) {
+      if (chainFields.has(property) || property === elementProperty || property === counterpartProperty) {
+        continue;
+      }
+
+      const child = CHILD_NODES.get(`${parentPath}/${singularIdProperty(property)}`);
+      if (child) {
+        references.push({ property, node: child.node, chain });
+      }
+    }
+  }
+
   const referenceProperties = new Set(references.map((reference) => reference.property));
 
   const descriptorProperties = required.filter(
@@ -491,12 +529,15 @@ function resolveFileTargets(strategy, params) {
 /**
  * @param {ApprovalTargetReference[]} references
  * @param {Record<string, unknown>} params
+ * @param {ApprovalTarget[]} chainTargets
  * @returns {ApprovalTarget[]}
  */
-function resolveReferenceTargets(references, params) {
+function resolveReferenceTargets(references, params, chainTargets) {
   return references.flatMap((reference) => {
     const raw = params[reference.property];
     const values = Array.isArray(raw) ? raw : [raw];
+    const parentIds = collectChainIds(reference.chain, params);
+    const parents = chainTargets.slice(0, reference.chain.length).map(toParent);
     /** @type {ApprovalTarget[]} */
     const targets = [];
     for (const value of values) {
@@ -505,14 +546,14 @@ function resolveReferenceTargets(references, params) {
         continue;
       }
 
-      const document = resolveDocument(reference.node, [id]);
+      const document = parentIds === null ? null : resolveDocument(reference.node, [...parentIds, id]);
       targets.push({
         role: reference.property,
         type: reference.node.type,
         id,
         name: readDisplayName(document),
         state: document ? "resolved" : "not-found",
-        parents: []
+        parents
       });
     }
 
@@ -595,7 +636,7 @@ export function resolveApprovalTargets(command, params) {
   const descriptor = resolveDescriptor(strategy, source);
   const base = resolveKindTargets(strategy, source, chainTargets, collection);
 
-  const references = resolveReferenceTargets(strategy.references, source);
+  const references = resolveReferenceTargets(strategy.references, source, chainTargets);
   const shownReferences = references.slice(0, APPROVAL_TARGET_DISPLAY_MAX);
 
   return {
