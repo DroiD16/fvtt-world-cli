@@ -2,6 +2,9 @@ import { ERROR_CODES, parseBridgeMessage, validateTransportMessage } from "@fvtt
 import type WebSocket from "ws";
 import type { RawData } from "ws";
 
+export const APPROVAL_AWAIT_COMMAND = "approval.await";
+export const APPROVAL_CANCEL_COMMAND = "approval.cancel";
+
 export interface ProtocolErrorShape {
   code: string;
   message: string;

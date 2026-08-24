@@ -2,7 +2,12 @@ import { APPROVAL_AWAIT_PARK_CAP_MS, ERROR_CODES, MESSAGE_TYPES } from "@fvtt-wo
 
 import { DEFAULT_CLIENT_TIMEOUT_MS } from "./bridge/session-store.js";
 import { localErrorEnvelope, toTransportErrorEnvelope } from "./errors.js";
-import { isCommandResponseEnvelope, type CommandResponseEnvelope } from "./transport-util.js";
+import {
+  APPROVAL_AWAIT_COMMAND,
+  APPROVAL_CANCEL_COMMAND,
+  isCommandResponseEnvelope,
+  type CommandResponseEnvelope
+} from "./transport-util.js";
 
 export const APPROVAL_AWAIT_CLIENT_TIMEOUT_FLOOR_MS = APPROVAL_AWAIT_PARK_CAP_MS + 5_000;
 export const APPROVAL_EMPTY_POLL_DELAY_MS = 250;
@@ -17,9 +22,6 @@ const TRANSIENT_TRANSPORT_CODES: ReadonlySet<string> = new Set([
 ]);
 
 const APPROVAL_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
-
-export const APPROVAL_AWAIT_COMMAND = "approval.await";
-export const APPROVAL_CANCEL_COMMAND = "approval.cancel";
 
 export interface ApprovalSendRequest {
   command: string;

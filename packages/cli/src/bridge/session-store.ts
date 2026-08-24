@@ -47,6 +47,7 @@ interface Waiter {
 }
 
 interface PendingRequest {
+  command: string;
   waiters: Waiter[];
   timeout: NodeJS.Timeout;
   bridgeSocket: WebSocket;
@@ -251,6 +252,7 @@ export class BridgeSessionStore {
     }, requestTimeoutMs);
 
     this.pendingRequests.set(request.id, {
+      command: request.command,
       waiters: [{ clientSocket, requestId: request.id }],
       timeout,
       bridgeSocket: this.activeBridgeSocket,
@@ -269,13 +271,14 @@ export class BridgeSessionStore {
 
   resolveResponse(response: CommandResponseEnvelope): {
     matched: boolean;
+    command: string | null;
     idempotency: IdempotencyMetadata | null;
 
     worldId: string | null;
   } {
     const pendingRequest = this.pendingRequests.get(response.id);
     if (!pendingRequest) {
-      return { matched: false, idempotency: null, worldId: null };
+      return { matched: false, command: null, idempotency: null, worldId: null };
     }
 
     clearTimeout(pendingRequest.timeout);
@@ -286,6 +289,7 @@ export class BridgeSessionStore {
     }
     return {
       matched: true,
+      command: pendingRequest.command,
       idempotency: pendingRequest.idempotency ?? null,
       worldId: pendingRequest.worldId ?? null
     };
