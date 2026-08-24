@@ -514,7 +514,7 @@ function resolveBulkTargets(strategy, params, parents) {
 function resolveFileTargets(strategy, params) {
   return strategy.pathProperties.map((property) => {
     const value = params[property];
-    const path = typeof value === "string" && value !== "" ? value : null;
+    const path = typeof value === "string" ? value : null;
     return {
       role: property,
       type: APPROVAL_TARGET_FILE_TYPE,

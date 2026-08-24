@@ -404,6 +404,14 @@ describe("approval target resolution", () => {
     ]);
   });
 
+  it("shows the managed root a listing addresses", () => {
+    const summary = resolveApprovalTargets("file.list", { path: "" });
+
+    expect(summary.targets).toEqual([
+      { role: "path", type: "File", id: null, name: "", state: "path", parents: [] }
+    ]);
+  });
+
   it("never reads the upload payload while describing a file target", () => {
     let reads = 0;
     const params = { path: "worlds/world-1/notes.txt" };
