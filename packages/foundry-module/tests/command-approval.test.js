@@ -11,11 +11,13 @@ import {
   createCommandApprovalApplication,
   formatApprovalParams
 } from "../scripts/command-approval.js";
-import { COMMAND_DEFINITIONS } from "../scripts/generated/protocol.js";
+import { createCommandRouter } from "../scripts/command-router.js";
+import { COMMAND_DEFINITIONS, MODULE_ID } from "../scripts/generated/protocol.js";
 import { ApprovalStore } from "../scripts/lib/approval-store.js";
 import { resolveApprovalTargets } from "../scripts/lib/approval-targets.js";
+import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 
-import { installFakeFoundry } from "./helpers/fake-foundry.js";
+import { createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
 import { createEnglishI18n } from "./helpers/i18n.js";
 
 const MODULE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -561,6 +563,36 @@ describe("Command approval window", () => {
     expect(executions).toBe(0);
     expect(store.getQueueView().current?.approvalId).toBe(admission.approvalId);
     expect(app.contexts).toEqual([]);
+  });
+
+  it("runs an allowed command through the guarded path and answers the client that waits for it", async () => {
+    await globalThis.game.settings.set(MODULE_ID, MODULE_SETTING_KEYS.COMMAND_POLICY, {
+      version: 1,
+      overrides: { "actor.update": "approve" }
+    });
+    const router = createCommandRouter({ bridgeClient: null });
+    createApprovalWindow({ approvalStore: router.approvalStore });
+
+    const pending = await router.route(
+      createRequest("actor.update", { actorId: "actor-1", patch: { name: "Allowed By The GM" } }),
+      { measureRequestBytes: () => 512 }
+    );
+    await flush();
+    const [app] = instances;
+    const approvalId = pending.error.details.approvalId;
+    expect(app.contexts.at(-1).request.approvalId).toBe(approvalId);
+
+    await dispatchOn(app, "allow");
+    const awaited = await router.route(createRequest("approval.await", { approvalId, waitMs: 0 }), {
+      measureRequestBytes: () => 512
+    });
+
+    expect(awaited.result.status).toBe("resolved");
+    expect(awaited.result.outcome).toBe("approved");
+    expect(awaited.result.response.id).toBe(approvalId);
+    expect(awaited.result.response.result.actor.name).toBe("Allowed By The GM");
+    expect(globalThis.game.actors.get("actor-1").name).toBe("Allowed By The GM");
+    expect(app.rendered).toBe(false);
   });
 
   it("wires the template to the two decisions the window registers and to the countdown element", () => {
