@@ -548,11 +548,19 @@ export class ApprovalStore {
   // capped too: without this, a client that requests and cancels in a loop grows the store freely.
   // Only an outcome its client already holds, or one already reduced to a tombstone, is forgotten to
   // make room; an answer nobody has read is never traded for a new request, which is refused instead.
+  // A command the GM approved and that is still running is neither: it can be neither reclaimed nor
+  // re-created by a client, so it is left out of the count rather than allowed to consume the cap
+  // for good when its handler never settles.
   /**
    * @returns {boolean}
    */
   #reclaimRecordSlot() {
-    if (this.#requests.size < this.recordMax) {
+    let counted = 0;
+    for (const record of this.#requests.values()) {
+      if (record.state !== "executing") counted += 1;
+    }
+
+    if (counted < this.recordMax) {
       return true;
     }
 
@@ -565,7 +573,8 @@ export class ApprovalStore {
     for (const candidate of reclaimable) {
       this.#retainedResponseBytes -= candidate.responseBytes;
       this.#requests.delete(candidate.approvalId);
-      if (this.#requests.size < this.recordMax) {
+      counted -= 1;
+      if (counted < this.recordMax) {
         return true;
       }
     }

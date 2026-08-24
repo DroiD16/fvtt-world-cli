@@ -284,6 +284,48 @@ describe("approval store admission", () => {
     });
   });
 
+  it("keeps admitting while approved commands are still running", async () => {
+    const executor = createDeferred();
+    const { store } = createHarness({ recordMax: 2, execute: () => executor.promise });
+    const first = admitRequest(store);
+    const second = admitRequest(store);
+    const firstDecision = track(store.decide(first.approvalId, "allow"));
+    const secondDecision = track(store.decide(second.approvalId, "allow"));
+    await flush();
+
+    expect(admitRequest(store).approvalId).toMatch(APPROVAL_ID_PATTERN);
+
+    executor.settle({ ok: true });
+    await flush();
+
+    expect(firstDecision.settled).toBe(true);
+    expect(secondDecision.settled).toBe(true);
+    await expect(store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: first.approvalId,
+      status: "resolved",
+      outcome: "approved",
+      response: { ok: true }
+    });
+  });
+
+  it("still refuses a request over unread verdicts while a command is running", async () => {
+    const executor = createDeferred();
+    const { store } = createHarness({ recordMax: 2, execute: () => executor.promise });
+    const running = admitRequest(store);
+    track(store.decide(running.approvalId, "allow"));
+    await flush();
+    await store.decide(admitRequest(store).approvalId, "deny");
+    await store.decide(admitRequest(store).approvalId, "deny");
+
+    expect(store.admit({ command: "actor.update", params: {}, requestBytes: 1 })).toEqual({
+      admitted: false,
+      reason: APPROVAL_REFUSAL_REASONS.RETAINED_COUNT
+    });
+
+    executor.settle({ ok: true });
+    await flush();
+  });
+
   it("refuses a request whose byte weight cannot be measured", () => {
     const { store } = createHarness({ pendingByteBudgetProvider: () => 1_000 });
 
