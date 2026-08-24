@@ -141,27 +141,27 @@ describe("Command approval window", () => {
     });
   }
 
+  /**
+   * @param {any} app
+   * @param {string} action
+   * @param {string | null} [approvalId]
+   */
+  function dispatchOn(app, action, approvalId = app.contexts.at(-1)?.request?.approvalId ?? null) {
+    const Application = /** @type {any} */ (app.constructor);
+    return Application.DEFAULT_OPTIONS.actions[action].call(
+      app,
+      { preventDefault: vi.fn() },
+      { dataset: { action, approvalId } }
+    );
+  }
+
   /** @param {any} store */
   function application(store) {
     const Application = createCommandApprovalApplication({ approvalStore: store });
     const app = new Application();
     const dispatch = (/** @type {string} */ action) =>
-      Application.DEFAULT_OPTIONS.actions[action].call(
-        app,
-        { preventDefault: vi.fn() },
-        { dataset: { action } }
-      );
+      dispatchOn(app, action, store.getQueueView().current?.approvalId ?? null);
     return { app, Application, dispatch };
-  }
-
-  /** @param {any} app */
-  function dispatchOn(app, action) {
-    const Application = /** @type {any} */ (app.constructor);
-    return Application.DEFAULT_OPTIONS.actions[action].call(
-      app,
-      { preventDefault: vi.fn() },
-      { dataset: { action } }
-    );
   }
 
   /** @param {any} context */
@@ -356,6 +356,58 @@ describe("Command approval window", () => {
     expect(app.contexts.at(-1).waiting).toBe(0);
   });
 
+  it("keeps the parameters of the running request when a later arrival opens the window again", async () => {
+    /** @type {(value: unknown) => void} */
+    let settleExecution = () => {};
+    const store = createStore({
+      execute: () =>
+        new Promise((resolve) => {
+          executions += 1;
+          settleExecution = resolve;
+        })
+    });
+    createApprovalWindow({ approvalStore: store });
+    admit(store, "actor.update", { actorId: "actor-1", patch: { name: "Valeros the Bold" } });
+    await flush();
+    const [app] = instances;
+
+    const decision = dispatchOn(app, "allow");
+    await flush();
+    await app.close();
+    admit(store, "scene.delete", { sceneId: "scene-1" });
+    await flush();
+
+    expect(app.contexts.at(-1).request.executing).toBe(true);
+    expect(JSON.parse(app.contexts.at(-1).request.params.json)).toEqual({
+      actorId: "actor-1",
+      patch: { name: "Valeros the Bold" }
+    });
+
+    settleExecution({ ok: true });
+    await decision;
+    await flush();
+
+    expect(app.contexts.at(-1).request.command).toBe("scene.delete");
+  });
+
+  it("decides nothing when the request that was on screen left the queue before the click", async () => {
+    const store = createStore();
+    createApprovalWindow({ approvalStore: store });
+    const displayed = admit(store, "scene.delete", { sceneId: "scene-1" });
+    const next = admit(store, "actor.delete", { actorId: "actor-1" });
+    await flush();
+    const [app] = instances;
+
+    store.cancel(displayed.approvalId);
+    await dispatchOn(app, "allow", displayed.approvalId);
+    await dispatchOn(app, "deny", displayed.approvalId);
+    await flush();
+
+    expect(executions).toBe(0);
+    expect(store.getQueueView().current?.approvalId).toBe(next.approvalId);
+    expect(store.getQueueView().current?.state).toBe("pending");
+  });
+
   it("advances to the next request as soon as one is denied", async () => {
     const store = createStore();
     createApprovalWindow({ approvalStore: store });
@@ -463,6 +515,7 @@ describe("Command approval window", () => {
 
     expect(new Set(actions)).toEqual(new Set(Object.keys(Application.DEFAULT_OPTIONS.actions)));
     expect(new Set(actions)).toEqual(new Set(["allow", "deny"]));
+    expect(TEMPLATE.match(/data-approval-id="\{\{request\.approvalId\}\}"/g)).toHaveLength(actions.length);
     expect(TEMPLATE).toContain("data-countdown");
   });
 });

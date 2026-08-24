@@ -166,7 +166,7 @@ export function buildApprovalContext(view, cache, now) {
   const countdown = executing ? null : formatRemaining(current.expiresAt - now);
 
   return {
-    request: { ...readPrepared(cache, current), executing, countdown },
+    request: { ...readPrepared(cache, current), approvalId: current.approvalId, executing, countdown },
     waiting: view.waitingCount,
     meta: countdown !== null || view.waitingCount > 0
   };
@@ -179,8 +179,9 @@ export function createCommandApprovalApplication({ approvalStore }) {
   const { ApplicationV2, HandlebarsApplicationMixin } = globalThis.foundry.applications.api;
 
   /**
-   * The decision is read from the store rather than from the rendered row: a request that timed out or
-   * was cancelled between the render and the click is no longer pending, and must not be decided.
+   * The clicked row carries the id it was rendered with: a timeout, a cancellation or a preceding
+   * decision advances the queue synchronously while the re-render is not, so a decision that no longer
+   * names the request on screen must not fall through onto the one that took its place.
    * @this {{ element?: any }}
    * @param {Event} event
    * @param {any} target
@@ -192,6 +193,7 @@ export function createCommandApprovalApplication({ approvalStore }) {
     if (action !== "allow" && action !== "deny") return;
     const { current } = approvalStore.getQueueView();
     if (current === null || current.state !== "pending") return;
+    if (target.dataset.approvalId !== current.approvalId) return;
     await approvalStore.decide(current.approvalId, action);
   };
 
@@ -253,10 +255,12 @@ export function createCommandApprovalApplication({ approvalStore }) {
       this.countdownTimer = null;
     }
 
+    // The store drops the parameters of a request it has claimed for execution, so the entry prepared
+    // while it was still pending is the only copy left to render if the window opens again.
     _onClose(options) {
       super._onClose(options);
       this.stopCountdown();
-      this.prepared = null;
+      if (approvalStore.getQueueView().current === null) this.prepared = null;
     }
   };
 }

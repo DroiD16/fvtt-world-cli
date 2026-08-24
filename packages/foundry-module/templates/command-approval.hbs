@@ -75,15 +75,17 @@
     {{#if request.executing}}
     <span class="fvtt-world-cli-approval-executing"><i class="fa-solid fa-spinner fa-spin-pulse"></i>
       {{localize "FVTTWORLDCLI.Approval.Executing"}}</span>
-    <button type="button" data-action="allow" disabled><i class="fa-solid fa-check"></i> {{localize
-      "FVTTWORLDCLI.Approval.Allow"}}</button>
-    <button type="button" data-action="deny" disabled><i class="fa-solid fa-ban"></i> {{localize
-      "FVTTWORLDCLI.Approval.Deny"}}</button>
-    {{else}}
-    <button type="button" data-action="allow" class="fvtt-world-cli-approval-allow"><i
+    <button type="button" data-action="allow" data-approval-id="{{request.approvalId}}" disabled><i
         class="fa-solid fa-check"></i> {{localize "FVTTWORLDCLI.Approval.Allow"}}</button>
-    <button type="button" data-action="deny" class="fvtt-world-cli-approval-deny"><i
+    <button type="button" data-action="deny" data-approval-id="{{request.approvalId}}" disabled><i
         class="fa-solid fa-ban"></i> {{localize "FVTTWORLDCLI.Approval.Deny"}}</button>
+    {{else}}
+    <button type="button" data-action="allow" data-approval-id="{{request.approvalId}}"
+      class="fvtt-world-cli-approval-allow"><i class="fa-solid fa-check"></i> {{localize
+      "FVTTWORLDCLI.Approval.Allow"}}</button>
+    <button type="button" data-action="deny" data-approval-id="{{request.approvalId}}"
+      class="fvtt-world-cli-approval-deny"><i class="fa-solid fa-ban"></i> {{localize
+      "FVTTWORLDCLI.Approval.Deny"}}</button>
     {{/if}}
   </footer>
   {{else}}
