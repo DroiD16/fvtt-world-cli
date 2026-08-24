@@ -401,7 +401,7 @@ function resolveChainTargets(chain, params) {
       ids.push(id);
     }
 
-    const document = id === null || broken ? null : resolveDocument(link.node, ids);
+    const document = broken ? null : resolveDocument(link.node, ids);
     targets.push({
       role: link.node.idField,
       type: link.node.type,
