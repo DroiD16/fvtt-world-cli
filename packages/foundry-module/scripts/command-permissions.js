@@ -46,8 +46,8 @@ export const SAVE_BUTTON_SELECTOR = 'button[data-action="savePolicy"]';
 export const SAVE_ERROR_SELECTOR = "[data-save-error]";
 
 const SAVE_FAILURE_KEYS = Object.freeze({
-  commandPolicy: "FVTTWORLDCLI.Permissions.SaveFailedPolicy",
-  approvalTimeoutMinutes: "FVTTWORLDCLI.Permissions.SaveFailedTimeout"
+  [MODULE_SETTING_KEYS.COMMAND_POLICY]: "FVTTWORLDCLI.Permissions.SaveFailedPolicy",
+  [MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES]: "FVTTWORLDCLI.Permissions.SaveFailedTimeout"
 });
 
 /** @returns {PolicyDraft} */
