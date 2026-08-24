@@ -432,6 +432,7 @@ describe("a request the approval store refuses", () => {
       command: "actor.update",
       reason: APPROVAL_REFUSAL_REASONS.PENDING_COUNT
     });
+    expect(response.error.message).toContain("discard an outcome no client has read yet");
     expect(queueViews).toHaveLength(1);
     expect(router.approvalStore.getQueueView()).toMatchObject({
       current: { approvalId },
