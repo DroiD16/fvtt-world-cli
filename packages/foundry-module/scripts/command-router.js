@@ -69,6 +69,12 @@ const COMMAND_DENIED_MESSAGE_TAIL =
   "client's command policy in Foundry can lift it.";
 
 function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// A marked result is a copy, and spreading a document or any other class instance would drop its
+// prototype: marking is stricter about its input than the envelope check above.
+function isSpreadableResult(value) {
   if (typeof value !== "object" || value === null) {
     return false;
   }
@@ -78,7 +84,7 @@ function isPlainObject(value) {
 }
 
 function withApprovalRequired(result) {
-  if (!isPlainObject(result) || Object.hasOwn(result, "approvalRequired")) {
+  if (!isSpreadableResult(result) || Object.hasOwn(result, "approvalRequired")) {
     return result;
   }
 

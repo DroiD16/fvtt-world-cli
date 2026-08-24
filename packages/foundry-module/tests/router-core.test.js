@@ -77,6 +77,20 @@ describe("command router", () => {
     });
   });
 
+  it("accepts a request envelope whose object was not built as a bare literal", async () => {
+    const router = createCommandRouter({
+      bridgeClient: {
+        getStatus: () => ({ status: "connected" })
+      }
+    });
+
+    class Envelope {}
+    const response = await router.route(Object.assign(new Envelope(), createRequest("system.ping")));
+
+    expect(response.ok).toBe(true);
+    expect(response.result.pong).toBe(true);
+  });
+
   it("returns a deterministic permission error without stopping transport in the router", async () => {
     globalThis.game.user.isGM = false;
     const stop = vi.fn();
