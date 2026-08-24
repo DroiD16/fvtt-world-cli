@@ -4,7 +4,7 @@ import { format, localize } from "./lib/i18n.js";
 /** @typedef {import("./lib/approval-store.js").ApprovalQueueView} ApprovalQueueView */
 /** @typedef {import("./lib/approval-store.js").ApprovalRequestView} ApprovalRequestView */
 /** @typedef {import("./lib/approval-targets.js").ApprovalTargetSummary} ApprovalTargetSummary */
-/** @typedef {{ label: string | null, type: string | null, missing: boolean, unnamed: boolean, parents: string }} ApprovalTargetRow */
+/** @typedef {{ role: string | null, label: string | null, type: string | null, missing: boolean, unnamed: boolean, parents: string }} ApprovalTargetRow */
 /**
  * @typedef {{
  *   command: string,
@@ -99,12 +99,19 @@ function formatRemaining(milliseconds) {
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
 }
 
+// Rows of one command can name documents of the same type in different roles — the stack a deal draws
+// from and the one it fills — and nothing but the parameter each row came from tells them apart. A
+// descriptor row always names its parameter, so the rows beside it name theirs too.
 /**
  * @param {ApprovalTargetSummary} summary
  * @returns {ApprovalTargetRow[]}
  */
 function prepareTargetRows(summary) {
+  const roles = new Set(summary.targets.map((target) => target.role));
+  const named = roles.size > 1 || summary.descriptor.length > 0;
+
   return summary.targets.map((target) => ({
+    role: named ? target.role : null,
     label: target.name ?? target.id,
     type: target.type,
     missing: target.state === "not-found",

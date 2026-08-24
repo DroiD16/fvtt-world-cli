@@ -189,7 +189,7 @@ describe("Command approval window", () => {
 
     expect(shown(context).command).toBe("actor.update");
     expect(shown(context).targets).toEqual([
-      { label: "Valeros", type: "Actor", missing: false, unnamed: false, parents: "" }
+      { role: null, label: "Valeros", type: "Actor", missing: false, unnamed: false, parents: "" }
     ]);
     expect(shown(context).hasTargets).toBe(true);
     expect(shown(context).countdown).toBe("1:00:00");
@@ -242,6 +242,41 @@ describe("Command approval window", () => {
     expect(shown(context).targets.every((/** @type {any} */ row) => row.parents === "Dungeon Level 1")).toBe(
       true
     );
+    expect(shown(context).targets.every((/** @type {any} */ row) => row.role === null)).toBe(true);
+  });
+
+  it("names the parameter behind each target when one command addresses several of them", async () => {
+    const store = createStore();
+    admit(store, "cards.deal", { cardsId: "cards-deck", to: ["cards-hand"], count: 2 });
+    admit(store, "file.move", { from: "worlds/world-1/a.txt", to: "worlds/world-1/b.txt" });
+    const { app } = application(store);
+
+    const dealt = await app._prepareContext();
+    expect(shown(dealt).targets.map((/** @type {any} */ row) => [row.role, row.label, row.type])).toEqual([
+      ["cardsId", "Poker Deck", "Cards"],
+      ["to", "Player Hand", "Cards"]
+    ]);
+
+    await dispatchOn(app, "deny", store.getQueueView().current?.approvalId);
+    const moved = await app._prepareContext();
+    expect(shown(moved).targets.map((/** @type {any} */ row) => [row.role, row.label])).toEqual([
+      ["from", "worlds/world-1/a.txt"],
+      ["to", "worlds/world-1/b.txt"]
+    ]);
+    expect(TEMPLATE).toContain("{{this.role}}");
+  });
+
+  it("names the parameter behind a target that stands beside a described one", async () => {
+    const store = createStore();
+    admit(store, "file.read", { path: "worlds/world-1/notes.txt", encoding: "utf8" });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).targets.map((/** @type {any} */ row) => [row.role, row.label])).toEqual([
+      ["path", "worlds/world-1/notes.txt"]
+    ]);
+    expect(shown(context).descriptor).toEqual([{ key: "encoding", value: "utf8" }]);
   });
 
   it("summarizes a binary upload field instead of copying or printing it", async () => {

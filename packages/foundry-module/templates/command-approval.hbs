@@ -32,6 +32,7 @@
           {{#each request.targets}}
           <li class="fvtt-world-cli-approval-target{{#if
             this.missing}} fvtt-world-cli-approval-target--missing{{/if}}">
+            {{#if this.role}}<span class="fvtt-world-cli-approval-target-key">{{this.role}}</span>{{/if}}
             {{#if this.parents}}<span
               class="fvtt-world-cli-approval-target-parents">{{this.parents}}</span>{{/if}}
             <span class="fvtt-world-cli-approval-target-name{{#unless
