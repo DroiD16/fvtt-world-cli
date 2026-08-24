@@ -1,9 +1,40 @@
-import { COMMAND_NAMES, DISCOVERABLE_COMMAND_NAMES } from "@fvtt-world-cli/protocol";
+import {
+  COMMAND_NAMES,
+  DISCOVERABLE_COMMAND_NAMES,
+  ERROR_CODES,
+  POLICY_DISCOVERY_TIMEOUT_MS,
+  createCommandResponse,
+  createErrorResponse,
+  createProtocolError
+} from "@fvtt-world-cli/protocol";
 import { CommanderError } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { executeCli } from "../src/index.js";
-import { createWritableBuffer, runCommand } from "./helpers/cli-harness.js";
+import { DaemonTransportError } from "../src/transport-util.js";
+import { createWritableBuffer, runCommand, type SendCommandMock } from "./helpers/cli-harness.js";
+
+function policySnapshot(snapshot: { approve?: string[]; deny?: string[] }) {
+  const calls: Array<{ command: string; timeoutMs?: number }> = [];
+  const sendCommand = (async (options: { command: string; timeoutMs?: number }) => {
+    calls.push({ command: options.command, timeoutMs: options.timeoutMs });
+    return createCommandResponse({
+      id: "snapshot",
+      result: { approve: snapshot.approve ?? [], deny: snapshot.deny ?? [] }
+    });
+  }) as unknown as SendCommandMock;
+  return { sendCommand, calls };
+}
+
+function policyFailure(failure: Error | { code: string; message: string }) {
+  return (async () => {
+    if (failure instanceof Error) throw failure;
+    return createErrorResponse({
+      id: "snapshot",
+      error: createProtocolError({ code: failure.code, message: failure.message })
+    });
+  }) as unknown as SendCommandMock;
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -47,6 +78,98 @@ describe("fvtt-world-cli commands", () => {
         expect(listed, `${command} must not be discoverable`).not.toContain(command);
         expect(human.stdout, `${command} must not be discoverable`).not.toContain(command);
       }
+    });
+
+    it("hides denied commands and marks the ones that need an approval", async () => {
+      const { sendCommand, calls } = policySnapshot({
+        approve: ["scene.delete"],
+        deny: ["file.delete"]
+      });
+
+      const result = await runCommand(["--json", "commands"], sendCommand);
+
+      expect(result.error).toBeNull();
+      const envelope = JSON.parse(result.stdout);
+      expect(envelope.policy).toEqual({ applied: true, source: "bridge" });
+      const listed = envelope.result as Array<{ command: string; approval?: boolean }>;
+      expect(listed.map((entry) => entry.command)).not.toContain("file.delete");
+      expect(listed).toContainEqual({ command: "scene.delete", mutation: true, approval: true });
+      expect(listed).toContainEqual({ command: "scene.get", mutation: false });
+      expect(listed.filter((entry) => entry.approval === true)).toHaveLength(1);
+      expect(calls).toEqual([{ command: "policy.snapshot", timeoutMs: POLICY_DISCOVERY_TIMEOUT_MS }]);
+    });
+
+    it("tags commands that need an approval in human output", async () => {
+      const { sendCommand } = policySnapshot({ approve: ["scene.delete"], deny: ["file.delete"] });
+
+      const result = await runCommand(["commands"], sendCommand);
+
+      expect(result.stdout).toContain("scene.delete\twrite\tapproval");
+      expect(result.stdout).toContain("scene.get\tread\n");
+      expect(result.stdout).not.toContain("file.delete");
+      expect(result.stderr).toBe("");
+    });
+
+    it.each([ERROR_CODES.DAEMON_UNAVAILABLE, ERROR_CODES.BRIDGE_NOT_READY, ERROR_CODES.BRIDGE_DISCONNECTED])(
+      "falls back to the static registry and says so when the bridge answers %s",
+      async (code) => {
+        const result = await runCommand(
+          ["--json", "commands"],
+          policyFailure({ code, message: "not available" })
+        );
+
+        expect(result.error).toBeNull();
+        const envelope = JSON.parse(result.stdout);
+        expect(envelope.policy).toEqual({ applied: false, source: "static", reason: code });
+        expect(envelope.result.map((entry: { command: string }) => entry.command)).toEqual([
+          ...DISCOVERABLE_COMMAND_NAMES
+        ]);
+        expect(envelope.result.every((entry: { approval?: boolean }) => entry.approval === undefined)).toBe(
+          true
+        );
+      }
+    );
+
+    it("falls back to the static registry when reading the policy times out", async () => {
+      const result = await runCommand(
+        ["commands"],
+        policyFailure(
+          new DaemonTransportError(ERROR_CODES.DAEMON_UNAVAILABLE, "Timed out waiting for daemon response", {
+            reason: "timeout"
+          })
+        )
+      );
+
+      expect(result.error).toBeNull();
+      expect(result.stderr).toContain("warning: the command policy");
+      expect(result.stderr).toContain(ERROR_CODES.DAEMON_UNAVAILABLE);
+      expect(result.stdout).toContain("scene.delete\twrite\n");
+    });
+
+    it.each([ERROR_CODES.UNAUTHORIZED, ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION, ERROR_CODES.INVALID_PARAMS])(
+      "fails with %s instead of pretending there is no bridge",
+      async (code) => {
+        const result = await runCommand(
+          ["--json", "commands"],
+          policyFailure({ code, message: "policy read refused" })
+        );
+
+        expect(result.error).toBeInstanceOf(CommanderError);
+        const envelope = JSON.parse(result.stdout);
+        expect(envelope.ok).toBe(false);
+        expect(envelope.error.code).toBe(code);
+        expect(envelope.result).toBeUndefined();
+      }
+    );
+
+    it("never lists a policy-plumbing command, whatever the policy says", async () => {
+      const { sendCommand } = policySnapshot({ approve: ["approval.await"], deny: [] });
+
+      const result = await runCommand(["--json", "commands"], sendCommand);
+
+      const listed = JSON.parse(result.stdout).result.map((entry: { command: string }) => entry.command);
+      expect(listed).not.toContain("approval.await");
+      expect(listed).not.toContain("policy.snapshot");
     });
 
     it("prints the schema of a command that discovery omits", async () => {
