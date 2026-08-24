@@ -110,7 +110,7 @@ function scenePlaceableNode(idField, type) {
 }
 
 /** @type {Readonly<Record<string, ApprovalTargetNode>>} */
-const TARGET_NODES = Object.freeze({
+export const APPROVAL_TARGET_NODES = Object.freeze({
   scene: { idField: "sceneId", type: "Scene", resolve: (ids) => getSceneById(ids[0]) },
   "scene.token": scenePlaceableNode("tokenId", "Token"),
   "scene.tile": scenePlaceableNode("tileId", "Tile"),
@@ -208,7 +208,7 @@ const TARGET_NODES = Object.freeze({
 
 /** @type {Map<string, ApprovalTargetLink>} */
 const CHILD_NODES = new Map(
-  Object.entries(TARGET_NODES)
+  Object.entries(APPROVAL_TARGET_NODES)
     .filter(([path]) => path.includes("."))
     .map(([path, node]) => [
       `${path.slice(0, path.lastIndexOf("."))}/${node.idField}`,
@@ -283,7 +283,7 @@ function buildStrategy(command) {
 
   for (const segment of segments.slice(0, -1)) {
     path = path === "" ? segment : `${path}.${segment}`;
-    const node = TARGET_NODES[path];
+    const node = APPROVAL_TARGET_NODES[path];
     if (!node) {
       break;
     }
@@ -314,7 +314,7 @@ function buildStrategy(command) {
   const counterpartProperty = COUNTERPART_PROPERTIES[command] ?? null;
   /** @type {ApprovalTargetReference[]} */
   const references = counterpartProperty
-    ? [{ property: counterpartProperty, node: TARGET_NODES[segments[0]], chain: [] }]
+    ? [{ property: counterpartProperty, node: APPROVAL_TARGET_NODES[segments[0]], chain: [] }]
     : [];
 
   const parentPath = chain.length > 0 ? chain[chain.length - 1].path : null;

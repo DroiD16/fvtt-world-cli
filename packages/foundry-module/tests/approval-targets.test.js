@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { COMMAND_DEFINITIONS, COMMAND_NAMES } from "../scripts/generated/protocol.js";
 import {
   APPROVAL_TARGET_DISPLAY_MAX,
+  APPROVAL_TARGET_FILE_TYPE,
   APPROVAL_TARGET_KINDS,
+  APPROVAL_TARGET_NODES,
   APPROVAL_TARGET_STATES,
   getApprovalTargetStrategy,
   resolveApprovalTargets
 } from "../scripts/lib/approval-targets.js";
-import { createDocument, installFakeFoundry } from "./helpers/fake-foundry.js";
+import { createCollection, createDocument, installFakeFoundry } from "./helpers/fake-foundry.js";
 
 // An id-suffixed property, plus the two names a command uses for the counterpart document or path
 // of a move, which carry no suffix.
@@ -135,6 +137,122 @@ describe("approval target strategies", () => {
       omittedCount: 0,
       descriptor: []
     });
+  });
+});
+
+// The ids of a seeded document for every node the resolver can address, parents first. A node whose
+// entry is missing, or whose resolver stops reaching its document, fails the exhaustiveness test
+// instead of reporting an addressed document as missing.
+const NODE_FIXTURE_IDS = {
+  scene: ["scene-1"],
+  "scene.token": ["scene-1", "token-a"],
+  "scene.tile": ["scene-1", "tile-a"],
+  "scene.sound": ["scene-1", "sound-a"],
+  "scene.wall": ["scene-1", "wall-plain"],
+  "scene.note": ["scene-1", "note-quest"],
+  "scene.drawing": ["scene-1", "drawing-rect"],
+  "scene.light": ["scene-1", "light-torch"],
+  "scene.template": ["scene-1", "template-fireball"],
+  "scene.region": ["scene-1", "region-lava"],
+  "scene.region.behavior": ["scene-1", "region-lava", "region-lava-behavior-1"],
+  "scene.token.item": ["scene-1", "token-a", "delta-item-1"],
+  "scene.token.item.effect": ["scene-1", "token-a", "delta-item-1", "delta-item-effect-1"],
+  "scene.token.effect": ["scene-1", "token-a", "delta-effect-1"],
+  actor: ["actor-1"],
+  "actor.item": ["actor-1", "actor-item-1"],
+  "actor.effect": ["actor-1", "actor-effect-1"],
+  "actor.item.effect": ["actor-1", "actor-item-1", "actor-item-effect-1"],
+  item: ["item-1"],
+  "item.effect": ["item-1", "item-effect-1"],
+  journal: ["journal-1"],
+  "journal.category": ["journal-categories", "cat-chapter-one"],
+  "journal.page": ["journal-1", "page-1"],
+  macro: ["macro-1"],
+  playlist: ["playlist-1"],
+  "playlist.sound": ["playlist-1", "sound-1"],
+  table: ["table-1"],
+  "table.result": ["table-1", "result-1"],
+  combat: ["combat-1"],
+  "combat.combatant": ["combat-1", "combatant-1"],
+  "combat.group": ["combat-1", "combatGroupAAA11"],
+  cards: ["cards-deck"],
+  "cards.card": ["cards-deck", "card-ace"],
+  chat: ["msg-1"],
+  folder: ["folder-actors-test"],
+  user: ["user-1"]
+};
+
+function seedRemainingTargetFixtures() {
+  const game = globalThis.game;
+  game.users = createCollection([createDocument("user-1", { name: "Ada" })]);
+
+  const tokenActor = game.scenes.get("scene-1").tokens.get("token-a").actor;
+  const owners = [
+    [tokenActor.items.get("delta-item-1"), "delta-item-effect-1"],
+    [tokenActor, "delta-effect-1"],
+    [game.actors.get("actor-1"), "actor-effect-1"],
+    [game.actors.get("actor-1").items.get("actor-item-1"), "actor-item-effect-1"],
+    [game.items.get("item-1"), "item-effect-1"]
+  ];
+
+  for (const [owner, effectId] of owners) {
+    owner.effects.set(createDocument(effectId, { name: "Flaming" }));
+  }
+}
+
+/**
+ * @param {string} path
+ * @param {{ idField: string, type: string }} node
+ */
+function commandAddressing(path, node) {
+  for (const command of COMMAND_NAMES) {
+    const strategy = getApprovalTargetStrategy(command);
+    if (!strategy) {
+      continue;
+    }
+
+    const terminal = strategy.chain[strategy.chain.length - 1];
+    if (terminal?.path === path) {
+      return { command, parents: strategy.chain.slice(0, -1), property: terminal.node.idField };
+    }
+
+    const reference = strategy.references.find((entry) => entry.node === node);
+    if (reference) {
+      return { command, parents: strategy.chain, property: reference.property };
+    }
+  }
+
+  return null;
+}
+
+describe("approval target document resolution", () => {
+  beforeEach(() => {
+    installFakeFoundry();
+    seedRemainingTargetFixtures();
+  });
+
+  it("resolves a seeded document for every node a command can address", () => {
+    expect(Object.keys(NODE_FIXTURE_IDS).sort()).toEqual(Object.keys(APPROVAL_TARGET_NODES).sort());
+
+    const unresolved = Object.entries(APPROVAL_TARGET_NODES).filter(([path, node]) => {
+      const addressing = commandAddressing(path, node);
+      const ids = NODE_FIXTURE_IDS[path];
+      if (!addressing || ids.length !== addressing.parents.length + 1) {
+        return true;
+      }
+
+      const params = Object.fromEntries([
+        ...addressing.parents.map((link, index) => [link.node.idField, ids[index]]),
+        [addressing.property, ids[ids.length - 1]]
+      ]);
+
+      return !resolveApprovalTargets(addressing.command, params).targets.some(
+        (target) =>
+          target.role === addressing.property && target.type === node.type && target.state === "resolved"
+      );
+    });
+
+    expect(unresolved.map(([path]) => path)).toEqual([]);
   });
 });
 
@@ -384,7 +502,7 @@ describe("approval target resolution", () => {
     expect(upload.targets).toEqual([
       {
         role: "path",
-        type: "File",
+        type: APPROVAL_TARGET_FILE_TYPE,
         id: null,
         name: "worlds/world-1/notes.txt",
         state: "path",
@@ -408,7 +526,7 @@ describe("approval target resolution", () => {
     const summary = resolveApprovalTargets("file.list", { path: "" });
 
     expect(summary.targets).toEqual([
-      { role: "path", type: "File", id: null, name: "", state: "path", parents: [] }
+      { role: "path", type: APPROVAL_TARGET_FILE_TYPE, id: null, name: "", state: "path", parents: [] }
     ]);
   });
 
