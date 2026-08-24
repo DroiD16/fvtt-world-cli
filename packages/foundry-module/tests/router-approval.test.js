@@ -229,6 +229,23 @@ describe("a command whose targets cannot be resolved", () => {
 });
 
 describe("the guards an allowed command meets at decision time", () => {
+  it("meets them all even when the store is built with an executor of its own", async () => {
+    const execute = vi.fn(() => ({ ok: true }));
+    router = createCommandRouter({ bridgeClient: BRIDGE_CLIENT, approvalStoreOptions: { execute } });
+    await storePolicy({ "actor.update": "approve" });
+    const approvalId = await askForApproval("actor.update", {
+      actorId: "actor-1",
+      patch: { name: "Renamed" }
+    });
+
+    await router.approvalStore.decide(approvalId, "allow");
+    const response = await pollOutcome(approvalId);
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(response.result.response.result.actor.name).toBe("Renamed");
+    expect(actorName()).toBe("Renamed");
+  });
+
   it("reports Foundry as no longer ready", async () => {
     await storePolicy({ "actor.update": "approve" });
     const approvalId = await askForApproval("actor.update", {
