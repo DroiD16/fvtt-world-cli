@@ -16,7 +16,7 @@ import {
 } from "../scripts/generated/protocol.js";
 import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 
-import { createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
+import { COMBAT_GROUP_A, createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
 
 const MODULE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPTS_DIR = join(MODULE_ROOT, "scripts");
@@ -60,17 +60,46 @@ const PREVIEW_FIXTURES = {
   playlistId: "playlist-1",
   tableId: "table-1",
   combatId: "combat-1",
-  folderId: "folder-actors-test"
+  folderId: "folder-actors-test",
+  cardsId: "cards-deck",
+  cardId: "card-ace",
+  messageId: "msg-1",
+  tileId: "tile-a",
+  wallId: "wall-plain",
+  noteId: "note-quest",
+  drawingId: "drawing-rect",
+  lightId: "light-torch",
+  templateId: "template-fireball",
+  regionId: "region-lava",
+  behaviorId: "behavior-darkness",
+  soundId: "sound-a",
+  categoryId: "cat-lore",
+  resultId: "result-1",
+  combatantId: "combatant-1",
+  groupId: COMBAT_GROUP_A,
+  path: "worlds/world-1/readme.txt",
+  from: "worlds/world-1/readme.txt",
+  to: "worlds/world-1/notes/readme.txt"
 };
-const PREVIEWS_THE_FAKE_WORLD_REFUSES = [
-  "scene.delete",
-  "scene.fog.reset",
-  "scene.token.item.delete",
-  "scene.token.item.effect.delete-many",
-  "actor.delete",
-  "actor.item.delete",
-  "actor.item.effect.delete-many"
-];
+const PREVIEW_PARAM_OVERRIDES = {
+  "scene.delete": { force: true },
+  "scene.region.behavior.delete": { regionId: "region-safe" },
+  "scene.token.item.delete": { itemId: "delta-item-1" },
+  "scene.token.item.effect.delete": { itemId: "delta-item-1" },
+  "scene.token.item.effect.delete-many": { itemId: "delta-item-1" },
+  "playlist.sound.delete": { soundId: "sound-1" },
+  "journal.category.delete": { journalId: "journal-guard" },
+  "actor.delete": { force: true },
+  "actor.item.delete": { itemId: "actor-item-1" },
+  "actor.item.effect.delete": { itemId: "actor-item-1" },
+  "actor.item.effect.delete-many": { itemId: "actor-item-1" }
+};
+const PREVIEWS_THE_FAKE_WORLD_REFUSES = ["scene.fog.reset"];
+const PREVIEWS_NO_FOUNDRY_VERSION_SUPPORTS = ["file.delete", "file.move"];
+const PREVIEWS_WITHOUT_A_RESULT = new Set([
+  ...PREVIEWS_THE_FAKE_WORLD_REFUSES,
+  ...PREVIEWS_NO_FOUNDRY_VERSION_SUPPORTS
+]);
 
 const APPROVAL_ID = "aaaaaaaaaaaaaaaaaaaaaa";
 const EXEMPT_PARAMS = {
@@ -116,6 +145,35 @@ async function storeRawPolicy(value) {
 async function createDeletableActor() {
   await router().route(createRequest("actor.create", { data: { name: "Rat", type: "npc" } }));
   return "actor-created";
+}
+
+function requiredKeys(command) {
+  return COMMAND_DEFINITIONS[command].paramsSchema.required ?? [];
+}
+
+function previewParams(command, seeded = {}) {
+  const chosen = { ...PREVIEW_PARAM_OVERRIDES[command], ...seeded };
+  const params = { ...chosen };
+  for (const key of requiredKeys(command)) {
+    params[key] = Object.hasOwn(chosen, key) ? chosen[key] : PREVIEW_FIXTURES[key];
+    expect(params[key], `${command} needs a ${key} fixture`).toBeDefined();
+  }
+  return params;
+}
+
+async function seedPreviewEffects() {
+  const seeded = {};
+  for (const command of PREVIEWABLE_APPROVE_COMMANDS) {
+    if (!requiredKeys(command).includes("effectId")) continue;
+
+    const parent = previewParams(command, { effectId: "seeding" });
+    delete parent.effectId;
+    const response = await router().route(
+      createRequest(command.replace(/\.delete$/, ".create"), { ...parent, data: { name: "Seeded Effect" } })
+    );
+    seeded[command] = { effectId: response.ok ? response.result.effect.id : "no-such-effect" };
+  }
+  return seeded;
 }
 
 function actorName(id) {
@@ -306,21 +364,13 @@ describe("command policy gate", () => {
       expect(response.error.details).not.toHaveProperty("approvalRequired");
     });
 
-    it("is marked in every family whose preview the fake world can reach", async () => {
-      const attempted = PREVIEWABLE_APPROVE_COMMANDS.filter((command) =>
-        (COMMAND_DEFINITIONS[command].paramsSchema.required ?? []).every((key) =>
-          Object.hasOwn(PREVIEW_FIXTURES, key)
-        )
-      );
-      const marked = [];
+    it("is marked in the preview of every approve-listed command", async () => {
+      const seeded = await seedPreviewEffects();
       const unmarked = [];
       const refused = [];
 
-      for (const command of attempted) {
-        const params = { dryRun: true };
-        for (const key of COMMAND_DEFINITIONS[command].paramsSchema.required ?? []) {
-          params[key] = PREVIEW_FIXTURES[key];
-        }
+      for (const command of PREVIEWABLE_APPROVE_COMMANDS) {
+        const params = { ...previewParams(command, seeded[command]), dryRun: true };
 
         const response = await router().route(createRequest(command, params));
         if (!response.ok) {
@@ -329,12 +379,14 @@ describe("command policy gate", () => {
           continue;
         }
 
-        (response.result?.approvalRequired === true ? marked : unmarked).push(command);
+        expect(response.result.dryRun, command).toBe(true);
+        if (response.result.approvalRequired !== true) unmarked.push(command);
       }
 
       expect(unmarked).toEqual([]);
-      expect(refused).toEqual(PREVIEWS_THE_FAKE_WORLD_REFUSES);
-      expect(marked).toEqual(attempted.filter((command) => !refused.includes(command)));
+      expect(refused).toEqual(
+        PREVIEWABLE_APPROVE_COMMANDS.filter((command) => PREVIEWS_WITHOUT_A_RESULT.has(command))
+      );
     });
 
     it("is marked by the gate alone, nowhere else in the module", () => {
