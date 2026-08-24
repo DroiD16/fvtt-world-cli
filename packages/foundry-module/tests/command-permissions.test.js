@@ -5,10 +5,16 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  BEHAVIOR_BUTTON_SELECTOR,
+  DIRTY_MARKER_SELECTOR,
+  EMPTY_NOTICE_SELECTOR,
+  FILL_LABEL_SELECTOR,
   FILTER_FIELD_SELECTOR,
   NODE_FILL_SELECTOR,
   NODE_SELECTOR,
   ROW_SELECTOR,
+  SAVE_BUTTON_SELECTOR,
+  SAVE_ERROR_SELECTOR,
   TIMEOUT_FIELD_SELECTOR,
   createCommandPermissionsApplication
 } from "../scripts/command-permissions.js";
@@ -30,6 +36,25 @@ import { createEnglishI18n, formatEnglish, localizeEnglish } from "./helpers/i18
 
 const MODULE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATE = readFileSync(join(MODULE_ROOT, "templates", "command-permissions.hbs"), "utf8");
+const FLAT_TEMPLATE = TEMPLATE.replace(/\s+/g, " ");
+const ATTRIBUTE_HOOKS = [
+  FILTER_FIELD_SELECTOR,
+  TIMEOUT_FIELD_SELECTOR,
+  NODE_FILL_SELECTOR,
+  SAVE_BUTTON_SELECTOR,
+  FILL_LABEL_SELECTOR,
+  EMPTY_NOTICE_SELECTOR,
+  DIRTY_MARKER_SELECTOR,
+  SAVE_ERROR_SELECTOR
+];
+
+function attributeOf(selector) {
+  return selector.replace(/^[a-z]+/, "").replace(/[[\]]/g, "");
+}
+
+function flatSection(start, end) {
+  return FLAT_TEMPLATE.slice(FLAT_TEMPLATE.indexOf(start), FLAT_TEMPLATE.indexOf(end));
+}
 
 const EXEMPT_COMMANDS = new Set(POLICY_EXEMPT_COMMANDS);
 const TOP_LEVEL_GROUPS = new Set(COMMAND_NAMES.map((command) => command.split(".")[0]));
@@ -126,7 +151,10 @@ function pressedBehavior(buttons) {
 
 function createRowElement(name) {
   const buttons = behaviorButtons("setBehavior");
-  const row = element({ querySelectorAll: () => buttons });
+  const row = element({
+    querySelectorAll: (/** @type {string} */ selector) =>
+      selector === BEHAVIOR_BUTTON_SELECTOR ? buttons : []
+  });
   row.dataset.command = name;
   return { row, buttons };
 }
@@ -256,6 +284,32 @@ describe("Command permissions application", () => {
     }
   });
 
+  it("finds every element it repaints or dispatches from through an attribute the template renders", () => {
+    const { Application } = application();
+
+    for (const selector of ATTRIBUTE_HOOKS) {
+      expect(FLAT_TEMPLATE, selector).toContain(attributeOf(selector));
+    }
+    expect(FLAT_TEMPLATE).toContain('data-node="{{this.path}}"');
+    for (const action of Object.keys(Application.DEFAULT_OPTIONS.actions)) {
+      expect(FLAT_TEMPLATE, action).toContain(`data-action="${action}"`);
+    }
+    for (const behavior of POLICY_BEHAVIORS) {
+      expect(FLAT_TEMPLATE).toContain(`data-action="fillAll" data-behavior="${behavior}"`);
+      expect(FLAT_TEMPLATE).toContain(
+        `data-action="fillNode" data-path="{{this.path}}" data-behavior="${behavior}"`
+      );
+    }
+
+    const rowMarkup = flatSection("{{#each this.commands}}", "{{#each this.nodes}}");
+    for (const behavior of POLICY_BEHAVIORS) {
+      expect(rowMarkup).toContain(
+        `<button type="button" data-action="setBehavior" data-command="{{this.name}}" ` +
+          `data-behavior="${behavior}"`
+      );
+    }
+  });
+
   it("describes the registry's command total, groups and default approvals", async () => {
     const { app } = application();
 
@@ -305,8 +359,10 @@ describe("Command permissions application", () => {
     expect(STORED_TIMEOUT_MINUTES).not.toBe(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
     expect(context.timeoutMinutes).toBe(STORED_TIMEOUT_MINUTES);
     expect(context.dirty).toBe(false);
+    expect(context.timeoutMin).toBe(APPROVAL_TIMEOUT_MIN_MINUTES);
+    expect(context.timeoutMax).toBe(APPROVAL_TIMEOUT_MAX_MINUTES);
     expect(TEMPLATE).toContain('name="approvalTimeout"');
-    expect(TEMPLATE).toContain('value="{{timeoutMinutes}}"');
+    expect(FLAT_TEMPLATE).toContain('min="{{timeoutMin}}" max="{{timeoutMax}}" value="{{timeoutMinutes}}"');
   });
 
   it("nests every name segment before the verb as its own level", async () => {
@@ -537,6 +593,27 @@ describe("Command permissions application", () => {
 
     await dispatch("savePolicy");
 
+    const context = await app._prepareContext();
+    expect(context.dirty).toBe(true);
+    expect(context.saveError).toBe(
+      formatEnglish("FVTTWORLDCLI.Permissions.SaveFailedTimeout", { error: "no room" })
+    );
+    expectNoNotification();
+  });
+
+  it("keeps the window dirty when the timeout is refused after the policy was stored", async () => {
+    const { app, dispatch } = application();
+    const write = globalThis.game.settings.set;
+    globalThis.game.settings.set = vi.fn(async (namespace, key, value) => {
+      if (key === MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES) throw new Error("no room");
+      return write(namespace, key, value);
+    });
+
+    await dispatch("setBehavior", { command: ALLOWED_BY_PROFILE, behavior: "deny" });
+    await dispatch("savePolicy");
+
+    expect(storedPolicy()).toEqual({ version: 1, overrides: { [ALLOWED_BY_PROFILE]: "deny" } });
+    expect(draftOf(app).timeoutMinutes).toBe(storedTimeout());
     const context = await app._prepareContext();
     expect(context.dirty).toBe(true);
     expect(context.saveError).toBe(

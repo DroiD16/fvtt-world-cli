@@ -38,6 +38,12 @@ export const TIMEOUT_FIELD_SELECTOR = 'input[name="approvalTimeout"]';
 export const NODE_SELECTOR = ".fvtt-world-cli-policy-node";
 export const ROW_SELECTOR = ".fvtt-world-cli-policy-row";
 export const NODE_FILL_SELECTOR = 'button[data-action="fillNode"]';
+export const BEHAVIOR_BUTTON_SELECTOR = "button[data-behavior]";
+export const FILL_LABEL_SELECTOR = "[data-fill-label]";
+export const EMPTY_NOTICE_SELECTOR = "[data-empty-notice]";
+export const DIRTY_MARKER_SELECTOR = "[data-dirty-marker]";
+export const SAVE_BUTTON_SELECTOR = 'button[data-action="savePolicy"]';
+export const SAVE_ERROR_SELECTOR = "[data-save-error]";
 
 const SAVE_FAILURE_KEYS = Object.freeze({
   commandPolicy: "FVTTWORLDCLI.Permissions.SaveFailedPolicy",
@@ -90,7 +96,7 @@ function buildContext(draft) {
     fillLabel: view.filtered
       ? format("FVTTWORLDCLI.Permissions.MasterFillFiltered", { count: view.visibleCount })
       : localize("FVTTWORLDCLI.Permissions.MasterFill"),
-    dirty: isDirty(draft),
+    dirty: draft.saveError !== "" || isDirty(draft),
     saveError: draft.saveError,
     timeoutMinutes: draft.timeoutMinutes,
     timeoutMin: APPROVAL_TIMEOUT_MIN_MINUTES,
@@ -157,7 +163,7 @@ function paintBehaviors(targets, context) {
       if (!row) continue;
       row.dataset.behavior = command.behavior;
       row.classList.toggle("fvtt-world-cli-policy-row--changed", command.changed);
-      for (const button of row.querySelectorAll("button[data-behavior]")) {
+      for (const button of row.querySelectorAll(BEHAVIOR_BUTTON_SELECTOR)) {
         button.setAttribute("aria-pressed", String(command.pressed[button.dataset.behavior] === true));
       }
     }
@@ -185,9 +191,9 @@ function paintVisibility(root, targets, context) {
     }
   }
 
-  const label = root?.querySelector("[data-fill-label]");
+  const label = root?.querySelector(FILL_LABEL_SELECTOR);
   if (label) label.textContent = context.fillLabel;
-  const empty = root?.querySelector("[data-empty-notice]");
+  const empty = root?.querySelector(EMPTY_NOTICE_SELECTOR);
   if (empty) empty.hidden = context.visibleCount > 0;
 }
 
@@ -196,11 +202,11 @@ function paintVisibility(root, targets, context) {
  * @param {ReturnType<typeof buildContext>} context
  */
 function paintFooter(root, context) {
-  const marker = root?.querySelector("[data-dirty-marker]");
+  const marker = root?.querySelector(DIRTY_MARKER_SELECTOR);
   if (marker) marker.classList.toggle("fvtt-world-cli-policy-dirty--active", context.dirty);
-  const save = root?.querySelector('button[data-action="savePolicy"]');
+  const save = root?.querySelector(SAVE_BUTTON_SELECTOR);
   if (save) save.classList.toggle("fvtt-world-cli-policy-save--dirty", context.dirty);
-  const failure = root?.querySelector("[data-save-error]");
+  const failure = root?.querySelector(SAVE_ERROR_SELECTOR);
   if (failure) {
     failure.textContent = context.saveError;
     failure.hidden = context.saveError === "";
