@@ -15,9 +15,9 @@ const MS_PER_MINUTE = 60_000;
 
 const APPROVAL_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 
-const weighedByRequestBytes = {
+const weighedResponses = {
   /** @param {any} execution */
-  execute: (execution) => ({ ok: true, weight: execution.requestBytes }),
+  execute: (execution) => ({ ok: true, weight: execution.params.weight }),
   /** @param {any} response */
   measureResponseBytes: (response) => response.weight
 };
@@ -144,6 +144,14 @@ function admitRequest(store, overrides = {}) {
   }
 
   return admission;
+}
+
+/**
+ * @param {ApprovalStore} store
+ * @param {number} requestBytes
+ */
+function admitWeighed(store, requestBytes) {
+  return admitRequest(store, { requestBytes, params: { weight: requestBytes } });
 }
 
 afterEach(() => {
@@ -379,9 +387,7 @@ describe("approval store decisions", () => {
       {
         approvalId: admission.approvalId,
         command: "actor.update",
-        params: { actorId: "actor-1", patch: { name: "Aria" } },
-        targets: [{ display: "Aria", kind: "Actor", missing: false }],
-        requestBytes: 128
+        params: { actorId: "actor-1", patch: { name: "Aria" } }
       }
     ]);
     await expect(store.awaitOutcome({ approvalId: admission.approvalId, waitMs: 0 })).resolves.toEqual({
@@ -863,9 +869,9 @@ describe("approval store retention", () => {
   });
 
   it("displaces a response the client already read to retain a newer outcome", async () => {
-    const { store } = createHarness({ ...weighedByRequestBytes, resultByteBudgetProvider: () => 100 });
-    const first = admitRequest(store, { requestBytes: 60 });
-    const second = admitRequest(store, { requestBytes: 60 });
+    const { store } = createHarness({ ...weighedResponses, resultByteBudgetProvider: () => 100 });
+    const first = admitWeighed(store, 60);
+    const second = admitWeighed(store, 60);
 
     await store.decide(first.approvalId, "allow");
     await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
@@ -885,10 +891,10 @@ describe("approval store retention", () => {
   });
 
   it("keeps a read outcome that could not have made room for the newer one anyway", async () => {
-    const { store } = createHarness({ ...weighedByRequestBytes, resultByteBudgetProvider: () => 100 });
-    const read = admitRequest(store, { requestBytes: 40 });
-    const unread = admitRequest(store, { requestBytes: 50 });
-    const oversized = admitRequest(store, { requestBytes: 60 });
+    const { store } = createHarness({ ...weighedResponses, resultByteBudgetProvider: () => 100 });
+    const read = admitWeighed(store, 40);
+    const unread = admitWeighed(store, 50);
+    const oversized = admitWeighed(store, 60);
 
     await store.decide(read.approvalId, "allow");
     await store.awaitOutcome({ approvalId: read.approvalId, waitMs: 0 });
@@ -915,9 +921,9 @@ describe("approval store retention", () => {
   });
 
   it("does not treat a poll that saw the request pending as a delivered outcome", async () => {
-    const { store } = createHarness({ ...weighedByRequestBytes, resultByteBudgetProvider: () => 100 });
-    const first = admitRequest(store, { requestBytes: 60 });
-    const second = admitRequest(store, { requestBytes: 60 });
+    const { store } = createHarness({ ...weighedResponses, resultByteBudgetProvider: () => 100 });
+    const first = admitWeighed(store, 60);
+    const second = admitWeighed(store, 60);
 
     await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
     await store.decide(first.approvalId, "allow");
@@ -938,19 +944,19 @@ describe("approval store retention", () => {
 
   it("counts the retained bytes correctly after a displaced outcome later expires", async () => {
     const { store, clock } = createHarness({
-      ...weighedByRequestBytes,
+      ...weighedResponses,
       resultByteBudgetProvider: () => 100
     });
-    const first = admitRequest(store, { requestBytes: 60 });
-    const second = admitRequest(store, { requestBytes: 60 });
+    const first = admitWeighed(store, 60);
+    const second = admitWeighed(store, 60);
 
     await store.decide(first.approvalId, "allow");
     await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
     await store.decide(second.approvalId, "allow");
     await clock.advance(APPROVAL_RESULT_RETENTION_MS);
 
-    const third = admitRequest(store, { requestBytes: 60 });
-    const fourth = admitRequest(store, { requestBytes: 60 });
+    const third = admitWeighed(store, 60);
+    const fourth = admitWeighed(store, 60);
     await store.decide(third.approvalId, "allow");
     await store.decide(fourth.approvalId, "allow");
 

@@ -30,7 +30,7 @@ export const APPROVAL_REFUSAL_REASONS = Object.freeze({
 /** @typedef {"pending" | "executing" | "resolved" | "denied" | "timeout" | "cancelled"} ApprovalState */
 /** @typedef {"approved" | "denied" | "timeout" | "cancelled"} ApprovalOutcome */
 /** @typedef {"allow" | "deny"} ApprovalDecision */
-/** @typedef {{ approvalId: string, command: string, params: unknown, targets: unknown, requestBytes: number }} ApprovalExecution */
+/** @typedef {{ approvalId: string, command: string, params: unknown }} ApprovalExecution */
 /** @typedef {(execution: ApprovalExecution) => Promise<unknown> | unknown} ApprovalExecutor */
 /**
  * @typedef {{ approvalId: string, status: "pending", expiresAt?: number }
@@ -324,13 +324,7 @@ export class ApprovalStore {
     let response;
     let hasResponse = false;
     try {
-      response = await this.execute({
-        approvalId,
-        command: record.command,
-        params,
-        targets: record.targets,
-        requestBytes: record.requestBytes
-      });
+      response = await this.execute({ approvalId, command: record.command, params });
       hasResponse = true;
     } catch (error) {
       console.error(`[fvtt-world-cli] approved command ${record.command} failed:`, error);
