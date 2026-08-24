@@ -530,19 +530,28 @@ function resolveFileTargets(strategy, params) {
  * @param {ApprovalTargetReference[]} references
  * @param {Record<string, unknown>} params
  * @param {ApprovalTarget[]} chainTargets
- * @returns {ApprovalTarget[]}
+ * @returns {{ targets: ApprovalTarget[], totalCount: number }}
  */
 function resolveReferenceTargets(references, params, chainTargets) {
-  return references.flatMap((reference) => {
+  /** @type {ApprovalTarget[]} */
+  const targets = [];
+  let totalCount = 0;
+
+  for (const reference of references) {
     const raw = params[reference.property];
     const values = Array.isArray(raw) ? raw : [raw];
     const parentIds = collectChainIds(reference.chain, params);
     const parents = chainTargets.slice(0, reference.chain.length).map(toParent);
-    /** @type {ApprovalTarget[]} */
-    const targets = [];
     for (const value of values) {
       const id = readId(value);
       if (id === null) {
+        continue;
+      }
+
+      totalCount += 1;
+      // A reference array can declare no maximum length, so resolution stops at the display cap
+      // rather than reading a document per element the summary would then discard.
+      if (targets.length >= APPROVAL_TARGET_DISPLAY_MAX) {
         continue;
       }
 
@@ -556,9 +565,9 @@ function resolveReferenceTargets(references, params, chainTargets) {
         parents
       });
     }
+  }
 
-    return targets;
-  });
+  return { targets, totalCount };
 }
 
 /**
@@ -637,14 +646,13 @@ export function resolveApprovalTargets(command, params) {
   const base = resolveKindTargets(strategy, source, chainTargets, collection);
 
   const references = resolveReferenceTargets(strategy.references, source, chainTargets);
-  const shownReferences = references.slice(0, APPROVAL_TARGET_DISPLAY_MAX);
 
   return {
     kind: strategy.kind,
     collection,
-    targets: [...base.targets, ...shownReferences],
-    totalCount: base.totalCount + references.length,
-    omittedCount: base.omittedCount + (references.length - shownReferences.length),
+    targets: [...base.targets, ...references.targets],
+    totalCount: base.totalCount + references.totalCount,
+    omittedCount: base.omittedCount + (references.totalCount - references.targets.length),
     descriptor
   };
 }
