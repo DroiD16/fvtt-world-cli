@@ -62,7 +62,15 @@ const PREVIEW_FIXTURES = {
   combatId: "combat-1",
   folderId: "folder-actors-test"
 };
-const PREVIEWS_REACHING_A_HANDLER = 23;
+const PREVIEWS_THE_FAKE_WORLD_REFUSES = [
+  "scene.delete",
+  "scene.fog.reset",
+  "scene.token.item.delete",
+  "scene.token.item.effect.delete-many",
+  "actor.delete",
+  "actor.item.delete",
+  "actor.item.effect.delete-many"
+];
 
 const APPROVAL_ID = "aaaaaaaaaaaaaaaaaaaaaa";
 const EXEMPT_PARAMS = {
@@ -299,22 +307,25 @@ describe("command policy gate", () => {
     });
 
     it("is marked in every family whose preview the fake world can reach", async () => {
+      const attempted = PREVIEWABLE_APPROVE_COMMANDS.filter((command) =>
+        (COMMAND_DEFINITIONS[command].paramsSchema.required ?? []).every((key) =>
+          Object.hasOwn(PREVIEW_FIXTURES, key)
+        )
+      );
       const marked = [];
       const unmarked = [];
+      const refused = [];
 
-      for (const command of PREVIEWABLE_APPROVE_COMMANDS) {
-        const required = COMMAND_DEFINITIONS[command].paramsSchema.required ?? [];
-        if (required.some((key) => !Object.hasOwn(PREVIEW_FIXTURES, key))) {
-          continue;
-        }
-
+      for (const command of attempted) {
         const params = { dryRun: true };
-        for (const key of required) {
+        for (const key of COMMAND_DEFINITIONS[command].paramsSchema.required ?? []) {
           params[key] = PREVIEW_FIXTURES[key];
         }
 
         const response = await router().route(createRequest(command, params));
         if (!response.ok) {
+          expect(response.error.code, command).not.toBe(ERROR_CODES.COMMAND_DENIED);
+          refused.push(command);
           continue;
         }
 
@@ -322,9 +333,8 @@ describe("command policy gate", () => {
       }
 
       expect(unmarked).toEqual([]);
-      expect(marked.length, `only ${marked.length} previews reached a handler`).toBeGreaterThanOrEqual(
-        PREVIEWS_REACHING_A_HANDLER
-      );
+      expect(refused).toEqual(PREVIEWS_THE_FAKE_WORLD_REFUSES);
+      expect(marked).toEqual(attempted.filter((command) => !refused.includes(command)));
     });
 
     it("is marked by the gate alone, nowhere else in the module", () => {
