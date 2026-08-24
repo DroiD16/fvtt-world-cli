@@ -134,10 +134,10 @@ export function buildPolicySnapshot(storedPolicy) {
       continue;
     }
 
-    const { baseBehavior } = resolveCommandPolicy(policy, command);
-    if (baseBehavior === "approve") {
+    const behavior = resolveNormalizedBehavior(policy, command);
+    if (behavior === "approve") {
       approve.push(command);
-    } else if (baseBehavior === "deny") {
+    } else if (behavior === "deny") {
       deny.push(command);
     }
   }
