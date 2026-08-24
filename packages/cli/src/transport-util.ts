@@ -1,4 +1,13 @@
-import { ERROR_CODES, parseBridgeMessage, validateTransportMessage } from "@fvtt-world-cli/protocol";
+import {
+  ERROR_CODES,
+  MESSAGE_TYPES,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
+  PROTOCOL_VERSION,
+  getProtocolVersionError,
+  parseBridgeMessage,
+  validateTransportMessage
+} from "@fvtt-world-cli/protocol";
 import type WebSocket from "ws";
 import type { RawData } from "ws";
 
@@ -61,6 +70,29 @@ export function isCommandResponseEnvelope(
   );
 }
 
+export function protocolVersionSkewError(message: unknown): DaemonTransportError | null {
+  if (typeof message !== "object" || message === null) {
+    return null;
+  }
+
+  const frame = message as { type?: unknown; protocolVersion?: unknown };
+  if (
+    frame.type !== MESSAGE_TYPES.CLIENT_HELLO_ACK ||
+    typeof frame.protocolVersion !== "string" ||
+    frame.protocolVersion === PROTOCOL_VERSION
+  ) {
+    return null;
+  }
+
+  const error = getProtocolVersionError(frame.protocolVersion, {
+    peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
+    reporter: PROTOCOL_COMPONENTS.CLI_DAEMON,
+    handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON
+  });
+
+  return new DaemonTransportError(error.code, error.message, error.details);
+}
+
 export function decodeTransportFrame(
   data: RawData
 ): { ok: true; value: unknown } | { ok: false; error: DaemonTransportError } {
@@ -74,6 +106,11 @@ export function decodeTransportFrame(
         { reason: "invalid_json" }
       )
     };
+  }
+
+  const skew = protocolVersionSkewError(parsed.value);
+  if (skew) {
+    return { ok: false, error: skew };
   }
 
   const validation = validateTransportMessage(parsed.value);

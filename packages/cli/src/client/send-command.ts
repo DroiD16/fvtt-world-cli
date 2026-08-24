@@ -21,6 +21,7 @@ import {
   decodeTransportFrame,
   isCommandResponseEnvelope,
   normalizeIncomingData,
+  protocolVersionSkewError,
   type CommandResponseEnvelope
 } from "../transport-util.js";
 
@@ -323,6 +324,13 @@ export async function connectDaemonClient({
     });
     socket.once("message", (data) => {
       const parsed = parseBridgeMessage(normalizeIncomingData(data));
+      const skew = parsed.ok ? protocolVersionSkewError(parsed.value) : null;
+      if (skew) {
+        clearTimeout(timer);
+        reject(skew);
+        socket.close();
+        return;
+      }
       const validation = parsed.ok ? validateTransportMessage(parsed.value) : { ok: false };
       const message =
         parsed.ok && validation.ok
