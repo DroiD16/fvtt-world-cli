@@ -636,6 +636,25 @@ describe("Command permissions application", () => {
     expect(draftOf(app)).toBeNull();
   });
 
+  it("asks before closing a window whose last save was refused", async () => {
+    const { app, dispatch } = application();
+    const write = globalThis.game.settings.set;
+    globalThis.game.settings.set = vi.fn(async (namespace, key, value) => {
+      if (key === MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES) throw new Error("no room");
+      return write(namespace, key, value);
+    });
+
+    await dispatch("setBehavior", { command: ALLOWED_BY_PROFILE, behavior: "deny" });
+    await dispatch("savePolicy");
+    confirmed = false;
+
+    expect(await app.close()).toBe(app);
+    expect(closeCalls).toBe(0);
+
+    confirmed = true;
+    expect(await app.close()).toBe("closed");
+  });
+
   it("closes a window without unsaved changes without asking", async () => {
     const { app } = application();
     await app._prepareContext();

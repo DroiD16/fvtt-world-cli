@@ -87,6 +87,14 @@ function isDirty(draft) {
 
 /**
  * @param {PolicyDraft} draft
+ * @returns {boolean}
+ */
+function hasUnsavedWork(draft) {
+  return draft.saveError !== "" || isDirty(draft);
+}
+
+/**
+ * @param {PolicyDraft} draft
  */
 function buildContext(draft) {
   const view = buildPolicyView(draft.policy, { filter: draft.filter });
@@ -96,7 +104,7 @@ function buildContext(draft) {
     fillLabel: view.filtered
       ? format("FVTTWORLDCLI.Permissions.MasterFillFiltered", { count: view.visibleCount })
       : localize("FVTTWORLDCLI.Permissions.MasterFill"),
-    dirty: draft.saveError !== "" || isDirty(draft),
+    dirty: hasUnsavedWork(draft),
     saveError: draft.saveError,
     timeoutMinutes: draft.timeoutMinutes,
     timeoutMin: APPROVAL_TIMEOUT_MIN_MINUTES,
@@ -423,7 +431,7 @@ export function createCommandPermissionsApplication() {
     async close(options) {
       if (
         this.draft &&
-        isDirty(this.draft) &&
+        hasUnsavedWork(this.draft) &&
         !(await askToDiscard(
           "FVTTWORLDCLI.Permissions.DiscardTitle",
           "FVTTWORLDCLI.Permissions.DiscardContent"
