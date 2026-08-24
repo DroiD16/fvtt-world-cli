@@ -4,7 +4,7 @@ import { createCommandRouter } from "../scripts/command-router.js";
 
 import { ERROR_CODES } from "../scripts/generated/protocol.js";
 
-import { createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
+import { createPermissiveSettings, createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
 
 describe("command router", () => {
   beforeEach(() => {
@@ -934,7 +934,10 @@ describe("command router", () => {
     });
 
     it("returns UNSUPPORTED_OPERATION when the core noCanvas setting is enabled (dry-run too)", async () => {
-      globalThis.game.settings.get = vi.fn((namespace, key) => namespace === "core" && key === "noCanvas");
+      const permissive = createPermissiveSettings();
+      globalThis.game.settings.get = vi.fn((namespace, key) =>
+        namespace === "core" && key === "noCanvas" ? true : permissive.get(namespace, key)
+      );
       const scene = globalThis.game.scenes.get("scene-1");
       scene.createThumbnail = vi.fn();
 
@@ -1072,8 +1075,7 @@ describe("command router", () => {
 
         confirmation: "not-dispatched",
         viewedSceneId: "scene-2",
-        dryRun: true,
-        approvalRequired: true
+        dryRun: true
       });
       expect(reset).not.toHaveBeenCalled();
     });
@@ -1101,7 +1103,10 @@ describe("command router", () => {
     });
 
     it("capability-gates the core noCanvas SETTING with UNSUPPORTED_OPERATION, under dry-run too", async () => {
-      globalThis.game.settings.get = vi.fn((namespace, key) => namespace === "core" && key === "noCanvas");
+      const permissive = createPermissiveSettings();
+      globalThis.game.settings.get = vi.fn((namespace, key) =>
+        namespace === "core" && key === "noCanvas" ? true : permissive.get(namespace, key)
+      );
       const { get, reset } = installFogGlobals({ ids: ["fog-1"] });
 
       const real = await routerFor().route(createRequest("scene.fog.reset", { sceneId: "scene-1" }));
@@ -1137,8 +1142,7 @@ describe("command router", () => {
         clearedCount: 1,
         confirmation: "not-dispatched",
         viewedSceneId: null,
-        dryRun: true,
-        approvalRequired: true
+        dryRun: true
       });
 
       expect(real.ok).toBe(false);

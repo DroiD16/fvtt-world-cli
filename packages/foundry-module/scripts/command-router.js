@@ -1,5 +1,6 @@
 import {
   COMMAND_DEFINITIONS,
+  DEFAULT_WS_MAX_PAYLOAD_BYTES,
   ERROR_CODES,
   MESSAGE_TYPES,
   PROTOCOL_COMPONENTS,
@@ -13,6 +14,7 @@ import {
   isKnownCommand
 } from "./generated/protocol.js";
 import { createActorEffectHandlers } from "./handlers/actor-effects.js";
+import { createApprovalHandlers } from "./handlers/approval.js";
 import { createAuditHandlers } from "./handlers/audit.js";
 import { createActorItemEffectHandlers } from "./handlers/actor-item-effects.js";
 import { createActorItemHandlers } from "./handlers/actor-items.js";
@@ -51,6 +53,8 @@ import { createSettingHandlers } from "./handlers/settings.js";
 import { createPolicyHandlers } from "./handlers/policy.js";
 import { createSystemHandlers } from "./handlers/system.js";
 import { createTableHandlers, withQueuedTableOwnership } from "./handlers/tables.js";
+import { ApprovalStore } from "./lib/approval-store.js";
+import { resolveApprovalTargets } from "./lib/approval-targets.js";
 import { isDryRun } from "./lib/dry-run.js";
 import {
   createBridgeError,
@@ -67,6 +71,21 @@ const COMMAND_DENIED_MESSAGE_TAIL =
   "transient failure to retry or to route around with a different command that reaches the same effect. " +
   "Treat the command as unavailable, and report the refusal to the user: only a human editing that GM " +
   "client's command policy in Foundry can lift it.";
+
+const APPROVAL_PENDING_MESSAGE_TAIL =
+  "Nothing has executed yet and no world state has changed. The decision is a human one, taken in the " +
+  "approval window of the GM client holding this bridge. Poll approval.await with details.approvalId to " +
+  "wait for it: an Allow answers with the command's own response, and a denial, a timeout, or a confirmed " +
+  "cancellation answers with a terminal error guaranteeing that the command never ran. A client that does " +
+  "not implement that wait loop must treat this response as a failure and must not report the command as " +
+  "done.";
+
+const APPROVAL_QUEUE_FULL_MESSAGE_TAIL =
+  "Nothing was displayed to the GM and nothing executed. The approval store bounds both the number of " +
+  "decisions waiting for the GM and their combined weight, and it refuses a new request rather than " +
+  "discard an outcome no client has read yet; a request whose frame weight could not be measured is " +
+  "refused the same way. Retry once the GM has worked through the waiting decisions, or report to the " +
+  "user that this command needs to be set to allow in that GM client's command policy.";
 
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -91,8 +110,17 @@ function withApprovalRequired(result) {
   return { ...result, approvalRequired: true };
 }
 
-export function createCommandRouter({ bridgeClient }) {
+export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} }) {
+  const approvalStore = new ApprovalStore({
+    ...approvalStoreOptions,
+    execute: ({ approvalId, command, params }) =>
+      executeGuardedCommand({ command, params, messageId: approvalId, skipPolicyGate: true }),
+    pendingByteBudgetProvider: () =>
+      bridgeClient?.getEffectiveLimits?.()?.wsMaxPayloadBytes ?? DEFAULT_WS_MAX_PAYLOAD_BYTES
+  });
+
   const handlers = /** @type {Record<string, (params: any, context: any) => Promise<any>>} */ ({
+    ...createApprovalHandlers({ approvalStore }),
     ...createActorHandlers(),
     ...createActorItemHandlers(),
     ...createActorEffectHandlers(),
@@ -139,9 +167,58 @@ export function createCommandRouter({ bridgeClient }) {
   });
 
   /**
-   * @param {{ command: string, params: any, messageId: string, skipPolicyGate?: boolean }} request
+   * @param {string} command
+   * @param {any} params
+   * @returns {unknown}
    */
-  async function executeGuardedCommand({ command, params, messageId, skipPolicyGate = false }) {
+  function resolveTargetsForDisplay(command, params) {
+    try {
+      return resolveApprovalTargets(command, params);
+    } catch (error) {
+      console.error(`[fvtt-world-cli] approval targets for ${command} could not be resolved:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * @param {{ command: string, params: any, requestBytes?: number }} request
+   * @returns {Error}
+   */
+  function admitForApproval({ command, params, requestBytes }) {
+    const admission = approvalStore.admit({
+      command,
+      params,
+      targets: resolveTargetsForDisplay(command, params),
+      requestBytes: /** @type {number} */ (requestBytes)
+    });
+
+    if (!admission.admitted) {
+      return createBridgeError(
+        ERROR_CODES.APPROVAL_QUEUE_FULL,
+        `Command ${command} was refused before it reached the GM of this bridge for approval. ` +
+          APPROVAL_QUEUE_FULL_MESSAGE_TAIL,
+        { command, reason: admission.reason }
+      );
+    }
+
+    return createBridgeError(
+      ERROR_CODES.APPROVAL_PENDING,
+      `Command ${command} needs an approval from the GM of this bridge before it runs. ` +
+        APPROVAL_PENDING_MESSAGE_TAIL,
+      { approvalId: admission.approvalId, expiresAt: admission.expiresAt, command }
+    );
+  }
+
+  /**
+   * @param {{
+   *   command: string,
+   *   params: any,
+   *   messageId: string,
+   *   requestBytes?: number,
+   *   skipPolicyGate?: boolean
+   * }} request
+   */
+  async function executeGuardedCommand({ command, params, messageId, requestBytes, skipPolicyGate = false }) {
     try {
       assertFoundryReady();
       if (!globalThis.game?.user?.isGM) {
@@ -166,6 +243,10 @@ export function createCommandRouter({ bridgeClient }) {
             COMMAND_DENIED_MESSAGE_TAIL,
           { command }
         );
+      }
+
+      if (policy?.behavior === "approve") {
+        throw admitForApproval({ command, params, requestBytes });
       }
 
       const handler = handlers[command];
@@ -203,9 +284,14 @@ export function createCommandRouter({ bridgeClient }) {
   }
 
   return {
+    approvalStore,
     executeGuardedCommand,
 
-    async route(message) {
+    /**
+     * @param {any} message
+     * @param {{ requestBytes?: number }} [frame]
+     */
+    async route(message, { requestBytes } = {}) {
       if (!isPlainObject(message)) {
         return createErrorResponse({
           id: "unknown",
@@ -264,7 +350,8 @@ export function createCommandRouter({ bridgeClient }) {
       return executeGuardedCommand({
         command: message.command,
         params: message.params,
-        messageId
+        messageId,
+        requestBytes
       });
     }
   };

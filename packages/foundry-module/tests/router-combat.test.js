@@ -653,9 +653,7 @@ describe("command router", () => {
 
       const real = await router().route(createRequest("combat.delete", { combatId: "combat-1" }));
       expect(real.ok).toBe(true);
-      expect(Object.keys(response.result).sort()).toEqual(
-        [...Object.keys(real.result), "dryRun", "approvalRequired"].sort()
-      );
+      expect(Object.keys(response.result).sort()).toEqual([...Object.keys(real.result), "dryRun"].sort());
     });
 
     it("combat.delete REFUSES to report a vetoed delete as success", async () => {
@@ -2154,8 +2152,7 @@ describe("command router", () => {
         id: "combatant-1",
         deleted: false,
         combat: expect.objectContaining({ id: "combat-1", combatantCount: 2, turn: 0 }),
-        dryRun: true,
-        approvalRequired: true
+        dryRun: true
       });
       expect(combat.deleteEmbeddedDocuments.mock.calls.length).toBe(callsBeforePreview);
     });
@@ -2465,8 +2462,7 @@ describe("command router", () => {
         deleted: false,
 
         danglingCombatantIds: ["combatant-2"],
-        dryRun: true,
-        approvalRequired: true
+        dryRun: true
       });
       expect(combat.groups.size).toBe(1);
 

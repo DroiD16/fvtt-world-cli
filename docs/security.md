@@ -106,6 +106,17 @@ Foundry hooks can veto or partially apply writes. Mutation handlers confirm obse
 where the command contract requires it and return structured partial or failed outcomes instead of
 claiming success.
 
+A command the policy sends to approval is not run by the request that carried it. The module holds it,
+in memory only, until the GM decides, and an allowed command then travels the same guarded path a
+direct call takes: Foundry readiness, current-GM authority, parameter validation, the write-permission
+check, and the family's own guards are all evaluated again at that moment. Only the policy verdict is
+not asked a second time, because the GM's allow is that verdict for that one invocation; a policy
+edited while the decision waits therefore does not change what was already approved. Nothing runs
+unless the request first leaves the waiting state, so a denial, an expiry, or a cancellation the
+module confirmed means the command never ran. The correlating `approvalId` is a 128-bit random token
+revealed only in the answer to the original request, and a caller without it can neither read the
+outcome nor cancel the decision.
+
 ## Document ownership
 
 Ownership is access policy rather than ordinary document content. Raw `ownership` is excluded from
@@ -202,6 +213,11 @@ The bridge does not expose arbitrary compendium writes.
 The daemon and module bound uploads, WebSocket frames, search work, batch sizes, and selected result
 shapes. Oversized operations return structured errors where possible without dropping the shared
 bridge session.
+
+Decisions waiting for the GM are bounded the same way: the module weighs each request frame as it
+arrives and refuses admission, before anything is displayed or executed, once the waiting decisions
+reach either their count or their combined weight. A retained outcome no client has read is never
+dropped to make room for a new request.
 
 The system remains susceptible to ordinary local denial of service by an authorized caller issuing
 many expensive Foundry operations. It is designed for cooperative local automation, not hostile

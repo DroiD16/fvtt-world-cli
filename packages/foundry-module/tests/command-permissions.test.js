@@ -31,7 +31,7 @@ import {
 import { buildPolicyView, listSubtreeCommands } from "../scripts/lib/policy-tree.js";
 import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 
-import { installFakeFoundry } from "./helpers/fake-foundry.js";
+import { clearStoredCommandPolicy, installFakeFoundry } from "./helpers/fake-foundry.js";
 import { createEnglishI18n, formatEnglish, localizeEnglish } from "./helpers/i18n.js";
 
 const MODULE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -180,6 +180,7 @@ describe("Command permissions application", () => {
 
   beforeEach(() => {
     installFakeFoundry();
+    clearStoredCommandPolicy();
     globalThis.game.i18n = createEnglishI18n();
     globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.COMMAND_POLICY, {
       scope: "client",

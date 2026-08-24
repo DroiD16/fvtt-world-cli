@@ -962,3 +962,80 @@ describe("BridgeClient status change signal", () => {
     });
   });
 });
+
+describe("BridgeClient request frame weight", () => {
+  function routingClient() {
+    globalThis.game = /** @type {any} */ ({
+      i18n: createEnglishI18n(),
+      user: { id: "gm", isGM: true }
+    });
+    /** @type {{ requestBytes?: number }[]} */
+    const frames = [];
+    const route = vi.fn(async (/** @type {any} */ message, /** @type {any} */ frame) => {
+      frames.push(frame);
+      return {
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_RESPONSE,
+        id: message.id,
+        ok: true,
+        result: {}
+      };
+    });
+    const client = new BridgeClient({
+      url: "ws://127.0.0.1:47833",
+      pairingId: "pair-1",
+      credential: "b".repeat(43),
+      router: { route },
+      getSession: () => ({ moduleId: "fvtt-world-cli" }),
+      logger: vi.fn()
+    });
+    globalThis.WebSocket = /** @type {any} */ ({ OPEN: 1 });
+    client.socket = /** @type {any} */ ({ readyState: 1, send: vi.fn(), close: vi.fn() });
+    client.helloAcknowledged = true;
+    return { client, route, frames };
+  }
+
+  /** @param {Record<string, unknown>} params */
+  function requestFrame(params) {
+    return JSON.stringify({
+      protocolVersion: PROTOCOL_VERSION,
+      type: MESSAGE_TYPES.COMMAND_REQUEST,
+      id: "weighed-1",
+      command: "file.upload",
+      params
+    });
+  }
+
+  it("reports the size of the frame it received, not the length of its text", async () => {
+    const { client, route, frames } = routingClient();
+    const frame = requestFrame({ path: "worlds/world-1/notes.txt", contentBase64: "A".repeat(4096) });
+
+    await client.handleMessage({ data: frame });
+
+    expect(route).toHaveBeenCalledTimes(1);
+    expect(frames).toEqual([{ requestBytes: new TextEncoder().encode(frame).length }]);
+    expect(frames[0].requestBytes).toBeGreaterThan(4096);
+  });
+
+  it("counts a multi-byte payload in bytes rather than characters", async () => {
+    const { client, frames } = routingClient();
+    const frame = requestFrame({ path: "worlds/world-1/héroïnes-🐉.txt", contentBase64: "é🐉".repeat(64) });
+
+    await client.handleMessage({ data: frame });
+
+    const measured = frames[0].requestBytes;
+    expect(measured).toBe(new TextEncoder().encode(frame).length);
+    expect(measured).toBeGreaterThan(frame.length);
+  });
+
+  it("takes the size of a binary frame from the frame itself", async () => {
+    const { client, frames } = routingClient();
+    const encoded = new TextEncoder().encode(
+      requestFrame({ path: "worlds/world-1/notes.txt", contentBase64: "AAAA" })
+    );
+
+    await client.handleMessage({ data: encoded.buffer });
+
+    expect(frames).toEqual([{ requestBytes: encoded.byteLength }]);
+  });
+});

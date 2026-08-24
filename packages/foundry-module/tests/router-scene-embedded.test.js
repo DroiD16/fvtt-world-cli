@@ -1018,7 +1018,6 @@ describe("command router", () => {
       sceneId: "scene-1",
       complete: true,
       dryRun: true,
-      approvalRequired: true,
       outcomes: [
         { index: 0, id: "wall-plain", status: "deleted" },
         { index: 1, id: "gone-wall-id-01", status: "alreadyDeleted" }
@@ -3281,8 +3280,7 @@ describe("command router", () => {
       regionId: "region-safe",
       id: "behavior-script",
       deleted: false,
-      dryRun: true,
-      approvalRequired: true
+      dryRun: true
     });
 
     const response = await router.route(

@@ -29,7 +29,7 @@ export const APPROVAL_REFUSAL_REASONS = Object.freeze({
 /** @typedef {"pending" | "executing" | "resolved" | "denied" | "timeout" | "cancelled"} ApprovalState */
 /** @typedef {"approved" | "denied" | "timeout" | "cancelled"} ApprovalOutcome */
 /** @typedef {"allow" | "deny"} ApprovalDecision */
-/** @typedef {{ approvalId: string, command: string, params: unknown, targets: unknown[], requestBytes: number }} ApprovalExecution */
+/** @typedef {{ approvalId: string, command: string, params: unknown, targets: unknown, requestBytes: number }} ApprovalExecution */
 /** @typedef {(execution: ApprovalExecution) => Promise<unknown> | unknown} ApprovalExecutor */
 /**
  * @typedef {{ approvalId: string, status: "pending", expiresAt?: number }
@@ -42,7 +42,7 @@ export const APPROVAL_REFUSAL_REASONS = Object.freeze({
  *   approvalId: string,
  *   command: string,
  *   params: unknown,
- *   targets: unknown[],
+ *   targets: unknown,
  *   createdAt: number,
  *   expiresAt: number,
  *   state: ApprovalState,
@@ -62,7 +62,7 @@ export const APPROVAL_REFUSAL_REASONS = Object.freeze({
  *   approvalId: string,
  *   command: string,
  *   params?: unknown,
- *   targets: unknown[],
+ *   targets: unknown,
  *   createdAt: number,
  *   expiresAt: number,
  *   state: ApprovalState
@@ -192,10 +192,10 @@ export class ApprovalStore {
   }
 
   /**
-   * @param {{ command: string, params: unknown, targets?: unknown[], requestBytes: number }} request
+   * @param {{ command: string, params: unknown, targets?: unknown, requestBytes: number }} request
    * @returns {ApprovalAdmission}
    */
-  admit({ command, params, targets = [], requestBytes }) {
+  admit({ command, params, targets = null, requestBytes }) {
     this.#pruneExpired();
 
     const bytes = normalizeByteWeight(requestBytes);
@@ -456,7 +456,7 @@ export class ApprovalStore {
   #settleTerminal(record, state) {
     this.#claimPending(record, state);
     record.terminalAt = this.now();
-    record.targets = [];
+    record.targets = null;
     this.#wakeWaiters(record);
     this.#publish();
   }
@@ -469,7 +469,7 @@ export class ApprovalStore {
   #settleExecution(record, response, hasResponse) {
     record.state = "resolved";
     record.terminalAt = this.now();
-    record.targets = [];
+    record.targets = null;
 
     /** @type {ApprovalReport | undefined} */
     let deliverable;

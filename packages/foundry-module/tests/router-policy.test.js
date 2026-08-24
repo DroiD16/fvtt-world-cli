@@ -16,7 +16,12 @@ import {
 } from "../scripts/generated/protocol.js";
 import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 
-import { COMBAT_GROUP_A, createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
+import {
+  COMBAT_GROUP_A,
+  clearStoredCommandPolicy,
+  createRequest,
+  installFakeFoundry
+} from "./helpers/fake-foundry.js";
 
 const MODULE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPTS_DIR = join(MODULE_ROOT, "scripts");
@@ -115,6 +120,7 @@ function router() {
 }
 
 function registerPolicySettings() {
+  clearStoredCommandPolicy();
   globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.COMMAND_POLICY, {
     name: "FVTTWORLDCLI.Settings.CommandPolicyName",
     scope: "client",
@@ -194,14 +200,17 @@ describe("command policy gate", () => {
       expect(response.result.actor.id).toBe("actor-1");
     });
 
-    it("dispatches an approve-listed command until the approval store governs it", async () => {
+    it("hands an approve-listed command to the GM instead of dispatching it", async () => {
       const actorId = await createDeletableActor();
 
-      const response = await router().route(createRequest("actor.delete", { actorId }));
+      const response = await router().route(createRequest("actor.delete", { actorId }), {
+        requestBytes: 256
+      });
 
-      expect(response.ok).toBe(true);
-      expect(response.result).toMatchObject({ id: actorId, deleted: true });
-      expect(globalThis.game.actors.get(actorId).deleted).toBe(true);
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe(ERROR_CODES.APPROVAL_PENDING);
+      expect(response.error.details.command).toBe("actor.delete");
+      expect(globalThis.game.actors.get(actorId).deleted).toBeUndefined();
     });
 
     it("resolves the destructive commands the default profile marks approve", async () => {
@@ -342,15 +351,6 @@ describe("command policy gate", () => {
 
       expect(raised.result.approvalRequired).toBe(true);
       expect(lowered.result).not.toHaveProperty("approvalRequired");
-    });
-
-    it("leaves a real call of an approve-listed command unmarked", async () => {
-      const actorId = await createDeletableActor();
-
-      const response = await router().route(createRequest("actor.delete", { actorId }));
-
-      expect(response.ok).toBe(true);
-      expect(response.result).not.toHaveProperty("approvalRequired");
     });
 
     it("carries no marker on a denied invocation", async () => {

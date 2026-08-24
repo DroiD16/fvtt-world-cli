@@ -90,6 +90,13 @@ CLI invocation
 The bridge advertises its supported commands during the handshake. The daemon forwards only commands
 advertised by the active session.
 
+A command the GM client's policy sends to human approval leaves this flow after authorization and
+before dispatch. The module keeps the invocation in memory, answers the request with a pending
+approval, and executes it from the GM's decision instead — through the same guarded dispatch, so the
+delay cannot outdate any check but the policy verdict itself. The waiting caller returns for the
+outcome in separate short-lived requests correlated by the approval's identifier, which keeps a
+decision that may take an hour off the request and session timeouts the transport is built around.
+
 ## Validation boundaries
 
 The CLI validation pass provides fast feedback and avoids unnecessary connections. The bridge repeats

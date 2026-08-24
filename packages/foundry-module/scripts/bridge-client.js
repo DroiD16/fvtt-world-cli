@@ -41,6 +41,7 @@ function normalizeAckLimits(limits) {
   return { uploadBytes, wsMaxPayloadBytes };
 }
 import { format, localize } from "./lib/i18n.js";
+import { utf8ByteLength } from "./lib/setting-values.js";
 import {
   getBridgeBusyWarningMessage,
   getDaemonUnavailableWarningMessage,
@@ -63,20 +64,28 @@ function defaultLogger(level, message, details = {}) {
   logMethod(prefix, message, details);
 }
 
-function normalizeMessageData(data) {
+// The frame is weighed here, where its wire form is still at hand, so nothing downstream serializes a
+// request a second time to learn how heavy it is. A binary frame reports its own size; a text frame is
+// counted without allocating a copy of a payload that may be hundreds of megabytes.
+/**
+ * @param {unknown} data
+ * @returns {Promise<{ text: string, bytes: number }>}
+ */
+function normalizeMessageFrame(data) {
   if (typeof data === "string") {
-    return Promise.resolve(data);
+    return Promise.resolve({ text: data, bytes: utf8ByteLength(data) });
   }
 
   if (data instanceof ArrayBuffer) {
-    return Promise.resolve(new TextDecoder().decode(data));
+    return Promise.resolve({ text: new TextDecoder().decode(data), bytes: data.byteLength });
   }
 
   if (typeof Blob !== "undefined" && data instanceof Blob) {
-    return data.text();
+    return data.text().then((text) => ({ text, bytes: data.size }));
   }
 
-  return Promise.resolve(String(data ?? ""));
+  const text = String(data ?? "");
+  return Promise.resolve({ text, bytes: utf8ByteLength(text) });
 }
 
 export class BridgeClient {
@@ -218,8 +227,8 @@ export class BridgeClient {
   }
 
   async handleMessage(event) {
-    const rawMessage = await normalizeMessageData(event.data);
-    const parsed = parseBridgeMessage(rawMessage);
+    const frame = await normalizeMessageFrame(event.data);
+    const parsed = parseBridgeMessage(frame.text);
 
     if (!parsed.ok) {
       this.logger("warn", "Received invalid JSON from daemon", parsed.error);
@@ -279,7 +288,7 @@ export class BridgeClient {
       return;
     }
 
-    const response = await this.router.route(message);
+    const response = await this.router.route(message, { requestBytes: frame.bytes });
     this.send(response);
   }
 
