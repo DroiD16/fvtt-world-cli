@@ -4,6 +4,7 @@ import { COMMAND_DEFINITIONS, COMMAND_NAMES } from "../scripts/generated/protoco
 import {
   APPROVAL_TARGET_DISPLAY_MAX,
   APPROVAL_TARGET_KINDS,
+  APPROVAL_TARGET_STATES,
   getApprovalTargetStrategy,
   resolveApprovalTargets
 } from "../scripts/lib/approval-targets.js";
@@ -13,9 +14,9 @@ import { createDocument, installFakeFoundry } from "./helpers/fake-foundry.js";
 // of a move, which carry no suffix.
 const ID_PARAMETER_PATTERN = /^(?:.+Ids?|from|to)$/;
 
-// The ids a summary shows only inside the parameter block: an entry in a compendium, which lies
-// outside the world document graph, and the opaque approval correlation id. A new command whose id
-// is missing here has no resolved target.
+// The ids a summary carries as descriptor text instead of as a resolved document target: an entry in
+// a compendium, which lies outside the world document graph, and the opaque approval correlation id.
+// A new command whose id is missing here has no resolved target.
 const UNRESOLVED_ID_PARAMETERS = [
   "actor.import-from-compendium entryId",
   "actor.item.import-from-compendium entryId",
@@ -92,6 +93,17 @@ describe("approval target strategies", () => {
     });
 
     expect(undescribed).toEqual([]);
+  });
+
+  it("names the document type of every command that describes a collection of them", () => {
+    const untyped = COMMAND_NAMES.filter((command) => {
+      const strategy = getApprovalTargetStrategy(command);
+      return (
+        (strategy?.kind === "create" || strategy?.kind === "bulk") && (strategy?.collection ?? null) === null
+      );
+    });
+
+    expect(untyped).toEqual([]);
   });
 
   it("resolves every id a command declares, or names it as one only the parameters carry", () => {
@@ -258,6 +270,23 @@ describe("approval target resolution", () => {
 
     expect(summary.totalCount).toBe(to.length + 1);
     expect(summary.omittedCount).toBe(3);
+    expect(summary.totalCount - summary.omittedCount).toBe(summary.targets.length);
+  });
+
+  it("reads no more counterpart stacks than the list shows", () => {
+    const collection = globalThis.game.cards;
+    const lookUp = collection.get.bind(collection);
+    let lookups = 0;
+    collection.get = (id) => {
+      lookups += 1;
+      return lookUp(id);
+    };
+
+    const to = Array.from({ length: 5000 }, (_, index) => `cards-hand-${index}`);
+    const summary = resolveApprovalTargets("cards.deal", { cardsId: "cards-deck", to });
+
+    expect(lookups).toBe(APPROVAL_TARGET_DISPLAY_MAX + 1);
+    expect(summary.totalCount).toBe(to.length + 1);
     expect(summary.totalCount - summary.omittedCount).toBe(summary.targets.length);
   });
 
@@ -464,6 +493,26 @@ describe("approval target resolution", () => {
     expect(summary.targets).toEqual([
       { role: "playlistId", type: "Playlist", id: null, name: null, state: "unspecified", parents: [] }
     ]);
+  });
+
+  it("marks a target with one of the states it declares, and declares no state it never marks", () => {
+    const summaries = [
+      resolveApprovalTargets("actor.update", { actorId: "actor-1", patch: {} }),
+      resolveApprovalTargets("scene.token.update", {
+        sceneId: "scene-1",
+        tokenId: "token-gone",
+        patch: {}
+      }),
+      resolveApprovalTargets("playlist.sound.list", {}),
+      resolveApprovalTargets("actor.item.create", { actorId: "actor-1", data: { name: "Rope" } }),
+      resolveApprovalTargets("file.upload", { path: "worlds/world-1/notes.txt" })
+    ];
+
+    const marked = summaries.flatMap((summary) =>
+      summary.targets.flatMap((target) => [target.state, ...target.parents.map((parent) => parent.state)])
+    );
+
+    expect([...new Set(marked)].sort()).toEqual([...APPROVAL_TARGET_STATES].sort());
   });
 
   it("answers without a game rather than raising the readiness error", () => {
