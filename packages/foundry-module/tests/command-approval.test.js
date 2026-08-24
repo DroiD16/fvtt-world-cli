@@ -32,7 +32,10 @@ function collectBinaryFields(schema, found) {
     if (BINARY_FIELD_PATTERN.test(name)) found.add(name);
     collectBinaryFields(property, found);
   }
+
+  for (const variant of schema.oneOf ?? []) collectBinaryFields(variant, found);
   collectBinaryFields(schema.items, found);
+  collectBinaryFields(schema.additionalProperties, found);
   return found;
 }
 
