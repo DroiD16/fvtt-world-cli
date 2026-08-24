@@ -511,23 +511,39 @@ describe("Command approval window", () => {
     expect(app.countdownNode.textContent).toBe("59:59");
   });
 
-  it("does not reopen a window the GM closed until another request arrives", async () => {
+  it("leaves a window the GM closed shut while the same request stays on screen", async () => {
+    const store = createStore();
+    createApprovalWindow({ approvalStore: store });
+    admit(store, "actor.delete", { actorId: "actor-1" });
+    const waiting = admit(store, "scene.delete", { sceneId: "scene-1" });
+    await flush();
+    const [app] = instances;
+
+    await app.close();
+    store.cancel(waiting.approvalId);
+    await flush();
+
+    expect(app.rendered).toBe(false);
+    expect(store.getQueueView().waitingCount).toBe(0);
+  });
+
+  it("shows the next request when the queue moves past the one the GM was looking at", async () => {
     const store = createStore({ timeoutMinutesProvider: () => 1 });
     createApprovalWindow({ approvalStore: store });
     admit(store, "actor.delete", { actorId: "actor-1" });
+    await flush();
+    await vi.advanceTimersByTimeAsync(30_000);
     admit(store, "scene.delete", { sceneId: "scene-1" });
     await flush();
     const [app] = instances;
 
     await app.close();
-    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(30_000);
     await flush();
-    expect(app.rendered).toBe(false);
 
-    admit(store, "item.delete", { itemId: "item-1" });
-    await flush();
     expect(app.rendered).toBe(true);
-    expect(app.contexts.at(-1).request.command).toBe("item.delete");
+    expect(app.contexts.at(-1).request.command).toBe("scene.delete");
+    expect(globalThis.ui.notifications.info).toHaveBeenCalledTimes(2);
   });
 
   it("decides nothing from a session that is not a GM", async () => {

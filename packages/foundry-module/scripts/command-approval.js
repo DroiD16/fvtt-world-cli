@@ -273,7 +273,9 @@ export function createCommandApprovalApplication({ approvalStore }) {
 }
 
 // The queue view names only the request on screen, so an arrival is read from the number of decisions
-// the store holds: admission is the one transition that raises it.
+// the store holds: admission is the one transition that raises it. A request the queue advances to
+// reopens the window as an arrival does, because nothing else can bring it back on screen: it has
+// already pinged while it waited, and the window opens from the queue alone.
 /**
  * @param {{ approvalStore: ApprovalStore }} runtime
  */
@@ -281,11 +283,16 @@ export function createApprovalWindow({ approvalStore }) {
   /** @type {any} */
   let application = null;
   let held = 0;
+  /** @type {string | null} */
+  let shown = null;
 
   approvalStore.subscribe((view) => {
     const total = (view.current === null ? 0 : 1) + view.waitingCount;
     const arrived = total > held;
+    const currentId = view.current?.approvalId ?? null;
+    const advanced = currentId !== null && currentId !== shown;
     held = total;
+    shown = currentId;
 
     if (total === 0) {
       void application?.close();
@@ -297,6 +304,6 @@ export function createApprovalWindow({ approvalStore }) {
     }
 
     application ??= new (createCommandApprovalApplication({ approvalStore }))();
-    void application.render({ force: arrived });
+    void application.render({ force: arrived || advanced });
   });
 }
