@@ -807,6 +807,23 @@ describe("Command permissions application", () => {
       expect(view.emptyNotice.hidden).toBe(true);
     });
 
+    it("counts only what a filter scoped to always-allowed commands can change", async () => {
+      const view = render();
+      const exemptCommand = POLICY_EXEMPT_COMMANDS[0];
+      await view.app._onRender({}, {});
+
+      view.filterField.listeners.get("input")({ target: { value: exemptCommand } });
+      await view.dispatch("fillAll", { behavior: "deny" });
+
+      const context = await view.app._prepareContext();
+      expect(context.visibleCount).toBe(1);
+      expect(view.fillLabel.textContent).toBe(
+        formatEnglish("FVTTWORLDCLI.Permissions.MasterFillFiltered", { count: 0 })
+      );
+      expect(draftOf(view.app).policy.overrides).toEqual({});
+      expect(view.emptyNotice.hidden).toBe(true);
+    });
+
     it("reports an empty result and reopens the whole tree when the filter is cleared", async () => {
       const view = render();
       await view.app._onRender({}, {});

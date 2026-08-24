@@ -69,9 +69,9 @@ function matchesFilterTerm(command, term) {
  * @param {unknown} filter
  * @returns {string[]}
  */
-export function listFilteredCommands(filter) {
+export function listFillableCommands(filter) {
   const term = normalizeFilterTerm(filter);
-  return COMMAND_NAMES.filter((command) => matchesFilterTerm(command, term));
+  return COMMAND_NAMES.filter((command) => !EXEMPT_COMMANDS.has(command) && matchesFilterTerm(command, term));
 }
 
 /**
@@ -199,6 +199,7 @@ export function buildPolicyView(storedPolicy, { filter = "" } = {}) {
   const term = normalizeFilterTerm(filter);
   const root = createBranch("", "");
   let visibleCount = 0;
+  let fillableCount = 0;
 
   for (const command of COMMAND_NAMES) {
     const segments = command.split(".");
@@ -213,14 +214,16 @@ export function buildPolicyView(storedPolicy, { filter = "" } = {}) {
     }
 
     const baseBehavior = resolveNormalizedBehavior(policy, command);
+    const exempt = EXEMPT_COMMANDS.has(command);
     const hidden = !matchesFilterTerm(command, term);
     if (!hidden) visibleCount += 1;
+    if (!hidden && !exempt) fillableCount += 1;
 
     branch.commands.push({
       name: command,
       verb,
       behavior: baseBehavior,
-      exempt: EXEMPT_COMMANDS.has(command),
+      exempt,
       destructive: isDestructiveCommand(command),
       changed: Object.hasOwn(policy.overrides, command),
       pressed: Object.fromEntries(POLICY_BEHAVIORS.map((value) => [value, value === baseBehavior])),
@@ -239,6 +242,7 @@ export function buildPolicyView(storedPolicy, { filter = "" } = {}) {
     commandCount: COMMAND_NAMES.length,
     groupCount: nodes.length,
     profileApproveCount: PROFILE_APPROVE_COUNT,
-    visibleCount
+    visibleCount,
+    fillableCount
   };
 }

@@ -14,7 +14,7 @@ import {
 import {
   buildPolicyView,
   clearOverrides,
-  listFilteredCommands,
+  listFillableCommands,
   listSubtreeCommands,
   normalizeFilterTerm,
   writeBehaviors
@@ -102,7 +102,7 @@ function buildContext(draft) {
   return {
     ...view,
     fillLabel: view.filtered
-      ? format("FVTTWORLDCLI.Permissions.MasterFillFiltered", { count: view.visibleCount })
+      ? format("FVTTWORLDCLI.Permissions.MasterFillFiltered", { count: view.fillableCount })
       : localize("FVTTWORLDCLI.Permissions.MasterFill"),
     dirty: hasUnsavedWork(draft),
     saveError: draft.saveError,
@@ -337,7 +337,7 @@ const handleAction = async function (event, target) {
   // The fill sits beside the filter, so it means what the filter shows: with no term every command
   // is visible and the fill is global.
   if (action === "fillAll") {
-    draft.policy = writeBehaviors(draft.policy, listFilteredCommands(draft.filter), target.dataset.behavior);
+    draft.policy = writeBehaviors(draft.policy, listFillableCommands(draft.filter), target.dataset.behavior);
     paintState(root, draft);
     return;
   }
