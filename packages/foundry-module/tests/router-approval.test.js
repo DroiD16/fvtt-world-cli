@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCommandRouter } from "../scripts/command-router.js";
 import { ERROR_CODES, MODULE_ID } from "../scripts/generated/protocol.js";
 import { APPROVAL_REFUSAL_REASONS } from "../scripts/lib/approval-store.js";
+import { resolveApprovalTargets } from "../scripts/lib/approval-targets.js";
 import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 
 import { clearStoredCommandPolicy, createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
@@ -114,6 +115,20 @@ describe("a command the policy sends to the GM", () => {
     });
   });
 
+  it("names the documents the waiting command would change", async () => {
+    const params = { actorId: "actor-1", patch: { name: "Renamed" } };
+    await storePolicy({ "actor.update": "approve" });
+    const approvalId = await askForApproval("actor.update", params);
+
+    const waiting = router.approvalStore.getQueueView().current;
+
+    expect(waiting.approvalId).toBe(approvalId);
+    expect(waiting.targets).toEqual(resolveApprovalTargets("actor.update", params));
+    expect(waiting.targets.targets).toEqual([
+      { role: "actorId", type: "Actor", id: "actor-1", name: "Valeros", state: "resolved", parents: [] }
+    ]);
+  });
+
   it("runs on an allow and delivers exactly what a direct call would have returned", async () => {
     const direct = await send("actor.update", { actorId: "actor-1", patch: { name: "Renamed" } });
     await storePolicy({ "actor.update": "approve" });
@@ -163,6 +178,38 @@ describe("a command the policy sends to the GM", () => {
 
     expect(response.result.response.ok).toBe(true);
     expect(actorName()).toBe("Approved Rename");
+  });
+});
+
+describe("a command whose targets cannot be resolved", () => {
+  afterEach(() => {
+    vi.doUnmock("../scripts/lib/approval-targets.js");
+    vi.resetModules();
+  });
+
+  it("still waits for a decision, with no documents named", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.resetModules();
+    vi.doMock("../scripts/lib/approval-targets.js", () => ({
+      resolveApprovalTargets: () => {
+        throw new Error("target resolution failed");
+      }
+    }));
+    const module = await import("../scripts/command-router.js");
+    router = module.createCommandRouter({ bridgeClient: BRIDGE_CLIENT });
+    await storePolicy({ "actor.update": "approve" });
+
+    const approvalId = await askForApproval("actor.update", {
+      actorId: "actor-1",
+      patch: { name: "Unnamed Target" }
+    });
+
+    expect(router.approvalStore.getQueueView()).toMatchObject({
+      current: { approvalId, command: "actor.update", state: "pending", targets: null },
+      waitingCount: 0
+    });
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });
 
@@ -378,6 +425,21 @@ describe("a request the approval store refuses", () => {
     expect(actorName()).toBe("Valeros");
   });
 
+  it("is refused when its frame outweighs the budget the transport allows", async () => {
+    router = createCommandRouter({
+      bridgeClient: BRIDGE_CLIENT,
+      approvalStoreOptions: { pendingByteBudgetProvider: () => REQUEST_BYTES - 1 }
+    });
+    await storePolicy({ "actor.update": "approve" });
+
+    const response = await send("actor.update", { actorId: "actor-1", patch: { name: "Too Heavy" } });
+
+    expect(response.error.code).toBe(ERROR_CODES.APPROVAL_QUEUE_FULL);
+    expect(response.error.details.reason).toBe(APPROVAL_REFUSAL_REASONS.PENDING_BYTES);
+    expect(router.approvalStore.getQueueView()).toEqual({ current: null, waitingCount: 0 });
+    expect(actorName()).toBe("Valeros");
+  });
+
   it("is refused when the weight of its frame is unknown", async () => {
     await storePolicy({ "actor.update": "approve" });
 
@@ -398,6 +460,13 @@ describe("a command that never reaches the store", () => {
     expect(response.ok).toBe(true);
     expect(response.result.approvalRequired).toBe(true);
     expect(globalThis.game.actors.get(actorId).deleted).toBeUndefined();
+    expect(router.approvalStore.getQueueView()).toEqual({ current: null, waitingCount: 0 });
+  });
+
+  it("rejects params the schema refuses instead of asking the GM about them", async () => {
+    const response = await send("actor.delete", { actorId: 5, bogus: true });
+
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
     expect(router.approvalStore.getQueueView()).toEqual({ current: null, waitingCount: 0 });
   });
 

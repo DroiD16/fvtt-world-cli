@@ -187,13 +187,18 @@ let bridgeStartGeneration = 0;
 
 async function startBridge(credential = getCurrentCredential()) {
   const generation = ++bridgeStartGeneration;
-  globalThis.foundryCliBridge?.stop?.();
+  const previous = globalThis.foundryCliBridge;
+  previous?.stop?.();
   if (!credential) return;
   const clientId = await ensureClientId();
   // Only the newest start may install a client: an overtaken one is never stopped here, so
   // starting it anyway would leave two clients racing for the slot and publishing conflicting status.
   if (generation !== bridgeStartGeneration) return;
   const bridgeClient = createBridgeRuntime(credential, clientId);
+  // Released only where the runtime is actually replaced: a start that never gets this far leaves the
+  // approvals it found decidable, and a store nothing can reach again would hold armed timers, the
+  // params of every waiting request, and parked polls that nobody would ever answer.
+  previous?.router?.approvalStore?.clear?.();
   globalThis.foundryCliBridge = bridgeClient;
   bridgeClient.start();
 }

@@ -112,11 +112,13 @@ function withApprovalRequired(result) {
 
 export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} }) {
   const approvalStore = new ApprovalStore({
-    ...approvalStoreOptions,
-    execute: ({ approvalId, command, params }) =>
-      executeGuardedCommand({ command, params, messageId: approvalId, skipPolicyGate: true }),
     pendingByteBudgetProvider: () =>
-      bridgeClient?.getEffectiveLimits?.()?.wsMaxPayloadBytes ?? DEFAULT_WS_MAX_PAYLOAD_BYTES
+      bridgeClient?.getEffectiveLimits?.()?.wsMaxPayloadBytes ?? DEFAULT_WS_MAX_PAYLOAD_BYTES,
+    ...approvalStoreOptions,
+    // The guarded path is what makes a delayed decision safe to run, so the executor is the one
+    // option a caller may not replace.
+    execute: ({ approvalId, command, params }) =>
+      executeGuardedCommand({ command, params, messageId: approvalId, skipPolicyGate: true })
   });
 
   const handlers = /** @type {Record<string, (params: any, context: any) => Promise<any>>} */ ({

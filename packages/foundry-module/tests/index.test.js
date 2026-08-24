@@ -234,6 +234,36 @@ describe("module settings registration", () => {
     expect(globalThis.foundryCliBridge.getStatus().status).toBe("connecting");
   });
 
+  it("releases the approvals of the connection a later start replaces", async () => {
+    globalThis.game.user = { id: "gm-1", isGM: true };
+    storedSettings.autoConnect = true;
+    storedSettings.credentials = { "world-1:gm-1": { pairingId: "pair-1", credential: "secret" } };
+    class FakeSocket {
+      addEventListener() {}
+      close() {}
+    }
+    globalThis.WebSocket = /** @type {any} */ (FakeSocket);
+
+    await import("../scripts/index.js");
+    const ready = hookCallbacks.get("ready");
+    await ready();
+    const replaced = globalThis.foundryCliBridge;
+    const admission = replaced.router.approvalStore.admit({
+      command: "actor.delete",
+      params: { actorId: "actor-1" },
+      requestBytes: 128
+    });
+    expect(replaced.router.approvalStore.getQueueView().current.approvalId).toBe(admission.approvalId);
+
+    await ready();
+
+    expect(globalThis.foundryCliBridge).not.toBe(replaced);
+    expect(replaced.router.approvalStore.getQueueView()).toEqual({ current: null, waitingCount: 0 });
+    await expect(
+      replaced.router.approvalStore.awaitOutcome({ approvalId: admission.approvalId, waitMs: 0 })
+    ).resolves.toEqual({ approvalId: admission.approvalId, status: "unknown" });
+  });
+
   it("advertises every executable command in the handshake so undiscoverable plumbing stays callable", async () => {
     globalThis.game.user = { id: "gm-1", isGM: true };
     storedSettings.autoConnect = true;

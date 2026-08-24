@@ -269,15 +269,19 @@ The wait is two-phase, because a decision can outlast any request timeout:
   `cancelled` guarantees that the command will not run: `executing` means the GM's decision already
   won the race, and a started handler cannot be recalled.
 - `APPROVAL_QUEUE_FULL` is admission control. The bounded store refused the request before anything
-  was displayed or executed, so nothing ran. It refuses on the number and weight of the decisions
-  still awaiting the GM, and also rather than discard a retained outcome no client has read yet. The
-  weight is the size of the received request frame, measured once as it arrives; a frame whose size
-  could not be established is refused as though it exceeded the budget, because an unweighed request
-  cannot be held to one.
+  was displayed or executed, so nothing ran. Its details carry the `command` and the `reason` the
+  admission was refused: `pending-count` and `pending-bytes` for the number and the combined weight
+  of the decisions still awaiting the GM, and `retained-count` when room could only have been made by
+  discarding a retained outcome no client has read yet. The weight is the size of the received request
+  frame, measured once as it arrives; a frame whose size could not be established is refused as though
+  it exceeded the budget, because an unweighed request cannot be held to one.
 - `APPROVAL_UNKNOWN` answers an id the module has no approval state for. Approval state is runtime
-  state: it does not survive a GM client reload, and a retained outcome expires. It is indeterminate
-  — the command may never have started or may have completed — so world state is the only authority,
-  and a read comes before any re-request.
+  state: it does not survive a GM client reload, and it is released when that client rebuilds its
+  bridge by connecting again or by pairing again, because the decisions the previous connection held
+  can no longer be reached — the transport's own reconnect after a dropped socket keeps them. A
+  retained outcome expires as well. The answer is indeterminate — the command may never have started
+  or may have completed — so world state is the only authority, and a read comes before any
+  re-request.
 - A dry run is not gated by an approval: the preview of an approval-listed command runs without a
   decision and its result carries `approvalRequired: true`, so the caller knows the real call
   reaches the GM. A command the policy denies is refused in preview too, and that refusal is an
