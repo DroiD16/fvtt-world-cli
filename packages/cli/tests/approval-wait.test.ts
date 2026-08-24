@@ -464,6 +464,25 @@ describe("approval wait", () => {
     expect(requested).toBe(true);
   });
 
+  it("leaves the next interrupt to the process while a cancellation is still in flight", async () => {
+    const signals = createSignalScope();
+    const harness = createHarness([
+      () => new Promise<CommandResponseEnvelope>(() => {}),
+      () => new Promise<CommandResponseEnvelope>(() => {})
+    ]);
+
+    void awaitApprovalOutcome({
+      pendingResponse: pendingEnvelope(),
+      stderr: harness.stderr,
+      signalScope: signals.scope,
+      ...harness.options
+    });
+    signals.fire();
+
+    expect(signals.size).toBe(0);
+    expect(harness.calls[1].command).toBe("approval.cancel");
+  });
+
   it("leaves no signal listener behind on the success path", async () => {
     const harness = createHarness([awaitResolved("approved", deliveredSuccess())]);
     const before = process.listenerCount("SIGINT");

@@ -271,7 +271,11 @@ export async function awaitApprovalOutcome({
   });
   let cancelling = false;
 
+  // The listener goes as the first signal arrives, not in the finally: while the cancellation
+  // request is in flight a still-registered listener would swallow the next Ctrl+C, leaving the
+  // user with no way out of a daemon that never answers it.
   function onSignal() {
+    signalScope.off("SIGINT", onSignal);
     if (cancelling) {
       return;
     }
