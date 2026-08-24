@@ -168,7 +168,8 @@ describe("BridgeClient terminal shutdown", () => {
     expect(scheduleReconnect).not.toHaveBeenCalled();
     expect(client.getStatus()).toMatchObject({
       status: "stopped",
-      terminalStopReason: ERROR_CODES.BRIDGE_BUSY
+      terminalStopReason: ERROR_CODES.BRIDGE_BUSY,
+      protocolVersionMismatch: null
     });
     expect(globalThis.ui.notifications.warn).toHaveBeenCalledWith(getBridgeBusyWarningMessage(), {
       permanent: true
@@ -311,7 +312,8 @@ describe("BridgeClient handshake reliability", () => {
     );
     expect(client.getStatus()).toMatchObject({
       status: "stopped",
-      terminalStopReason: ERROR_CODES.INVALID_MESSAGE
+      terminalStopReason: ERROR_CODES.INVALID_MESSAGE,
+      protocolVersionMismatch: null
     });
   });
 
