@@ -117,6 +117,13 @@ module confirmed means the command never ran. The correlating `approvalId` is a 
 revealed only in the answer to the original request, and a caller without it can neither read the
 outcome nor cancel the decision.
 
+The decision is taken in the GM-only Command Approval window, which opens by itself when a request
+arrives and shows one waiting request at a time: the command name, the remaining time, the names of
+the documents or managed paths it would change, and its full parameters. Binary upload content is
+summarized as its size rather than printed, so a large payload cannot bury the fields that describe
+what the command does. The window names no requester, because the command envelope carries no client
+identity: what the GM approves is the invocation in front of them, not a particular caller.
+
 ## Document ownership
 
 Ownership is access policy rather than ordinary document content. Raw `ownership` is excluded from

@@ -1,0 +1,92 @@
+<section class="fvtt-world-cli-approval-window">
+  {{#if request}}
+  <div class="fvtt-world-cli-approval-body">
+    <div class="fvtt-world-cli-approval-summary">
+      <div class="fvtt-world-cli-approval-command">
+        <span class="fvtt-world-cli-approval-label">{{localize "FVTTWORLDCLI.Approval.Command"}}</span>
+        <code class="fvtt-world-cli-approval-command-name">{{request.command}}</code>
+        {{#if request.bulk}}
+        <span class="fvtt-world-cli-approval-bulk">{{localize "FVTTWORLDCLI.Approval.BulkNotice"
+          count=request.elementCount}}</span>
+        {{/if}}
+      </div>
+
+      {{#if meta}}
+      <div class="fvtt-world-cli-approval-meta">
+        {{#if request.countdown}}
+        <span class="fvtt-world-cli-approval-expiry">
+          <i class="fa-solid fa-hourglass-half"></i>
+          {{localize "FVTTWORLDCLI.Approval.Expires"}}
+          <strong data-countdown>{{request.countdown}}</strong>
+          {{localize "FVTTWORLDCLI.Approval.TimeoutValue" minutes=request.timeoutMinutes}}
+        </span>
+        {{/if}}
+        {{#if waiting}}<span class="fvtt-world-cli-approval-waiting">{{localize
+          "FVTTWORLDCLI.Approval.Waiting" count=waiting}}</span>{{/if}}
+      </div>
+      {{/if}}
+
+      <div class="fvtt-world-cli-approval-section">
+        <span class="fvtt-world-cli-approval-label">{{localize "FVTTWORLDCLI.Approval.Targets"}}</span>
+        <ul class="fvtt-world-cli-approval-targets">
+          {{#each request.targets}}
+          <li class="fvtt-world-cli-approval-target{{#if
+            this.missing}} fvtt-world-cli-approval-target--missing{{/if}}">
+            {{#if this.parents}}<span
+              class="fvtt-world-cli-approval-target-parents">{{this.parents}}</span>{{/if}}
+            <span class="fvtt-world-cli-approval-target-name{{#unless
+              this.label}} fvtt-world-cli-approval-target-name--unset{{/unless}}{{#if
+              this.unnamed}} fvtt-world-cli-approval-target-name--id{{/if}}">{{#if
+              this.label}}{{this.label}}{{else}}{{localize
+              "FVTTWORLDCLI.Approval.TargetUnspecified"}}{{/if}}</span>
+            {{#if this.type}}<span class="fvtt-world-cli-approval-target-kind">{{this.type}}</span>{{/if}}
+            {{#if this.missing}}<span class="fvtt-world-cli-approval-target-missing">{{localize
+              "FVTTWORLDCLI.Approval.TargetMissing"}}</span>{{/if}}
+          </li>
+          {{/each}}
+          {{#each request.descriptor}}
+          <li class="fvtt-world-cli-approval-target">
+            <span class="fvtt-world-cli-approval-target-key">{{this.key}}</span>
+            <span class="fvtt-world-cli-approval-target-name">{{this.value}}</span>
+          </li>
+          {{/each}}
+        </ul>
+        {{#if request.omitted}}
+        <span class="fvtt-world-cli-approval-note">{{localize "FVTTWORLDCLI.Approval.TargetsOmitted"
+          count=request.omitted}}</span>
+        {{/if}}
+        {{#unless request.hasTargets}}
+        <span class="fvtt-world-cli-approval-note">{{localize "FVTTWORLDCLI.Approval.TargetsNone"}}</span>
+        {{/unless}}
+      </div>
+    </div>
+
+    <div class="fvtt-world-cli-approval-params">
+      <div class="fvtt-world-cli-approval-params-header">
+        <span class="fvtt-world-cli-approval-label">{{localize "FVTTWORLDCLI.Approval.Params"}}</span>
+        <span class="fvtt-world-cli-approval-size">{{localize "FVTTWORLDCLI.Approval.ParamsSize"
+          bytes=request.params.bytes}}</span>
+      </div>
+      <pre class="fvtt-world-cli-approval-json"><code>{{request.params.json}}</code></pre>
+    </div>
+  </div>
+
+  <footer class="form-footer fvtt-world-cli-approval-footer">
+    {{#if request.executing}}
+    <span class="fvtt-world-cli-approval-executing"><i class="fa-solid fa-spinner fa-spin-pulse"></i>
+      {{localize "FVTTWORLDCLI.Approval.Executing"}}</span>
+    <button type="button" data-action="allow" disabled><i class="fa-solid fa-check"></i> {{localize
+      "FVTTWORLDCLI.Approval.Allow"}}</button>
+    <button type="button" data-action="deny" disabled><i class="fa-solid fa-ban"></i> {{localize
+      "FVTTWORLDCLI.Approval.Deny"}}</button>
+    {{else}}
+    <button type="button" data-action="allow" class="fvtt-world-cli-approval-allow"><i
+        class="fa-solid fa-check"></i> {{localize "FVTTWORLDCLI.Approval.Allow"}}</button>
+    <button type="button" data-action="deny" class="fvtt-world-cli-approval-deny"><i
+        class="fa-solid fa-ban"></i> {{localize "FVTTWORLDCLI.Approval.Deny"}}</button>
+    {{/if}}
+  </footer>
+  {{else}}
+  <p class="fvtt-world-cli-approval-empty">{{localize "FVTTWORLDCLI.Approval.Empty"}}</p>
+  {{/if}}
+</section>

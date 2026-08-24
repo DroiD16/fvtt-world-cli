@@ -150,6 +150,27 @@
       "Close": "Close",
       "DiscardTitle": "Discard unsaved changes",
       "DiscardContent": "This window has unsaved changes. Close it and discard them?"
+    },
+    "Approval": {
+      "Title": "World CLI Command Approval",
+      "Arrived": "World CLI is waiting for your approval in the Command Approval window.",
+      "Command": "Command",
+      "BulkNotice": "One decision covers {count} elements.",
+      "Expires": "Decision expires in",
+      "TimeoutValue": "of {minutes} minutes",
+      "Waiting": "{count} more waiting",
+      "Targets": "Targets",
+      "TargetMissing": "not found",
+      "TargetUnspecified": "not specified",
+      "TargetsOmitted": "{count} more not shown.",
+      "TargetsNone": "No document target.",
+      "Params": "Parameters",
+      "ParamsSize": "{bytes} bytes",
+      "RedactedContent": "<content: {bytes} bytes>",
+      "Allow": "Allow",
+      "Deny": "Deny",
+      "Executing": "Running the approved command",
+      "Empty": "Nothing is waiting for approval."
     }
   }
 }

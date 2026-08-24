@@ -11,6 +11,7 @@ import {
   MODULE_TITLE
 } from "./generated/protocol.js";
 import { createCommandRouter } from "./command-router.js";
+import { createApprovalWindow } from "./command-approval.js";
 import { createAuthorizationApplication, ensureClientId, getCurrentCredential } from "./authorization.js";
 import { createCommandPermissionsApplication } from "./command-permissions.js";
 import { createBridgeStatusApplication, registerSceneControls } from "./scene-controls.js";
@@ -62,6 +63,8 @@ function createBridgeRuntime(credential, clientId) {
         }
     }
   });
+
+  createApprovalWindow({ approvalStore: router.approvalStore });
 
   bridgeClient = new BridgeClient({
     url: settings.daemonUrl,
