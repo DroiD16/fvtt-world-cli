@@ -240,11 +240,11 @@ to the GM client holding the bridge.
 The wait is two-phase, because a decision can outlast any request timeout:
 
 - The ordinary request is answered at once with `APPROVAL_PENDING`, whose details carry `approvalId`,
-  `expiresAt`, and `command`. The request is not held open, so a decision taken an hour later does not
-  depend on one socket surviving. That the phase-one answer is an error envelope is deliberate: a
-  consumer that does not implement the wait loop fails safe instead of reporting success. The CLI is
-  the supported consumer of this flow and converts the pending answer into a blocking wait, so a
-  caller using the CLI never branches on the code itself.
+  `expiresAt` in epoch milliseconds, and `command`. The request is not held open, so a decision taken
+  an hour later does not depend on one socket surviving. That the phase-one answer is an error
+  envelope is deliberate: a consumer that does not implement the wait loop fails safe instead of
+  reporting success. The CLI is the supported consumer of this flow and converts the pending answer
+  into a blocking wait, so a caller using the CLI never branches on the code itself.
 - `approval.await { approvalId, waitMs? }` polls that id. A poll parks in the Foundry module for at
   most `APPROVAL_AWAIT_PARK_CAP_MS`; its optional `waitMs` may ask for a shorter park and is bounded
   by the cap. The result echoes the id and is either
