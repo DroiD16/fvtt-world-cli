@@ -2,6 +2,7 @@ import { createServer } from "node:net";
 import { Readable } from "node:stream";
 
 import {
+  ERROR_CODES,
   MESSAGE_TYPES,
   PROTOCOL_VERSION,
   createCommandResponse,
@@ -10,10 +11,11 @@ import {
 } from "@fvtt-world-cli/protocol";
 import { CommanderError } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, type WebSocket } from "ws";
 
 import { createProgram, planCliErrorOutput } from "../src/index.js";
 import { createEmptyConfig } from "../src/config.js";
+import { runCommand, type SendCommandMock } from "./helpers/cli-harness.js";
 
 function createTestConfigStore(daemonUrl?: string) {
   const config = createEmptyConfig();
@@ -40,7 +42,10 @@ async function getFreePort() {
   });
 }
 
-type RequestHandler = (request: { id: string; command: string; params: Record<string, unknown> }) => unknown;
+type RequestHandler = (
+  request: { id: string; command: string; params: Record<string, unknown> },
+  socket: WebSocket
+) => unknown;
 
 interface FakeDaemon {
   url: string;
@@ -78,7 +83,10 @@ async function createFakeDaemon(handler: RequestHandler): Promise<FakeDaemon> {
         );
         return;
       }
-      const response = handler({ id: request.id, command: request.command, params: request.params ?? {} });
+      const response = handler(
+        { id: request.id, command: request.command, params: request.params ?? {} },
+        socket
+      );
 
       if (response !== undefined) {
         socket.send(JSON.stringify(response));
@@ -506,6 +514,115 @@ describe("fvtt-world-cli exec --stdin", () => {
     expect(jsonPlan.exitCode).toBe(3);
   });
 
+  it("waits out an approval on one line without reordering the batch", async () => {
+    const daemon = await fakeDaemon(({ id, command }) => {
+      if (command === "scene.delete") return approvalPending(command, id);
+      if (command === "approval.await")
+        return createCommandResponse({
+          id,
+          result: approvalReport("approved", createCommandResponse({ id: "delivered", result: { id: "s1" } }))
+        });
+      return okResponse(id, command);
+    });
+    const input =
+      [
+        JSON.stringify({ id: "first", command: "system.ping" }),
+        JSON.stringify({ id: "second", command: "scene.delete", params: { sceneId: "s1" } }),
+        JSON.stringify({ id: "third", command: "system.info" })
+      ].join("\n") + "\n";
+
+    const { lines, stderr, error } = await runExec(daemon.url, input);
+
+    expect(error).toBeNull();
+    expect(lines.map((line) => line.index)).toEqual([0, 1, 2]);
+    expect(lines.map((line) => line.id)).toEqual(["first", "second", "third"]);
+    expect(lines[1].ok).toBe(true);
+    expect(lines[1].result.id).toBe("s1");
+    expect(stderr).toContain("Waiting for GM approval in Foundry (command scene.delete");
+    expect(daemon.connectionCount).toBe(1);
+  });
+
+  it("replaces a persistent connection that died while the approval was pending", async () => {
+    let polls = 0;
+    const daemon = await fakeDaemon(({ id, command }, socket) => {
+      if (command === "scene.delete") return approvalPending(command, id);
+      if (command === "approval.await") {
+        polls += 1;
+        if (polls === 1) {
+          socket.close();
+          return undefined;
+        }
+        return createCommandResponse({
+          id,
+          result: approvalReport("approved", createCommandResponse({ id: "delivered", result: { id: "s1" } }))
+        });
+      }
+      return okResponse(id, command);
+    });
+    const input = JSON.stringify({ command: "scene.delete", params: { sceneId: "s1" } }) + "\n";
+
+    const { lines, error } = await runExec(daemon.url, input);
+
+    expect(error).toBeNull();
+    expect(lines).toHaveLength(1);
+    expect(lines[0].ok).toBe(true);
+    expect(polls).toBe(2);
+    expect(daemon.connectionCount).toBe(2);
+  });
+
+  it("stops the batch on a terminal approval failure with --stop-on-error", async () => {
+    const seen: string[] = [];
+    const daemon = await fakeDaemon(({ id, command }) => {
+      seen.push(command);
+      if (command === "scene.delete") return approvalPending(command, id);
+      if (command === "approval.await")
+        return createCommandResponse({ id, result: approvalReport("denied") });
+      return okResponse(id, command);
+    });
+    const input =
+      [
+        JSON.stringify({ command: "scene.delete", params: { sceneId: "s1" } }),
+        JSON.stringify({ command: "system.ping" })
+      ].join("\n") + "\n";
+
+    const { lines, error } = await runExec(daemon.url, input, ["--stop-on-error"]);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].error.code).toBe(ERROR_CODES.APPROVAL_DENIED);
+    expect(seen).not.toContain("system.ping");
+    expect((error as CommanderError).exitCode).toBe(1);
+  });
+
+  it("stops the batch and leaves no signal listener after an interrupted approval", async () => {
+    const daemon = await fakeDaemon(({ id, command }) => {
+      if (command === "scene.delete") return approvalPending(command, id);
+      if (command === "approval.cancel")
+        return createCommandResponse({ id, result: { approvalId: APPROVAL_ID, status: "cancelled" } });
+      if (command === "approval.await") return undefined;
+      return okResponse(id, command);
+    });
+    const input =
+      [
+        JSON.stringify({ command: "scene.delete", params: { sceneId: "s1" } }),
+        JSON.stringify({ command: "system.ping" })
+      ].join("\n") + "\n";
+    const baseline = process.listenerCount("SIGINT");
+    const interrupt = (async () => {
+      while (process.listenerCount("SIGINT") === baseline) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      process.emit("SIGINT");
+    })();
+
+    const { lines, error } = await runExec(daemon.url, input);
+    await interrupt;
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].error.code).toBe(ERROR_CODES.APPROVAL_CANCELLED);
+    expect((error as CommanderError).exitCode).toBe(1);
+    expect(process.listenerCount("SIGINT")).toBe(baseline);
+  });
+
   it("fails fast within --timeout-ms when the TCP peer accepts but never completes the WS upgrade", async () => {
     const held: import("node:net").Socket[] = [];
     const server = createServer((socket) => {
@@ -560,5 +677,139 @@ describe("fvtt-world-cli exec --stdin", () => {
       }
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+});
+
+const APPROVAL_ID = "BBBBBBBBBBBBBBBBBBBBBB";
+
+function approvalPending(command: string, id = "req-1") {
+  return createErrorResponse({
+    id,
+    error: createProtocolError({
+      code: ERROR_CODES.APPROVAL_PENDING,
+      message: `Command ${command} needs an approval from the GM of this bridge.`,
+      details: { approvalId: APPROVAL_ID, expiresAt: Date.now() + 600_000, command }
+    })
+  });
+}
+
+function approvalReport(outcome: string, response?: unknown) {
+  return {
+    approvalId: APPROVAL_ID,
+    status: "resolved",
+    outcome,
+    ...(response === undefined ? {} : { response })
+  };
+}
+
+function deletedScene(id = "res-1") {
+  return createCommandResponse({ id, result: { id: "s1" } });
+}
+
+function createApprovalSendCommand(reports: Array<Record<string, unknown>>) {
+  const calls: Array<{ command: string; params: Record<string, unknown> }> = [];
+  const queue = [...reports];
+  const sendCommand = (async (options: { command: string; params?: Record<string, unknown> }) => {
+    calls.push({ command: options.command, params: options.params ?? {} });
+    if (options.command === "approval.await") {
+      return createCommandResponse({ id: "poll", result: queue.shift() });
+    }
+    return approvalPending(options.command);
+  }) as unknown as SendCommandMock;
+  return { sendCommand, calls };
+}
+
+describe("fvtt-world-cli approval wait on a single command", () => {
+  it("renders an allowed command exactly like a direct call", async () => {
+    const direct = await runCommand(["scene", "delete", "--scene-id", "s1"], (async () =>
+      deletedScene()) as unknown as SendCommandMock);
+    const { sendCommand, calls } = createApprovalSendCommand([approvalReport("approved", deletedScene())]);
+
+    const waited = await runCommand(["scene", "delete", "--scene-id", "s1"], sendCommand);
+
+    expect(waited.error).toBeNull();
+    expect(waited.stdout).toBe(direct.stdout);
+    expect(calls.map((call) => call.command)).toEqual(["scene.delete", "approval.await"]);
+    expect(waited.stderr).toContain("Waiting for GM approval in Foundry (command scene.delete");
+  });
+
+  it("prints exactly one envelope on stdout and the waiting notice on stderr with --json", async () => {
+    const { sendCommand } = createApprovalSendCommand([approvalReport("approved", deletedScene())]);
+
+    const result = await runCommand(["--json", "scene", "delete", "--scene-id", "s1"], sendCommand);
+
+    expect(result.error).toBeNull();
+    const envelope = JSON.parse(result.stdout) as { ok: boolean; result: { id: string } };
+    expect(envelope.ok).toBe(true);
+    expect(envelope.result.id).toBe("s1");
+    expect(result.stderr).toContain("Press Ctrl+C to request cancellation.");
+  });
+
+  it("renders a handler error that ran after the approval as that handler error", async () => {
+    const handlerError = createErrorResponse({
+      id: "res-1",
+      error: createProtocolError({ code: "SCENE_NOT_FOUND", message: "nope" })
+    });
+    const { sendCommand } = createApprovalSendCommand([approvalReport("approved", handlerError)]);
+
+    const result = await runCommand(["scene", "delete", "--scene-id", "s1"], sendCommand);
+
+    expect(result.stderr).toContain("SCENE_NOT_FOUND: nope");
+    expect(result.stderr).not.toContain("APPROVAL_");
+    expect((result.error as CommanderError).exitCode).toBe(1);
+  });
+
+  it.each([
+    ["denied", ERROR_CODES.APPROVAL_DENIED],
+    ["timeout", ERROR_CODES.APPROVAL_TIMEOUT],
+    ["cancelled", ERROR_CODES.APPROVAL_CANCELLED]
+  ])("fails with a terminal code when the approval ends as %s", async (outcome, code) => {
+    const { sendCommand } = createApprovalSendCommand([approvalReport(outcome)]);
+
+    const result = await runCommand(["scene", "delete", "--scene-id", "s1"], sendCommand);
+
+    expect(result.stderr).toContain(`${code}: `);
+    expect(result.stdout).toBe("");
+    expect((result.error as CommanderError).exitCode).toBe(1);
+  });
+
+  it("keeps the module's indeterminate answer for an unknown approval", async () => {
+    const unknown = createErrorResponse({
+      id: "poll",
+      error: createProtocolError({
+        code: ERROR_CODES.APPROVAL_UNKNOWN,
+        message: "no approval state for this id",
+        details: { approvalId: APPROVAL_ID }
+      })
+    });
+    const sendCommand = (async (options: { command: string }) =>
+      options.command === "approval.await"
+        ? unknown
+        : approvalPending(options.command)) as unknown as SendCommandMock;
+
+    const result = await runCommand(["--json", "scene", "delete", "--scene-id", "s1"], sendCommand);
+
+    const envelope = JSON.parse(result.stdout) as { ok: boolean; error: { code: string } };
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe(ERROR_CODES.APPROVAL_UNKNOWN);
+    expect((result.error as CommanderError).exitCode).toBe(1);
+  });
+
+  it("never polls for an approval when the call is a dry run", async () => {
+    const calls: string[] = [];
+    const sendCommand = (async (options: { command: string; params: Record<string, unknown> }) => {
+      calls.push(options.command);
+      return createCommandResponse({
+        id: "res-1",
+        result: { id: "s1", dryRun: true, approvalRequired: true }
+      });
+    }) as unknown as SendCommandMock;
+
+    const result = await runCommand(["--dry-run", "scene", "delete", "--scene-id", "s1"], sendCommand);
+
+    expect(result.error).toBeNull();
+    expect(calls).toEqual(["scene.delete"]);
+    expect(result.stdout).toContain("DRY RUN (not persisted):");
+    expect(result.stderr).toBe("");
   });
 });

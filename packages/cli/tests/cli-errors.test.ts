@@ -172,6 +172,13 @@ describe("fvtt-world-cli commands", () => {
         "PAYLOAD_TOO_LARGE",
         "UNSUPPORTED_OPERATION",
         "INTERNAL_ERROR",
+        "COMMAND_DENIED",
+        "APPROVAL_PENDING",
+        "APPROVAL_DENIED",
+        "APPROVAL_TIMEOUT",
+        "APPROVAL_CANCELLED",
+        "APPROVAL_QUEUE_FULL",
+        "APPROVAL_UNKNOWN",
 
         "LOCAL_FILE_ERROR",
         "PAIRING_DECLINED",
