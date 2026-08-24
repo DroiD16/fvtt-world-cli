@@ -204,7 +204,7 @@ describe("command policy gate", () => {
       const actorId = await createDeletableActor();
 
       const response = await router().route(createRequest("actor.delete", { actorId }), {
-        requestBytes: 256
+        measureRequestBytes: () => 256
       });
 
       expect(response.ok).toBe(false);

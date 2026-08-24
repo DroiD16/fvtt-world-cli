@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BridgeClient } from "../scripts/bridge-client.js";
 import {
   BRIDGE_RELEASE_CLOSE_CODE,
+  BRIDGE_TAKEOVER_CLOSE_CODE,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
   ERROR_CODES,
@@ -969,7 +970,7 @@ describe("BridgeClient request frame weight", () => {
       i18n: createEnglishI18n(),
       user: { id: "gm", isGM: true }
     });
-    /** @type {{ requestBytes?: number }[]} */
+    /** @type {{ measureRequestBytes: () => number }[]} */
     const frames = [];
     const route = vi.fn(async (/** @type {any} */ message, /** @type {any} */ frame) => {
       frames.push(frame);
@@ -1006,15 +1007,15 @@ describe("BridgeClient request frame weight", () => {
     });
   }
 
-  it("reports the size of the frame it received, not the length of its text", async () => {
+  it("offers the size of the frame it received, not the length of its text", async () => {
     const { client, route, frames } = routingClient();
     const frame = requestFrame({ path: "worlds/world-1/notes.txt", contentBase64: "A".repeat(4096) });
 
     await client.handleMessage({ data: frame });
 
     expect(route).toHaveBeenCalledTimes(1);
-    expect(frames).toEqual([{ requestBytes: new TextEncoder().encode(frame).length }]);
-    expect(frames[0].requestBytes).toBeGreaterThan(4096);
+    expect(frames[0].measureRequestBytes()).toBe(new TextEncoder().encode(frame).length);
+    expect(frames[0].measureRequestBytes()).toBeGreaterThan(4096);
   });
 
   it("counts a multi-byte payload in bytes rather than characters", async () => {
@@ -1023,7 +1024,7 @@ describe("BridgeClient request frame weight", () => {
 
     await client.handleMessage({ data: frame });
 
-    const measured = frames[0].requestBytes;
+    const measured = frames[0].measureRequestBytes();
     expect(measured).toBe(new TextEncoder().encode(frame).length);
     expect(measured).toBeGreaterThan(frame.length);
   });
@@ -1036,6 +1037,94 @@ describe("BridgeClient request frame weight", () => {
 
     await client.handleMessage({ data: encoded.buffer });
 
-    expect(frames).toEqual([{ requestBytes: encoded.byteLength }]);
+    expect(frames[0].measureRequestBytes()).toBe(encoded.byteLength);
+  });
+
+  it("leaves the count to the router, which asks for it only where a weight is needed", async () => {
+    const { client, route, frames } = routingClient();
+
+    await client.handleMessage({
+      data: requestFrame({ path: "worlds/world-1/notes.txt", contentBase64: "AAAA" })
+    });
+
+    expect(route).toHaveBeenCalledTimes(1);
+    expect(Object.keys(frames[0])).toEqual(["measureRequestBytes"]);
+    expect(typeof frames[0].measureRequestBytes).toBe("function");
+  });
+});
+
+describe("BridgeClient approvals held for the GM", () => {
+  function clientWithApprovals() {
+    const clear = vi.fn();
+    const client = new BridgeClient({
+      url: "ws://127.0.0.1:47833",
+      credential: "invalid-credential",
+      router: { route: vi.fn(async () => ({ ok: true })), approvalStore: { clear } },
+      getSession: () => ({ moduleId: "fvtt-world-cli" }),
+      logger: vi.fn()
+    });
+
+    globalThis.WebSocket = /** @type {any} */ ({ CONNECTING: 0, OPEN: 1 });
+    client.socket = /** @type {any} */ ({ readyState: 1, send: vi.fn(), close: vi.fn() });
+    client.handleOpen();
+
+    return { client, clear };
+  }
+
+  it("survive a dropped socket the client will reconnect", () => {
+    const { client, clear } = clientWithApprovals();
+    vi.spyOn(client, "scheduleReconnect").mockImplementation(() => {});
+
+    client.handleClose({ code: 1006, reason: "socket lost" });
+
+    expect(clear).not.toHaveBeenCalled();
+  });
+
+  it("are released when the GM disconnects the bridge", () => {
+    const { client, clear } = clientWithApprovals();
+
+    client.stop();
+
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("are released when another client takes the bridge slot", () => {
+    const { client, clear } = clientWithApprovals();
+
+    client.handleClose({ code: BRIDGE_TAKEOVER_CLOSE_CODE, reason: "Another client took the bridge" });
+
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("are released when the daemon releases the bridge", () => {
+    const { client, clear } = clientWithApprovals();
+
+    client.handleClose({ code: BRIDGE_RELEASE_CLOSE_CODE, reason: "Bridge released" });
+
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("are released when the session stops for good", () => {
+    const { client, clear } = clientWithApprovals();
+
+    client.stopForRejectedCredential(new Error("Bridge hello credential mismatch"));
+
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("are released when the client is no longer a GM", async () => {
+    const { client, clear } = clientWithApprovals();
+
+    await client.handleMessage({
+      data: JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_REQUEST,
+        id: "demoted-1",
+        command: "actor.get",
+        params: { actorId: "actor-1" }
+      })
+    });
+
+    expect(clear).toHaveBeenCalledTimes(1);
   });
 });

@@ -38,9 +38,9 @@ function storePolicy(overrides) {
 /**
  * @param {string} command
  * @param {Record<string, any>} [params]
- * @param {{ requestBytes?: number }} [frame]
+ * @param {{ measureRequestBytes?: () => number }} [frame]
  */
-function send(command, params = {}, frame = { requestBytes: REQUEST_BYTES }) {
+function send(command, params = {}, frame = { measureRequestBytes: () => REQUEST_BYTES }) {
   return router.route(createRequest(command, params), frame);
 }
 
@@ -113,6 +113,21 @@ describe("a command the policy sends to the GM", () => {
       current: { approvalId, command: "actor.delete", state: "pending" },
       waitingCount: 0
     });
+  });
+
+  it("answers a poll taken before the decision as still pending, with the deadline it was given", async () => {
+    const actorId = await createDeletableActor();
+    const pending = await send("actor.delete", { actorId });
+
+    const response = await pollOutcome(pending.error.details.approvalId);
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toEqual({
+      approvalId: pending.error.details.approvalId,
+      status: "pending",
+      expiresAt: pending.error.details.expiresAt
+    });
+    expect(globalThis.game.actors.get(actorId).deleted).toBeUndefined();
   });
 
   it("names the documents the waiting command would change", async () => {

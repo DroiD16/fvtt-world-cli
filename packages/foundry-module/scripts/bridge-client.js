@@ -64,28 +64,31 @@ function defaultLogger(level, message, details = {}) {
   logMethod(prefix, message, details);
 }
 
-// The frame is weighed here, where its wire form is still at hand, so nothing downstream serializes a
-// request a second time to learn how heavy it is. A binary frame reports its own size; a text frame is
-// counted without allocating a copy of a payload that may be hundreds of megabytes.
+// The frame is weighed from the wire form it arrives in, so nothing downstream serializes a request a
+// second time to learn how heavy it is. Counting a text frame walks it, and only a command sent to
+// approval is ever weighed, so the measurement stays a call the router makes on that branch alone; a
+// binary frame reports its own size.
 /**
  * @param {unknown} data
- * @returns {Promise<{ text: string, bytes: number }>}
+ * @returns {Promise<{ text: string, measureBytes: () => number }>}
  */
 function normalizeMessageFrame(data) {
   if (typeof data === "string") {
-    return Promise.resolve({ text: data, bytes: utf8ByteLength(data) });
+    return Promise.resolve({ text: data, measureBytes: () => utf8ByteLength(data) });
   }
 
   if (data instanceof ArrayBuffer) {
-    return Promise.resolve({ text: new TextDecoder().decode(data), bytes: data.byteLength });
+    const bytes = data.byteLength;
+    return Promise.resolve({ text: new TextDecoder().decode(data), measureBytes: () => bytes });
   }
 
   if (typeof Blob !== "undefined" && data instanceof Blob) {
-    return data.text().then((text) => ({ text, bytes: data.size }));
+    const bytes = data.size;
+    return data.text().then((text) => ({ text, measureBytes: () => bytes }));
   }
 
   const text = String(data ?? "");
-  return Promise.resolve({ text, bytes: utf8ByteLength(text) });
+  return Promise.resolve({ text, measureBytes: () => utf8ByteLength(text) });
 }
 
 export class BridgeClient {
@@ -183,7 +186,16 @@ export class BridgeClient {
     }
 
     this.#dropHandshakeAcknowledgement();
+    this.#releaseApprovals();
     this.#setStatus("stopped");
+  }
+
+  // A session that ends with no reconnect to follow takes its approvals with it: nothing can poll their
+  // outcome any more, so a decision left armed would run a command whose caller was already answered
+  // with a failure, and its timer, params and parked polls would be held for nobody. A dropped socket
+  // that reconnects is not such an end, and keeps them.
+  #releaseApprovals() {
+    this.router?.approvalStore?.clear?.();
   }
 
   connect() {
@@ -288,7 +300,7 @@ export class BridgeClient {
       return;
     }
 
-    const response = await this.router.route(message, { requestBytes: frame.bytes });
+    const response = await this.router.route(message, { measureRequestBytes: frame.measureBytes });
     this.send(response);
   }
 
@@ -345,6 +357,7 @@ export class BridgeClient {
       this.terminalStopReason = { code: "TAKEN_OVER", message: event.reason || BRIDGE_TAKEOVER_CLOSE_REASON };
       this.shouldReconnect = false;
       this.clearReconnectTimer();
+      this.#releaseApprovals();
       this.#setStatus("stopped");
       return;
     }
@@ -353,6 +366,7 @@ export class BridgeClient {
       this.terminalStopReason = { code: "RELEASED", message: event.reason || "Bridge released" };
       this.shouldReconnect = false;
       this.clearReconnectTimer();
+      this.#releaseApprovals();
       this.#setStatus("stopped");
       return;
     }
@@ -443,6 +457,7 @@ export class BridgeClient {
     this.terminalStopReason = { code, message };
     this.shouldReconnect = false;
     this.clearReconnectTimer();
+    this.#releaseApprovals();
     this.#setStatus("stopped");
 
     if (warn && !this.hasWarnedTerminalStop) {

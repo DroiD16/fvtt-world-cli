@@ -183,15 +183,15 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
   }
 
   /**
-   * @param {{ command: string, params: any, requestBytes?: number }} request
+   * @param {{ command: string, params: any, measureRequestBytes?: () => number }} request
    * @returns {Error}
    */
-  function admitForApproval({ command, params, requestBytes }) {
+  function admitForApproval({ command, params, measureRequestBytes }) {
     const admission = approvalStore.admit({
       command,
       params,
       targets: resolveTargetsForDisplay(command, params),
-      requestBytes: /** @type {number} */ (requestBytes)
+      requestBytes: /** @type {number} */ (measureRequestBytes?.())
     });
 
     if (!admission.admitted) {
@@ -216,11 +216,17 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
    *   command: string,
    *   params: any,
    *   messageId: string,
-   *   requestBytes?: number,
+   *   measureRequestBytes?: () => number,
    *   skipPolicyGate?: boolean
    * }} request
    */
-  async function executeGuardedCommand({ command, params, messageId, requestBytes, skipPolicyGate = false }) {
+  async function executeGuardedCommand({
+    command,
+    params,
+    messageId,
+    measureRequestBytes,
+    skipPolicyGate = false
+  }) {
     try {
       assertFoundryReady();
       if (!globalThis.game?.user?.isGM) {
@@ -248,7 +254,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
       }
 
       if (policy?.behavior === "approve") {
-        throw admitForApproval({ command, params, requestBytes });
+        throw admitForApproval({ command, params, measureRequestBytes });
       }
 
       const handler = handlers[command];
@@ -291,9 +297,9 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
 
     /**
      * @param {any} message
-     * @param {{ requestBytes?: number }} [frame]
+     * @param {{ measureRequestBytes?: () => number }} [frame]
      */
-    async route(message, { requestBytes } = {}) {
+    async route(message, { measureRequestBytes } = {}) {
       if (!isPlainObject(message)) {
         return createErrorResponse({
           id: "unknown",
@@ -353,7 +359,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
         command: message.command,
         params: message.params,
         messageId,
-        requestBytes
+        measureRequestBytes
       });
     }
   };
