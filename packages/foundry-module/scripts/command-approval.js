@@ -1,4 +1,5 @@
 import { format, localize } from "./lib/i18n.js";
+import { utf8ByteLength } from "./lib/setting-values.js";
 
 /** @typedef {import("./lib/approval-store.js").ApprovalStore} ApprovalStore */
 /** @typedef {import("./lib/approval-store.js").ApprovalQueueView} ApprovalQueueView */
@@ -83,7 +84,7 @@ function redactValue(value, field) {
  */
 export function formatApprovalParams(params) {
   const json = JSON.stringify(redactValue(params, null), null, 2) ?? "";
-  return { json, bytes: new TextEncoder().encode(json).length };
+  return { json, bytes: utf8ByteLength(json) };
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   DEFAULT_WS_MAX_PAYLOAD_BYTES
 } from "../generated/protocol.js";
 import { readApprovalTimeoutMinutes, resolveApprovalTimeoutMinutes } from "./policy.js";
+import { utf8ByteLength } from "./setting-values.js";
 
 const MS_PER_MINUTE = 60_000;
 
@@ -86,30 +87,13 @@ function createApprovalId() {
 // A weighed response is charged against a raw-frame byte budget, so it is counted in UTF-8 bytes:
 // string length would undercount every non-ASCII character by half or more.
 /**
- * @param {string} text
- * @returns {number}
- */
-function countUtf8Bytes(text) {
-  let bytes = 0;
-  for (const character of text) {
-    const code = character.codePointAt(0) ?? 0;
-    if (code < 0x80) bytes += 1;
-    else if (code < 0x800) bytes += 2;
-    else if (code < 0x10000) bytes += 3;
-    else bytes += 4;
-  }
-
-  return bytes;
-}
-
-/**
  * @param {unknown} value
  * @returns {number}
  */
 function measureJsonBytes(value) {
   try {
     const serialized = JSON.stringify(value);
-    return typeof serialized === "string" ? countUtf8Bytes(serialized) : 0;
+    return typeof serialized === "string" ? utf8ByteLength(serialized) : 0;
   } catch {
     return Number.POSITIVE_INFINITY;
   }
