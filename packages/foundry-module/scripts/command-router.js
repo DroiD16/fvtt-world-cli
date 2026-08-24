@@ -190,7 +190,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
     const admission = approvalStore.admit({
       command,
       params,
-      targets: resolveTargetsForDisplay(command, params),
+      resolveTargets: () => resolveTargetsForDisplay(command, params),
       requestBytes: /** @type {number} */ (measureRequestBytes?.())
     });
 

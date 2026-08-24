@@ -176,10 +176,15 @@ export class ApprovalStore {
   }
 
   /**
-   * @param {{ command: string, params: unknown, targets?: unknown, requestBytes: number }} request
+   * @param {{
+   *   command: string,
+   *   params: unknown,
+   *   resolveTargets?: () => unknown,
+   *   requestBytes: number
+   * }} request
    * @returns {ApprovalAdmission}
    */
-  admit({ command, params, targets = null, requestBytes }) {
+  admit({ command, params, resolveTargets = () => null, requestBytes }) {
     this.#pruneExpired();
 
     const bytes = normalizeByteWeight(requestBytes);
@@ -204,7 +209,9 @@ export class ApprovalStore {
       approvalId,
       command,
       params,
-      targets,
+      // Naming the documents a request would change costs a lookup per document, so it happens once
+      // the request is past every bound: a refused caller must not be able to buy that work.
+      targets: resolveTargets(),
       createdAt,
       expiresAt: createdAt + timeoutMs,
       state: "pending",

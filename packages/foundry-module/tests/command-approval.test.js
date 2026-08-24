@@ -136,7 +136,7 @@ describe("Command approval window", () => {
     return store.admit({
       command,
       params,
-      targets: resolveApprovalTargets(command, params),
+      resolveTargets: () => resolveApprovalTargets(command, params),
       requestBytes: 1024
     });
   }

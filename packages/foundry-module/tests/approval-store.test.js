@@ -134,7 +134,7 @@ function admitRequest(store, overrides = {}) {
   const admission = store.admit({
     command: "actor.update",
     params: { actorId: "actor-1", patch: { name: "Aria" } },
-    targets: [{ display: "Aria", kind: "Actor", missing: false }],
+    resolveTargets: () => [{ display: "Aria", kind: "Actor", missing: false }],
     requestBytes: 128,
     ...overrides
   });
@@ -190,6 +190,22 @@ describe("approval store admission", () => {
       admitted: false,
       reason: APPROVAL_REFUSAL_REASONS.PENDING_COUNT
     });
+  });
+
+  it("names the documents a request would change only once it is past every bound", () => {
+    const { store } = createHarness({ pendingMax: 1 });
+    const resolveTargets = vi.fn(() => [{ display: "Aria", kind: "Actor", missing: false }]);
+
+    admitRequest(store, { resolveTargets });
+    const refused = store.admit({
+      command: "actor.update",
+      params: {},
+      resolveTargets,
+      requestBytes: 1
+    });
+
+    expect(refused).toEqual({ admitted: false, reason: APPROVAL_REFUSAL_REASONS.PENDING_COUNT });
+    expect(resolveTargets).toHaveBeenCalledTimes(1);
   });
 
   it("refuses admission once the pending byte budget is reached", () => {
