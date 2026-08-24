@@ -1,4 +1,5 @@
 import { MODULE_TITLE, PROTOCOL_COMPONENTS } from "../generated/protocol.js";
+import { describeProtocolVersion } from "./bridge-status.js";
 import { format } from "./i18n.js";
 
 const PROTOCOL_VERSION_SKEW_KEYS = Object.freeze({
@@ -24,7 +25,7 @@ export function getProtocolVersionSkewWarningMessage({ expectedVersion, actualVe
   return format(PROTOCOL_VERSION_SKEW_KEYS[staleComponent], {
     module: MODULE_TITLE,
     expected: expectedVersion,
-    actual: actualVersion
+    actual: describeProtocolVersion(actualVersion)
   });
 }
 

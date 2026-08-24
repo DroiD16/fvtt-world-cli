@@ -203,11 +203,13 @@ acknowledgement, and receives the same snapshot that `system info` reports as `b
 `url`, `helloAcknowledged`, `hasEstablishedSession`, `lastConnectedAt`, `reconnectAttempts`,
 `terminalStopReason`, and `protocolVersionMismatch`. The last one is `null` except on a handshake the
 module refused over a protocol version difference, where it carries the version this module speaks, the
-version the daemon speaks, and which of the two halves is the older release, so the module's own status
-window can name the remedy instead of leaving it in a console log. Readiness is `status === "connected"` together with `helloAcknowledged`, because
-an open socket precedes the daemon's acknowledgement. A snapshot never reports an acknowledged
-handshake on a client that is no longer connected: losing the socket resets the acknowledgement before
-the status transition that publishes it, so consumers cannot observe that contradictory pair.
+version the daemon speaks, and a `staleComponent` naming the older half: `module`, `cli-daemon`, or
+`unknown` when the two versions do not identify one. That is what lets the module's own status window name
+the remedy instead of leaving it in a console log. Readiness is `status === "connected"` together with
+`helloAcknowledged`, because an open socket precedes the daemon's acknowledgement. A snapshot never
+reports an acknowledged handshake on a client that is no longer connected: losing the socket resets the
+acknowledgement before the status transition that publishes it, so consumers cannot observe that
+contradictory pair.
 `helloAcknowledged` stays in the snapshot for consumers that need the distinction; the module's own
 windows fold it into the connection state they display rather than showing it as its own field.
 

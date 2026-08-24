@@ -36,6 +36,20 @@ function observeLocalization() {
   return localizer;
 }
 
+// Every channel a notification can be raised on, because the module reaches for them optionally: a
+// channel left off this stub swallows its call, and the count below would report it as never raised.
+function stubNotifications() {
+  globalThis.ui = /** @type {any} */ ({
+    notifications: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      success: vi.fn(),
+      notify: vi.fn()
+    }
+  });
+}
+
 function countNotifications() {
   return Object.values(globalThis.ui.notifications).reduce(
     (total, notify) => total + notify.mock.calls.length,
@@ -85,15 +99,7 @@ function markClientConnected(client) {
 }
 
 describe("BridgeClient terminal shutdown", () => {
-  beforeEach(() => {
-    globalThis.ui = {
-      notifications: {
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn()
-      }
-    };
-  });
+  beforeEach(stubNotifications);
 
   it("stops permanently after an unauthorized hello ack and warns only once", async () => {
     const logger = vi.fn();
@@ -245,13 +251,7 @@ describe("BridgeClient terminal shutdown", () => {
 });
 
 describe("BridgeClient handshake reliability", () => {
-  beforeEach(() => {
-    globalThis.ui = {
-      notifications: {
-        warn: vi.fn()
-      }
-    };
-  });
+  beforeEach(stubNotifications);
 
   it("names the paired browser in the bridge hello beside the credential", async () => {
     const client = new BridgeClient({
@@ -364,11 +364,13 @@ describe("BridgeClient handshake reliability", () => {
     [
       "the daemon speaks the protocol version published before releases matched",
       "3.0",
+      "3.0, from release 1.0.0",
       "cli-daemon",
       "FVTTWORLDCLI.Startup.ProtocolVersionSkewDaemon"
     ],
     [
       "the daemon speaks a later protocol version than this module",
+      "9.9.0",
       "9.9.0",
       "module",
       "FVTTWORLDCLI.Startup.ProtocolVersionSkewModule"
@@ -376,42 +378,46 @@ describe("BridgeClient handshake reliability", () => {
     [
       "the daemon's protocol version cannot be ordered against this module's",
       "next-dev",
+      "next-dev",
       "unknown",
       "FVTTWORLDCLI.Startup.ProtocolVersionSkewUnknown"
     ]
-  ])("tells the GM which half is behind when %s", async (_case, daemonVersion, staleComponent, key) => {
-    const localizer = observeLocalization();
-    const client = createClient();
+  ])(
+    "tells the GM which half is behind when %s",
+    async (_case, daemonVersion, shownDaemonVersion, staleComponent, key) => {
+      const localizer = observeLocalization();
+      const client = createClient();
 
-    markClientConnected(client);
-    await client.handleMessage(
-      createHelloAck({
-        ok: false,
-        protocolVersion: daemonVersion,
-        error: {
-          code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
-          message: `Unsupported protocol version: ${PROTOCOL_VERSION}`
+      markClientConnected(client);
+      await client.handleMessage(
+        createHelloAck({
+          ok: false,
+          protocolVersion: daemonVersion,
+          error: {
+            code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+            message: `Unsupported protocol version: ${PROTOCOL_VERSION}`
+          }
+        })
+      );
+
+      expect(localizer.format).toHaveBeenCalledWith(key, {
+        module: MODULE_TITLE,
+        expected: PROTOCOL_VERSION,
+        actual: shownDaemonVersion
+      });
+      expect(countNotifications()).toBe(1);
+      expect(globalThis.ui.notifications.warn.mock.calls[0][1]).toEqual({ permanent: true });
+      expect(client.getStatus()).toMatchObject({
+        status: "stopped",
+        terminalStopReason: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+        protocolVersionMismatch: {
+          expectedVersion: PROTOCOL_VERSION,
+          actualVersion: daemonVersion,
+          staleComponent
         }
-      })
-    );
-
-    expect(localizer.format).toHaveBeenCalledWith(key, {
-      module: MODULE_TITLE,
-      expected: PROTOCOL_VERSION,
-      actual: daemonVersion
-    });
-    expect(countNotifications()).toBe(1);
-    expect(globalThis.ui.notifications.warn.mock.calls[0][1]).toEqual({ permanent: true });
-    expect(client.getStatus()).toMatchObject({
-      status: "stopped",
-      terminalStopReason: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
-      protocolVersionMismatch: {
-        expectedVersion: PROTOCOL_VERSION,
-        actualVersion: daemonVersion,
-        staleComponent
-      }
-    });
-  });
+      });
+    }
+  );
 
   it("does not silently drop a version-skewed hello-ack the way it drops command messages", async () => {
     const logger = vi.fn();
@@ -644,9 +650,7 @@ describe("BridgeClient handshake reliability", () => {
 });
 
 describe("BridgeClient daemon-advertised limits", () => {
-  beforeEach(() => {
-    globalThis.ui = { notifications: { warn: vi.fn() } };
-  });
+  beforeEach(stubNotifications);
 
   it("stores the daemon-advertised limits from a successful hello-ack", async () => {
     const client = createClient();
@@ -814,7 +818,7 @@ describe("BridgeClient status change signal", () => {
 
   beforeEach(() => {
     onStatusChange = vi.fn();
-    globalThis.ui = { notifications: { warn: vi.fn() } };
+    stubNotifications();
   });
 
   function observedClient(logger = vi.fn()) {
@@ -890,6 +894,35 @@ describe("BridgeClient status change signal", () => {
       helloAcknowledged: true,
       hasEstablishedSession: true,
       protocolVersionMismatch: null
+    });
+  });
+
+  it("emits the refused handshake already carrying the version mismatch that explains it", async () => {
+    const client = observedClient();
+    markClientConnected(client);
+    onStatusChange.mockClear();
+
+    await client.handleMessage(
+      createHelloAck({
+        ok: false,
+        protocolVersion: "3.0",
+        error: {
+          code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+          message: `Unsupported protocol version: ${PROTOCOL_VERSION}`
+        }
+      })
+    );
+
+    const stopped = onStatusChange.mock.calls
+      .map(([snapshot]) => snapshot)
+      .find((snapshot) => snapshot.status === "stopped");
+    expect(stopped).toMatchObject({
+      terminalStopReason: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+      protocolVersionMismatch: {
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: "3.0",
+        staleComponent: "cli-daemon"
+      }
     });
   });
 

@@ -664,12 +664,12 @@ describe("Bridge status window", () => {
   });
 
   it.each([
-    ["module", "1.0.0", "9.9.0", "module"],
-    ["cliDaemon", "1.1.0", "3.0", "cli-daemon"],
-    ["unknown", "1.1.0", "next-dev", "unknown"]
+    ["module", "1.0.0", "9.9.0", "9.9.0", "module"],
+    ["cliDaemon", "1.1.0", "3.0", "3.0, from release 1.0.0", "cli-daemon"],
+    ["unknown", "1.1.0", "next-dev", "next-dev", "unknown"]
   ])(
     "names both versions and the remedy while the bridge is stopped over a %s release gap",
-    (leaf, expectedVersion, actualVersion, staleComponent) => {
+    (leaf, expectedVersion, actualVersion, shownActualVersion, staleComponent) => {
       stubBridge({
         status: "stopped",
         url: "ws://127.0.0.1:47833",
@@ -683,7 +683,7 @@ describe("Bridge status window", () => {
         terminalStopReason: "UNSUPPORTED_PROTOCOL_VERSION",
         protocolVersionMismatch: {
           expectedVersion,
-          actualVersion,
+          actualVersion: shownActualVersion,
           staleComponent: localizeEnglish(`FVTTWORLDCLI.BridgeStatus.VersionMismatch.Component.${leaf}`),
           remedy: localizeEnglish(`FVTTWORLDCLI.BridgeStatus.VersionMismatch.Advice.${leaf}`)
         }

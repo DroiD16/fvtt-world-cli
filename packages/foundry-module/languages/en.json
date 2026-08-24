@@ -22,6 +22,7 @@
       "VersionMismatch": {
         "ModuleVersion": "Module protocol version",
         "DaemonVersion": "Daemon protocol version",
+        "FromRelease": "{version}, from release {release}",
         "StaleComponent": "Older half",
         "Remedy": "What to do",
         "Component": {

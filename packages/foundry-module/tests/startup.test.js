@@ -79,7 +79,7 @@ describe("bridge startup warnings", () => {
           actualVersion: "3.0",
           staleComponent: "cli-daemon"
         }),
-      "World CLI for Foundry VTT stopped: the daemon and this module come from different releases, which is refused by design. This client speaks protocol 1.1.0 and the daemon speaks 3.0, so the CLI and daemon are the older half. Update the fvtt-world-cli package and restart the daemon, or ask your agent to update it, then connect again."
+      "World CLI for Foundry VTT stopped: the daemon and this module come from different releases, which is refused by design. This client speaks protocol 1.1.0 and the daemon speaks 3.0, from release 1.0.0, so the CLI and daemon are the older half. Update the fvtt-world-cli package and restart the daemon, or ask your agent to update it, then connect again."
     ],
     [
       "a protocol version skew neither side can be blamed for",

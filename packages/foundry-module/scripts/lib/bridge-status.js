@@ -1,4 +1,4 @@
-import { PROTOCOL_COMPONENTS } from "../generated/protocol.js";
+import { PROTOCOL_COMPONENTS, normalizeComparableProtocolVersion } from "../generated/protocol.js";
 import { format, localize } from "./i18n.js";
 
 export const DISPLAY_STATE_GLYPHS = Object.freeze({
@@ -86,6 +86,15 @@ const STALE_COMPONENT_REMEDIES = Object.freeze({
   [PROTOCOL_COMPONENTS.UNKNOWN]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Advice.unknown"
 });
 
+// A protocol version published before the two numbers matched reads as newer than the release it came
+// from, so the release is spelled out wherever that version is shown as evidence of who is behind.
+/** @param {string} version */
+export function describeProtocolVersion(version) {
+  const release = normalizeComparableProtocolVersion(version);
+  if (release === null || release === version) return version;
+  return format("FVTTWORLDCLI.BridgeStatus.VersionMismatch.FromRelease", { version, release });
+}
+
 /**
  * @param {{ expectedVersion: string, actualVersion: string, staleComponent: string } | null | undefined} mismatch
  */
@@ -93,7 +102,7 @@ export function describeProtocolVersionMismatch(mismatch) {
   if (!mismatch) return null;
   return {
     expectedVersion: mismatch.expectedVersion,
-    actualVersion: mismatch.actualVersion,
+    actualVersion: describeProtocolVersion(mismatch.actualVersion),
     staleComponent: localize(STALE_COMPONENT_LABELS[mismatch.staleComponent]),
     remedy: localize(STALE_COMPONENT_REMEDIES[mismatch.staleComponent])
   };
