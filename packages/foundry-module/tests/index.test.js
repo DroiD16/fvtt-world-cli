@@ -38,7 +38,15 @@ describe("module settings registration", () => {
       modules: new Map()
     };
 
-    class ApplicationV2 {}
+    class ApplicationV2 {
+      async render() {
+        return this;
+      }
+
+      async close() {
+        return this;
+      }
+    }
     globalThis.foundry = {
       applications: {
         api: {
@@ -60,6 +68,7 @@ describe("module settings registration", () => {
 
     globalThis.ui = {
       notifications: {
+        info: vi.fn(),
         warn: vi.fn()
       }
     };
@@ -262,6 +271,27 @@ describe("module settings registration", () => {
     await expect(
       replaced.router.approvalStore.awaitOutcome({ approvalId: admission.approvalId, waitMs: 0 })
     ).resolves.toEqual({ approvalId: admission.approvalId, status: "unknown" });
+  });
+
+  it("puts a command held for a decision in front of the GM of the running bridge", async () => {
+    globalThis.game.user = { id: "gm-1", isGM: true };
+    storedSettings.autoConnect = true;
+    storedSettings.credentials = { "world-1:gm-1": { pairingId: "pair-1", credential: "secret" } };
+    class FakeSocket {
+      addEventListener() {}
+      close() {}
+    }
+    globalThis.WebSocket = /** @type {any} */ (FakeSocket);
+
+    await import("../scripts/index.js");
+    await hookCallbacks.get("ready")();
+    globalThis.foundryCliBridge.router.approvalStore.admit({
+      command: "actor.delete",
+      params: { actorId: "actor-1" },
+      requestBytes: 128
+    });
+
+    expect(globalThis.ui.notifications.info).toHaveBeenCalledTimes(1);
   });
 
   it("advertises every executable command in the handshake so undiscoverable plumbing stays callable", async () => {
