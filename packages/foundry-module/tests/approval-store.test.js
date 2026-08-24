@@ -15,6 +15,13 @@ const MS_PER_MINUTE = 60_000;
 
 const APPROVAL_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 
+const weighedByRequestBytes = {
+  /** @param {any} execution */
+  execute: (execution) => ({ ok: true, weight: execution.requestBytes }),
+  /** @param {any} response */
+  measureResponseBytes: (response) => response.weight
+};
+
 function flush() {
   return Promise.resolve()
     .then(() => {})
@@ -207,6 +214,48 @@ describe("approval store admission", () => {
     expect(admitRequest(store, { requestBytes: 1_000 }).approvalId).toMatch(APPROVAL_ID_PATTERN);
   });
 
+  it("forgets a delivered outcome before an undelivered one when the record cap is reached", async () => {
+    const { store } = createHarness({ recordMax: 3 });
+    const first = admitRequest(store);
+    const second = admitRequest(store);
+
+    store.cancel(first.approvalId);
+    store.cancel(second.approvalId);
+    await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
+    admitRequest(store);
+    admitRequest(store);
+
+    await expect(store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: first.approvalId,
+      status: "unknown"
+    });
+    await expect(store.awaitOutcome({ approvalId: second.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: second.approvalId,
+      status: "resolved",
+      outcome: "cancelled"
+    });
+  });
+
+  it("caps the number of settled requests it remembers even when none was polled", async () => {
+    const { store } = createHarness({ recordMax: 2 });
+    const first = admitRequest(store);
+    store.cancel(first.approvalId);
+    const second = admitRequest(store);
+    store.cancel(second.approvalId);
+
+    admitRequest(store);
+
+    await expect(store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: first.approvalId,
+      status: "unknown"
+    });
+    await expect(store.awaitOutcome({ approvalId: second.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: second.approvalId,
+      status: "resolved",
+      outcome: "cancelled"
+    });
+  });
+
   it("reads the byte budget again for every admission", () => {
     let budget = 500;
     const { store } = createHarness({ pendingByteBudgetProvider: () => budget });
@@ -261,7 +310,7 @@ describe("approval store decisions", () => {
     });
   });
 
-  it("resolves rather than sticks in executing when the executor throws", async () => {
+  it("reports an indeterminate outcome, not a success, when the executor throws", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { store, clock } = createHarness({
       execute: () => {
@@ -276,8 +325,8 @@ describe("approval store decisions", () => {
     expect(decision).toEqual({ approvalId: admission.approvalId, state: "resolved" });
     expect(report).toEqual({
       approvalId: admission.approvalId,
-      status: "resolved",
-      outcome: "approved"
+      status: "unknown",
+      reason: APPROVAL_UNKNOWN_REASONS.EXECUTOR_FAILED
     });
     expect(store.getQueueView()).toEqual({ current: null, waitingCount: 0 });
     expect(clock.liveTimers()).toBe(0);
@@ -337,7 +386,6 @@ describe("approval store decisions", () => {
     expect(store.getQueueView().current).toEqual({
       approvalId: admission.approvalId,
       command: "actor.update",
-      params: null,
       targets: [{ display: "Aria", kind: "Actor", missing: false }],
       createdAt: expect.any(Number),
       expiresAt: admission.expiresAt,
@@ -683,7 +731,7 @@ describe("approval store retention", () => {
     expect(store.cancel(admission.approvalId)).toBe("unknown");
   });
 
-  it("keeps an earlier retained response when a later one cannot fit", async () => {
+  it("keeps an earlier undelivered response when a later one cannot fit", async () => {
     const { store } = createHarness({
       execute: (execution) => ({ ok: true, command: execution.command }),
       resultByteBudgetProvider: () => 60
@@ -702,6 +750,92 @@ describe("approval store retention", () => {
     });
     await expect(store.awaitOutcome({ approvalId: second.approvalId, waitMs: 0 })).resolves.toEqual({
       approvalId: second.approvalId,
+      status: "unknown",
+      reason: APPROVAL_UNKNOWN_REASONS.RESULT_RETENTION_CAP
+    });
+  });
+
+  it("displaces a response the client already read to retain a newer outcome", async () => {
+    const { store } = createHarness({ ...weighedByRequestBytes, resultByteBudgetProvider: () => 100 });
+    const first = admitRequest(store, { requestBytes: 60 });
+    const second = admitRequest(store, { requestBytes: 60 });
+
+    await store.decide(first.approvalId, "allow");
+    await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
+    await store.decide(second.approvalId, "allow");
+
+    await expect(store.awaitOutcome({ approvalId: second.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: second.approvalId,
+      status: "resolved",
+      outcome: "approved",
+      response: { ok: true, weight: 60 }
+    });
+    await expect(store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: first.approvalId,
+      status: "unknown",
+      reason: APPROVAL_UNKNOWN_REASONS.RESULT_RETENTION_CAP
+    });
+  });
+
+  it("does not treat a poll that saw the request pending as a delivered outcome", async () => {
+    const { store } = createHarness({ ...weighedByRequestBytes, resultByteBudgetProvider: () => 100 });
+    const first = admitRequest(store, { requestBytes: 60 });
+    const second = admitRequest(store, { requestBytes: 60 });
+
+    await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
+    await store.decide(first.approvalId, "allow");
+    await store.decide(second.approvalId, "allow");
+
+    await expect(store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: first.approvalId,
+      status: "resolved",
+      outcome: "approved",
+      response: { ok: true, weight: 60 }
+    });
+    await expect(store.awaitOutcome({ approvalId: second.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: second.approvalId,
+      status: "unknown",
+      reason: APPROVAL_UNKNOWN_REASONS.RESULT_RETENTION_CAP
+    });
+  });
+
+  it("counts the retained bytes correctly after a displaced outcome later expires", async () => {
+    const { store, clock } = createHarness({
+      ...weighedByRequestBytes,
+      resultByteBudgetProvider: () => 100
+    });
+    const first = admitRequest(store, { requestBytes: 60 });
+    const second = admitRequest(store, { requestBytes: 60 });
+
+    await store.decide(first.approvalId, "allow");
+    await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
+    await store.decide(second.approvalId, "allow");
+    await clock.advance(APPROVAL_RESULT_RETENTION_MS);
+
+    const third = admitRequest(store, { requestBytes: 60 });
+    const fourth = admitRequest(store, { requestBytes: 60 });
+    await store.decide(third.approvalId, "allow");
+    await store.decide(fourth.approvalId, "allow");
+
+    await expect(store.awaitOutcome({ approvalId: fourth.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: fourth.approvalId,
+      status: "unknown",
+      reason: APPROVAL_UNKNOWN_REASONS.RESULT_RETENTION_CAP
+    });
+  });
+
+  it("weighs a retained response in bytes rather than in string length", async () => {
+    const response = { text: "ю".repeat(30) };
+    const { store } = createHarness({
+      execute: () => response,
+      resultByteBudgetProvider: () => 50
+    });
+    const admission = admitRequest(store);
+
+    await store.decide(admission.approvalId, "allow");
+
+    await expect(store.awaitOutcome({ approvalId: admission.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: admission.approvalId,
       status: "unknown",
       reason: APPROVAL_UNKNOWN_REASONS.RESULT_RETENTION_CAP
     });

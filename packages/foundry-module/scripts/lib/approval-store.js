@@ -12,7 +12,10 @@ const APPROVAL_ID_BYTES = 16;
 
 const APPROVAL_ID_LENGTH = 22;
 
+const APPROVAL_RECORD_MAX = 200;
+
 export const APPROVAL_UNKNOWN_REASONS = Object.freeze({
+  EXECUTOR_FAILED: "executor-failed",
   RESULT_RETENTION_CAP: "result-retention-cap",
   STORE_CLEARED: "store-cleared"
 });
@@ -49,6 +52,7 @@ export const APPROVAL_REFUSAL_REASONS = Object.freeze({
  *   response: unknown,
  *   hasResponse: boolean,
  *   responseBytes: number,
+ *   delivered: boolean,
  *   unknownReason: string | null
  * }} ApprovalRecord
  */
@@ -56,7 +60,7 @@ export const APPROVAL_REFUSAL_REASONS = Object.freeze({
  * @typedef {{
  *   approvalId: string,
  *   command: string,
- *   params: unknown,
+ *   params?: unknown,
  *   targets: unknown[],
  *   createdAt: number,
  *   expiresAt: number,
@@ -78,6 +82,25 @@ function createApprovalId() {
     .slice(0, APPROVAL_ID_LENGTH);
 }
 
+// A weighed response is charged against a raw-frame byte budget, so it is counted in UTF-8 bytes:
+// string length would undercount every non-ASCII character by half or more.
+/**
+ * @param {string} text
+ * @returns {number}
+ */
+function countUtf8Bytes(text) {
+  let bytes = 0;
+  for (const character of text) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x800) bytes += 2;
+    else if (code < 0x10000) bytes += 3;
+    else bytes += 4;
+  }
+
+  return bytes;
+}
+
 /**
  * @param {unknown} value
  * @returns {number}
@@ -85,7 +108,7 @@ function createApprovalId() {
 function measureJsonBytes(value) {
   try {
     const serialized = JSON.stringify(value);
-    return typeof serialized === "string" ? serialized.length : 0;
+    return typeof serialized === "string" ? countUtf8Bytes(serialized) : 0;
   } catch {
     return Number.POSITIVE_INFINITY;
   }
@@ -128,6 +151,7 @@ export class ApprovalStore {
    *   setTimer?: (handler: () => void, delayMs: number) => any,
    *   clearTimer?: (handle: any) => void,
    *   pendingMax?: number,
+   *   recordMax?: number,
    *   resultRetentionMs?: number,
    *   parkCapMs?: number,
    *   timeoutMinutesProvider?: () => unknown,
@@ -142,6 +166,7 @@ export class ApprovalStore {
     setTimer = (handler, delayMs) => setTimeout(handler, delayMs),
     clearTimer = (handle) => clearTimeout(handle),
     pendingMax = APPROVAL_PENDING_MAX,
+    recordMax = APPROVAL_RECORD_MAX,
     resultRetentionMs = APPROVAL_RESULT_RETENTION_MS,
     parkCapMs = APPROVAL_AWAIT_PARK_CAP_MS,
     timeoutMinutesProvider = readApprovalTimeoutMinutes,
@@ -154,6 +179,7 @@ export class ApprovalStore {
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
     this.pendingMax = pendingMax;
+    this.recordMax = recordMax;
     this.resultRetentionMs = resultRetentionMs;
     this.parkCapMs = parkCapMs;
     this.timeoutMinutesProvider = timeoutMinutesProvider;
@@ -168,6 +194,7 @@ export class ApprovalStore {
    */
   admit({ command, params, targets = [], requestBytes = 0 }) {
     this.#pruneExpired();
+    this.#forgetOldestSettled();
 
     const bytes = normalizeByteWeight(requestBytes);
     if (this.#countPending() >= this.pendingMax) {
@@ -198,6 +225,7 @@ export class ApprovalStore {
       response: undefined,
       hasResponse: false,
       responseBytes: 0,
+      delivered: false,
       unknownReason: null
     };
 
@@ -419,6 +447,7 @@ export class ApprovalStore {
   #settleTerminal(record, state) {
     this.#claimPending(record, state);
     record.terminalAt = this.now();
+    record.targets = [];
     this.#wakeWaiters(record);
     this.#publish();
   }
@@ -431,16 +460,15 @@ export class ApprovalStore {
   #settleExecution(record, response, hasResponse) {
     record.state = "resolved";
     record.terminalAt = this.now();
+    record.targets = [];
 
     /** @type {ApprovalReport | undefined} */
     let deliverable;
-    if (hasResponse && this.#requests.get(record.approvalId) === record) {
+    if (!hasResponse) {
+      record.unknownReason = APPROVAL_UNKNOWN_REASONS.EXECUTOR_FAILED;
+    } else if (this.#requests.get(record.approvalId) === record) {
       const responseBytes = this.measureResponseBytes(response);
-      const fits =
-        Number.isFinite(responseBytes) &&
-        this.#retainedResponseBytes + responseBytes <= resolveByteBudget(this.resultByteBudgetProvider);
-
-      if (fits) {
+      if (this.#makeRoomForResponse(record, responseBytes)) {
         record.response = response;
         record.hasResponse = true;
         record.responseBytes = responseBytes;
@@ -458,6 +486,69 @@ export class ApprovalStore {
 
     this.#wakeWaiters(record, deliverable);
     this.#publish();
+  }
+
+  // An outcome nobody has read yet is worth more than one already handed to a waiter, so a new
+  // response displaces retained responses that were already delivered before it gives up its own.
+  /**
+   * @param {ApprovalRecord} record
+   * @param {number} responseBytes
+   * @returns {boolean}
+   */
+  #makeRoomForResponse(record, responseBytes) {
+    const budget = resolveByteBudget(this.resultByteBudgetProvider);
+    if (!Number.isFinite(responseBytes) || responseBytes > budget) {
+      return false;
+    }
+
+    for (const candidate of this.#requests.values()) {
+      if (this.#retainedResponseBytes + responseBytes <= budget) {
+        return true;
+      }
+
+      if (candidate !== record && candidate.hasResponse && candidate.delivered) {
+        this.#releaseResponse(candidate);
+      }
+    }
+
+    return this.#retainedResponseBytes + responseBytes <= budget;
+  }
+
+  /**
+   * @param {ApprovalRecord} record
+   */
+  #releaseResponse(record) {
+    this.#retainedResponseBytes -= record.responseBytes;
+    record.responseBytes = 0;
+    record.response = undefined;
+    record.hasResponse = false;
+    record.unknownReason = APPROVAL_UNKNOWN_REASONS.RESULT_RETENTION_CAP;
+  }
+
+  // Terminal records outlive their request for the whole retention window, so their number is
+  // capped too: without this, a client that requests and cancels in a loop grows the store freely.
+  #forgetOldestSettled() {
+    if (this.#requests.size < this.recordMax) {
+      return;
+    }
+
+    const settled = [...this.#requests.values()].filter((record) => record.terminalAt !== null);
+    const order = [
+      settled.filter((record) => record.delivered),
+      settled.filter((record) => !record.delivered && !record.hasResponse),
+      settled.filter((record) => !record.delivered && record.hasResponse)
+    ];
+
+    for (const candidates of order) {
+      for (const candidate of candidates) {
+        if (this.#requests.size < this.recordMax) {
+          return;
+        }
+
+        this.#releaseResponse(candidate);
+        this.#requests.delete(candidate.approvalId);
+      }
+    }
   }
 
   /**
@@ -491,6 +582,7 @@ export class ApprovalStore {
       case "executing":
         return { approvalId: record.approvalId, status: "pending", expiresAt: record.expiresAt };
       case "resolved":
+        record.delivered = true;
         return {
           approvalId: record.approvalId,
           status: "resolved",
@@ -498,6 +590,7 @@ export class ApprovalStore {
           ...(record.hasResponse ? { response: record.response } : {})
         };
       default:
+        record.delivered = true;
         return { approvalId: record.approvalId, status: "resolved", outcome: record.state };
     }
   }
@@ -510,7 +603,7 @@ export class ApprovalStore {
     return {
       approvalId: record.approvalId,
       command: record.command,
-      params: record.params,
+      ...(record.state === "pending" ? { params: record.params } : {}),
       targets: record.targets,
       createdAt: record.createdAt,
       expiresAt: record.expiresAt,
