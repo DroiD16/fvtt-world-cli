@@ -61,14 +61,15 @@ export async function executeRemoteCommand({
   if (isApprovalPending(response)) {
     response = await awaitApprovalOutcome({
       pendingResponse: response,
-      send: ({ command: awaitCommand, params: awaitParams, timeoutMs: awaitTimeoutMs }) =>
+      send: ({ command: awaitCommand, params: awaitParams, timeoutMs: awaitTimeoutMs, signal }) =>
         dependencies.sendCommand({
           daemonUrl: clientConfig.daemonUrl,
           deviceCredential: clientConfig.deviceCredential,
           command: awaitCommand,
           params: awaitParams,
           ...clientMaxPayloadOption(dependencies),
-          timeoutMs: awaitTimeoutMs
+          timeoutMs: awaitTimeoutMs,
+          ...(signal ? { signal } : {})
         }),
       stderr: dependencies.stderr,
       ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
@@ -240,7 +241,9 @@ export async function runExecBatch({
     reconnect: async () => {
       const replaced = client;
       client = await connectDaemonClient(connectOptions);
-      await replaced.close().catch(() => {});
+      // Closing a socket that never answers takes as long as the client timeout, and the next poll
+      // must not wait for the connection it already replaced.
+      void replaced.close().catch(() => {});
     },
     stderr: dependencies.stderr,
     ...(typeof timeoutMs === "number" ? { timeoutMs } : {}),

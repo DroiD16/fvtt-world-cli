@@ -416,6 +416,31 @@ describe("approval wait", () => {
     expect(signals.size).toBe(0);
   });
 
+  it("stops the poll it outran, so no connection outlives the cancellation", async () => {
+    const signals = createSignalScope();
+    const abortStates: boolean[] = [];
+    const harness = createHarness([
+      () => new Promise<CommandResponseEnvelope>(() => {}),
+      createCommandResponse({ id: "cancel", result: { approvalId: APPROVAL_ID, status: "cancelled" } })
+    ]);
+    const send = async (request: ApprovalSendRequest) => {
+      if (request.signal) request.signal.addEventListener("abort", () => abortStates.push(true));
+      return await harness.options.send(request);
+    };
+
+    const pending = awaitApprovalOutcome({
+      pendingResponse: pendingEnvelope(),
+      stderr: harness.stderr,
+      signalScope: signals.scope,
+      ...harness.options,
+      send
+    });
+    signals.fire();
+    await pending;
+
+    expect(abortStates).toEqual([true]);
+  });
+
   it("tells the caller a cancellation was requested", async () => {
     const signals = createSignalScope();
     const harness = createHarness([

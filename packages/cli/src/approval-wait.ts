@@ -27,6 +27,7 @@ export interface ApprovalSendRequest {
   command: string;
   params: Record<string, unknown>;
   timeoutMs: number;
+  signal?: AbortSignal;
 }
 
 export interface ApprovalSignalScope {
@@ -190,13 +191,14 @@ export async function awaitApprovalOutcome({
     return { kind: "settled", envelope: report.response };
   }
 
-  async function pollOnce(): Promise<WaitStep> {
+  async function pollOnce(signal: AbortSignal): Promise<WaitStep> {
     let response: CommandResponseEnvelope;
     try {
       response = await send({
         command: APPROVAL_AWAIT_COMMAND,
         params: { approvalId, waitMs: APPROVAL_AWAIT_PARK_CAP_MS },
-        timeoutMs: pollTimeoutMs
+        timeoutMs: pollTimeoutMs,
+        signal
       });
     } catch (error) {
       return { kind: "transport", envelope: toTransportErrorEnvelope(error) };
@@ -279,12 +281,16 @@ export async function awaitApprovalOutcome({
   }
 
   signalScope.on("SIGINT", onSignal);
+  // A poll the cancellation outran is still holding a live connection, and nothing else will close
+  // it before its own timeout: abandoning it without this abort leaves the CLI running after Ctrl+C.
+  let pollAbort: AbortController | null = null;
 
   try {
     let retryDelayMs = APPROVAL_RETRY_BASE_DELAY_MS;
 
     for (;;) {
-      const step = await Promise.race([pollOnce(), cancellation]);
+      pollAbort = new AbortController();
+      const step = await Promise.race([pollOnce(pollAbort.signal), cancellation]);
 
       if (step.kind === "settled") {
         return step.envelope;
@@ -314,6 +320,7 @@ export async function awaitApprovalOutcome({
       }
     }
   } finally {
+    pollAbort?.abort();
     signalScope.off("SIGINT", onSignal);
   }
 }

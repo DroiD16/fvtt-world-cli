@@ -62,6 +62,7 @@ export interface SendCommandOptions {
   timeoutMs?: number;
 
   maxPayloadBytes?: number;
+  signal?: AbortSignal;
 }
 
 function buildValidatedRequest(
@@ -116,7 +117,8 @@ export async function sendCommand({
   command,
   params = {},
   timeoutMs = DEFAULT_CLIENT_TIMEOUT_MS,
-  maxPayloadBytes = DEFAULT_WS_MAX_PAYLOAD_BYTES
+  maxPayloadBytes = DEFAULT_WS_MAX_PAYLOAD_BYTES,
+  signal
 }: SendCommandOptions) {
   warnIfClientTimeoutUnsafe(timeoutMs);
 
@@ -151,11 +153,35 @@ export async function sendCommand({
 
     function cleanup() {
       clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
       socket.removeAllListeners();
       if (socket.readyState === socket.OPEN || socket.readyState === socket.CONNECTING) {
         socket.close();
       }
     }
+
+    function onAbort() {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      socket.terminate();
+      reject(
+        new DaemonTransportError(
+          ERROR_CODES.DAEMON_UNAVAILABLE,
+          `Stopped waiting for the daemon response to ${command}`,
+          { reason: "closed", command }
+        )
+      );
+    }
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort);
 
     socket.once("open", () => {
       opened = true;

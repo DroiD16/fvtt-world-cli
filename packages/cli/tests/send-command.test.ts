@@ -219,6 +219,29 @@ describe("one-shot sendCommand transport", () => {
     expect(stderr[0]).toContain("--timeout-ms (200000)");
   });
 
+  it("gives up its connection when the caller aborts the request", async () => {
+    const controller = new AbortController();
+    let serverSocket: WebSocket | null = null;
+    const server = await startScriptedServer((socket) => {
+      serverSocket = socket;
+      acceptThen(socket, () => controller.abort());
+    });
+
+    const error = await expectTransportRejection(
+      sendCommand({
+        daemonUrl: server.url,
+        deviceCredential: CREDENTIAL,
+        command: "system.ping",
+        timeoutMs: 10_000,
+        signal: controller.signal
+      })
+    );
+
+    expect(error.code).toBe(ERROR_CODES.DAEMON_UNAVAILABLE);
+    expect(error.details).toMatchObject({ command: "system.ping" });
+    await closedOnServer(serverSocket as unknown as WebSocket);
+  });
+
   describe("hello-ack phase", () => {
     it("rejects with the daemon's own error when the hello ack reports failure", async () => {
       const server = await startScriptedServer((socket) => {
