@@ -90,7 +90,7 @@ export function formatApprovalParams(params) {
  * @param {number} milliseconds
  * @returns {string}
  */
-export function formatRemaining(milliseconds) {
+function formatRemaining(milliseconds) {
   const total = Math.max(0, Math.ceil(milliseconds / 1000));
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
@@ -156,7 +156,7 @@ function readPrepared(cache, request) {
  * @param {{ prepared: { approvalId: string, request: PreparedApprovalRequest } | null }} cache
  * @param {number} now
  */
-export function buildApprovalContext(view, cache, now) {
+function buildApprovalContext(view, cache, now) {
   const current = view.current;
   if (current === null) {
     return { request: null, waiting: 0, meta: false };
@@ -269,14 +269,13 @@ export function createCommandApprovalApplication({ approvalStore }) {
 // the store holds: admission is the one transition that raises it.
 /**
  * @param {{ approvalStore: ApprovalStore }} runtime
- * @returns {{ release: () => void }}
  */
 export function createApprovalWindow({ approvalStore }) {
   /** @type {any} */
   let application = null;
   let held = 0;
 
-  const release = approvalStore.subscribe((view) => {
+  approvalStore.subscribe((view) => {
     const total = (view.current === null ? 0 : 1) + view.waitingCount;
     const arrived = total > held;
     held = total;
@@ -293,6 +292,4 @@ export function createApprovalWindow({ approvalStore }) {
     application ??= new (createCommandApprovalApplication({ approvalStore }))();
     void application.render({ force: arrived });
   });
-
-  return { release };
 }
