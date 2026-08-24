@@ -1,5 +1,11 @@
-import { MODULE_TITLE } from "../generated/protocol.js";
+import { MODULE_TITLE, PROTOCOL_COMPONENTS } from "../generated/protocol.js";
 import { format } from "./i18n.js";
+
+const PROTOCOL_VERSION_SKEW_KEYS = Object.freeze({
+  [PROTOCOL_COMPONENTS.MODULE]: "FVTTWORLDCLI.Startup.ProtocolVersionSkewModule",
+  [PROTOCOL_COMPONENTS.CLI_DAEMON]: "FVTTWORLDCLI.Startup.ProtocolVersionSkewDaemon",
+  [PROTOCOL_COMPONENTS.UNKNOWN]: "FVTTWORLDCLI.Startup.ProtocolVersionSkewUnknown"
+});
 
 export function getDaemonUnavailableWarningMessage() {
   return format("FVTTWORLDCLI.Startup.DaemonUnavailable", { module: MODULE_TITLE });
@@ -13,8 +19,9 @@ export function getBridgeBusyWarningMessage() {
   return format("FVTTWORLDCLI.Startup.BridgeBusy", { module: MODULE_TITLE });
 }
 
-export function getProtocolVersionSkewWarningMessage(expectedVersion, actualVersion) {
-  return format("FVTTWORLDCLI.Startup.ProtocolVersionSkew", {
+/** @param {{ expectedVersion: string, actualVersion: string, staleComponent: string }} mismatch */
+export function getProtocolVersionSkewWarningMessage({ expectedVersion, actualVersion, staleComponent }) {
+  return format(PROTOCOL_VERSION_SKEW_KEYS[staleComponent], {
     module: MODULE_TITLE,
     expected: expectedVersion,
     actual: actualVersion

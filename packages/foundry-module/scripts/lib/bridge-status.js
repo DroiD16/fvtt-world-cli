@@ -1,3 +1,4 @@
+import { PROTOCOL_COMPONENTS } from "../generated/protocol.js";
 import { format, localize } from "./i18n.js";
 
 export const DISPLAY_STATE_GLYPHS = Object.freeze({
@@ -72,6 +73,31 @@ const RAW_STATUS_DETAILS = Object.freeze({
   idle: "FVTTWORLDCLI.BridgeStatus.Raw.idle",
   reconnecting: "FVTTWORLDCLI.BridgeStatus.Raw.reconnecting"
 });
+
+const STALE_COMPONENT_LABELS = Object.freeze({
+  [PROTOCOL_COMPONENTS.MODULE]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Component.module",
+  [PROTOCOL_COMPONENTS.CLI_DAEMON]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Component.cliDaemon",
+  [PROTOCOL_COMPONENTS.UNKNOWN]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Component.unknown"
+});
+
+const STALE_COMPONENT_REMEDIES = Object.freeze({
+  [PROTOCOL_COMPONENTS.MODULE]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Advice.module",
+  [PROTOCOL_COMPONENTS.CLI_DAEMON]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Advice.cliDaemon",
+  [PROTOCOL_COMPONENTS.UNKNOWN]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Advice.unknown"
+});
+
+/**
+ * @param {{ expectedVersion: string, actualVersion: string, staleComponent: string } | null | undefined} mismatch
+ */
+export function describeProtocolVersionMismatch(mismatch) {
+  if (!mismatch) return null;
+  return {
+    expectedVersion: mismatch.expectedVersion,
+    actualVersion: mismatch.actualVersion,
+    staleComponent: localize(STALE_COMPONENT_LABELS[mismatch.staleComponent]),
+    remedy: localize(STALE_COMPONENT_REMEDIES[mismatch.staleComponent])
+  };
+}
 
 /**
  * @param {"connected" | "pending" | "offline" | "unpaired"} displayState

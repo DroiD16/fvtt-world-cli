@@ -62,9 +62,34 @@ describe("bridge startup warnings", () => {
       "World CLI for Foundry VTT stopped: another pairing owns the daemon's active bridge slot. Release that bridge or use bridge release, then choose Connect in Authorization."
     ],
     [
-      "a protocol version skew",
-      () => getProtocolVersionSkewWarningMessage("1.4", "9.9"),
-      "World CLI for Foundry VTT stopped: protocol version mismatch. This client speaks 1.4 but the daemon speaks 9.9. Upgrade the daemon and module to matching versions and reload the client."
+      "a protocol version skew the module is behind on",
+      () =>
+        getProtocolVersionSkewWarningMessage({
+          expectedVersion: "1.1.0",
+          actualVersion: "9.9.0",
+          staleComponent: "module"
+        }),
+      "World CLI for Foundry VTT stopped: the daemon and this module come from different releases, which is refused by design. This client speaks protocol 1.1.0 and the daemon speaks 9.9.0, so this module is the older half. Update the module in Foundry, or ask your agent to update it, then reload the client."
+    ],
+    [
+      "a protocol version skew the daemon is behind on",
+      () =>
+        getProtocolVersionSkewWarningMessage({
+          expectedVersion: "1.1.0",
+          actualVersion: "3.0",
+          staleComponent: "cli-daemon"
+        }),
+      "World CLI for Foundry VTT stopped: the daemon and this module come from different releases, which is refused by design. This client speaks protocol 1.1.0 and the daemon speaks 3.0, so the CLI and daemon are the older half. Update the fvtt-world-cli package and restart the daemon, or ask your agent to update it, then connect again."
+    ],
+    [
+      "a protocol version skew neither side can be blamed for",
+      () =>
+        getProtocolVersionSkewWarningMessage({
+          expectedVersion: "1.1.0",
+          actualVersion: "banana",
+          staleComponent: "unknown"
+        }),
+      "World CLI for Foundry VTT stopped: the daemon and this module come from different releases, which is refused by design. This client speaks protocol 1.1.0 and the daemon speaks banana, and those versions cannot be ordered, so check both halves. Bring the fvtt-world-cli package and the module to the same release, restart the daemon, and reload the client."
     ],
     [
       "a rejected handshake",

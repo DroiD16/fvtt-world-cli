@@ -6,6 +6,7 @@ import {
   DISPLAY_STATE_GLYPH_NAMES,
   DISPLAY_STATE_NAMES,
   describeConnection,
+  describeProtocolVersionMismatch,
   resolveDisplayState
 } from "./lib/bridge-status.js";
 import { format, localize } from "./lib/i18n.js";
@@ -31,7 +32,8 @@ export function prepareBridgeStatusContext() {
     url: bridgeStatus?.url ?? "",
     lastConnectedAt: bridgeStatus?.lastConnectedAt ?? "",
     reconnectAttempts: bridgeStatus?.reconnectAttempts ?? 0,
-    terminalStopReason: bridgeStatus?.terminalStopReason ?? ""
+    terminalStopReason: bridgeStatus?.terminalStopReason ?? "",
+    protocolVersionMismatch: describeProtocolVersionMismatch(bridgeStatus?.protocolVersionMismatch)
   };
 }
 

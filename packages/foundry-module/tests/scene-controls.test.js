@@ -658,9 +658,38 @@ describe("Bridge status window", () => {
       url: "ws://127.0.0.1:47833",
       lastConnectedAt: "2026-08-12T10:00:00.000Z",
       reconnectAttempts: 2,
-      terminalStopReason: ""
+      terminalStopReason: "",
+      protocolVersionMismatch: null
     });
   });
+
+  it.each([
+    ["module", "1.0.0", "9.9.0", "module"],
+    ["cliDaemon", "1.1.0", "3.0", "cli-daemon"],
+    ["unknown", "1.1.0", "next-dev", "unknown"]
+  ])(
+    "names both versions and the remedy while the bridge is stopped over a %s release gap",
+    (leaf, expectedVersion, actualVersion, staleComponent) => {
+      stubBridge({
+        status: "stopped",
+        url: "ws://127.0.0.1:47833",
+        helloAcknowledged: false,
+        terminalStopReason: "UNSUPPORTED_PROTOCOL_VERSION",
+        protocolVersionMismatch: { expectedVersion, actualVersion, staleComponent }
+      });
+
+      expect(prepareBridgeStatusContext()).toMatchObject({
+        displayState: "offline",
+        terminalStopReason: "UNSUPPORTED_PROTOCOL_VERSION",
+        protocolVersionMismatch: {
+          expectedVersion,
+          actualVersion,
+          staleComponent: localizeEnglish(`FVTTWORLDCLI.BridgeStatus.VersionMismatch.Component.${leaf}`),
+          remedy: localizeEnglish(`FVTTWORLDCLI.BridgeStatus.VersionMismatch.Advice.${leaf}`)
+        }
+      });
+    }
+  );
 
   it("reports an unpaired browser that has no bridge instance", () => {
     stubGame({ paired: false });

@@ -19,6 +19,22 @@
       "LastConnectedAt": "Last connected at",
       "ReconnectAttempts": "Reconnect attempts",
       "TerminalStopReason": "Terminal stop reason",
+      "VersionMismatch": {
+        "ModuleVersion": "Module protocol version",
+        "DaemonVersion": "Daemon protocol version",
+        "StaleComponent": "Older half",
+        "Remedy": "What to do",
+        "Component": {
+          "module": "This Foundry module",
+          "cliDaemon": "The CLI and daemon",
+          "unknown": "Not identifiable from these versions"
+        },
+        "Advice": {
+          "module": "Update the module in Foundry, or ask your agent to update it, then reload the client.",
+          "cliDaemon": "Update the fvtt-world-cli package and restart the daemon, or ask your agent to update it, then connect again.",
+          "unknown": "Bring the fvtt-world-cli package and the module to the same release, restart the daemon, and reload the client."
+        }
+      },
       "LocalPairing": "Local pairing",
       "Configured": "Configured",
       "NotConfigured": "Not configured",
@@ -81,7 +97,9 @@
       "DaemonUnavailable": "{module} stopped: the configured daemon is unavailable. Start the local daemon and reload the client.",
       "RejectedCredential": "{module} stopped: the pairing credential was rejected. Open Authorization and pair again.",
       "BridgeBusy": "{module} stopped: another pairing owns the daemon's active bridge slot. Release that bridge or use bridge release, then choose Connect in Authorization.",
-      "ProtocolVersionSkew": "{module} stopped: protocol version mismatch. This client speaks {expected} but the daemon speaks {actual}. Upgrade the daemon and module to matching versions and reload the client.",
+      "ProtocolVersionSkewModule": "{module} stopped: the daemon and this module come from different releases, which is refused by design. This client speaks protocol {expected} and the daemon speaks {actual}, so this module is the older half. Update the module in Foundry, or ask your agent to update it, then reload the client.",
+      "ProtocolVersionSkewDaemon": "{module} stopped: the daemon and this module come from different releases, which is refused by design. This client speaks protocol {expected} and the daemon speaks {actual}, so the CLI and daemon are the older half. Update the fvtt-world-cli package and restart the daemon, or ask your agent to update it, then connect again.",
+      "ProtocolVersionSkewUnknown": "{module} stopped: the daemon and this module come from different releases, which is refused by design. This client speaks protocol {expected} and the daemon speaks {actual}, and those versions cannot be ordered, so check both halves. Bring the fvtt-world-cli package and the module to the same release, restart the daemon, and reload the client.",
       "RejectedHandshake": "{module} stopped: the daemon rejected the bridge handshake. Fix the daemon configuration and reload the client.",
       "RejectedHandshakeWithReason": "{module} stopped: the daemon rejected the bridge handshake ({reason}). Fix the daemon configuration and reload the client.",
       "NotPaired": "{module} is not paired. Open Authorization from the World CLI scene-controls group, or from Configure Settings → Module Settings → Authorization."

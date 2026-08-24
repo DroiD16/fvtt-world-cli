@@ -8,6 +8,7 @@ import {
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
   ERROR_CODES,
   MESSAGE_TYPES,
+  MODULE_TITLE,
   PROTOCOL_VERSION,
   validateHelloMessage
 } from "../scripts/generated/protocol.js";
@@ -25,6 +26,22 @@ import { createEnglishI18n } from "./helpers/i18n.js";
 beforeEach(() => {
   globalThis.game = /** @type {any} */ ({ i18n: createEnglishI18n() });
 });
+
+// The prose belongs to the catalog, so a message is pinned by the key it was rendered from and the data
+// it was rendered with; comparing sentences would pass a key that renders the wrong remedy.
+function observeLocalization() {
+  const i18n = createEnglishI18n();
+  const localizer = { localize: vi.fn(i18n.localize), format: vi.fn(i18n.format) };
+  globalThis.game = /** @type {any} */ ({ i18n: localizer });
+  return localizer;
+}
+
+function countNotifications() {
+  return Object.values(globalThis.ui.notifications).reduce(
+    (total, notify) => total + notify.mock.calls.length,
+    0
+  );
+}
 
 function createClient(logger = vi.fn()) {
   return new BridgeClient({
@@ -71,7 +88,9 @@ describe("BridgeClient terminal shutdown", () => {
   beforeEach(() => {
     globalThis.ui = {
       notifications: {
-        warn: vi.fn()
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn()
       }
     };
   });
@@ -323,7 +342,11 @@ describe("BridgeClient handshake reliability", () => {
     expect(globalThis.ui.notifications.warn).toHaveBeenCalledTimes(1);
 
     expect(globalThis.ui.notifications.warn).toHaveBeenCalledWith(
-      getProtocolVersionSkewWarningMessage(PROTOCOL_VERSION, "9.9.0"),
+      getProtocolVersionSkewWarningMessage({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: "9.9.0",
+        staleComponent: "module"
+      }),
       { permanent: true }
     );
     const skewWarning = globalThis.ui.notifications.warn.mock.calls[0][0];
@@ -332,6 +355,61 @@ describe("BridgeClient handshake reliability", () => {
     expect(client.getStatus()).toMatchObject({
       status: "stopped",
       terminalStopReason: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION
+    });
+  });
+
+  // A daemon still on the released protocol answers with no mismatch details at all, so a module that
+  // read the older half off the ack would meet the very first mismatch a GM can hit with nothing to say.
+  it.each([
+    [
+      "the daemon speaks the protocol version published before releases matched",
+      "3.0",
+      "cli-daemon",
+      "FVTTWORLDCLI.Startup.ProtocolVersionSkewDaemon"
+    ],
+    [
+      "the daemon speaks a later protocol version than this module",
+      "9.9.0",
+      "module",
+      "FVTTWORLDCLI.Startup.ProtocolVersionSkewModule"
+    ],
+    [
+      "the daemon's protocol version cannot be ordered against this module's",
+      "next-dev",
+      "unknown",
+      "FVTTWORLDCLI.Startup.ProtocolVersionSkewUnknown"
+    ]
+  ])("tells the GM which half is behind when %s", async (_case, daemonVersion, staleComponent, key) => {
+    const localizer = observeLocalization();
+    const client = createClient();
+
+    markClientConnected(client);
+    await client.handleMessage(
+      createHelloAck({
+        ok: false,
+        protocolVersion: daemonVersion,
+        error: {
+          code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+          message: `Unsupported protocol version: ${PROTOCOL_VERSION}`
+        }
+      })
+    );
+
+    expect(localizer.format).toHaveBeenCalledWith(key, {
+      module: MODULE_TITLE,
+      expected: PROTOCOL_VERSION,
+      actual: daemonVersion
+    });
+    expect(countNotifications()).toBe(1);
+    expect(globalThis.ui.notifications.warn.mock.calls[0][1]).toEqual({ permanent: true });
+    expect(client.getStatus()).toMatchObject({
+      status: "stopped",
+      terminalStopReason: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+      protocolVersionMismatch: {
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: daemonVersion,
+        staleComponent
+      }
     });
   });
 
@@ -810,7 +888,8 @@ describe("BridgeClient status change signal", () => {
     expect(onStatusChange.mock.calls[0][0]).toMatchObject({
       status: "connected",
       helloAcknowledged: true,
-      hasEstablishedSession: true
+      hasEstablishedSession: true,
+      protocolVersionMismatch: null
     });
   });
 

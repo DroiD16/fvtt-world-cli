@@ -7,12 +7,15 @@ import {
   ERROR_CODES,
   MESSAGE_TYPES,
   MODULE_ID,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
   RECONNECT_BASE_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
   createBridgeHello,
   createErrorResponse,
   createProtocolError,
+  getProtocolVersionError,
   parseBridgeMessage,
   validateTransportMessage
 } from "./generated/protocol.js";
@@ -129,6 +132,8 @@ export class BridgeClient {
     this.hasEstablishedSession = false;
     this.shouldReconnect = true;
     this.terminalStopReason = null;
+    /** @type {{ expectedVersion: string, actualVersion: string, staleComponent: string } | null} */
+    this.protocolVersionMismatch = null;
     this.hasWarnedTerminalStop = false;
     this.pendingDaemonRequests = new Map();
   }
@@ -481,15 +486,30 @@ export class BridgeClient {
     });
   }
 
+  // The older half is worked out here rather than read off the ack: a daemon from a release that
+  // predates these details answers with none, and that is exactly the mismatch a GM meets first.
   stopForProtocolVersionSkew(message) {
-    const moduleVersion = PROTOCOL_VERSION;
-    const daemonVersion = message.protocolVersion ?? "unknown";
+    const daemonVersion = String(message.protocolVersion ?? "unknown");
+    const details = /** @type {{ staleComponent: string }} */ (
+      getProtocolVersionError(daemonVersion, {
+        peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
+        reporter: PROTOCOL_COMPONENTS.MODULE,
+        handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+      }).details
+    );
+    const mismatch = {
+      expectedVersion: PROTOCOL_VERSION,
+      actualVersion: daemonVersion,
+      staleComponent: details.staleComponent
+    };
+    this.protocolVersionMismatch = mismatch;
+
     this.stopTerminally({
       code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
-      message: `Module protocol version ${moduleVersion} is incompatible with daemon version ${daemonVersion}`,
+      message: `Module protocol version ${PROTOCOL_VERSION} is incompatible with daemon version ${daemonVersion}`,
       warn: {
-        message: getProtocolVersionSkewWarningMessage(moduleVersion, daemonVersion),
-        details: { moduleVersion, daemonVersion }
+        message: getProtocolVersionSkewWarningMessage(mismatch),
+        details: mismatch
       }
     });
   }
@@ -631,7 +651,8 @@ export class BridgeClient {
       hasEstablishedSession: this.hasEstablishedSession,
       lastConnectedAt: this.lastConnectedAt,
       reconnectAttempts: this.reconnectAttempts,
-      terminalStopReason: this.terminalStopReason?.code ?? null
+      terminalStopReason: this.terminalStopReason?.code ?? null,
+      protocolVersionMismatch: this.protocolVersionMismatch
     };
   }
 }
