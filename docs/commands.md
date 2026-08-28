@@ -307,9 +307,11 @@ executed.
 
 Approval state lives only in the GM client's memory. Reloading that client, or ending its bridge
 session, discards the decisions it was holding. A decision no GM had answered is abandoned undecided
-and is never dispatched, but no answer for it leaves the session that held it, so the command waiting
-on it reports `APPROVAL_UNKNOWN`, as does a command that was already executing when the state went,
-and so does any later poll for a decision the new runtime has no state for.
+and is never dispatched, but no answer for it leaves the session that held it: the command waiting on
+it ends with `BRIDGE_DISCONNECTED`, like anything else that was in flight, and it is the retry
+against the replacement runtime — which has no state for that decision — that reports
+`APPROVAL_UNKNOWN`. A command that was already executing when the state went, and any later poll for
+a decision the new runtime does not know, report `APPROVAL_UNKNOWN` the same way.
 
 A request whose session ended before the GM client answered it at all is a separate case: the CLI
 never learned whether a decision was even raised for it, so it reports `BRIDGE_DISCONNECTED` and the
