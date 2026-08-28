@@ -6,6 +6,7 @@ import {
   APPROVAL_AWAIT_COMMAND,
   APPROVAL_CANCEL_COMMAND,
   isCommandResponseEnvelope,
+  readPendingApprovalDetails,
   type CommandResponseEnvelope
 } from "./transport-util.js";
 
@@ -20,8 +21,6 @@ const TRANSIENT_TRANSPORT_CODES: ReadonlySet<string> = new Set([
   ERROR_CODES.BRIDGE_NOT_READY,
   ERROR_CODES.BRIDGE_DISCONNECTED
 ]);
-
-const APPROVAL_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 
 export interface ApprovalSendRequest {
   command: string;
@@ -59,25 +58,13 @@ type WaitStep =
   | { kind: "transport"; envelope: CommandResponseEnvelope };
 
 function readPendingApproval(response: CommandResponseEnvelope): PendingApproval | null {
-  if (response.error?.code !== ERROR_CODES.APPROVAL_PENDING) {
+  const details = readPendingApprovalDetails(response);
+  if (!details) {
     return null;
   }
 
-  const details = response.error.details ?? {};
-  const approvalId = details.approvalId;
-  const expiresAt = details.expiresAt;
-  if (typeof approvalId !== "string" || !APPROVAL_ID_PATTERN.test(approvalId)) {
-    return null;
-  }
-  if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) {
-    return null;
-  }
-
-  return {
-    approvalId,
-    expiresAt,
-    command: typeof details.command === "string" ? details.command : "unknown"
-  };
+  const command = response.error?.details?.command;
+  return { ...details, command: typeof command === "string" ? command : "unknown" };
 }
 
 function describeTransportFailure(envelope: CommandResponseEnvelope): string {

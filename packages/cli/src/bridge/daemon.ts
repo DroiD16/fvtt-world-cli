@@ -31,12 +31,16 @@ import { WebSocketServer } from "ws";
 import type WebSocket from "ws";
 import type { CliConfigStore, PersistedCliConfig, PersistedCliConfigV3 } from "../config.js";
 import { PersistedCliConfigSchema, createEmptyConfig } from "../config.js";
-import { isCommandResponseEnvelope, normalizeIncomingData, sendJson } from "../transport-util.js";
+import {
+  isCommandResponseEnvelope,
+  normalizeIncomingData,
+  readPendingApprovalDetails,
+  sendJson
+} from "../transport-util.js";
 
 import {
   ApprovalIdempotencyLinks,
   readApprovalSettlement,
-  readPendingApprovalDetails,
   type ApprovalLinkOptions
 } from "./approval-link.js";
 import {

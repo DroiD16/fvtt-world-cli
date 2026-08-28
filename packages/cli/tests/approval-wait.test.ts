@@ -497,7 +497,12 @@ describe("approval wait", () => {
   });
 
   it("returns the original envelope when the pending details cannot drive a wait", async () => {
-    for (const broken of [{ approvalId: "short" }, { expiresAt: "soon" }, { approvalId: undefined }]) {
+    for (const broken of [
+      { approvalId: "short" },
+      { expiresAt: "soon" },
+      { approvalId: undefined },
+      { expiresAt: 1e20 }
+    ]) {
       const harness = createHarness([]);
       const original = pendingEnvelope(broken);
 

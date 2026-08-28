@@ -29,6 +29,35 @@ export interface CommandResponseEnvelope {
   error?: ProtocolErrorShape;
 }
 
+const APPROVAL_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+const MAX_EPOCH_MS = 8_640_000_000_000_000;
+
+export function readApprovalId(value: unknown): string | null {
+  return typeof value === "string" && APPROVAL_ID_PATTERN.test(value) ? value : null;
+}
+
+export function readPendingApprovalDetails(
+  envelope: CommandResponseEnvelope
+): { approvalId: string; expiresAt: number } | null {
+  if (envelope.ok || envelope.error?.code !== ERROR_CODES.APPROVAL_PENDING) {
+    return null;
+  }
+
+  const details = envelope.error.details ?? {};
+  const approvalId = readApprovalId(details.approvalId);
+  const expiresAt = details.expiresAt;
+  if (approvalId === null || typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) {
+    return null;
+  }
+  // A deadline outside the Date range still compares as an ordinary number, so a waiter would accept
+  // it and only then throw while formatting the deadline it just accepted.
+  if (Math.abs(expiresAt) > MAX_EPOCH_MS) {
+    return null;
+  }
+
+  return { approvalId, expiresAt };
+}
+
 export class DaemonTransportError extends Error {
   readonly code: string;
   readonly details?: Record<string, unknown>;

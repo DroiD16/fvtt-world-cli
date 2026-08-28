@@ -7,12 +7,8 @@ import {
 } from "@fvtt-world-cli/protocol";
 import { describe, expect, it } from "vitest";
 
-import {
-  ApprovalIdempotencyLinks,
-  readApprovalSettlement,
-  readPendingApprovalDetails
-} from "../src/bridge/approval-link.js";
-import type { CommandResponseEnvelope } from "../src/transport-util.js";
+import { ApprovalIdempotencyLinks, readApprovalSettlement } from "../src/bridge/approval-link.js";
+import { readPendingApprovalDetails, type CommandResponseEnvelope } from "../src/transport-util.js";
 
 const APPROVAL_ID = "CCCCCCCCCCCCCCCCCCCCCC";
 const EXPIRES_AT = 1_000_000;
@@ -187,12 +183,14 @@ describe("approval idempotency links", () => {
     }
   });
 
-  it("records a link only from a pending answer it can bound in time", () => {
+  it("reads a pending approval only from details a waiter could act on", () => {
     expect(readPendingApprovalDetails(pendingResponse())).toEqual({
       approvalId: APPROVAL_ID,
       expiresAt: EXPIRES_AT
     });
     expect(readPendingApprovalDetails(pendingResponse(APPROVAL_ID, "soon"))).toBeNull();
+    expect(readPendingApprovalDetails(pendingResponse(APPROVAL_ID, 1e20))).toBeNull();
+    expect(readPendingApprovalDetails(pendingResponse("short"))).toBeNull();
     expect(readPendingApprovalDetails(delivered())).toBeNull();
   });
 });

@@ -3023,6 +3023,33 @@ describe("authorization daemon", () => {
     });
   });
 
+  it("re-forwards a same-key retry when the pending answer named an approval it cannot poll", async () => {
+    const { bridge, cli } = await startApprovalDaemon();
+    const forwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+    const answer = next(cli);
+    bridge.send(
+      JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_RESPONSE,
+        id: "item-1",
+        ok: false,
+        error: {
+          code: ERROR_CODES.APPROVAL_PENDING,
+          message: "Command item.create needs an approval from the GM of this bridge.",
+          details: { approvalId: "short", expiresAt: Date.now() + 600_000, command: "item.create" }
+        }
+      })
+    );
+    await answer;
+
+    const reforwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+
+    expect(await reforwarded).toMatchObject({ id: "item-2", command: "item.create" });
+  });
+
   it("serves an allowed command's own response to a later retry of the same key", async () => {
     const { daemon, bridge, cli } = await startApprovalDaemon();
     await sendPendingApproval(bridge, cli, "item-1", "key-1");

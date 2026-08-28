@@ -4,6 +4,7 @@ import {
   APPROVAL_AWAIT_COMMAND,
   APPROVAL_CANCEL_COMMAND,
   isCommandResponseEnvelope,
+  readApprovalId,
   type CommandResponseEnvelope
 } from "../transport-util.js";
 
@@ -33,10 +34,6 @@ export interface ApprovalLinkOptions {
   maxEntries?: number;
   retentionMs?: number;
   now?: () => number;
-}
-
-function readApprovalId(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function settlementForAwait(envelope: CommandResponseEnvelope): ApprovalSettlement {
@@ -90,23 +87,6 @@ export function readApprovalSettlement(
     return settlementForCancel(envelope);
   }
   return { kind: "none" };
-}
-
-export function readPendingApprovalDetails(
-  envelope: CommandResponseEnvelope
-): { approvalId: string; expiresAt: number } | null {
-  if (envelope.ok || envelope.error?.code !== ERROR_CODES.APPROVAL_PENDING) {
-    return null;
-  }
-
-  const details = envelope.error.details ?? {};
-  const approvalId = readApprovalId(details.approvalId);
-  const expiresAt = details.expiresAt;
-  if (!approvalId || typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) {
-    return null;
-  }
-
-  return { approvalId, expiresAt };
 }
 
 export class ApprovalIdempotencyLinks {
