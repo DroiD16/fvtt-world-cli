@@ -386,6 +386,26 @@ describe("approval wait", () => {
     expect(reconnects).toBe(1);
   });
 
+  it("keeps the connection a daemon-reported failure did not break", async () => {
+    const harness = createHarness([
+      transportEnvelope(ERROR_CODES.BRIDGE_TIMEOUT),
+      awaitResolved("approved", deliveredSuccess())
+    ]);
+    let reconnects = 0;
+
+    await awaitApprovalOutcome({
+      pendingResponse: pendingEnvelope(),
+      stderr: harness.stderr,
+      reconnect: async () => {
+        reconnects += 1;
+      },
+      ...harness.options
+    });
+
+    expect(reconnects).toBe(0);
+    expect(harness.calls).toHaveLength(2);
+  });
+
   it("reports a confirmed cancellation as guaranteed not executed", async () => {
     const signals = createSignalScope();
     const harness = createHarness([

@@ -57,7 +57,7 @@ interface PendingApproval {
 type WaitStep =
   | { kind: "settled"; envelope: CommandResponseEnvelope }
   | { kind: "pending" }
-  | { kind: "transport"; envelope: CommandResponseEnvelope };
+  | { kind: "transport"; envelope: CommandResponseEnvelope; connectionLost: boolean };
 
 type SettledStep = Extract<WaitStep, { kind: "settled" }>;
 
@@ -192,7 +192,7 @@ export async function awaitApprovalOutcome({
         ...(signal ? { signal } : {})
       });
     } catch (error) {
-      return { kind: "transport", envelope: toTransportErrorEnvelope(error) };
+      return { kind: "transport", envelope: toTransportErrorEnvelope(error), connectionLost: true };
     }
 
     if (response.ok) {
@@ -200,7 +200,7 @@ export async function awaitApprovalOutcome({
     }
 
     if (TRANSIENT_TRANSPORT_CODES.has(response.error?.code ?? "")) {
-      return { kind: "transport", envelope: response };
+      return { kind: "transport", envelope: response, connectionLost: false };
     }
 
     return { kind: "settled", envelope: response };
@@ -322,7 +322,7 @@ export async function awaitApprovalOutcome({
       }
       retryDelayMs = Math.min(retryDelayMs * 2, APPROVAL_RETRY_MAX_DELAY_MS);
 
-      if (reconnect) {
+      if (reconnect && step.connectionLost) {
         let failure: unknown = null;
         const cancelledWhileReconnecting = await raceCancellation(
           reconnect().catch((error: unknown) => {
