@@ -13,6 +13,7 @@ import {
 import {
   buildPolicySnapshot,
   normalizeStoredPolicy,
+  readApprovalSoundEnabled,
   readApprovalTimeoutMinutes,
   readStoredCommandPolicy,
   resolveApprovalTimeoutMinutes,
@@ -342,6 +343,7 @@ describe("reading the policy settings out of Foundry", () => {
 
     expect(readStoredCommandPolicy().overrides).toEqual({ [ALLOW_BY_DEFAULT]: "deny" });
     expect(readApprovalTimeoutMinutes()).toBe(5);
+    expect(readApprovalSoundEnabled()).toBe(true);
   });
 
   it("degrades to the default profile and timeout when the setting is not registered yet", () => {
@@ -356,6 +358,7 @@ describe("reading the policy settings out of Foundry", () => {
     expect(readStoredCommandPolicy()).toEqual({ version: 1, overrides: {} });
     expect(behaviorOf(readStoredCommandPolicy(), APPROVE_BY_DEFAULT)).toBe("approve");
     expect(readApprovalTimeoutMinutes()).toBe(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
+    expect(readApprovalSoundEnabled()).toBe(true);
   });
 
   it("degrades to the default profile and timeout with no game object at all", () => {
@@ -372,5 +375,16 @@ describe("reading the policy settings out of Foundry", () => {
 
     expect(readApprovalTimeoutMinutes()).toBe(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
     expect(readStoredCommandPolicy()).toEqual({ version: 1, overrides: {} });
+  });
+
+  it("reports the approval sound as off only when the stored setting is false", () => {
+    globalThis.game = /** @type {any} */ ({
+      settings: {
+        get: (namespace, key) =>
+          namespace === MODULE_ID && key === MODULE_SETTING_KEYS.APPROVAL_SOUND ? false : undefined
+      }
+    });
+
+    expect(readApprovalSoundEnabled()).toBe(false);
   });
 });
