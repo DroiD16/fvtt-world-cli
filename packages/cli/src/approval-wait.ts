@@ -2,6 +2,7 @@ import { APPROVAL_AWAIT_PARK_CAP_MS, ERROR_CODES, MESSAGE_TYPES } from "@fvtt-wo
 
 import { DEFAULT_CLIENT_TIMEOUT_MS } from "./bridge/session-store.js";
 import { localErrorEnvelope, toTransportErrorEnvelope } from "./errors.js";
+import { AWAIT_EMPTY_POLL_DELAY_MS, AWAIT_FLOOR_MARGIN_MS } from "./park-polling.js";
 import {
   APPROVAL_AWAIT_COMMAND,
   APPROVAL_CANCEL_COMMAND,
@@ -10,8 +11,8 @@ import {
   type CommandResponseEnvelope
 } from "./transport-util.js";
 
-export const APPROVAL_AWAIT_CLIENT_TIMEOUT_FLOOR_MS = APPROVAL_AWAIT_PARK_CAP_MS + 5_000;
-export const APPROVAL_EMPTY_POLL_DELAY_MS = 250;
+export const APPROVAL_AWAIT_CLIENT_TIMEOUT_FLOOR_MS = APPROVAL_AWAIT_PARK_CAP_MS + AWAIT_FLOOR_MARGIN_MS;
+export const APPROVAL_EMPTY_POLL_DELAY_MS = AWAIT_EMPTY_POLL_DELAY_MS;
 export const APPROVAL_RETRY_BASE_DELAY_MS = 500;
 export const APPROVAL_RETRY_MAX_DELAY_MS = 5_000;
 export const APPROVAL_RETRY_MARGIN_MS = 30_000;

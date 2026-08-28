@@ -14,6 +14,7 @@ import { connectDaemonClient } from "../client/send-command.js";
 import { createDaemonControlRunner, requestDaemonControl } from "../daemon-control.js";
 import { clientMaxPayloadOption, getCommandConfig } from "../config-io.js";
 import { type CliDependencies, write } from "../deps.js";
+import { AWAIT_EMPTY_POLL_DELAY_MS, AWAIT_FLOOR_MARGIN_MS } from "../park-polling.js";
 import { parseNonNegativeInt } from "../parse.js";
 
 type PendingPairing = Record<string, unknown>;
@@ -27,8 +28,8 @@ interface AuthPruneOptions {
 
 type CommandReportingUnknownSubcommand = Command & { unknownCommand: () => never };
 
-export const AWAIT_CLIENT_TIMEOUT_FLOOR_MS = AUTH_AWAIT_PARK_CAP_MS + 5_000;
-export const AWAIT_EMPTY_POLL_DELAY_MS = 250;
+export const AWAIT_CLIENT_TIMEOUT_FLOOR_MS = AUTH_AWAIT_PARK_CAP_MS + AWAIT_FLOOR_MARGIN_MS;
+export { AWAIT_EMPTY_POLL_DELAY_MS };
 
 const INTERACTIVE_WAIT_GUIDANCE =
   "Waiting for a pairing request needs an interactive terminal. Use auth pending and auth approve --yes instead.";

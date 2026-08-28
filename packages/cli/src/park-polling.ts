@@ -1,0 +1,2 @@
+export const AWAIT_FLOOR_MARGIN_MS = 5_000;
+export const AWAIT_EMPTY_POLL_DELAY_MS = 250;
