@@ -2318,13 +2318,17 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 54 approve-listed commands in a registry of 316", () => {
+    it("counts 54 approve-listed and 262 self-running commands in a registry of 316", () => {
       const approved = COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === "approve");
 
       expect(
-        { commands: COMMAND_NAMES.length, approve: approved.length },
-        'the totals moved: update the counts docs/commands.md states ("54 of the 316 commands in the registry") in the same change'
-      ).toEqual({ commands: 316, approve: 54 });
+        {
+          commands: COMMAND_NAMES.length,
+          approve: approved.length,
+          allow: COMMAND_NAMES.length - approved.length
+        },
+        'the totals moved: update every count docs/commands.md states ("54 of the 316 commands in the registry; the other 262 run on their own") in the same change'
+      ).toEqual({ commands: 316, approve: 54, allow: 262 });
     });
 
     it("cannot be mutated in place", () => {
