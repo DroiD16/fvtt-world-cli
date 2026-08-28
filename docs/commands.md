@@ -310,10 +310,9 @@ while the window is already open is silent. Browsers hold audio until the GM has
 the page at least once after loading it, so the first sound after a reload can be delayed until that
 interaction.
 
-The approval timeout is the `Approval timeout (minutes)` field in the same Module Settings form, and
-in the permissions window: 60 minutes by default, at least 1 and at most 35791, and a stored value
-outside that range falls back to 60, and a fraction the field accepts is rounded to
-whole minutes. When it runs out, the waiting command is refused without being
+The approval timeout is the `Approval timeout (minutes)` field in the Module Settings form, not in
+the permissions window: 60 minutes by default, at least 1 and at most 35791; a stored value outside
+that range falls back to 60, and a fraction the field accepts is rounded to whole minutes. When it runs out, the waiting command is refused without being
 executed.
 
 Approval state lives only in the GM client's memory. Reloading that client, or ending its bridge

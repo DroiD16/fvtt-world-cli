@@ -126,8 +126,6 @@
     },
     "Permissions": {
       "Title": "World CLI Command Permissions",
-      "Timeout": "Approval timeout (minutes)",
-      "TimeoutHint": "How long a command waits for your decision before it is refused. The waiting command is never executed after the timeout.",
       "Filter": "Filter commands",
       "FilterPlaceholder": "actor.item, delete, upload",
       "MasterFill": "Set every command to",
@@ -165,7 +163,6 @@
       "ResetConfirmContent": "Every command in the whole list returns to its default, whatever the filter shows: destructive commands wait for your approval and the rest run on their own. Nothing is stored until you save.",
       "Save": "Save",
       "SaveFailedPolicy": "Foundry refused to store the command permissions: {error}. Your changes are still here, and nothing was saved.",
-      "SaveFailedTimeout": "The command permissions were stored, but Foundry refused the approval timeout: {error}.",
       "Close": "Close",
       "DiscardTitle": "Discard unsaved changes",
       "DiscardContent": "This window has unsaved changes. Close it and discard them?"

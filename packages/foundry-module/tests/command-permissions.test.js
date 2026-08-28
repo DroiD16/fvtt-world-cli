@@ -15,13 +15,10 @@ import {
   ROW_SELECTOR,
   SAVE_BUTTON_SELECTOR,
   SAVE_ERROR_SELECTOR,
-  TIMEOUT_FIELD_SELECTOR,
   createCommandPermissionsApplication
 } from "../scripts/command-permissions.js";
 import {
   APPROVAL_TIMEOUT_DEFAULT_MINUTES,
-  APPROVAL_TIMEOUT_MAX_MINUTES,
-  APPROVAL_TIMEOUT_MIN_MINUTES,
   COMMAND_NAMES,
   DEFAULT_COMMAND_PROFILE,
   MODULE_ID,
@@ -39,7 +36,6 @@ const TEMPLATE = readFileSync(join(MODULE_ROOT, "templates", "command-permission
 const FLAT_TEMPLATE = TEMPLATE.replace(/\s+/g, " ");
 const ATTRIBUTE_HOOKS = [
   FILTER_FIELD_SELECTOR,
-  TIMEOUT_FIELD_SELECTOR,
   NODE_FILL_SELECTOR,
   SAVE_BUTTON_SELECTOR,
   FILL_LABEL_SELECTOR,
@@ -76,10 +72,6 @@ const EXEMPT_ONLY_GROUPS = [...new Set(COMMAND_NAMES.map((command) => command.sp
       EXEMPT_COMMANDS.has(command)
     )
 );
-const STORED_TIMEOUT_MINUTES =
-  APPROVAL_TIMEOUT_DEFAULT_MINUTES === APPROVAL_TIMEOUT_MAX_MINUTES
-    ? APPROVAL_TIMEOUT_MIN_MINUTES
-    : APPROVAL_TIMEOUT_DEFAULT_MINUTES + 1;
 
 function* eachNode(nodes) {
   for (const node of nodes) {
@@ -240,10 +232,6 @@ describe("Command permissions application", () => {
     return globalThis.game.settings.get(MODULE_ID, MODULE_SETTING_KEYS.COMMAND_POLICY);
   }
 
-  function storedTimeout() {
-    return globalThis.game.settings.get(MODULE_ID, MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES);
-  }
-
   async function store(key, value) {
     await globalThis.game.settings.set(MODULE_ID, key, value);
     globalThis.game.settings.set.mockClear();
@@ -318,7 +306,6 @@ describe("Command permissions application", () => {
     expect(context.commandCount).toBe(GOVERNED_COMMANDS.length);
     expect(context.groupCount).toBe(GOVERNED_GROUPS.size);
     expect(context.profileApproveCount).toBe(PROFILE_APPROVALS.length);
-    expect(context.timeoutMinutes).toBe(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
     expect(context.dirty).toBe(false);
   });
 
@@ -348,21 +335,6 @@ describe("Command permissions application", () => {
       version: 1,
       overrides: { [ALLOWED_BY_PROFILE]: "deny", [APPROVED_BY_PROFILE]: "deny" }
     });
-  });
-
-  it("opens the timeout on the stored value rather than the registered default", async () => {
-    await store(MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES, STORED_TIMEOUT_MINUTES);
-    const { app } = application();
-
-    const context = await app._prepareContext();
-
-    expect(STORED_TIMEOUT_MINUTES).not.toBe(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
-    expect(context.timeoutMinutes).toBe(STORED_TIMEOUT_MINUTES);
-    expect(context.dirty).toBe(false);
-    expect(context.timeoutMin).toBe(APPROVAL_TIMEOUT_MIN_MINUTES);
-    expect(context.timeoutMax).toBe(APPROVAL_TIMEOUT_MAX_MINUTES);
-    expect(TEMPLATE).toContain('name="approvalTimeout"');
-    expect(FLAT_TEMPLATE).toContain('min="{{timeoutMin}}" max="{{timeoutMax}}" value="{{timeoutMinutes}}"');
   });
 
   it("nests every name segment before the verb as its own level", async () => {
@@ -523,34 +495,20 @@ describe("Command permissions application", () => {
     expect(draftOf(app).policy.overrides).toEqual({ [ALLOWED_BY_PROFILE]: "deny" });
   });
 
-  it("saves the normalized policy and then the normalized timeout, without a notification", async () => {
+  it("saves only the normalized policy, without a notification", async () => {
     const { app, dispatch } = application();
     await dispatch("setBehavior", { command: ALLOWED_BY_PROFILE, behavior: "approve" });
-    draftOf(app).timeoutMinutes = 5;
 
     await dispatch("savePolicy");
 
     expect(globalThis.game.settings.set.mock.calls.map(([, key]) => key)).toEqual([
-      MODULE_SETTING_KEYS.COMMAND_POLICY,
-      MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES
+      MODULE_SETTING_KEYS.COMMAND_POLICY
     ]);
     expect(storedPolicy()).toEqual({ version: 1, overrides: { [ALLOWED_BY_PROFILE]: "approve" } });
-    expect(storedTimeout()).toBe(5);
     const context = await app._prepareContext();
     expect(context.dirty).toBe(false);
     expect(context.saveError).toBe("");
     expectNoNotification();
-  });
-
-  it("falls back to the default timeout when the field holds an unusable value", async () => {
-    const { app, dispatch } = application();
-    await app._prepareContext();
-    draftOf(app).timeoutMinutes = 0;
-
-    await dispatch("savePolicy");
-
-    expect(storedTimeout()).toBe(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
-    expect((await app._prepareContext()).timeoutMinutes).toBe(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
   });
 
   it("keeps the window dirty and names the policy write that Foundry refused", async () => {
@@ -574,46 +532,6 @@ describe("Command permissions application", () => {
     expectNoNotification();
   });
 
-  it("keeps the window dirty and names the timeout write that Foundry refused", async () => {
-    const { app, dispatch } = application();
-    globalThis.game.settings.set = vi.fn(async (_namespace, key) => {
-      if (key === MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES) throw new Error("no room");
-      return null;
-    });
-    await app._prepareContext();
-    draftOf(app).timeoutMinutes = 7;
-
-    await dispatch("savePolicy");
-
-    const context = await app._prepareContext();
-    expect(context.dirty).toBe(true);
-    expect(context.saveError).toBe(
-      formatEnglish("FVTTWORLDCLI.Permissions.SaveFailedTimeout", { error: "no room" })
-    );
-    expectNoNotification();
-  });
-
-  it("keeps the window dirty when the timeout is refused after the policy was stored", async () => {
-    const { app, dispatch } = application();
-    const write = globalThis.game.settings.set;
-    globalThis.game.settings.set = vi.fn(async (namespace, key, value) => {
-      if (key === MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES) throw new Error("no room");
-      return write(namespace, key, value);
-    });
-
-    await dispatch("setBehavior", { command: ALLOWED_BY_PROFILE, behavior: "deny" });
-    await dispatch("savePolicy");
-
-    expect(storedPolicy()).toEqual({ version: 1, overrides: { [ALLOWED_BY_PROFILE]: "deny" } });
-    expect(draftOf(app).timeoutMinutes).toBe(storedTimeout());
-    const context = await app._prepareContext();
-    expect(context.dirty).toBe(true);
-    expect(context.saveError).toBe(
-      formatEnglish("FVTTWORLDCLI.Permissions.SaveFailedTimeout", { error: "no room" })
-    );
-    expectNoNotification();
-  });
-
   it("asks before closing a window with unsaved changes and keeps it open when refused", async () => {
     const { app, dispatch } = application();
     await dispatch("setBehavior", { command: ALLOWED_BY_PROFILE, behavior: "deny" });
@@ -630,10 +548,8 @@ describe("Command permissions application", () => {
 
   it("asks before closing a window whose last save was refused", async () => {
     const { app, dispatch } = application();
-    const write = globalThis.game.settings.set;
-    globalThis.game.settings.set = vi.fn(async (namespace, key, value) => {
-      if (key === MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES) throw new Error("no room");
-      return write(namespace, key, value);
+    globalThis.game.settings.set = vi.fn(async () => {
+      throw new Error("no room");
     });
 
     await dispatch("setBehavior", { command: ALLOWED_BY_PROFILE, behavior: "deny" });
@@ -708,7 +624,6 @@ describe("Command permissions application", () => {
     function render() {
       const { app, dispatch } = application();
       const filterField = element();
-      const timeoutField = element();
       const { row, buttons: rowButtons } = createRowElement(ALLOWED_BY_PROFILE);
       const { node, buttons: nodeButtons, badges } = createNodeElement(ALLOWED_BY_PROFILE.split(".")[0]);
       const fillLabel = element();
@@ -718,7 +633,6 @@ describe("Command permissions application", () => {
       const saveError = element();
       const map = new Map([
         [FILTER_FIELD_SELECTOR, filterField],
-        [TIMEOUT_FIELD_SELECTOR, timeoutField],
         ["[data-fill-label]", fillLabel],
         ["[data-empty-notice]", emptyNotice],
         ["[data-dirty-marker]", dirtyMarker],
@@ -740,7 +654,6 @@ describe("Command permissions application", () => {
         app,
         dispatch,
         filterField,
-        timeoutField,
         row,
         rowButtons,
         node,
@@ -844,20 +757,6 @@ describe("Command permissions application", () => {
       expect(view.node.open).toBe(false);
     });
 
-    it("reads the timeout field on change and writes back the value it saved", async () => {
-      const view = render();
-      await view.app._onRender({}, {});
-
-      view.timeoutField.listeners.get("change")({ target: { value: "0" } });
-      expect((await view.app._prepareContext()).dirty).toBe(true);
-
-      await view.dispatch("savePolicy");
-
-      expect(storedTimeout()).toBe(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
-      expect(view.timeoutField.value).toBe(String(APPROVAL_TIMEOUT_DEFAULT_MINUTES));
-      expect(view.dirtyMarker.classes.get("fvtt-world-cli-policy-dirty--active")).toBe(false);
-    });
-
     it("shows the refused write in the window instead of a notification", async () => {
       const view = render();
       globalThis.game.settings.set = vi.fn(async () => {
@@ -865,14 +764,12 @@ describe("Command permissions application", () => {
       });
       await view.app._onRender({}, {});
       await view.dispatch("setBehavior", { command: ALLOWED_BY_PROFILE, behavior: "deny" });
-      view.timeoutField.listeners.get("change")({ target: { value: "" } });
 
       await view.dispatch("savePolicy");
 
       expect(view.saveError.hidden).toBe(false);
       expect(view.saveError.textContent).toContain("storage is full");
       expect(view.dirtyMarker.classes.get("fvtt-world-cli-policy-dirty--active")).toBe(true);
-      expect(view.timeoutField.value).toBe("");
       expectNoNotification();
     });
   });

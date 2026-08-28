@@ -1,16 +1,6 @@
-import {
-  APPROVAL_TIMEOUT_MAX_MINUTES,
-  APPROVAL_TIMEOUT_MIN_MINUTES,
-  MODULE_ID,
-  POLICY_BEHAVIORS
-} from "./generated/protocol.js";
+import { MODULE_ID, POLICY_BEHAVIORS } from "./generated/protocol.js";
 import { format, localize } from "./lib/i18n.js";
-import {
-  normalizeStoredPolicy,
-  readApprovalTimeoutMinutes,
-  readStoredCommandPolicy,
-  resolveApprovalTimeoutMinutes
-} from "./lib/policy.js";
+import { normalizeStoredPolicy, readStoredCommandPolicy } from "./lib/policy.js";
 import {
   buildPolicyView,
   clearOverrides,
@@ -26,7 +16,6 @@ import { MODULE_SETTING_KEYS } from "./lib/validators.js";
 /**
  * @typedef {{
  *   policy: CommandPolicy,
- *   timeoutMinutes: number,
  *   filter: string,
  *   saveError: string
  * }} PolicyDraft
@@ -34,7 +23,6 @@ import { MODULE_SETTING_KEYS } from "./lib/validators.js";
 /** @typedef {{ nodes: Map<string, any>, rows: Map<string, any>, fills: Map<string, any[]> }} PaintTargets */
 
 export const FILTER_FIELD_SELECTOR = 'input[name="commandFilter"]';
-export const TIMEOUT_FIELD_SELECTOR = 'input[name="approvalTimeout"]';
 export const NODE_SELECTOR = ".fvtt-world-cli-policy-node";
 export const ROW_SELECTOR = ".fvtt-world-cli-policy-row";
 export const NODE_FILL_SELECTOR = 'button[data-action="fillNode"]';
@@ -46,15 +34,13 @@ export const SAVE_BUTTON_SELECTOR = 'button[data-action="savePolicy"]';
 export const SAVE_ERROR_SELECTOR = "[data-save-error]";
 
 const SAVE_FAILURE_KEYS = Object.freeze({
-  [MODULE_SETTING_KEYS.COMMAND_POLICY]: "FVTTWORLDCLI.Permissions.SaveFailedPolicy",
-  [MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES]: "FVTTWORLDCLI.Permissions.SaveFailedTimeout"
+  [MODULE_SETTING_KEYS.COMMAND_POLICY]: "FVTTWORLDCLI.Permissions.SaveFailedPolicy"
 });
 
 /** @returns {PolicyDraft} */
 function readDraft() {
   return {
     policy: readStoredCommandPolicy(),
-    timeoutMinutes: readApprovalTimeoutMinutes(),
     filter: "",
     saveError: ""
   };
@@ -79,7 +65,6 @@ function isDirty(draft) {
   const storedCommands = Object.keys(stored);
 
   return (
-    draft.timeoutMinutes !== readApprovalTimeoutMinutes() ||
     storedCommands.length !== Object.keys(current).length ||
     storedCommands.some((command) => stored[command] !== current[command])
   );
@@ -105,10 +90,7 @@ function buildContext(draft) {
       ? format("FVTTWORLDCLI.Permissions.MasterFillFiltered", { count: view.visibleCount })
       : localize("FVTTWORLDCLI.Permissions.MasterFill"),
     dirty: hasUnsavedWork(draft),
-    saveError: draft.saveError,
-    timeoutMinutes: draft.timeoutMinutes,
-    timeoutMin: APPROVAL_TIMEOUT_MIN_MINUTES,
-    timeoutMax: APPROVAL_TIMEOUT_MAX_MINUTES
+    saveError: draft.saveError
   };
 }
 
@@ -276,15 +258,11 @@ async function writeSetting(draft, key, value) {
  */
 async function savePolicy(draft) {
   const policy = normalizeStoredPolicy(draft.policy);
-  const timeoutMinutes = resolveApprovalTimeoutMinutes(draft.timeoutMinutes);
   draft.saveError = "";
 
   if (!(await writeSetting(draft, MODULE_SETTING_KEYS.COMMAND_POLICY, policy))) return false;
-  if (!(await writeSetting(draft, MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES, timeoutMinutes)))
-    return false;
 
   draft.policy = policy;
-  draft.timeoutMinutes = timeoutMinutes;
   return true;
 }
 
@@ -355,10 +333,7 @@ const handleAction = async function (event, target) {
   }
 
   if (action === "savePolicy") {
-    if (await savePolicy(draft)) {
-      const timeout = root?.querySelector(TIMEOUT_FIELD_SELECTOR);
-      if (timeout) timeout.value = String(draft.timeoutMinutes);
-    }
+    await savePolicy(draft);
     paintState(root, draft);
     return;
   }
@@ -414,11 +389,6 @@ export function createCommandPermissionsApplication() {
       root?.querySelector(FILTER_FIELD_SELECTOR)?.addEventListener("input", (/** @type {any} */ event) => {
         draft.filter = normalizeFilterTerm(event.target?.value);
         paintAll(root, draft);
-      });
-
-      root?.querySelector(TIMEOUT_FIELD_SELECTOR)?.addEventListener("change", (/** @type {any} */ event) => {
-        draft.timeoutMinutes = Number.parseInt(event.target?.value, 10);
-        paintState(root, draft);
       });
 
       paintAll(root, draft);
