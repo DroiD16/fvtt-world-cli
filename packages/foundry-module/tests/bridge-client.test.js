@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BridgeClient } from "../scripts/bridge-client.js";
 import {
+  APPROVAL_AWAIT_PARK_CAP_MS,
   BRIDGE_RELEASE_CLOSE_CODE,
   BRIDGE_TAKEOVER_CLOSE_CODE,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
@@ -19,6 +20,7 @@ import {
   getProtocolVersionSkewWarningMessage,
   getRejectedHandshakeWarningMessage
 } from "../scripts/lib/startup.js";
+import { ApprovalStore } from "../scripts/lib/approval-store.js";
 import { createEnglishI18n } from "./helpers/i18n.js";
 
 // Without a localizer every warning builder returns its bare catalog key, which would make each
@@ -1184,6 +1186,83 @@ describe("BridgeClient approvals held for the GM", () => {
 
     return { client, clear };
   }
+
+  function clientWithParkedApproval() {
+    const store = new ApprovalStore({ execute: async () => ({ ok: true }) });
+    const admission = store.admit({
+      command: "actor.update",
+      params: { actorId: "actor-1" },
+      requestBytes: 32
+    });
+    if (!admission.admitted) {
+      throw new Error(`the store refused an admission the test needs: ${admission.reason}`);
+    }
+
+    const client = new BridgeClient({
+      url: "ws://127.0.0.1:47833",
+      credential: "invalid-credential",
+      router: {
+        approvalStore: store,
+        route: async () => ({
+          protocolVersion: PROTOCOL_VERSION,
+          type: MESSAGE_TYPES.COMMAND_RESPONSE,
+          id: "poll-1",
+          ok: true,
+          result: await store.awaitOutcome({
+            approvalId: admission.approvalId,
+            waitMs: APPROVAL_AWAIT_PARK_CAP_MS
+          })
+        })
+      },
+      getSession: () => ({ moduleId: "fvtt-world-cli" }),
+      logger: vi.fn()
+    });
+
+    globalThis.game.user = /** @type {any} */ ({ id: "gm-1", isGM: true });
+    globalThis.WebSocket = /** @type {any} */ ({ CONNECTING: 0, OPEN: 1 });
+    const send = vi.fn();
+    client.socket = /** @type {any} */ ({ readyState: 1, send, close: vi.fn() });
+    client.handleOpen();
+
+    const parked = client.handleMessage({
+      data: JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_REQUEST,
+        id: "poll-1",
+        command: "approval.await",
+        params: { approvalId: admission.approvalId, waitMs: APPROVAL_AWAIT_PARK_CAP_MS }
+      })
+    });
+
+    return { client, store, send, parked };
+  }
+
+  /** @param {any} send */
+  function commandResponses(send) {
+    return send.mock.calls
+      .map(([frame]) => JSON.parse(frame))
+      .filter((message) => message.type === MESSAGE_TYPES.COMMAND_RESPONSE);
+  }
+
+  it("leave a parked poll unanswered when the GM rebuilds the connection", async () => {
+    const { client, store, send, parked } = clientWithParkedApproval();
+
+    client.stop();
+    await parked;
+
+    expect(commandResponses(send)).toEqual([]);
+    expect(store.getQueueView()).toEqual({ current: null, waitingCount: 0 });
+  });
+
+  it("leave a parked poll unanswered when another client takes the bridge slot", async () => {
+    const { client, store, send, parked } = clientWithParkedApproval();
+
+    client.handleClose({ code: BRIDGE_TAKEOVER_CLOSE_CODE, reason: "Another client took the bridge" });
+    await parked;
+
+    expect(commandResponses(send)).toEqual([]);
+    expect(store.getQueueView()).toEqual({ current: null, waitingCount: 0 });
+  });
 
   it("survive a dropped socket the client will reconnect", () => {
     const { client, clear } = clientWithApprovals();
