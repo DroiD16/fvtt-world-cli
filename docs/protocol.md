@@ -277,7 +277,8 @@ The wait is two-phase, because a decision can outlast any request timeout:
   was displayed or executed, so nothing ran. Its details carry the `command` and the `reason` the
   admission was refused: `pending-count` and `pending-bytes` for the number and the combined weight
   of the decisions still awaiting the GM, and `retained-count` when room could only have been made by
-  discarding a retained outcome no client has read yet. The weight is the size of the received request
+  discarding a retained outcome the store still protects — one no client has read, or one read too
+  recently for its answer to have reached that client. The weight is the size of the received request
   frame, measured once from the frame as received; a frame whose size could not be established is
   refused as though it exceeded the budget, because an unweighed request cannot be held to one.
 - `APPROVAL_UNKNOWN` answers an id the module has no approval state for. Approval state is runtime
