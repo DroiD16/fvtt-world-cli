@@ -276,7 +276,9 @@ function playApprovalSound() {
   try {
     const src = globalThis.CONFIG?.sounds?.notification;
     if (!src) return;
-    globalThis.foundry?.audio?.AudioHelper?.play?.({ src, channel: "interface" }, false);
+    void Promise.resolve(
+      globalThis.foundry?.audio?.AudioHelper?.play?.({ src, channel: "interface" }, false)
+    ).catch(() => undefined);
   } catch {
     return;
   }

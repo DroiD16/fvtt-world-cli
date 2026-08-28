@@ -393,6 +393,29 @@ describe("Command approval window", () => {
     expect(globalThis.foundry.audio.AudioHelper.play).toHaveBeenCalledTimes(1);
   });
 
+  it("opens the window even when playing the sound rejects", async () => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    let plays = 0;
+    // vi.fn() attaches its own handler to a returned rejection, which would hide a dropped promise.
+    globalThis.foundry.audio.AudioHelper.play = () => {
+      plays += 1;
+      return Promise.reject(new Error("audio blocked"));
+    };
+    const store = createStore();
+    createApprovalWindow({ approvalStore: store });
+
+    admit(store, "actor.delete", { actorId: "actor-1" });
+    await flush();
+    vi.useRealTimers();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    process.off("unhandledRejection", unhandled);
+
+    expect(instances[0].rendered).toBe(true);
+    expect(plays).toBe(1);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
   it("adds no notification to a decision, a timeout, a cancellation or an emptied queue", async () => {
     const store = createStore({ timeoutMinutesProvider: () => 1 });
     createApprovalWindow({ approvalStore: store });
