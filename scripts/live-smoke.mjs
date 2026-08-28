@@ -470,6 +470,8 @@ const POLICY_SEGMENT_EARLY_EXIT_HINT =
 const APPROVAL_POLL_INTERVAL_MS = 250;
 
 const APPROVAL_WINDOW_WAIT_MS = 30_000;
+const APPROVAL_WAIT_LINE = "Waiting for GM approval in Foundry";
+const APPROVAL_WAIT_LINE_WAIT_MS = 15_000;
 
 const APPROVAL_DECISION_WAIT_MS = 60_000;
 
@@ -585,7 +587,7 @@ function startFoundryctl(args) {
     });
   });
 
-  return { child, done };
+  return { child, done, stderrSoFar: () => stderr };
 }
 
 async function settleFoundryctl(call, waitMs) {
@@ -617,6 +619,27 @@ async function waitForApprovalWindow(gmControlUrl, command, handledApprovalIds) 
 
     await delayMs(APPROVAL_POLL_INTERVAL_MS);
   }
+}
+
+async function interruptApprovalWait(summary, call, step) {
+  const deadline = Date.now() + APPROVAL_WAIT_LINE_WAIT_MS;
+
+  for (;;) {
+    if (call.stderrSoFar().includes(APPROVAL_WAIT_LINE)) {
+      break;
+    }
+
+    if (Date.now() >= deadline) {
+      summary.notes.push(
+        `The ${step} branch interrupted its command before that command reported that it was waiting for a GM approval. The cancellation path is installed with that report, so the interrupt may have reached Node's default handler instead, leaving the approval at the head of the GM's queue for the whole approval timeout and any later approval branch reading that survivor rather than its own request.`
+      );
+      break;
+    }
+
+    await delayMs(APPROVAL_POLL_INTERVAL_MS);
+  }
+
+  call.child.kill("SIGINT");
 }
 
 async function waitForEmptyApprovalWindow(gmControlUrl) {
@@ -1000,7 +1023,7 @@ async function runPolicySegment(summary, options, { stamp, coverage }) {
       ? await evaluateInGmPage(gmControlUrl, approvalClickScript("allow", allowWindow.approvalId))
       : false;
     if (allowClicked !== true) {
-      allowHold.call.child.kill("SIGINT");
+      await interruptApprovalWait(summary, allowHold.call, "policy.approve(allow)");
       await approvalWindowCleared(summary, gmControlUrl, handledApprovalIds, "policy.approve(allow)");
     }
     const allowRun = await settleFoundryctl(allowHold.call, APPROVAL_DECISION_WAIT_MS);
@@ -1037,7 +1060,7 @@ async function runPolicySegment(summary, options, { stamp, coverage }) {
       ? await evaluateInGmPage(gmControlUrl, approvalClickScript("deny", denyWindow.approvalId))
       : false;
     if (denyClicked !== true) {
-      denyHold.call.child.kill("SIGINT");
+      await interruptApprovalWait(summary, denyHold.call, "policy.approve(deny)");
       await approvalWindowCleared(summary, gmControlUrl, handledApprovalIds, "policy.approve(deny)");
     }
     const denyRun = await settleFoundryctl(denyHold.call, APPROVAL_DECISION_WAIT_MS);
@@ -1067,7 +1090,7 @@ async function runPolicySegment(summary, options, { stamp, coverage }) {
       `${journalName} cancelled`
     ]);
     const cancelWindow = cancelHold.window;
-    cancelHold.call.child.kill("SIGINT");
+    await interruptApprovalWait(summary, cancelHold.call, "policy.approve(cancel)");
     const cancelRun = await settleFoundryctl(cancelHold.call, APPROVAL_DECISION_WAIT_MS);
     const cancelWindowCleared = await approvalWindowCleared(
       summary,
@@ -1132,7 +1155,7 @@ async function runPolicySegment(summary, options, { stamp, coverage }) {
       ]);
       const timeoutWindow = timeoutHold.window;
       if (!timeoutWindow) {
-        timeoutHold.call.child.kill("SIGINT");
+        await interruptApprovalWait(summary, timeoutHold.call, POLICY_TIMEOUT_BRANCH_STEP);
         await approvalWindowCleared(summary, gmControlUrl, handledApprovalIds, POLICY_TIMEOUT_BRANCH_STEP);
       }
       const timeoutRun = await settleFoundryctl(timeoutHold.call, POLICY_TIMEOUT_BRANCH_WAIT_MS);
