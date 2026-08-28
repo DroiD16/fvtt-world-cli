@@ -1,0 +1,126 @@
+<section class="fvtt-world-cli-policy-window">
+  <div class="fvtt-world-cli-policy-controls">
+    <div class="form-group">
+      <label for="fvtt-world-cli-command-filter">{{localize "FVTTWORLDCLI.Permissions.Filter"}}</label>
+      <div class="form-fields">
+        <input id="fvtt-world-cli-command-filter" type="search" name="commandFilter" value="{{filter}}"
+          placeholder="{{localize "FVTTWORLDCLI.Permissions.FilterPlaceholder"}}" />
+      </div>
+    </div>
+
+    <div class="fvtt-world-cli-policy-fill">
+      <span class="fvtt-world-cli-policy-fill-label" data-fill-label data-tooltip="{{localize
+        "FVTTWORLDCLI.Permissions.MasterFillHint"}}">{{fillLabel}}</span>
+      <span class="fvtt-world-cli-policy-switch">
+        <button type="button" data-action="fillAll" data-behavior="allow"
+          data-tooltip="{{localize "FVTTWORLDCLI.Permissions.BehaviorHint.Allow"}}">{{localize
+          "FVTTWORLDCLI.Permissions.Behavior.Allow"}}</button>
+        <button type="button" data-action="fillAll" data-behavior="approve"
+          data-tooltip="{{localize "FVTTWORLDCLI.Permissions.BehaviorHint.Approve"}}">{{localize
+          "FVTTWORLDCLI.Permissions.Behavior.Approve"}}</button>
+        <button type="button" data-action="fillAll" data-behavior="deny"
+          data-tooltip="{{localize "FVTTWORLDCLI.Permissions.BehaviorHint.Deny"}}">{{localize
+          "FVTTWORLDCLI.Permissions.Behavior.Deny"}}</button>
+      </span>
+    </div>
+
+    <div class="fvtt-world-cli-policy-tree-controls">
+      <span class="fvtt-world-cli-policy-fill-label">{{localize "FVTTWORLDCLI.Permissions.TreeControls"}}</span>
+      <button type="button" data-action="expandAll" class="fvtt-world-cli-policy-tree-button"
+        data-tooltip="{{localize "FVTTWORLDCLI.Permissions.ExpandAllHint"}}"><i
+          class="fa-solid fa-chevrons-down"></i> {{localize "FVTTWORLDCLI.Permissions.ExpandAll"}}</button>
+      <button type="button" data-action="collapseAll" class="fvtt-world-cli-policy-tree-button"
+        data-tooltip="{{localize "FVTTWORLDCLI.Permissions.CollapseAllHint"}}"><i
+          class="fa-solid fa-chevrons-up"></i> {{localize "FVTTWORLDCLI.Permissions.CollapseAll"}}</button>
+    </div>
+  </div>
+
+  <div class="fvtt-world-cli-policy-list">
+    {{#*inline "policyNode"}}
+    <details class="fvtt-world-cli-policy-node{{#if this.changed}} fvtt-world-cli-policy-node--changed{{/if}}"
+      data-node="{{this.path}}" data-depth="{{this.depth}}" {{#if this.hidden}}hidden{{/if}}
+      {{#if this.open}}open{{/if}}>
+      <summary class="fvtt-world-cli-policy-summary">
+        <i class="fa-solid fa-caret-right fvtt-world-cli-policy-caret"></i>
+        <span class="fvtt-world-cli-policy-node-name" data-tooltip="{{this.path}}">{{this.segment}}</span>
+        <span class="fvtt-world-cli-policy-node-size" data-tooltip="{{localize
+          "FVTTWORLDCLI.Permissions.NodeSizeHint"}}">{{this.commandCount}}</span>
+        <span class="fvtt-world-cli-policy-changed" data-tooltip="{{localize
+          "FVTTWORLDCLI.Permissions.Changed"}}"><i class="fa-solid fa-pen"></i></span>
+        <span class="fvtt-world-cli-policy-counts">
+          <span class="fvtt-world-cli-policy-count fvtt-world-cli-policy-count--allow" data-count="allow"
+            data-tooltip="{{localize "FVTTWORLDCLI.Permissions.Behavior.Allow"}}">{{this.counts.allow}}</span>
+          <span class="fvtt-world-cli-policy-count fvtt-world-cli-policy-count--approve" data-count="approve"
+            data-tooltip="{{localize
+            "FVTTWORLDCLI.Permissions.Behavior.Approve"}}">{{this.counts.approve}}</span>
+          <span class="fvtt-world-cli-policy-count fvtt-world-cli-policy-count--deny" data-count="deny"
+            data-tooltip="{{localize "FVTTWORLDCLI.Permissions.Behavior.Deny"}}">{{this.counts.deny}}</span>
+        </span>
+        <span class="fvtt-world-cli-policy-switch fvtt-world-cli-policy-switch--node" role="group">
+          <button type="button" data-action="fillNode" data-path="{{this.path}}" data-behavior="allow"
+            aria-pressed="{{this.pressed.allow}}" data-tooltip="{{localize
+            "FVTTWORLDCLI.Permissions.NodeFillHint.Allow"}}">{{localize
+            "FVTTWORLDCLI.Permissions.Behavior.Allow"}}</button>
+          <button type="button" data-action="fillNode" data-path="{{this.path}}" data-behavior="approve"
+            aria-pressed="{{this.pressed.approve}}" data-tooltip="{{localize
+            "FVTTWORLDCLI.Permissions.NodeFillHint.Approve"}}">{{localize
+            "FVTTWORLDCLI.Permissions.Behavior.Approve"}}</button>
+          <button type="button" data-action="fillNode" data-path="{{this.path}}" data-behavior="deny"
+            aria-pressed="{{this.pressed.deny}}" data-tooltip="{{localize
+            "FVTTWORLDCLI.Permissions.NodeFillHint.Deny"}}">{{localize
+            "FVTTWORLDCLI.Permissions.Behavior.Deny"}}</button>
+        </span>
+      </summary>
+
+      <div class="fvtt-world-cli-policy-children">
+        {{#each this.commands}}
+        <div class="fvtt-world-cli-policy-row{{#if this.band}} fvtt-world-cli-policy-row--odd{{/if}}{{#if
+          this.changed}} fvtt-world-cli-policy-row--changed{{/if}}" data-command="{{this.name}}"
+          data-behavior="{{this.behavior}}" {{#if this.hidden}}hidden{{/if}}>
+          <span class="fvtt-world-cli-policy-command" data-tooltip="{{this.name}}">
+            <span class="fvtt-world-cli-policy-command-verb">{{this.verb}}</span>
+            {{#if this.destructive}}<i class="fa-solid fa-triangle-exclamation
+              fvtt-world-cli-policy-destructive" data-tooltip="{{localize
+              "FVTTWORLDCLI.Permissions.Destructive"}}"></i>{{/if}}
+          </span>
+          <span class="fvtt-world-cli-policy-switch" role="group">
+            <button type="button" data-action="setBehavior" data-command="{{this.name}}" data-behavior="allow"
+              aria-pressed="{{this.pressed.allow}}" data-tooltip="{{localize
+              "FVTTWORLDCLI.Permissions.BehaviorHint.Allow"}}">{{localize
+              "FVTTWORLDCLI.Permissions.Behavior.Allow"}}</button>
+            <button type="button" data-action="setBehavior" data-command="{{this.name}}"
+              data-behavior="approve" aria-pressed="{{this.pressed.approve}}" data-tooltip="{{localize
+              "FVTTWORLDCLI.Permissions.BehaviorHint.Approve"}}">{{localize
+              "FVTTWORLDCLI.Permissions.Behavior.Approve"}}</button>
+            <button type="button" data-action="setBehavior" data-command="{{this.name}}" data-behavior="deny"
+              aria-pressed="{{this.pressed.deny}}" data-tooltip="{{localize
+              "FVTTWORLDCLI.Permissions.BehaviorHint.Deny"}}">{{localize
+              "FVTTWORLDCLI.Permissions.Behavior.Deny"}}</button>
+          </span>
+        </div>
+        {{/each}}
+        {{#each this.nodes}}{{> policyNode}}{{/each}}
+      </div>
+    </details>
+    {{/inline}}
+
+    {{#each nodes}}{{> policyNode}}{{/each}}
+    <p class="fvtt-world-cli-policy-empty" data-empty-notice hidden>{{localize
+      "FVTTWORLDCLI.Permissions.NoMatches"}}</p>
+  </div>
+
+  <p class="notification error fvtt-world-cli-policy-error" data-save-error {{#unless
+    saveError}}hidden{{/unless}}>{{saveError}}</p>
+
+  <footer class="form-footer fvtt-world-cli-policy-footer">
+    <span class="fvtt-world-cli-policy-dirty{{#if dirty}} fvtt-world-cli-policy-dirty--active{{/if}}"
+      data-dirty-marker><i class="fa-solid fa-circle"></i> {{localize "FVTTWORLDCLI.Permissions.Dirty"}}</span>
+    <button type="button" data-action="resetPolicy" data-tooltip="{{localize
+      "FVTTWORLDCLI.Permissions.ResetHint"}}"><i class="fa-solid fa-rotate-left"></i> {{localize
+      "FVTTWORLDCLI.Permissions.Reset"}}</button>
+    <button type="button" data-action="savePolicy"><i class="fa-solid fa-floppy-disk"></i> {{localize
+      "FVTTWORLDCLI.Permissions.Save"}}</button>
+    <button type="button" data-action="closePolicy"><i class="fa-solid fa-xmark"></i> {{localize
+      "FVTTWORLDCLI.Permissions.Close"}}</button>
+  </footer>
+</section>

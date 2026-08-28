@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createCommandRouter } from "../scripts/command-router.js";
 
@@ -6,7 +6,7 @@ import { COMMAND_DEFINITIONS, ERROR_CODES, MODULE_ID } from "../scripts/generate
 
 import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 
-import { createRequest } from "./helpers/fake-foundry.js";
+import { createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
 
 describe("settings read surface", () => {
   let router;
@@ -803,5 +803,110 @@ describe("settings read surface", () => {
     );
     expect(rejected.ok).toBe(false);
     expect(rejected.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+  });
+});
+
+describe("settings state in the fake Foundry", () => {
+  let router;
+
+  beforeEach(() => {
+    installFakeFoundry();
+    router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+  });
+
+  afterEach(() => {
+    delete globalThis.game;
+    vi.restoreAllMocks();
+  });
+
+  it("serves a registration default until a value is written, then serves the written value", async () => {
+    globalThis.game.settings.register("test-module", "mode", {
+      scope: "client",
+      config: false,
+      type: String,
+      default: "allow"
+    });
+
+    expect(globalThis.game.settings.get("test-module", "mode")).toBe("allow");
+
+    await globalThis.game.settings.set("test-module", "mode", "deny");
+
+    expect(globalThis.game.settings.get("test-module", "mode")).toBe("deny");
+    expect(globalThis.__routerTestState.settingValues.get("test-module.mode")).toBe("deny");
+  });
+
+  it("hands out a separate copy of an object value on every read", async () => {
+    globalThis.game.settings.register("test-module", "policy", {
+      scope: "world",
+      config: false,
+      type: Object,
+      default: { version: 1, overrides: {} }
+    });
+
+    const fromDefault = globalThis.game.settings.get("test-module", "policy");
+    fromDefault.overrides["actor.delete"] = "deny";
+
+    expect(globalThis.game.settings.get("test-module", "policy")).toEqual({ version: 1, overrides: {} });
+
+    const written = { version: 1, overrides: { "actor.create": "allow" } };
+    await globalThis.game.settings.set("test-module", "policy", written);
+    written.overrides["actor.create"] = "deny";
+
+    expect(globalThis.game.settings.get("test-module", "policy")).toEqual({
+      version: 1,
+      overrides: { "actor.create": "allow" }
+    });
+
+    const fromStore = globalThis.game.settings.get("test-module", "policy");
+    fromStore.overrides["actor.delete"] = "deny";
+
+    expect(globalThis.game.settings.get("test-module", "policy")).toEqual({
+      version: 1,
+      overrides: { "actor.create": "allow" }
+    });
+  });
+
+  it("returns an empty string for a pair no package registered", () => {
+    expect(globalThis.game.settings.get("test-module", "unknown")).toBe("");
+  });
+
+  it("serves a seeded value for a pair no package registered", () => {
+    globalThis.__routerTestState.settingValues.set("core.noCanvas", true);
+
+    expect(globalThis.game.settings.get("core", "noCanvas")).toBe(true);
+  });
+
+  it("registers into the map the setting read commands walk", async () => {
+    globalThis.game.settings.register("test-module", "mode", {
+      name: "Mode",
+      hint: "How the module behaves",
+      scope: "client",
+      config: false,
+      requiresReload: true,
+      type: String,
+      default: "allow"
+    });
+    await globalThis.game.settings.set("test-module", "mode", "deny");
+
+    const list = await router.route(createRequest("setting.list"));
+    expect(list.ok).toBe(true);
+    expect(list.result.settings.find((row) => row.id === "test-module.mode")).toEqual({
+      namespace: "test-module",
+      key: "mode",
+      id: "test-module.mode",
+      name: "Mode",
+      nameLocalized: "Mode",
+      hint: "How the module behaves",
+      hintLocalized: "How the module behaves",
+      scope: "client",
+      type: { kind: "String" },
+      config: false,
+      requiresReload: true
+    });
+
+    const read = await router.route(createRequest("setting.get", { namespace: "test-module", key: "mode" }));
+    expect(read.ok).toBe(true);
+    expect(read.result.setting.id).toBe("test-module.mode");
+    expect(read.result.setting.value).toBe("deny");
   });
 });

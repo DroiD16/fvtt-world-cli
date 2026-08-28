@@ -1,5 +1,8 @@
 import { BridgeClient } from "./bridge-client.js";
 import {
+  APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+  APPROVAL_TIMEOUT_MAX_MINUTES,
+  APPROVAL_TIMEOUT_MIN_MINUTES,
   COMMAND_NAMES,
   DEFAULT_DAEMON_URL,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
@@ -8,8 +11,11 @@ import {
   MODULE_TITLE
 } from "./generated/protocol.js";
 import { createCommandRouter } from "./command-router.js";
+import { createApprovalWindow } from "./command-approval.js";
 import { createAuthorizationApplication, ensureClientId, getCurrentCredential } from "./authorization.js";
+import { createCommandPermissionsApplication } from "./command-permissions.js";
 import { createBridgeStatusApplication, registerSceneControls } from "./scene-controls.js";
+import { isGameMasterUser } from "./lib/identity.js";
 import { getNotPairedWarningMessage, warnBridgeDisabled } from "./lib/startup.js";
 import { publishStatus } from "./lib/status-signal.js";
 import { MODULE_SETTING_KEYS, getBridgeSettings } from "./lib/validators.js";
@@ -59,6 +65,8 @@ function createBridgeRuntime(credential, clientId) {
     }
   });
 
+  createApprovalWindow({ approvalStore: router.approvalStore });
+
   bridgeClient = new BridgeClient({
     url: settings.daemonUrl,
     pairingId: credential.pairingId,
@@ -87,11 +95,13 @@ function createBridgeRuntime(credential, clientId) {
 }
 
 function registerSettings() {
+  const configurable = isGameMasterUser();
+
   globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.DAEMON_URL, {
     name: "FVTTWORLDCLI.Settings.DaemonUrlName",
     hint: "FVTTWORLDCLI.Settings.DaemonUrlHint",
     scope: "client",
-    config: true,
+    config: configurable,
     type: String,
     default: DEFAULT_DAEMON_URL
   });
@@ -100,7 +110,7 @@ function registerSettings() {
     name: "FVTTWORLDCLI.Settings.AutoConnectName",
     hint: "FVTTWORLDCLI.Settings.AutoConnectHint",
     scope: "client",
-    config: true,
+    config: configurable,
     type: Boolean,
     default: true
   });
@@ -121,6 +131,33 @@ function registerSettings() {
     default: ""
   });
 
+  globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.COMMAND_POLICY, {
+    name: "FVTTWORLDCLI.Settings.CommandPolicyName",
+    scope: "client",
+    config: false,
+    type: Object,
+    default: {}
+  });
+
+  globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.APPROVAL_TIMEOUT_MINUTES, {
+    name: "FVTTWORLDCLI.Settings.ApprovalTimeoutMinutesName",
+    hint: "FVTTWORLDCLI.Settings.ApprovalTimeoutMinutesHint",
+    scope: "client",
+    config: configurable,
+    type: Number,
+    range: { min: APPROVAL_TIMEOUT_MIN_MINUTES, max: APPROVAL_TIMEOUT_MAX_MINUTES },
+    default: APPROVAL_TIMEOUT_DEFAULT_MINUTES
+  });
+
+  globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.APPROVAL_SOUND, {
+    name: "FVTTWORLDCLI.Settings.ApprovalSoundName",
+    hint: "FVTTWORLDCLI.Settings.ApprovalSoundHint",
+    scope: "client",
+    config: configurable,
+    type: Boolean,
+    default: true
+  });
+
   const AuthorizationApplication = createAuthorizationApplication({ connect: startBridge });
   globalThis.game.settings.registerMenu(MODULE_ID, "authorization", {
     name: "FVTTWORLDCLI.Settings.AuthorizationName",
@@ -138,6 +175,15 @@ function registerSettings() {
     hint: "FVTTWORLDCLI.BridgeStatus.MenuHint",
     icon: "fa-solid fa-plug",
     type: BridgeStatusApplication,
+    restricted: true
+  });
+
+  globalThis.game.settings.registerMenu(MODULE_ID, "commandPermissions", {
+    name: "FVTTWORLDCLI.Settings.CommandPermissionsName",
+    label: "FVTTWORLDCLI.Settings.CommandPermissionsLabel",
+    hint: "FVTTWORLDCLI.Settings.CommandPermissionsHint",
+    icon: "fa-solid fa-shield-halved",
+    type: createCommandPermissionsApplication(),
     restricted: true
   });
 
@@ -173,7 +219,7 @@ Hooks.once("init", () => {
 });
 
 Hooks.once("ready", async () => {
-  if (!globalThis.game.user?.isGM) {
+  if (!isGameMasterUser()) {
     log("info", "Skipping bridge startup for non-GM user");
     return;
   }

@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+  APPROVAL_TIMEOUT_MAX_MINUTES,
+  APPROVAL_TIMEOUT_MIN_MINUTES,
+  COMMAND_NAMES,
+  DISCOVERABLE_COMMAND_NAMES
+} from "../scripts/generated/protocol.js";
+
 describe("module settings registration", () => {
   let hookCallbacks;
   let hookHandlers;
@@ -30,7 +38,15 @@ describe("module settings registration", () => {
       modules: new Map()
     };
 
-    class ApplicationV2 {}
+    class ApplicationV2 {
+      async render() {
+        return this;
+      }
+
+      async close() {
+        return this;
+      }
+    }
     globalThis.foundry = {
       applications: {
         api: {
@@ -52,6 +68,7 @@ describe("module settings registration", () => {
 
     globalThis.ui = {
       notifications: {
+        info: vi.fn(),
         warn: vi.fn()
       }
     };
@@ -142,6 +159,155 @@ describe("module settings registration", () => {
     });
   });
 
+  it("keeps the command policy in a hidden client-scoped setting the window is the only editor of", async () => {
+    await import("../scripts/index.js");
+
+    hookCallbacks.get("init")();
+
+    const registration = globalThis.game.settings.register.mock.calls.find(
+      ([, key]) => key === "commandPolicy"
+    );
+
+    expect(registration).toBeDefined();
+    expect(registration[2]).toMatchObject({
+      scope: "client",
+      config: false,
+      type: Object,
+      default: {}
+    });
+  });
+
+  it("bounds the visible approval timeout setting without turning its field into a slider", async () => {
+    await import("../scripts/index.js");
+
+    hookCallbacks.get("init")();
+
+    const registration = globalThis.game.settings.register.mock.calls.find(
+      ([, key]) => key === "approvalTimeoutMinutes"
+    );
+
+    expect(registration).toBeDefined();
+    expect(registration[2]).toMatchObject({
+      scope: "client",
+      config: true,
+      type: Number,
+      default: APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+      range: { min: APPROVAL_TIMEOUT_MIN_MINUTES, max: APPROVAL_TIMEOUT_MAX_MINUTES }
+    });
+    expect(registration[2].range).not.toHaveProperty("step");
+  });
+
+  it("registers the approval sound as a visible client-scoped boolean that defaults to enabled", async () => {
+    await import("../scripts/index.js");
+
+    hookCallbacks.get("init")();
+
+    const registration = globalThis.game.settings.register.mock.calls.find(
+      ([, key]) => key === "approvalSound"
+    );
+
+    expect(registration).toBeDefined();
+    expect(registration[2]).toMatchObject({
+      name: "FVTTWORLDCLI.Settings.ApprovalSoundName",
+      hint: "FVTTWORLDCLI.Settings.ApprovalSoundHint",
+      scope: "client",
+      config: true,
+      type: Boolean,
+      default: true
+    });
+  });
+
+  describe("settings visibility for the current user", () => {
+    const VISIBLE_KEYS = ["daemonUrl", "autoConnect", "approvalTimeoutMinutes", "approvalSound"];
+    const ALL_KEYS = [
+      "daemonUrl",
+      "autoConnect",
+      "credentials",
+      "clientId",
+      "commandPolicy",
+      "approvalTimeoutMinutes",
+      "approvalSound"
+    ];
+
+    function signInAs(role) {
+      /** @type {any} */ (globalThis).CONST = {
+        USER_ROLES: { PLAYER: 1, TRUSTED: 2, ASSISTANT: 3, GAMEMASTER: 4 }
+      };
+      delete globalThis.game.user;
+      globalThis.game.data = {
+        userId: "user-1",
+        users: [
+          { _id: "user-1", name: "Self", role },
+          { _id: "user-2", name: "Other", role: 4 }
+        ]
+      };
+    }
+
+    afterEach(() => {
+      delete (/** @type {any} */ (globalThis).CONST);
+    });
+
+    async function registerAndCollect() {
+      await import("../scripts/index.js");
+      hookCallbacks.get("init")();
+      return new Map(globalThis.game.settings.register.mock.calls.map(([, key, options]) => [key, options]));
+    }
+
+    it("shows the configurable settings to a gamemaster who is not signed in yet at registration time", async () => {
+      signInAs(4);
+
+      const registrations = await registerAndCollect();
+
+      for (const key of VISIBLE_KEYS) expect(registrations.get(key).config).toBe(true);
+    });
+
+    it("shows the configurable settings to an assistant gamemaster, matching the bridge startup check", async () => {
+      signInAs(3);
+
+      const registrations = await registerAndCollect();
+
+      for (const key of VISIBLE_KEYS) expect(registrations.get(key).config).toBe(true);
+    });
+
+    it("hides every setting from a player so no module category appears in Configure Settings", async () => {
+      signInAs(1);
+
+      const registrations = await registerAndCollect();
+
+      for (const key of ALL_KEYS) expect(registrations.get(key).config).toBe(false);
+    });
+
+    it("still registers every client-scoped setting for a player so stored values remain readable", async () => {
+      signInAs(1);
+
+      const registrations = await registerAndCollect();
+
+      expect([...registrations.keys()]).toEqual(ALL_KEYS);
+      for (const key of ALL_KEYS) expect(registrations.get(key).scope).toBe("client");
+    });
+
+    it("does not start the bridge on ready for a player even when the browser holds a credential", async () => {
+      signInAs(1);
+      storedSettings.autoConnect = true;
+      storedSettings.credentials = { "world-1:user-1": { pairingId: "pair-1", credential: "secret" } };
+
+      await import("../scripts/index.js");
+      await hookCallbacks.get("ready")();
+
+      expect(globalThis.foundryCliBridge).toBeUndefined();
+    });
+
+    it("keeps the settings menus restricted to gamemasters for a player", async () => {
+      signInAs(1);
+
+      await registerAndCollect();
+
+      const menus = globalThis.game.settings.registerMenu.mock.calls;
+      expect(menus.map(([, key]) => key)).toEqual(["authorization", "bridgeStatus", "commandPermissions"]);
+      for (const [, , options] of menus) expect(options.restricted).toBe(true);
+    });
+  });
+
   it("skips bridge startup on ready when auto-connect is disabled", async () => {
     storedSettings.autoConnect = false;
     storedSettings.credentials = { "world-1:gm-1": { pairingId: "pair-1", credential: "secret" } };
@@ -188,19 +354,94 @@ describe("module settings registration", () => {
     expect(globalThis.foundryCliBridge.getStatus().status).toBe("connecting");
   });
 
-  it("registers Authorization and Bridge Status as GM-only ApplicationV2 settings submenus", async () => {
+  it("releases the approvals of the connection a later start replaces", async () => {
+    globalThis.game.user = { id: "gm-1", isGM: true };
+    storedSettings.autoConnect = true;
+    storedSettings.credentials = { "world-1:gm-1": { pairingId: "pair-1", credential: "secret" } };
+    class FakeSocket {
+      addEventListener() {}
+      close() {}
+    }
+    globalThis.WebSocket = /** @type {any} */ (FakeSocket);
+
+    await import("../scripts/index.js");
+    const ready = hookCallbacks.get("ready");
+    await ready();
+    const replaced = globalThis.foundryCliBridge;
+    const admission = replaced.router.approvalStore.admit({
+      command: "actor.delete",
+      params: { actorId: "actor-1" },
+      requestBytes: 128
+    });
+    expect(replaced.router.approvalStore.getQueueView().current.approvalId).toBe(admission.approvalId);
+
+    await ready();
+
+    expect(globalThis.foundryCliBridge).not.toBe(replaced);
+    expect(replaced.router.approvalStore.getQueueView()).toEqual({ current: null, waitingCount: 0 });
+    await expect(
+      replaced.router.approvalStore.awaitOutcome({ approvalId: admission.approvalId, waitMs: 0 })
+    ).resolves.toEqual({ approvalId: admission.approvalId, status: "unknown" });
+  });
+
+  it("puts a command held for a decision in front of the GM of the running bridge", async () => {
+    globalThis.game.user = { id: "gm-1", isGM: true };
+    storedSettings.autoConnect = true;
+    storedSettings.credentials = { "world-1:gm-1": { pairingId: "pair-1", credential: "secret" } };
+    class FakeSocket {
+      addEventListener() {}
+      close() {}
+    }
+    globalThis.WebSocket = /** @type {any} */ (FakeSocket);
+
+    await import("../scripts/index.js");
+    await hookCallbacks.get("ready")();
+    globalThis.foundryCliBridge.router.approvalStore.admit({
+      command: "actor.delete",
+      params: { actorId: "actor-1" },
+      requestBytes: 128
+    });
+
+    expect(globalThis.ui.notifications.info).toHaveBeenCalledTimes(1);
+  });
+
+  it("advertises every executable command in the handshake so undiscoverable plumbing stays callable", async () => {
+    globalThis.game.user = { id: "gm-1", isGM: true };
+    storedSettings.autoConnect = true;
+    storedSettings.credentials = { "world-1:gm-1": { pairingId: "pair-1", credential: "secret" } };
+    class FakeSocket {
+      addEventListener() {}
+      close() {}
+    }
+    globalThis.WebSocket = /** @type {any} */ (FakeSocket);
+
+    await import("../scripts/index.js");
+    await hookCallbacks.get("ready")();
+
+    const undiscoverable = COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name));
+    expect(undiscoverable.length).toBeGreaterThan(0);
+
+    const { commands } = globalThis.foundryCliBridge.getSession();
+    expect(commands).toEqual([...COMMAND_NAMES]);
+    for (const command of undiscoverable) {
+      expect(commands, `${command} must remain forwardable`).toContain(command);
+    }
+  });
+
+  it("registers every GM-only ApplicationV2 settings submenu the module ships", async () => {
     await import("../scripts/index.js");
 
     hookCallbacks.get("init")();
 
     const menus = globalThis.game.settings.registerMenu.mock.calls;
-    expect(menus.map(([, key]) => key)).toEqual(["authorization", "bridgeStatus"]);
+    expect(menus.map(([, key]) => key)).toEqual(["authorization", "bridgeStatus", "commandPermissions"]);
     for (const [, , registration] of menus) {
       expect(registration.restricted).toBe(true);
       expect(registration.type.prototype).toBeInstanceOf(globalThis.foundry.applications.api.ApplicationV2);
     }
     expect(menus[0][2].icon).toBe("fa-solid fa-key-skeleton");
     expect(menus[1][2].icon).toBe("fa-solid fa-plug");
+    expect(menus[2][2].icon).toBe("fa-solid fa-shield-halved");
   });
 
   it("registers the scene-controls group and indicator hooks on init", async () => {

@@ -1,0 +1,511 @@
+.fvtt-world-cli-policy .window-content,
+.fvtt-world-cli-approval .window-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fvtt-world-cli-policy-window,
+.fvtt-world-cli-approval-window {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+  height: 100%;
+}
+
+.fvtt-world-cli-policy-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--color-border-light-primary, var(--color-light-4));
+}
+
+.fvtt-world-cli-policy-controls .form-group {
+  margin: 0;
+}
+
+.fvtt-world-cli-policy-controls .hint {
+  margin: 0;
+}
+
+.fvtt-world-cli-policy-fill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-top: 0.25rem;
+}
+
+.fvtt-world-cli-policy-fill-label {
+  font-size: var(--font-size-12);
+  color: var(--color-text-subtle);
+}
+
+.fvtt-world-cli-policy-tree-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.25rem;
+}
+
+.fvtt-world-cli-policy-tree-button {
+  --button-size: 1.6rem;
+  flex: 0 0 auto;
+  width: auto;
+  white-space: nowrap;
+}
+
+/* The tri-state segmented control: one button per behavior, the active one marked by aria-pressed so
+   the pressed state stays readable without a hidden form field. */
+.fvtt-world-cli-policy-switch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border-light-tertiary, var(--color-light-5));
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.fvtt-world-cli-policy-switch button {
+  --button-size: 1.4rem;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 6ch;
+  margin: 0;
+  padding: 0 0.5rem;
+  border: none;
+  border-radius: 0;
+  background: none;
+  font-size: var(--font-size-12);
+  color: var(--color-text-subtle);
+  white-space: nowrap;
+}
+
+.fvtt-world-cli-policy-switch button + button {
+  border-left: 1px solid var(--color-border-light-tertiary, var(--color-light-5));
+}
+
+.fvtt-world-cli-policy-switch button[aria-pressed="true"][data-behavior="allow"] {
+  background: color-mix(in srgb, var(--color-level-success) 30%, transparent);
+  color: var(--color-text-emphatic, inherit);
+}
+
+.fvtt-world-cli-policy-switch button[aria-pressed="true"][data-behavior="approve"] {
+  background: color-mix(in srgb, var(--color-level-warning) 30%, transparent);
+  color: var(--color-text-emphatic, inherit);
+}
+
+.fvtt-world-cli-policy-switch button[aria-pressed="true"][data-behavior="deny"] {
+  background: color-mix(in srgb, var(--color-level-error) 30%, transparent);
+  color: var(--color-text-emphatic, inherit);
+}
+
+.fvtt-world-cli-policy-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.fvtt-world-cli-policy-node[data-depth="0"] {
+  border-bottom: 1px solid var(--color-border-light-tertiary, var(--color-light-5));
+}
+
+/* Native disclosure marker off, explicit caret on: the caret is the affordance that says a row
+   opens, and it must read the same at every depth. */
+.fvtt-world-cli-policy-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.125rem 0.25rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.fvtt-world-cli-policy-summary::-webkit-details-marker {
+  display: none;
+}
+
+.fvtt-world-cli-policy-summary:hover {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.fvtt-world-cli-policy-caret {
+  width: 0.75rem;
+  text-align: center;
+  color: var(--color-text-subtle);
+  transition: transform 100ms ease-in-out;
+}
+
+.fvtt-world-cli-policy-node[open] > .fvtt-world-cli-policy-summary .fvtt-world-cli-policy-caret {
+  transform: rotate(90deg);
+}
+
+.fvtt-world-cli-policy-node-name {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-13);
+  font-weight: bold;
+}
+
+.fvtt-world-cli-policy-node[data-depth="0"] > .fvtt-world-cli-policy-summary {
+  padding-block: 0.25rem;
+}
+
+.fvtt-world-cli-policy-node[data-depth="0"]
+  > .fvtt-world-cli-policy-summary
+  .fvtt-world-cli-policy-node-name {
+  font-size: var(--font-size-14);
+}
+
+.fvtt-world-cli-policy-node-size {
+  flex: 1;
+  font-size: var(--font-size-11);
+  color: var(--color-text-subtle);
+}
+
+/* Each level indents its own children, so nesting depth is legible without a computed padding. */
+.fvtt-world-cli-policy-children {
+  margin-left: 0.6rem;
+  padding-left: 0.4rem;
+  border-left: 1px solid var(--color-border-light-tertiary, var(--color-light-5));
+}
+
+.fvtt-world-cli-policy-changed {
+  display: none;
+  color: var(--color-level-warning);
+  font-size: var(--font-size-11);
+}
+
+.fvtt-world-cli-policy-node--changed > .fvtt-world-cli-policy-summary .fvtt-world-cli-policy-changed {
+  display: inline;
+}
+
+/* A node switch fills its whole subtree, so it shows a pressed state only while every command below
+   already carries that one behavior; a mixed subtree reads as the counts beside it. */
+.fvtt-world-cli-policy-switch--node button {
+  font-size: var(--font-size-11);
+  min-width: 5ch;
+}
+
+.fvtt-world-cli-policy-counts {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.fvtt-world-cli-policy-count {
+  min-width: 2.5ch;
+  padding: 0 0.25rem;
+  border-radius: 3px;
+  text-align: center;
+  font-size: var(--font-size-11);
+  color: var(--color-text-emphatic, inherit);
+}
+
+.fvtt-world-cli-policy-count--allow {
+  background: color-mix(in srgb, var(--color-level-success) 25%, transparent);
+}
+
+.fvtt-world-cli-policy-count--approve {
+  background: color-mix(in srgb, var(--color-level-warning) 25%, transparent);
+}
+
+.fvtt-world-cli-policy-count--deny {
+  background: color-mix(in srgb, var(--color-level-error) 25%, transparent);
+}
+
+.fvtt-world-cli-policy-count--empty {
+  background: none;
+  color: var(--color-text-subtle);
+}
+
+.fvtt-world-cli-policy-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.125rem 0.25rem 0.125rem 1.25rem;
+}
+
+/* Striping is painted from the visible rows rather than :nth-child, so the bands stay alternating
+   while a filter hides part of a group. The tint mixes the row's own text colour: a black overlay
+   disappears on the dark theme and a white one disappears on the light theme. */
+.fvtt-world-cli-policy-row--odd {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.fvtt-world-cli-policy-row:hover {
+  background: color-mix(in srgb, currentColor 24%, transparent);
+}
+
+.fvtt-world-cli-policy-command {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+/* The row carries the verb alone: its place in the tree already spells the rest of the name, and the
+   full command stays available as the row's tooltip. */
+.fvtt-world-cli-policy-command-verb {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-12);
+  white-space: nowrap;
+}
+
+.fvtt-world-cli-policy-row--changed .fvtt-world-cli-policy-command-verb {
+  font-weight: bold;
+}
+
+.fvtt-world-cli-policy-destructive {
+  color: var(--color-level-warning);
+  font-size: var(--font-size-11);
+}
+
+.fvtt-world-cli-policy-empty {
+  padding: 0.5rem;
+  color: var(--color-text-subtle);
+}
+
+.fvtt-world-cli-policy-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.fvtt-world-cli-policy-dirty {
+  flex: 1;
+  visibility: hidden;
+  font-size: var(--font-size-12);
+  color: var(--color-level-warning);
+}
+
+.fvtt-world-cli-policy-dirty--active {
+  visibility: visible;
+}
+
+.fvtt-world-cli-policy-footer button {
+  white-space: nowrap;
+}
+
+.fvtt-world-cli-policy-save--dirty {
+  border-color: var(--color-level-warning);
+}
+
+.fvtt-world-cli-policy-error {
+  margin: 0;
+  font-size: var(--font-size-12);
+}
+
+.fvtt-world-cli-approval-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Everything above the parameters is capped at half the window and scrolls on its own, so a long
+   target list can never push the JSON out of view. A `flex: 0 1 auto` block would be shrunk to
+   nothing by the greedy parameter block below it. */
+.fvtt-world-cli-approval-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  max-height: 50%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.fvtt-world-cli-approval-label {
+  font-size: var(--font-size-11);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-subtle);
+}
+
+.fvtt-world-cli-approval-command {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.fvtt-world-cli-approval-command-name {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-16);
+  font-weight: bold;
+}
+
+.fvtt-world-cli-approval-bulk {
+  font-size: var(--font-size-12);
+  color: var(--color-level-warning);
+}
+
+.fvtt-world-cli-approval-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  font-size: var(--font-size-12);
+}
+
+/* Tabular digits keep the countdown from changing width as it ticks without switching typeface. */
+.fvtt-world-cli-approval-expiry strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: inherit;
+}
+
+.fvtt-world-cli-approval-waiting {
+  color: var(--color-level-warning);
+}
+
+.fvtt-world-cli-approval-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.fvtt-world-cli-approval-targets {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fvtt-world-cli-approval-target {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.125rem 0.25rem;
+}
+
+.fvtt-world-cli-approval-target:nth-child(even) {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.fvtt-world-cli-approval-target-parents {
+  font-size: var(--font-size-11);
+  color: var(--color-text-subtle);
+}
+
+.fvtt-world-cli-approval-target-name {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.fvtt-world-cli-approval-target-key {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-11);
+  color: var(--color-text-subtle);
+}
+
+.fvtt-world-cli-approval-target-kind {
+  font-size: var(--font-size-11);
+  color: var(--color-text-subtle);
+}
+
+.fvtt-world-cli-approval-target-name--id {
+  font-family: var(--font-mono, monospace);
+}
+
+.fvtt-world-cli-approval-target-name--unset {
+  color: var(--color-text-subtle);
+}
+
+.fvtt-world-cli-approval-target--missing .fvtt-world-cli-approval-target-name {
+  font-family: var(--font-mono, monospace);
+  color: var(--color-text-subtle);
+}
+
+.fvtt-world-cli-approval-target-missing {
+  font-size: var(--font-size-11);
+  color: var(--color-level-error);
+}
+
+.fvtt-world-cli-approval-note {
+  font-size: var(--font-size-11);
+  color: var(--color-text-subtle);
+}
+
+/* The parameters take every row the summary above leaves, down to the bottom of the window. A plain
+   flex column carries that stretch; a <details> would break it where the browser wraps its content
+   in ::details-content. */
+.fvtt-world-cli-approval-params {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.fvtt-world-cli-approval-params-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.fvtt-world-cli-approval-size {
+  font-size: var(--font-size-11);
+  color: var(--color-text-subtle);
+}
+
+/* Foundry v14 ships `code { display: inline-block; white-space: nowrap }`, which collapses the
+   pretty-printed newlines into spaces and flattens the whole payload onto one line. The element the
+   text actually lives in has to restate its own formatting. */
+.fvtt-world-cli-approval-json code {
+  display: block;
+  margin: 0;
+  padding: 0;
+  background: none;
+  white-space: pre;
+  word-break: normal;
+}
+
+/* Pretty-printed JSON keeps its own line breaks: a long value scrolls right rather than wrapping,
+   which would make the indentation unreadable. */
+.fvtt-world-cli-approval-json {
+  flex: 1 1 0;
+  min-height: 0;
+  margin: 0.25rem 0 0;
+  padding: 0.5rem;
+  overflow: auto;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: var(--font-size-12);
+  white-space: pre;
+}
+
+.fvtt-world-cli-approval-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.fvtt-world-cli-approval-footer button {
+  white-space: nowrap;
+}
+
+.fvtt-world-cli-approval-executing {
+  flex: 1;
+  font-size: var(--font-size-12);
+  color: var(--color-level-warning);
+}
+
+.fvtt-world-cli-approval-allow {
+  border-color: var(--color-level-success);
+}
+
+.fvtt-world-cli-approval-deny {
+  border-color: var(--color-level-error);
+}
+
+.fvtt-world-cli-approval-empty {
+  padding: 1rem;
+  color: var(--color-text-subtle);
+}

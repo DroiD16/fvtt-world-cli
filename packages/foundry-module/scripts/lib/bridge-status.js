@@ -1,3 +1,4 @@
+import { PROTOCOL_COMPONENTS, normalizeComparableProtocolVersion } from "../generated/protocol.js";
 import { format, localize } from "./i18n.js";
 
 export const DISPLAY_STATE_GLYPHS = Object.freeze({
@@ -41,8 +42,6 @@ const DISPLAY_STATE_LABELS = Object.freeze({
   unpaired: "FVTTWORLDCLI.BridgeStatus.State.unpaired"
 });
 
-// A raw status equal to its display state's canonical status adds nothing, so it stays unparenthesised.
-// The empty string for offline never matches a real status, which is how every offline reason surfaces.
 const CANONICAL_RAW_STATUS = Object.freeze({
   connected: "connected",
   pending: "connecting",
@@ -72,6 +71,38 @@ const RAW_STATUS_DETAILS = Object.freeze({
   idle: "FVTTWORLDCLI.BridgeStatus.Raw.idle",
   reconnecting: "FVTTWORLDCLI.BridgeStatus.Raw.reconnecting"
 });
+
+const STALE_COMPONENT_LABELS = Object.freeze({
+  [PROTOCOL_COMPONENTS.MODULE]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Component.module",
+  [PROTOCOL_COMPONENTS.CLI_DAEMON]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Component.cliDaemon",
+  [PROTOCOL_COMPONENTS.UNKNOWN]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Component.unknown"
+});
+
+const STALE_COMPONENT_REMEDIES = Object.freeze({
+  [PROTOCOL_COMPONENTS.MODULE]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Advice.module",
+  [PROTOCOL_COMPONENTS.CLI_DAEMON]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Advice.cliDaemon",
+  [PROTOCOL_COMPONENTS.UNKNOWN]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Advice.unknown"
+});
+
+/** @param {string} version */
+export function describeProtocolVersion(version) {
+  const release = normalizeComparableProtocolVersion(version);
+  if (release === null || release === version) return version;
+  return format("FVTTWORLDCLI.BridgeStatus.VersionMismatch.FromRelease", { version, release });
+}
+
+/**
+ * @param {{ expectedVersion: string, actualVersion: string, staleComponent: string } | null | undefined} mismatch
+ */
+export function describeProtocolVersionMismatch(mismatch) {
+  if (!mismatch) return null;
+  return {
+    expectedVersion: mismatch.expectedVersion,
+    actualVersion: describeProtocolVersion(mismatch.actualVersion),
+    staleComponent: localize(STALE_COMPONENT_LABELS[mismatch.staleComponent]),
+    remedy: localize(STALE_COMPONENT_REMEDIES[mismatch.staleComponent])
+  };
+}
 
 /**
  * @param {"connected" | "pending" | "offline" | "unpaired"} displayState

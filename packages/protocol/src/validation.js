@@ -11,7 +11,13 @@ import {
   getInvalidCommandError,
   isKnownCommand
 } from "./commands.js";
-import { ERROR_CODES, MESSAGE_TYPES, PROTOCOL_VERSION } from "./constants.js";
+import {
+  ERROR_CODES,
+  MESSAGE_TYPES,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
+  PROTOCOL_VERSION
+} from "./constants.js";
 
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -415,6 +421,9 @@ export function createErrorResponse({ id, error }) {
   };
 }
 
+/**
+ * @param {{ code: string, message: string, details?: Record<string, unknown> }} options
+ */
 export function createProtocolError({ code, message, details = {} }) {
   return {
     code,
@@ -423,13 +432,111 @@ export function createProtocolError({ code, message, details = {} }) {
   };
 }
 
-export function getProtocolVersionError(actualVersion) {
+// "3.0" is the one protocol version published before the protocol version became the release version.
+const LEGACY_PROTOCOL_RELEASES = Object.freeze({ "3.0": "1.0.0" });
+
+const RELEASE_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+
+/**
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+export function normalizeComparableProtocolVersion(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  if (Object.hasOwn(LEGACY_PROTOCOL_RELEASES, value)) {
+    return LEGACY_PROTOCOL_RELEASES[value];
+  }
+  return RELEASE_VERSION_PATTERN.test(value) ? value : null;
+}
+
+/**
+ * @param {string} left
+ * @param {string} right
+ * @returns {number}
+ */
+function compareReleaseVersions(left, right) {
+  const leftParts = left.split(".").map(Number);
+  const rightParts = right.split(".").map(Number);
+  for (let index = 0; index < leftParts.length; index += 1) {
+    if (leftParts[index] !== rightParts[index]) {
+      return leftParts[index] < rightParts[index] ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * @param {string} component
+ * @returns {boolean}
+ */
+function isNamedComponent(component) {
+  return component === PROTOCOL_COMPONENTS.MODULE || component === PROTOCOL_COMPONENTS.CLI_DAEMON;
+}
+
+/**
+ * @param {unknown} actualVersion
+ * @param {string} peer
+ * @param {string} reporter
+ * @returns {{ staleComponent: string, comparable: boolean }}
+ */
+function resolveStaleness(actualVersion, peer, reporter) {
+  const actual = normalizeComparableProtocolVersion(actualVersion);
+  const expected = normalizeComparableProtocolVersion(PROTOCOL_VERSION);
+  if (actual === null || expected === null) {
+    return { staleComponent: PROTOCOL_COMPONENTS.UNKNOWN, comparable: false };
+  }
+
+  const order = compareReleaseVersions(actual, expected);
+  const older = order < 0 ? peer : order > 0 ? reporter : PROTOCOL_COMPONENTS.UNKNOWN;
+  return {
+    staleComponent: isNamedComponent(older) ? older : PROTOCOL_COMPONENTS.UNKNOWN,
+    comparable: true
+  };
+}
+
+/**
+ * @param {{ staleComponent: string, comparable: boolean }} staleness
+ * @returns {string}
+ */
+function describeStaleness({ staleComponent, comparable }) {
+  if (staleComponent === PROTOCOL_COMPONENTS.MODULE) {
+    return "the Foundry module is the older component, so update the module in Foundry until both halves come from the same release, then reload the GM client";
+  }
+  if (staleComponent === PROTOCOL_COMPONENTS.CLI_DAEMON) {
+    return "the CLI and daemon are the older component, so update the fvtt-world-cli package until both halves come from the same release, then restart the daemon";
+  }
+  const cause = comparable
+    ? "the older component is not identified here"
+    : "these versions cannot be ordered, so the older component is unknown";
+  return `${cause}: bring the fvtt-world-cli package and the Foundry module to the same release, restart the daemon, and reload the GM client`;
+}
+
+/**
+ * @typedef {(typeof PROTOCOL_HANDSHAKES)[keyof typeof PROTOCOL_HANDSHAKES]} ProtocolHandshake
+ */
+
+/**
+ * @param {unknown} actualVersion
+ * @param {{ peer?: string, reporter?: string, handshake?: ProtocolHandshake }} [options]
+ */
+export function getProtocolVersionError(actualVersion, options = {}) {
+  const {
+    peer = PROTOCOL_COMPONENTS.UNKNOWN,
+    reporter = PROTOCOL_COMPONENTS.UNKNOWN,
+    handshake = PROTOCOL_HANDSHAKES.UNKNOWN
+  } = options;
+  const staleness = resolveStaleness(actualVersion, peer, reporter);
+
   return createProtocolError({
     code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
-    message: `Unsupported protocol version: ${actualVersion}`,
+    message: `Unsupported protocol version: ${actualVersion} (expected ${PROTOCOL_VERSION}); ${describeStaleness(staleness)}. Components from different releases are refused by design.`,
     details: {
       expectedVersion: PROTOCOL_VERSION,
-      actualVersion
+      actualVersion,
+      staleComponent: staleness.staleComponent,
+      handshake
     }
   });
 }

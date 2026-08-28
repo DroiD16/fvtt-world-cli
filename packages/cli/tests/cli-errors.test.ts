@@ -2,7 +2,15 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { DEFAULT_UPLOAD_SIZE_LIMIT_BYTES } from "@fvtt-world-cli/protocol";
+import {
+  DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
+  ERROR_CODES,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
+  PROTOCOL_VERSION,
+  createErrorResponse,
+  getProtocolVersionError
+} from "@fvtt-world-cli/protocol";
 import { CommanderError } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -14,8 +22,21 @@ import {
   createDefaultTestConfig,
   createInMemoryConfigStore,
   createWritableBuffer,
-  failIfCalledSendCommand
+  failIfCalledSendCommand,
+  runCommand,
+  type SendCommandMock
 } from "./helpers/cli-harness.js";
+
+function mismatchSendCommand(
+  actualVersion: string,
+  origin: { peer: string; handshake: (typeof PROTOCOL_HANDSHAKES)[keyof typeof PROTOCOL_HANDSHAKES] }
+) {
+  return (async () =>
+    createErrorResponse({
+      id: "req-1",
+      error: getProtocolVersionError(actualVersion, { ...origin, reporter: PROTOCOL_COMPONENTS.CLI_DAEMON })
+    })) as unknown as SendCommandMock;
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -148,6 +169,68 @@ describe("fvtt-world-cli commands", () => {
     });
   });
 
+  describe("protocol version mismatch output", () => {
+    it("tells the user to update the Foundry module when the module is the older half", async () => {
+      const result = await runCommand(
+        ["scene", "get", "--scene-id", "s1"],
+        mismatchSendCommand("1.0.0", {
+          peer: PROTOCOL_COMPONENTS.MODULE,
+          handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+        })
+      );
+
+      expect(result.stderr).toContain(`${ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION}: `);
+      expect(result.stderr).toContain("update the module in Foundry");
+      expect(result.stderr).toContain(`"staleComponent": "${PROTOCOL_COMPONENTS.MODULE}"`);
+    });
+
+    it("tells the user to restart the daemon when the CLI half is the older one", async () => {
+      const result = await runCommand(
+        ["scene", "get", "--scene-id", "s1"],
+        mismatchSendCommand("1.0.0", {
+          peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
+          handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON
+        })
+      );
+
+      expect(result.stderr).toContain("restart the daemon");
+      expect(result.stderr).toContain(`"staleComponent": "${PROTOCOL_COMPONENTS.CLI_DAEMON}"`);
+    });
+
+    it("admits it cannot tell which half is stale for a version it cannot order", async () => {
+      const result = await runCommand(
+        ["scene", "get", "--scene-id", "s1"],
+        mismatchSendCommand("banana", {
+          peer: PROTOCOL_COMPONENTS.MODULE,
+          handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+        })
+      );
+
+      expect(result.stderr).toContain("cannot be ordered");
+      expect(result.stderr).toContain(`"staleComponent": "${PROTOCOL_COMPONENTS.UNKNOWN}"`);
+    });
+
+    it("carries the whole mismatch in the --json envelope", async () => {
+      const result = await runCommand(
+        ["--json", "scene", "get", "--scene-id", "s1"],
+        mismatchSendCommand("1.0.0", {
+          peer: PROTOCOL_COMPONENTS.MODULE,
+          handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+        })
+      );
+
+      const envelope = JSON.parse(result.stdout);
+      expect(envelope.error.code).toBe(ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION);
+      expect(envelope.error.details).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: "1.0.0",
+        staleComponent: PROTOCOL_COMPONENTS.MODULE,
+        handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+      });
+      expect((result.error as CommanderError).exitCode).toBe(1);
+    });
+  });
+
   describe("exitCodeForErrorCode (coarse exit classes)", () => {
     it("maps connectivity/auth codes to 3 (daemon unavailable / unauthorized)", () => {
       expect(exitCodeForErrorCode("DAEMON_UNAVAILABLE")).toBe(3);
@@ -172,6 +255,13 @@ describe("fvtt-world-cli commands", () => {
         "PAYLOAD_TOO_LARGE",
         "UNSUPPORTED_OPERATION",
         "INTERNAL_ERROR",
+        "COMMAND_DENIED",
+        "APPROVAL_PENDING",
+        "APPROVAL_DENIED",
+        "APPROVAL_TIMEOUT",
+        "APPROVAL_CANCELLED",
+        "APPROVAL_QUEUE_FULL",
+        "APPROVAL_UNKNOWN",
 
         "LOCAL_FILE_ERROR",
         "PAIRING_DECLINED",

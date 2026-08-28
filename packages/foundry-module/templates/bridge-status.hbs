@@ -25,6 +25,24 @@
       <strong>{{#if terminalStopReason}}{{terminalStopReason}}{{else}}&mdash;{{/if}}</strong>
     </div>
   </div>
+  {{#if protocolVersionMismatch}}
+    <div class="form-group fvtt-world-cli-readonly">
+      <label>{{localize "FVTTWORLDCLI.BridgeStatus.VersionMismatch.ModuleVersion"}}</label>
+      <div class="form-fields"><strong>{{protocolVersionMismatch.expectedVersion}}</strong></div>
+    </div>
+    <div class="form-group fvtt-world-cli-readonly">
+      <label>{{localize "FVTTWORLDCLI.BridgeStatus.VersionMismatch.DaemonVersion"}}</label>
+      <div class="form-fields"><strong>{{protocolVersionMismatch.actualVersion}}</strong></div>
+    </div>
+    <div class="form-group fvtt-world-cli-readonly">
+      <label>{{localize "FVTTWORLDCLI.BridgeStatus.VersionMismatch.StaleComponent"}}</label>
+      <div class="form-fields"><strong>{{protocolVersionMismatch.staleComponent}}</strong></div>
+    </div>
+    <div class="form-group fvtt-world-cli-readonly">
+      <label>{{localize "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Remedy"}}</label>
+      <div class="form-fields"><strong>{{protocolVersionMismatch.remedy}}</strong></div>
+    </div>
+  {{/if}}
   <div class="form-group fvtt-world-cli-readonly">
     <label>{{localize "FVTTWORLDCLI.BridgeStatus.LocalPairing"}}</label>
     <div class="form-fields">

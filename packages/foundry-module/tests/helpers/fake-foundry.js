@@ -1,6 +1,12 @@
 import { expect, vi } from "vitest";
 
-import { MESSAGE_TYPES, PROTOCOL_VERSION } from "../../scripts/generated/protocol.js";
+import {
+  COMMAND_NAMES,
+  MESSAGE_TYPES,
+  MODULE_ID,
+  PROTOCOL_VERSION
+} from "../../scripts/generated/protocol.js";
+import { MODULE_SETTING_KEYS } from "../../scripts/lib/validators.js";
 
 function ensureFilePickerNamespace() {
   globalThis.foundry ??= {};
@@ -1005,6 +1011,10 @@ function createTableResultDocument(id, data) {
     )
   );
   return row;
+}
+
+function copySettingValue(value) {
+  return value !== null && typeof value === "object" ? JSON.parse(JSON.stringify(value)) : value;
 }
 
 function isSameStoredValue(current, next) {
@@ -3040,6 +3050,28 @@ export function createRequest(command, params = {}) {
   };
 }
 
+// The GM of a fake world allows every command, so a test about a command's own behavior is answered by
+// that command and not by the approval queue the default profile would send its deletions to. A test
+// about the policy itself stores the policy it needs instead.
+export function allowEveryCommandPolicy() {
+  return {
+    version: 1,
+    overrides: Object.fromEntries(COMMAND_NAMES.map((command) => [command, "allow"]))
+  };
+}
+
+export function clearStoredCommandPolicy() {
+  globalThis.__routerTestState.settingValues.delete(`${MODULE_ID}.${MODULE_SETTING_KEYS.COMMAND_POLICY}`);
+}
+
+export function createPermissiveSettings() {
+  return {
+    get: vi.fn((namespace, key) =>
+      namespace === MODULE_ID && key === MODULE_SETTING_KEYS.COMMAND_POLICY ? allowEveryCommandPolicy() : ""
+    )
+  };
+}
+
 export function installFakeFoundry() {
   ensureFilePickerNamespace();
   const directoryContents = new Map([
@@ -3065,6 +3097,10 @@ export function installFakeFoundry() {
     ["worlds/world-1/maps/dungeon.webp", Uint8Array.from([1, 2, 3, 4])]
   ]);
   const fetchOverrides = new Map();
+  const settingRegistrations = new Map();
+  const settingValues = new Map([
+    [`${MODULE_ID}.${MODULE_SETTING_KEYS.COMMAND_POLICY}`, allowEveryCommandPolicy()]
+  ]);
 
   const scene = createSceneDocument("scene-1", {
     name: "Dungeon Level 1",
@@ -3764,7 +3800,28 @@ export function installFakeFoundry() {
       }
     ]),
     settings: {
-      get: vi.fn(() => "")
+      settings: settingRegistrations,
+      register: vi.fn((namespace, key, config) => {
+        const id = `${namespace}.${key}`;
+        settingRegistrations.set(id, { ...config, namespace, key, id });
+      }),
+      registerMenu: vi.fn(),
+      get: vi.fn((namespace, key) => {
+        const id = `${namespace}.${key}`;
+        if (settingValues.has(id)) {
+          return copySettingValue(settingValues.get(id));
+        }
+
+        const registration = settingRegistrations.get(id);
+        return registration && registration.default !== undefined
+          ? copySettingValue(registration.default)
+          : "";
+      }),
+      set: vi.fn(async (namespace, key, value) => {
+        const stored = copySettingValue(value);
+        settingValues.set(`${namespace}.${key}`, stored);
+        return copySettingValue(stored);
+      })
     },
     scenes: createCollection([scene, inactiveScene]),
     items: createCollection([item]),
@@ -3860,7 +3917,8 @@ export function installFakeFoundry() {
   globalThis.__routerTestState = {
     directoryContents,
     fileContents,
-    fetchOverrides
+    fetchOverrides,
+    settingValues
   };
 
   globalThis.Item = makeDocumentClass({
@@ -4118,8 +4176,18 @@ export function installFakeFoundry() {
 
     audio: {
       AudioHelper: {
-        getDefaultSoundName: (path) => `derived:${path}`
+        getDefaultSoundName: (path) => `derived:${path}`,
+        play: vi.fn(() => undefined)
       }
+    }
+  };
+
+  globalThis.CONFIG = {
+    sounds: {
+      dice: "sounds/dice.wav",
+      lock: "sounds/lock.wav",
+      notification: "sounds/notify.wav",
+      combat: "sounds/drums.wav"
     }
   };
 

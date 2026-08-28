@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BridgeClient } from "../scripts/bridge-client.js";
 import {
+  APPROVAL_AWAIT_PARK_CAP_MS,
   BRIDGE_RELEASE_CLOSE_CODE,
+  BRIDGE_TAKEOVER_CLOSE_CODE,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
   ERROR_CODES,
   MESSAGE_TYPES,
+  MODULE_TITLE,
   PROTOCOL_VERSION,
   validateHelloMessage
 } from "../scripts/generated/protocol.js";
@@ -17,6 +20,7 @@ import {
   getProtocolVersionSkewWarningMessage,
   getRejectedHandshakeWarningMessage
 } from "../scripts/lib/startup.js";
+import { ApprovalStore } from "../scripts/lib/approval-store.js";
 import { createEnglishI18n } from "./helpers/i18n.js";
 
 // Without a localizer every warning builder returns its bare catalog key, which would make each
@@ -24,6 +28,36 @@ import { createEnglishI18n } from "./helpers/i18n.js";
 beforeEach(() => {
   globalThis.game = /** @type {any} */ ({ i18n: createEnglishI18n() });
 });
+
+// The prose belongs to the catalog, so a message is pinned by the key it was rendered from and the data
+// it was rendered with; comparing sentences would pass a key that renders the wrong remedy.
+function observeLocalization() {
+  const i18n = createEnglishI18n();
+  const localizer = { localize: vi.fn(i18n.localize), format: vi.fn(i18n.format) };
+  globalThis.game = /** @type {any} */ ({ i18n: localizer });
+  return localizer;
+}
+
+// Every channel a notification can be raised on, because the module reaches for them optionally: a
+// channel left off this stub swallows its call, and the count below would report it as never raised.
+function stubNotifications() {
+  globalThis.ui = /** @type {any} */ ({
+    notifications: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      success: vi.fn(),
+      notify: vi.fn()
+    }
+  });
+}
+
+function countNotifications() {
+  return Object.values(globalThis.ui.notifications).reduce(
+    (total, notify) => total + notify.mock.calls.length,
+    0
+  );
+}
 
 function createClient(logger = vi.fn()) {
   return new BridgeClient({
@@ -67,13 +101,7 @@ function markClientConnected(client) {
 }
 
 describe("BridgeClient terminal shutdown", () => {
-  beforeEach(() => {
-    globalThis.ui = {
-      notifications: {
-        warn: vi.fn()
-      }
-    };
-  });
+  beforeEach(stubNotifications);
 
   it("stops permanently after an unauthorized hello ack and warns only once", async () => {
     const logger = vi.fn();
@@ -142,7 +170,8 @@ describe("BridgeClient terminal shutdown", () => {
     expect(scheduleReconnect).not.toHaveBeenCalled();
     expect(client.getStatus()).toMatchObject({
       status: "stopped",
-      terminalStopReason: ERROR_CODES.BRIDGE_BUSY
+      terminalStopReason: ERROR_CODES.BRIDGE_BUSY,
+      protocolVersionMismatch: null
     });
     expect(globalThis.ui.notifications.warn).toHaveBeenCalledWith(getBridgeBusyWarningMessage(), {
       permanent: true
@@ -225,13 +254,7 @@ describe("BridgeClient terminal shutdown", () => {
 });
 
 describe("BridgeClient handshake reliability", () => {
-  beforeEach(() => {
-    globalThis.ui = {
-      notifications: {
-        warn: vi.fn()
-      }
-    };
-  });
+  beforeEach(stubNotifications);
 
   it("names the paired browser in the bridge hello beside the credential", async () => {
     const client = new BridgeClient({
@@ -291,7 +314,8 @@ describe("BridgeClient handshake reliability", () => {
     );
     expect(client.getStatus()).toMatchObject({
       status: "stopped",
-      terminalStopReason: ERROR_CODES.INVALID_MESSAGE
+      terminalStopReason: ERROR_CODES.INVALID_MESSAGE,
+      protocolVersionMismatch: null
     });
   });
 
@@ -304,13 +328,15 @@ describe("BridgeClient handshake reliability", () => {
     await client.handleMessage(
       createHelloAck({
         ok: false,
-        protocolVersion: "9.9",
+        protocolVersion: "9.9.0",
         error: {
           code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
           message: `Unsupported protocol version: ${PROTOCOL_VERSION}`,
           details: {
-            expectedVersion: "9.9",
-            actualVersion: PROTOCOL_VERSION
+            expectedVersion: "9.9.0",
+            actualVersion: PROTOCOL_VERSION,
+            staleComponent: "module",
+            handshake: "module-daemon"
           }
         }
       })
@@ -320,7 +346,11 @@ describe("BridgeClient handshake reliability", () => {
     expect(globalThis.ui.notifications.warn).toHaveBeenCalledTimes(1);
 
     expect(globalThis.ui.notifications.warn).toHaveBeenCalledWith(
-      getProtocolVersionSkewWarningMessage(PROTOCOL_VERSION, "9.9"),
+      getProtocolVersionSkewWarningMessage({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: "9.9.0",
+        staleComponent: "module"
+      }),
       { permanent: true }
     );
     const skewWarning = globalThis.ui.notifications.warn.mock.calls[0][0];
@@ -332,6 +362,67 @@ describe("BridgeClient handshake reliability", () => {
     });
   });
 
+  // A daemon still on the released protocol answers with no mismatch details at all, so a module that
+  // read the older half off the ack would meet the very first mismatch a GM can hit with nothing to say.
+  it.each([
+    [
+      "the daemon speaks the protocol version published before releases matched",
+      "3.0",
+      "3.0, from release 1.0.0",
+      "cli-daemon",
+      "FVTTWORLDCLI.Startup.ProtocolVersionSkewDaemon"
+    ],
+    [
+      "the daemon speaks a later protocol version than this module",
+      "9.9.0",
+      "9.9.0",
+      "module",
+      "FVTTWORLDCLI.Startup.ProtocolVersionSkewModule"
+    ],
+    [
+      "the daemon's protocol version cannot be ordered against this module's",
+      "next-dev",
+      "next-dev",
+      "unknown",
+      "FVTTWORLDCLI.Startup.ProtocolVersionSkewUnknown"
+    ]
+  ])(
+    "tells the GM which half is behind when %s",
+    async (_case, daemonVersion, shownDaemonVersion, staleComponent, key) => {
+      const localizer = observeLocalization();
+      const client = createClient();
+
+      markClientConnected(client);
+      await client.handleMessage(
+        createHelloAck({
+          ok: false,
+          protocolVersion: daemonVersion,
+          error: {
+            code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+            message: `Unsupported protocol version: ${PROTOCOL_VERSION}`
+          }
+        })
+      );
+
+      expect(localizer.format).toHaveBeenCalledWith(key, {
+        module: MODULE_TITLE,
+        expected: PROTOCOL_VERSION,
+        actual: shownDaemonVersion
+      });
+      expect(countNotifications()).toBe(1);
+      expect(globalThis.ui.notifications.warn.mock.calls[0][1]).toEqual({ permanent: true });
+      expect(client.getStatus()).toMatchObject({
+        status: "stopped",
+        terminalStopReason: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+        protocolVersionMismatch: {
+          expectedVersion: PROTOCOL_VERSION,
+          actualVersion: daemonVersion,
+          staleComponent
+        }
+      });
+    }
+  );
+
   it("does not silently drop a version-skewed hello-ack the way it drops command messages", async () => {
     const logger = vi.fn();
     const client = createClient(logger);
@@ -340,10 +431,10 @@ describe("BridgeClient handshake reliability", () => {
     await client.handleMessage(
       createHelloAck({
         ok: false,
-        protocolVersion: "9.9",
+        protocolVersion: "9.9.0",
         error: {
           code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
-          message: "Unsupported protocol version: 9.9"
+          message: "Unsupported protocol version: 9.9.0"
         }
       })
     );
@@ -563,9 +654,7 @@ describe("BridgeClient handshake reliability", () => {
 });
 
 describe("BridgeClient daemon-advertised limits", () => {
-  beforeEach(() => {
-    globalThis.ui = { notifications: { warn: vi.fn() } };
-  });
+  beforeEach(stubNotifications);
 
   it("stores the daemon-advertised limits from a successful hello-ack", async () => {
     const client = createClient();
@@ -733,7 +822,7 @@ describe("BridgeClient status change signal", () => {
 
   beforeEach(() => {
     onStatusChange = vi.fn();
-    globalThis.ui = { notifications: { warn: vi.fn() } };
+    stubNotifications();
   });
 
   function observedClient(logger = vi.fn()) {
@@ -807,7 +896,37 @@ describe("BridgeClient status change signal", () => {
     expect(onStatusChange.mock.calls[0][0]).toMatchObject({
       status: "connected",
       helloAcknowledged: true,
-      hasEstablishedSession: true
+      hasEstablishedSession: true,
+      protocolVersionMismatch: null
+    });
+  });
+
+  it("emits the refused handshake already carrying the version mismatch that explains it", async () => {
+    const client = observedClient();
+    markClientConnected(client);
+    onStatusChange.mockClear();
+
+    await client.handleMessage(
+      createHelloAck({
+        ok: false,
+        protocolVersion: "3.0",
+        error: {
+          code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+          message: `Unsupported protocol version: ${PROTOCOL_VERSION}`
+        }
+      })
+    );
+
+    const stopped = onStatusChange.mock.calls
+      .map(([snapshot]) => snapshot)
+      .find((snapshot) => snapshot.status === "stopped");
+    expect(stopped).toMatchObject({
+      terminalStopReason: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+      protocolVersionMismatch: {
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: "3.0",
+        staleComponent: "cli-daemon"
+      }
     });
   });
 
@@ -958,5 +1077,262 @@ describe("BridgeClient status change signal", () => {
     expect(logger).toHaveBeenCalledWith("warn", "Bridge status subscriber failed", {
       message: "subscriber exploded"
     });
+  });
+});
+
+describe("BridgeClient request frame weight", () => {
+  function routingClient() {
+    globalThis.game = /** @type {any} */ ({
+      i18n: createEnglishI18n(),
+      user: { id: "gm", isGM: true }
+    });
+    /** @type {{ measureRequestBytes: () => number }[]} */
+    const frames = [];
+    const route = vi.fn(async (/** @type {any} */ message, /** @type {any} */ frame) => {
+      frames.push(frame);
+      return {
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_RESPONSE,
+        id: message.id,
+        ok: true,
+        result: {}
+      };
+    });
+    const client = new BridgeClient({
+      url: "ws://127.0.0.1:47833",
+      pairingId: "pair-1",
+      credential: "b".repeat(43),
+      router: { route },
+      getSession: () => ({ moduleId: "fvtt-world-cli" }),
+      logger: vi.fn()
+    });
+    globalThis.WebSocket = /** @type {any} */ ({ OPEN: 1 });
+    client.socket = /** @type {any} */ ({ readyState: 1, send: vi.fn(), close: vi.fn() });
+    client.helloAcknowledged = true;
+    return { client, route, frames };
+  }
+
+  /** @param {Record<string, unknown>} params */
+  function requestFrame(params) {
+    return JSON.stringify({
+      protocolVersion: PROTOCOL_VERSION,
+      type: MESSAGE_TYPES.COMMAND_REQUEST,
+      id: "weighed-1",
+      command: "file.upload",
+      params
+    });
+  }
+
+  it("offers the size of the frame it received, not the length of its text", async () => {
+    const { client, route, frames } = routingClient();
+    const frame = requestFrame({ path: "worlds/world-1/notes.txt", contentBase64: "A".repeat(4096) });
+
+    await client.handleMessage({ data: frame });
+
+    expect(route).toHaveBeenCalledTimes(1);
+    expect(frames[0].measureRequestBytes()).toBe(new TextEncoder().encode(frame).length);
+    expect(frames[0].measureRequestBytes()).toBeGreaterThan(4096);
+  });
+
+  it("counts a multi-byte payload in bytes rather than characters", async () => {
+    const { client, frames } = routingClient();
+    const frame = requestFrame({ path: "worlds/world-1/héroïnes-🐉.txt", contentBase64: "é🐉".repeat(64) });
+
+    await client.handleMessage({ data: frame });
+
+    const measured = frames[0].measureRequestBytes();
+    expect(measured).toBe(new TextEncoder().encode(frame).length);
+    expect(measured).toBeGreaterThan(frame.length);
+  });
+
+  it("takes the size of a binary frame from the frame itself", async () => {
+    const { client, frames } = routingClient();
+    const encoded = new TextEncoder().encode(
+      requestFrame({ path: "worlds/world-1/notes.txt", contentBase64: "AAAA" })
+    );
+
+    await client.handleMessage({ data: encoded.buffer });
+
+    expect(frames[0].measureRequestBytes()).toBe(encoded.byteLength);
+  });
+
+  it("leaves the count to the router, which asks for it only where a weight is needed", async () => {
+    const { client, route, frames } = routingClient();
+
+    await client.handleMessage({
+      data: requestFrame({ path: "worlds/world-1/notes.txt", contentBase64: "AAAA" })
+    });
+
+    expect(route).toHaveBeenCalledTimes(1);
+    expect(Object.keys(frames[0])).toEqual(["measureRequestBytes"]);
+    expect(typeof frames[0].measureRequestBytes).toBe("function");
+  });
+});
+
+describe("BridgeClient approvals held for the GM", () => {
+  function clientWithApprovals() {
+    const clear = vi.fn();
+    const client = new BridgeClient({
+      url: "ws://127.0.0.1:47833",
+      credential: "invalid-credential",
+      router: { route: vi.fn(async () => ({ ok: true })), approvalStore: { clear } },
+      getSession: () => ({ moduleId: "fvtt-world-cli" }),
+      logger: vi.fn()
+    });
+
+    globalThis.WebSocket = /** @type {any} */ ({ CONNECTING: 0, OPEN: 1 });
+    client.socket = /** @type {any} */ ({ readyState: 1, send: vi.fn(), close: vi.fn() });
+    client.handleOpen();
+
+    return { client, clear };
+  }
+
+  function clientWithParkedApproval() {
+    const store = new ApprovalStore({ execute: async () => ({ ok: true }) });
+    const admission = store.admit({
+      command: "actor.update",
+      params: { actorId: "actor-1" },
+      requestBytes: 32
+    });
+    if (!admission.admitted) {
+      throw new Error(`the store refused an admission the test needs: ${admission.reason}`);
+    }
+
+    const client = new BridgeClient({
+      url: "ws://127.0.0.1:47833",
+      credential: "invalid-credential",
+      router: {
+        approvalStore: store,
+        route: async () => ({
+          protocolVersion: PROTOCOL_VERSION,
+          type: MESSAGE_TYPES.COMMAND_RESPONSE,
+          id: "poll-1",
+          ok: true,
+          result: await store.awaitOutcome({
+            approvalId: admission.approvalId,
+            waitMs: APPROVAL_AWAIT_PARK_CAP_MS
+          })
+        })
+      },
+      getSession: () => ({ moduleId: "fvtt-world-cli" }),
+      logger: vi.fn()
+    });
+
+    globalThis.game.user = /** @type {any} */ ({ id: "gm-1", isGM: true });
+    globalThis.WebSocket = /** @type {any} */ ({ CONNECTING: 0, OPEN: 1 });
+    const send = vi.fn();
+    client.socket = /** @type {any} */ ({ readyState: 1, send, close: vi.fn() });
+    client.handleOpen();
+
+    const parked = client.handleMessage({
+      data: JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_REQUEST,
+        id: "poll-1",
+        command: "approval.await",
+        params: { approvalId: admission.approvalId, waitMs: APPROVAL_AWAIT_PARK_CAP_MS }
+      })
+    });
+
+    return { approvalId: admission.approvalId, client, store, send, parked };
+  }
+
+  /** @param {any} send */
+  function commandResponses(send) {
+    return send.mock.calls
+      .map(([frame]) => JSON.parse(frame))
+      .filter((message) => message.type === MESSAGE_TYPES.COMMAND_RESPONSE);
+  }
+
+  it("answer a parked poll when the decision is taken and the socket is open", async () => {
+    const { approvalId, store, send, parked } = clientWithParkedApproval();
+
+    await store.decide(approvalId, "allow");
+    await parked;
+
+    expect(commandResponses(send)).toEqual([
+      expect.objectContaining({
+        id: "poll-1",
+        ok: true,
+        result: expect.objectContaining({ status: "resolved" })
+      })
+    ]);
+  });
+
+  it("leave a parked poll unanswered when the GM rebuilds the connection", async () => {
+    const { client, store, send, parked } = clientWithParkedApproval();
+
+    client.stop();
+    await parked;
+
+    expect(commandResponses(send)).toEqual([]);
+    expect(store.getQueueView()).toEqual({ current: null, waitingCount: 0 });
+  });
+
+  it("leave a parked poll unanswered when another client takes the bridge slot", async () => {
+    const { client, store, send, parked } = clientWithParkedApproval();
+
+    client.handleClose({ code: BRIDGE_TAKEOVER_CLOSE_CODE, reason: "Another client took the bridge" });
+    await parked;
+
+    expect(commandResponses(send)).toEqual([]);
+    expect(store.getQueueView()).toEqual({ current: null, waitingCount: 0 });
+  });
+
+  it("survive a dropped socket the client will reconnect", () => {
+    const { client, clear } = clientWithApprovals();
+    vi.spyOn(client, "scheduleReconnect").mockImplementation(() => {});
+
+    client.handleClose({ code: 1006, reason: "socket lost" });
+
+    expect(clear).not.toHaveBeenCalled();
+  });
+
+  it("are released when the GM disconnects the bridge", () => {
+    const { client, clear } = clientWithApprovals();
+
+    client.stop();
+
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("are released when another client takes the bridge slot", () => {
+    const { client, clear } = clientWithApprovals();
+
+    client.handleClose({ code: BRIDGE_TAKEOVER_CLOSE_CODE, reason: "Another client took the bridge" });
+
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("are released when the daemon releases the bridge", () => {
+    const { client, clear } = clientWithApprovals();
+
+    client.handleClose({ code: BRIDGE_RELEASE_CLOSE_CODE, reason: "Bridge released" });
+
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("are released when the session stops for good", () => {
+    const { client, clear } = clientWithApprovals();
+
+    client.stopForRejectedCredential(new Error("Bridge hello credential mismatch"));
+
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("are released when the client is no longer a GM", async () => {
+    const { client, clear } = clientWithApprovals();
+
+    await client.handleMessage({
+      data: JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_REQUEST,
+        id: "demoted-1",
+        command: "actor.get",
+        params: { actorId: "actor-1" }
+      })
+    });
+
+    expect(clear).toHaveBeenCalledTimes(1);
   });
 });

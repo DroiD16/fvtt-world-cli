@@ -15,6 +15,8 @@ import {
   MODULE_ID,
   PAIRING_PENDING_MAX,
   PAIRING_REQUEST_TTL_MS,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
   createErrorResponse,
   createProtocolError,
@@ -29,8 +31,18 @@ import { WebSocketServer } from "ws";
 import type WebSocket from "ws";
 import type { CliConfigStore, PersistedCliConfig, PersistedCliConfigV3 } from "../config.js";
 import { PersistedCliConfigSchema, createEmptyConfig } from "../config.js";
-import { isCommandResponseEnvelope, normalizeIncomingData, sendJson } from "../transport-util.js";
+import {
+  isCommandResponseEnvelope,
+  normalizeIncomingData,
+  readPendingApprovalDetails,
+  sendJson
+} from "../transport-util.js";
 
+import {
+  ApprovalIdempotencyLinks,
+  readApprovalSettlement,
+  type ApprovalLinkOptions
+} from "./approval-link.js";
 import {
   IdempotencyCache,
   computeRequestFingerprint,
@@ -41,7 +53,8 @@ import {
   DEFAULT_CLIENT_TIMEOUT_MS,
   DEFAULT_REQUEST_TIMEOUT_MS,
   type BridgeSessionInfo,
-  type CommandRequestEnvelope
+  type CommandRequestEnvelope,
+  type LostKeyedRequest
 } from "./session-store.js";
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
@@ -56,6 +69,28 @@ interface ConnectionState {
 
   isAlive: boolean;
 }
+
+type ProtocolMismatchOrigin = {
+  peer: string;
+  handshake: (typeof PROTOCOL_HANDSHAKES)[keyof typeof PROTOCOL_HANDSHAKES];
+};
+
+const CLI_HELLO_ORIGIN: ProtocolMismatchOrigin = {
+  peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
+  handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON
+};
+const MODULE_HELLO_ORIGIN: ProtocolMismatchOrigin = {
+  peer: PROTOCOL_COMPONENTS.MODULE,
+  handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+};
+const CLI_COMMAND_ORIGIN: ProtocolMismatchOrigin = {
+  peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
+  handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
+};
+const CLI_CONTROL_ORIGIN: ProtocolMismatchOrigin = {
+  peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
+  handshake: PROTOCOL_HANDSHAKES.DAEMON_REQUEST
+};
 
 function createBridgeHelloAck({
   ok,
@@ -125,6 +160,23 @@ function daemonEnvelope(
   return { protocolVersion: PROTOCOL_VERSION, type, id, operation, ok, ...(ok ? { result } : { error }) };
 }
 
+function idempotencyConflict(
+  requestId: string,
+  command: string,
+  idempotencyKey: string,
+  remedy: string,
+  clause = "was already used for"
+) {
+  return createErrorResponse({
+    id: requestId,
+    error: createProtocolError({
+      code: ERROR_CODES.IDEMPOTENCY_KEY_CONFLICT,
+      message: `Idempotency key "${idempotencyKey}" ${clause} a different ${command} request (same key, different command or params); use a fresh idempotencyKey for this new request, or ${remedy}`,
+      details: { command, idempotencyKey }
+    })
+  });
+}
+
 export interface BridgeDaemonOptions {
   daemonUrl?: string;
   configStore?: CliConfigStore;
@@ -137,6 +189,7 @@ export interface BridgeDaemonOptions {
   uploadLimitBytes?: number;
 
   idempotencyCacheOptions?: IdempotencyCacheOptions;
+  approvalLinkOptions?: ApprovalLinkOptions;
   logger?: Logger;
 }
 
@@ -195,6 +248,7 @@ export class BridgeDaemon {
   wsMaxPayloadBytes: number;
   sessionStore: BridgeSessionStore;
   idempotencyCache: IdempotencyCache;
+  approvalLinks: ApprovalIdempotencyLinks;
 
   cachedWorldId: string | null;
   server: WebSocketServer | null;
@@ -210,6 +264,7 @@ export class BridgeDaemon {
     heartbeatIntervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS,
     idempotencyTtlMs = DEFAULT_IDEMPOTENCY_TTL_MS,
     idempotencyCacheOptions = {},
+    approvalLinkOptions = {},
     uploadLimitBytes = DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
     logger = pino({ level: process.env.FVTT_WORLD_CLI_LOG_LEVEL ?? "warn" })
   }: BridgeDaemonOptions = {}) {
@@ -242,6 +297,7 @@ export class BridgeDaemon {
       ...idempotencyCacheOptions,
       ttlMs: idempotencyCacheOptions.ttlMs ?? idempotencyTtlMs
     });
+    this.approvalLinks = new ApprovalIdempotencyLinks(approvalLinkOptions);
     this.cachedWorldId = null;
     this.server = null;
     this.connectionStates = new WeakMap();
@@ -308,7 +364,7 @@ export class BridgeDaemon {
           this.leaseExpiresAt = Date.now() + BRIDGE_LEASE_MS;
           this.activePairingId = null;
         }
-        this.sessionStore.removeSocket(socket);
+        this.tombstoneLostKeyedRequests(this.sessionStore.removeSocket(socket));
       });
     });
 
@@ -368,6 +424,7 @@ export class BridgeDaemon {
     }
 
     this.idempotencyCache.clear();
+    this.approvalLinks.clear();
     this.cachedWorldId = null;
 
     this.dropAwaitWaiters(() => true);
@@ -418,9 +475,12 @@ export class BridgeDaemon {
 
     const validationResult = validateTransportMessage(message);
     if (!validationResult.ok) {
-      const protocolError =
+      const rejection = (origin: ProtocolMismatchOrigin) =>
         message.protocolVersion !== undefined && message.protocolVersion !== PROTOCOL_VERSION
-          ? getProtocolVersionError(String(message.protocolVersion))
+          ? getProtocolVersionError(String(message.protocolVersion), {
+              ...origin,
+              reporter: PROTOCOL_COMPONENTS.CLI_DAEMON
+            })
           : createProtocolError({
               code: ERROR_CODES.INVALID_MESSAGE,
               message: "Invalid transport message",
@@ -431,23 +491,23 @@ export class BridgeDaemon {
           protocolVersion: PROTOCOL_VERSION,
           type: MESSAGE_TYPES.CLIENT_HELLO_ACK,
           ok: false,
-          error: protocolError
+          error: rejection(CLI_HELLO_ORIGIN)
         });
       } else if (state.role === "unknown" && message.type === MESSAGE_TYPES.PAIRING_REQUEST) {
         sendJson(socket, {
           protocolVersion: PROTOCOL_VERSION,
           type: MESSAGE_TYPES.PAIRING_RESULT,
           ok: false,
-          error: protocolError
+          error: rejection(MODULE_HELLO_ORIGIN)
         });
       } else if (state.role === "unknown" && message.type === MESSAGE_TYPES.BRIDGE_HELLO) {
-        sendJson(socket, createBridgeHelloAck({ ok: false, error: protocolError }));
+        sendJson(socket, createBridgeHelloAck({ ok: false, error: rejection(MODULE_HELLO_ORIGIN) }));
       } else if (state.role === "cli" && message.type === MESSAGE_TYPES.COMMAND_REQUEST) {
         sendJson(
           socket,
           createErrorResponse({
             id: typeof message.id === "string" ? message.id : `invalid_${randomUUID()}`,
-            error: protocolError
+            error: rejection(CLI_COMMAND_ORIGIN)
           })
         );
         return;
@@ -457,7 +517,14 @@ export class BridgeDaemon {
           typeof message.operation === "string" && message.operation ? message.operation : "unknown";
         sendJson(
           socket,
-          daemonEnvelope(MESSAGE_TYPES.DAEMON_RESPONSE, id, operation, false, undefined, protocolError)
+          daemonEnvelope(
+            MESSAGE_TYPES.DAEMON_RESPONSE,
+            id,
+            operation,
+            false,
+            undefined,
+            rejection(CLI_CONTROL_ORIGIN)
+          )
         );
         return;
       }
@@ -598,7 +665,7 @@ export class BridgeDaemon {
       state.role = "unknown";
       state.pairingId = null;
     }
-    this.sessionStore.removeSocket(socket);
+    this.tombstoneLostKeyedRequests(this.sessionStore.removeSocket(socket));
     socket.close(closeCode, closeReason);
   }
 
@@ -924,9 +991,11 @@ export class BridgeDaemon {
       const idempotencyScope = `${pairing.pairingId}:${pairing.origin}:${newSession.world.id}`;
       if (this.cachedWorldId !== null && this.cachedWorldId !== idempotencyScope) {
         this.idempotencyCache.clear();
+        this.approvalLinks.clear();
       }
       this.cachedWorldId = idempotencyScope;
-      this.sessionStore.registerBridge(socket, newSession);
+      const { lostKeyedRequests } = this.sessionStore.registerBridge(socket, newSession);
+      this.tombstoneLostKeyedRequests(lostKeyedRequests);
       sendJson(
         socket,
         createBridgeHelloAck({
@@ -942,15 +1011,58 @@ export class BridgeDaemon {
       return;
     }
 
-    const { idempotency, worldId: matchedWorldId } = this.sessionStore.resolveResponse(message);
+    const { command, idempotency, worldId: matchedWorldId } = this.sessionStore.resolveResponse(message);
 
-    if (
-      idempotency &&
-      message.ok === true &&
-      (socket === this.sessionStore.activeBridgeSocket ||
-        (matchedWorldId !== null && matchedWorldId === this.cachedWorldId))
-    ) {
+    const inScope =
+      socket === this.sessionStore.activeBridgeSocket ||
+      (matchedWorldId !== null && matchedWorldId === this.cachedWorldId);
+    if (!inScope) {
+      return;
+    }
+
+    if (idempotency && message.ok === true) {
       this.idempotencyCache.storeIfAbsent(idempotency.key, idempotency.fingerprint, message);
+      this.approvalLinks.release(idempotency.key);
+      return;
+    }
+
+    if (idempotency) {
+      const pendingApproval = readPendingApprovalDetails(message);
+      if (pendingApproval) {
+        this.approvalLinks.record({
+          key: idempotency.key,
+          fingerprint: idempotency.fingerprint,
+          pendingResponse: message,
+          ...pendingApproval
+        });
+        return;
+      }
+      this.approvalLinks.release(idempotency.key);
+      return;
+    }
+
+    const settlement = readApprovalSettlement(command, message);
+    const promoted = this.approvalLinks.settle(settlement);
+    if (promoted && settlement.kind === "promote") {
+      this.idempotencyCache.storeIfAbsent(promoted.key, promoted.fingerprint, settlement.response);
+    }
+  }
+
+  tombstoneLostKeyedRequests(lostKeyedRequests: LostKeyedRequest[]) {
+    for (const lost of lostKeyedRequests) {
+      if (lost.worldId !== this.cachedWorldId) {
+        this.approvalLinks.release(lost.key);
+        continue;
+      }
+      if (this.idempotencyCache.lookup(lost.key, lost.fingerprint).status !== "miss") {
+        this.approvalLinks.release(lost.key);
+        continue;
+      }
+      this.approvalLinks.recordLostInFlight({
+        key: lost.key,
+        fingerprint: lost.fingerprint,
+        retainMs: this.idempotencyCache.ttlMs
+      });
     }
   }
 
@@ -993,14 +1105,69 @@ export class BridgeDaemon {
       if (lookup.status === "conflict") {
         sendJson(
           socket,
+          idempotencyConflict(
+            requestId,
+            String(message.command),
+            idempotencyKey,
+            "resend the byte-identical original request to fetch its cached result"
+          )
+        );
+        return;
+      }
+
+      const link = this.approvalLinks.lookup(idempotencyKey, fingerprint);
+
+      if (link.status === "conflict") {
+        sendJson(
+          socket,
+          idempotencyConflict(
+            requestId,
+            String(message.command),
+            idempotencyKey,
+            link.approvalId === null
+              ? "verify world state and use a fresh idempotencyKey"
+              : "resend the byte-identical original request to keep waiting on the approval it already created"
+          )
+        );
+        return;
+      }
+
+      if (link.status === "lost-in-flight") {
+        sendJson(
+          socket,
           createErrorResponse({
             id: requestId,
             error: createProtocolError({
-              code: ERROR_CODES.IDEMPOTENCY_KEY_CONFLICT,
-              message: `Idempotency key "${idempotencyKey}" was already used for a different ${message.command} request (same key, different command or params); use a fresh idempotencyKey for this new request, or resend the byte-identical original request to fetch its cached result`,
+              code: ERROR_CODES.BRIDGE_DISCONNECTED,
+              message: `Idempotency key "${idempotencyKey}" belongs to a ${message.command} request that was already forwarded to Foundry when the bridge session ended, so this daemon never learned whether it ran: it may have changed the world, and it may already be waiting on a GM approval that is still actionable. Read the documents that request would have written before anything else, report what you found, and send the command again only under a fresh idempotencyKey.`,
               details: {
+                reason: "lost-in-flight",
                 command: message.command,
                 idempotencyKey
+              }
+            })
+          })
+        );
+        return;
+      }
+
+      if (link.status === "pending") {
+        sendJson(socket, { ...link.response, id: requestId });
+        return;
+      }
+
+      if (link.status === "indeterminate") {
+        sendJson(
+          socket,
+          createErrorResponse({
+            id: requestId,
+            error: createProtocolError({
+              code: ERROR_CODES.APPROVAL_UNKNOWN,
+              message: `Idempotency key "${idempotencyKey}" belongs to a ${message.command} request whose GM approval ended without a readable outcome, so this daemon cannot say whether it ran: it may never have started, or it may have completed and changed the world. Read the documents that request would have written before anything else, report what you found, and send the command again only under a fresh idempotencyKey.`,
+              details: {
+                command: message.command,
+                idempotencyKey,
+                approvalId: link.approvalId
               }
             })
           })
@@ -1024,20 +1191,52 @@ export class BridgeDaemon {
           } else {
             sendJson(
               socket,
-              createErrorResponse({
-                id: requestId,
-                error: createProtocolError({
-                  code: ERROR_CODES.IDEMPOTENCY_KEY_CONFLICT,
-                  message: `Idempotency key "${idempotencyKey}" is already in flight for a different ${message.command} request (same key, different command or params); use a fresh idempotencyKey for this new request, or resend the byte-identical original request to coalesce onto the in-flight one`,
-                  details: {
-                    command: message.command,
-                    idempotencyKey
-                  }
-                })
-              })
+              idempotencyConflict(
+                requestId,
+                String(message.command),
+                idempotencyKey,
+                "resend the byte-identical original request to coalesce onto the in-flight one",
+                "is already in flight for"
+              )
             );
             return;
           }
+        }
+      }
+
+      if (this.cachedWorldId !== null) {
+        const reserved = this.approvalLinks.reserve({
+          key: idempotencyKey,
+          fingerprint,
+          retainMs: this.requestTimeoutMs + this.idempotencyCache.ttlMs
+        });
+        if (!reserved.ok && reserved.reason === "conflict") {
+          sendJson(
+            socket,
+            idempotencyConflict(
+              requestId,
+              String(message.command),
+              idempotencyKey,
+              "resend the byte-identical original request to reuse the reservation it already holds",
+              "is still reserved for"
+            )
+          );
+          return;
+        }
+
+        if (!reserved.ok) {
+          sendJson(
+            socket,
+            createErrorResponse({
+              id: requestId,
+              error: createProtocolError({
+                code: ERROR_CODES.IDEMPOTENCY_STORE_FULL,
+                message: `This daemon is holding its maximum of ${this.approvalLinks.maxEntries} indeterminate idempotency keys, so it cannot guarantee that a ${message.command} request forwarded under key "${idempotencyKey}" would stay deduplicated if the bridge session ended mid-flight; nothing was forwarded and the world is unchanged. Retry once earlier keys settle or their dedupe window expires.`,
+                details: { command: message.command, idempotencyKey }
+              })
+            })
+          );
+          return;
         }
       }
 
@@ -1056,6 +1255,9 @@ export class BridgeDaemon {
     });
 
     if (!result.ok) {
+      if (idempotency) {
+        this.approvalLinks.release(idempotency.key);
+      }
       sendJson(
         socket,
         createErrorResponse({

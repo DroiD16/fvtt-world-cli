@@ -12,7 +12,10 @@ export const MODULE_SETTING_KEYS = Object.freeze({
   DAEMON_URL: "daemonUrl",
   CREDENTIALS: "credentials",
   CLIENT_ID: "clientId",
-  AUTO_CONNECT: "autoConnect"
+  AUTO_CONNECT: "autoConnect",
+  COMMAND_POLICY: "commandPolicy",
+  APPROVAL_TIMEOUT_MINUTES: "approvalTimeoutMinutes",
+  APPROVAL_SOUND: "approvalSound"
 });
 
 export function getGame() {

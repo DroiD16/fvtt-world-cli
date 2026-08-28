@@ -21,6 +21,7 @@ import {
   decodeTransportFrame,
   isCommandResponseEnvelope,
   normalizeIncomingData,
+  protocolVersionSkewError,
   type CommandResponseEnvelope
 } from "../transport-util.js";
 
@@ -61,6 +62,7 @@ export interface SendCommandOptions {
   timeoutMs?: number;
 
   maxPayloadBytes?: number;
+  signal?: AbortSignal;
 }
 
 function buildValidatedRequest(
@@ -115,7 +117,8 @@ export async function sendCommand({
   command,
   params = {},
   timeoutMs = DEFAULT_CLIENT_TIMEOUT_MS,
-  maxPayloadBytes = DEFAULT_WS_MAX_PAYLOAD_BYTES
+  maxPayloadBytes = DEFAULT_WS_MAX_PAYLOAD_BYTES,
+  signal
 }: SendCommandOptions) {
   warnIfClientTimeoutUnsafe(timeoutMs);
 
@@ -150,11 +153,35 @@ export async function sendCommand({
 
     function cleanup() {
       clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
       socket.removeAllListeners();
       if (socket.readyState === socket.OPEN || socket.readyState === socket.CONNECTING) {
         socket.close();
       }
     }
+
+    function onAbort() {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      socket.terminate();
+      reject(
+        new DaemonTransportError(
+          ERROR_CODES.DAEMON_UNAVAILABLE,
+          `Stopped waiting for the daemon response to ${command}`,
+          { reason: "closed", command }
+        )
+      );
+    }
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort);
 
     socket.once("open", () => {
       opened = true;
@@ -259,6 +286,7 @@ export interface PersistentDaemonClient {
     command: string;
     params?: Record<string, unknown>;
     timeoutMs?: number;
+    signal?: AbortSignal;
   }): Promise<CommandResponseEnvelope>;
   requestControl(options: {
     operation: string;
@@ -323,6 +351,13 @@ export async function connectDaemonClient({
     });
     socket.once("message", (data) => {
       const parsed = parseBridgeMessage(normalizeIncomingData(data));
+      const skew = parsed.ok ? protocolVersionSkewError(parsed.value) : null;
+      if (skew) {
+        clearTimeout(timer);
+        reject(skew);
+        socket.close();
+        return;
+      }
       const validation = parsed.ok ? validateTransportMessage(parsed.value) : { ok: false };
       const message =
         parsed.ok && validation.ok
@@ -421,7 +456,7 @@ export async function connectDaemonClient({
   });
 
   return {
-    async send({ command, params = {}, timeoutMs = DEFAULT_CLIENT_TIMEOUT_MS }) {
+    async send({ command, params = {}, timeoutMs = DEFAULT_CLIENT_TIMEOUT_MS, signal }) {
       warnIfClientTimeoutUnsafe(timeoutMs);
 
       if (closedError) {
@@ -435,8 +470,22 @@ export async function connectDaemonClient({
       const request = built.request;
 
       return await new Promise<CommandResponseEnvelope>((resolve, reject) => {
+        function onAbort() {
+          clearTimeout(timer);
+          pending.delete(request.id);
+          signal?.removeEventListener("abort", onAbort);
+          reject(
+            new DaemonTransportError(
+              ERROR_CODES.DAEMON_UNAVAILABLE,
+              `Stopped waiting for the daemon response to ${command}`,
+              { reason: "closed", command }
+            )
+          );
+        }
+
         const timer = setTimeout(() => {
           pending.delete(request.id);
+          signal?.removeEventListener("abort", onAbort);
           reject(
             new DaemonTransportError(
               ERROR_CODES.DAEMON_UNAVAILABLE,
@@ -446,7 +495,23 @@ export async function connectDaemonClient({
           );
         }, timeoutMs);
 
-        pending.set(request.id, { resolve, reject, timer });
+        if (signal?.aborted) {
+          onAbort();
+          return;
+        }
+        signal?.addEventListener("abort", onAbort);
+
+        pending.set(request.id, {
+          resolve: (envelope) => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve(envelope);
+          },
+          reject: (error) => {
+            signal?.removeEventListener("abort", onAbort);
+            reject(error);
+          },
+          timer
+        });
         socket.send(JSON.stringify(request));
       });
     },

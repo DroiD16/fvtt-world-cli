@@ -162,8 +162,10 @@ on the CLI:
 | Tokens embedded in a scene | `scene.token.*` | `fvtt-world-cli scene token …` |
 | Effects on a placed token | `scene.token.effect.*` | `fvtt-world-cli scene token effect …` |
 
-Use `fvtt-world-cli commands --json` for the complete current inventory. The exact operation set
+Use `fvtt-world-cli commands --json` for the current inventory. The exact operation set
 varies by family, so a nearby document family is not a reliable guide to what another one supports.
+With a bridge connected, that inventory is also filtered by the GM client's command permissions, as
+[Discovery under a policy](#discovery-under-a-policy) describes.
 
 ## Capability map
 
@@ -227,6 +229,82 @@ Document references are updated separately with an explicit document command.
 See [Security](security.md#file-write-boundary) before automating file writes.
 
 ## Shared command behavior
+
+### Command permissions and approval
+
+Every command has one of three behaviors in the GM client that holds the bridge: allow, approve, or
+deny. A GM edits them under Configure Settings → Module Settings → World CLI → Command permissions.
+The settings belong to the browser profile, so another browser or machine can apply a different
+policy.
+
+An approved command waits for the GM instead of failing. Foundry opens the Command Approval window.
+It shows the command, its targets, and its parameters. The CLI writes one status line to stderr:
+
+```
+Waiting for GM approval in Foundry (command actor.delete, expires 2026-08-28T18:20:00.000Z). Press Ctrl+C to request cancellation.
+```
+
+The line uses stderr in both output modes, so `--json` stdout still carries one envelope. Allow runs
+the command at the time of the decision. The module repeats the normal guards first because world
+state and permissions may have changed while the request waited. The CLI then returns the command's
+success or error.
+
+The wait tolerates short daemon outages, bridge reconnects, and poll timeouts while the approval
+remains open. Other outcomes use structured errors:
+
+| Code | Meaning | State |
+|---|---|---|
+| `COMMAND_DENIED` | The permission is deny, whether at the request or by the time an approved command runs | Not executed |
+| `APPROVAL_DENIED` | The GM chose Deny | Not executed |
+| `APPROVAL_TIMEOUT` | No decision was taken before the approval expired | Not executed |
+| `APPROVAL_CANCELLED` | A cancellation the GM client confirmed won the decision | Not executed |
+| `APPROVAL_QUEUE_FULL` | The module refused admission before showing the request | Not executed |
+| `APPROVAL_UNKNOWN` | The module no longer holds the decision | Indeterminate |
+
+`APPROVAL_UNKNOWN` means the client can no longer prove whether the command ran. Read the affected
+world state before trying again. `APPROVAL_QUEUE_FULL` means the module refused the request before
+execution. Retry after the GM clears earlier requests.
+
+Ctrl+C asks the GM client to cancel a waiting decision. Only `APPROVAL_CANCELLED` proves that the
+command will not run. If the command has started or the client cannot confirm cancellation, the CLI
+reports an indeterminate result.
+
+The default policy asks for approval on commands ending in `delete` or `delete-many`, plus
+`file.move` and `scene.fog.reset`. It allows the remaining commands unless they are exempt from the
+policy. Use the Command permissions window or `fvtt-world-cli commands --json` for the current
+inventory.
+
+`system.ping`, `system.info`, and the internal approval-wait commands always run. This keeps the
+bridge able to report its state and finish an existing decision. The permissions window omits those
+commands. Pairing and other `auth` operations run in the daemon, outside the command policy.
+
+Foundry plays its standard interface notification when a request enters an empty queue. The `Play a
+sound on approval requests` setting controls it. Browsers may delay the first sound until the GM
+interacts with the page after a reload.
+
+Set the approval deadline with `Approval timeout (minutes)` in the main Module Settings form. The
+form and protocol enforce the supported range. Expiry refuses the command without running it.
+
+Approval state lives in the GM client's memory. Reloading that client or ending its bridge session
+can produce `BRIDGE_DISCONNECTED` or `APPROVAL_UNKNOWN`. Both are indeterminate. Read the affected
+world state before another write, then use a fresh idempotency key if the command still needs to run.
+The complete state and retry contract is in [Protocol](protocol.md#approval-flow).
+
+### Discovery under a policy
+
+With the bridge reachable, `commands` and `commands --json` describe what that GM client will
+actually run. The listing omits denied commands. JSON marks approval waits with `"approval": true`;
+plain output uses an `approval` tag. The JSON envelope also contains
+`policy: { "applied": true, "source": "bridge" }`.
+
+When no bridge answers, the listing falls back to the full static registry and says so:
+`policy: { "applied": false, "source": "static", "reason": … }` in JSON, and a warning on stderr in
+plain output. Only an unavailable daemon or bridge triggers fallback. Authentication, validation,
+and protocol failures return errors.
+
+`schema`, `--help`, and this documentation describe the whole static registry. If a caller sends a
+denied command found there, the GM client returns `COMMAND_DENIED`. Discovery hides; the client
+enforces.
 
 ### JSON output
 
@@ -306,6 +384,10 @@ fvtt-world-cli --dry-run actor update --actor-id <id> --name "New name" --json
 The result uses the normal command shape and includes `dryRun: true`. The preview contract — what a
 dry run executes, what it can report, and its non-reservation of state — is defined in
 [Protocol](protocol.md#dry-run).
+
+Approval does not hold a preview. A command whose permission is approve previews without asking the
+GM, and its result carries `approvalRequired: true` so the caller knows the commit will wait. The GM
+client returns `COMMAND_DENIED` for a denied preview.
 
 ### Idempotency and retries
 

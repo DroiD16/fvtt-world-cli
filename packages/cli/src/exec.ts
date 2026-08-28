@@ -4,50 +4,21 @@ import { ERROR_CODES, isWriteCommand } from "@fvtt-world-cli/protocol";
 import { Command, CommanderError } from "commander";
 
 import type { CommandResponseEnvelope } from "./transport-util.js";
-import { connectDaemonClient } from "./client/send-command.js";
+import { awaitApprovalOutcome } from "./approval-wait.js";
+import { connectDaemonClient, type PersistentDaemonClient } from "./client/send-command.js";
 import { clientMaxPayloadOption, getCommandConfig } from "./config-io.js";
 import { type CliDependencies, write } from "./deps.js";
 import {
   ExecConnectError,
   exitCodeForErrorCode,
   localErrorEnvelope,
+  renderProtocolError,
   toTransportErrorEnvelope
 } from "./errors.js";
 import { humanizeCommandResult } from "./render/registry.js";
 
-const TRANSPORT_DETAIL_REASONS = new Set([
-  "timeout",
-  "disconnected",
-  "invalid_json",
-  "unexpected_type",
-  "closed",
-  "connect_error"
-]);
-
-function normalizeTransportMessage(message: string): string {
-  if (/ECONNREFUSED/.test(message)) {
-    return "Could not connect to the daemon (connection refused). Is `fvtt-world-cli bridge serve` running?";
-  }
-  if (/ETIMEDOUT/.test(message)) {
-    return "Could not connect to the daemon (connection timed out).";
-  }
-  if (/ENOTFOUND|EAI_AGAIN/.test(message)) {
-    return "Could not resolve the daemon host.";
-  }
-  if (/ECONNRESET/.test(message)) {
-    return "The daemon connection was reset.";
-  }
-  return message;
-}
-
-function renderProtocolError(error: any) {
-  const code = error?.code ?? "UNKNOWN_ERROR";
-  const message = normalizeTransportMessage(String(error?.message ?? "Unknown error"));
-  const reason = error?.details?.reason;
-  const showDetails =
-    Boolean(error?.details) && !(typeof reason === "string" && TRANSPORT_DETAIL_REASONS.has(reason));
-  const details = showDetails ? `\n${JSON.stringify(error.details, null, 2)}` : "";
-  return `${code}: ${message}${details}`;
+function isApprovalPending(response: CommandResponseEnvelope) {
+  return !response.ok && response.error?.code === ERROR_CODES.APPROVAL_PENDING;
 }
 
 export async function executeRemoteCommand({
@@ -87,6 +58,24 @@ export async function executeRemoteCommand({
     response = toTransportErrorEnvelope(error);
   }
 
+  if (isApprovalPending(response)) {
+    response = await awaitApprovalOutcome({
+      pendingResponse: response,
+      send: ({ command: awaitCommand, params: awaitParams, timeoutMs: awaitTimeoutMs, signal }) =>
+        dependencies.sendCommand({
+          daemonUrl: clientConfig.daemonUrl,
+          deviceCredential: clientConfig.deviceCredential,
+          command: awaitCommand,
+          params: awaitParams,
+          ...clientMaxPayloadOption(dependencies),
+          timeoutMs: awaitTimeoutMs,
+          ...(signal ? { signal } : {})
+        }),
+      stderr: dependencies.stderr,
+      ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
+    });
+  }
+
   if (outputJson) {
     write(dependencies.stdout, `${JSON.stringify(response, null, 2)}\n`);
   } else if (response.ok) {
@@ -111,18 +100,24 @@ export async function executeRemoteCommand({
   }
 }
 
+interface ExecBatchSession {
+  send: (o: {
+    command: string;
+    params?: Record<string, unknown>;
+    timeoutMs?: number;
+  }) => Promise<CommandResponseEnvelope>;
+  reconnect: () => Promise<void>;
+  stderr: CliDependencies["stderr"];
+  timeoutMs?: number;
+  onCancelRequested: () => void;
+}
+
 async function processExecLine(
-  client: {
-    send: (o: {
-      command: string;
-      params?: Record<string, unknown>;
-      timeoutMs?: number;
-    }) => Promise<CommandResponseEnvelope>;
-  },
+  session: ExecBatchSession,
   rawLine: string,
-  timeoutMs: number | undefined,
   dryRun: boolean
 ): Promise<{ id?: string; envelope: CommandResponseEnvelope }> {
+  const timeoutMs = session.timeoutMs;
   let parsedLine: unknown;
   try {
     parsedLine = JSON.parse(rawLine);
@@ -175,16 +170,32 @@ async function processExecLine(
       ? { ...(params as Record<string, unknown>), dryRun: true }
       : (params as Record<string, unknown>);
 
+  let envelope: CommandResponseEnvelope;
   try {
-    const envelope = await client.send({
+    envelope = await session.send({
       command: obj.command,
       params: requestParams,
       ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
     });
-    return { id: callerId, envelope };
   } catch (error) {
     return { id: callerId, envelope: toTransportErrorEnvelope(error) };
   }
+
+  if (!isApprovalPending(envelope)) {
+    return { id: callerId, envelope };
+  }
+
+  return {
+    id: callerId,
+    envelope: await awaitApprovalOutcome({
+      pendingResponse: envelope,
+      send: (request) => session.send(request),
+      reconnect: session.reconnect,
+      onCancelRequested: session.onCancelRequested,
+      stderr: session.stderr,
+      ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
+    })
+  };
 }
 
 export async function runExecBatch({
@@ -210,17 +221,36 @@ export async function runExecBatch({
   const dryRun = Boolean(globalOptions.dryRun);
   const stopOnError = Boolean((command.opts() as { stopOnError?: boolean }).stopOnError);
 
-  let client: Awaited<ReturnType<typeof connectDaemonClient>>;
+  const connectOptions = {
+    daemonUrl: clientConfig.daemonUrl,
+    deviceCredential: clientConfig.deviceCredential,
+    ...clientMaxPayloadOption(dependencies),
+    ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
+  };
+
+  let client: PersistentDaemonClient;
   try {
-    client = await connectDaemonClient({
-      daemonUrl: clientConfig.daemonUrl,
-      deviceCredential: clientConfig.deviceCredential,
-      ...clientMaxPayloadOption(dependencies),
-      ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
-    });
+    client = await connectDaemonClient(connectOptions);
   } catch (error) {
     throw new ExecConnectError(toTransportErrorEnvelope(error));
   }
+
+  let cancelRequested = false;
+  const session: ExecBatchSession = {
+    send: (request) => client.send(request),
+    reconnect: async () => {
+      const replaced = client;
+      client = await connectDaemonClient(connectOptions);
+      // Closing a socket that never answers takes as long as the client timeout, and the next poll
+      // must not wait for the connection it already replaced.
+      void replaced.close().catch(() => {});
+    },
+    stderr: dependencies.stderr,
+    ...(typeof timeoutMs === "number" ? { timeoutMs } : {}),
+    onCancelRequested: () => {
+      cancelRequested = true;
+    }
+  };
 
   const rl = createInterface({ input: stdin, crlfDelay: Infinity });
   let anyFailed = false;
@@ -235,7 +265,7 @@ export async function runExecBatch({
         continue;
       }
 
-      const { id, envelope } = await processExecLine(client, rawLine, timeoutMs, dryRun);
+      const { id, envelope } = await processExecLine(session, rawLine, dryRun);
 
       const outputLine = { ...envelope, index: currentIndex, ...(id !== undefined ? { id } : {}) };
       write(dependencies.stdout, `${JSON.stringify(outputLine)}\n`);
@@ -245,6 +275,11 @@ export async function runExecBatch({
         if (stopOnError) {
           break;
         }
+      }
+
+      if (cancelRequested) {
+        anyFailed = true;
+        break;
       }
     }
   } finally {

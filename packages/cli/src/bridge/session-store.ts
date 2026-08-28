@@ -1,6 +1,8 @@
 import {
   BRIDGE_TAKEOVER_CLOSE_CODE,
   BRIDGE_TAKEOVER_CLOSE_REASON,
+  COMMAND_NAMES,
+  DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   createErrorResponse,
   createProtocolError
@@ -45,6 +47,7 @@ interface Waiter {
 }
 
 interface PendingRequest {
+  command: string;
   waiters: Waiter[];
   timeout: NodeJS.Timeout;
   bridgeSocket: WebSocket;
@@ -54,8 +57,25 @@ interface PendingRequest {
   worldId?: string;
 }
 
+export interface LostKeyedRequest {
+  worldId: string;
+  key: string;
+  fingerprint: string;
+}
+
 function inFlightIndexKey(worldId: string, idempotencyKey: string) {
   return JSON.stringify([worldId, idempotencyKey]);
+}
+
+const UNDISCOVERABLE_COMMANDS = new Set(
+  COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name))
+);
+
+function withoutUndiscoverableCommands(session: BridgeSessionInfo): BridgeSessionInfo {
+  return {
+    ...session,
+    commands: session.commands.filter((name) => !UNDISCOVERABLE_COMMANDS.has(name))
+  };
 }
 
 export class BridgeSessionStore {
@@ -76,9 +96,7 @@ export class BridgeSessionStore {
     const staleSocket =
       this.activeBridgeSocket && this.activeBridgeSocket !== socket ? this.activeBridgeSocket : null;
 
-    if (staleSocket) {
-      this.failPendingForBridge(staleSocket, "taken-over");
-    }
+    const lostKeyedRequests = staleSocket ? this.failPendingForBridge(staleSocket, "taken-over") : [];
 
     this.activeBridgeSocket = socket;
     this.activeSession = session;
@@ -87,13 +105,13 @@ export class BridgeSessionStore {
       staleSocket.close(BRIDGE_TAKEOVER_CLOSE_CODE, BRIDGE_TAKEOVER_CLOSE_REASON);
     }
 
-    return { ok: true };
+    return { ok: true, lostKeyedRequests };
   }
 
   getBridgeStatus() {
     return {
       connected: Boolean(this.activeBridgeSocket && this.activeSession),
-      session: this.activeSession
+      session: this.activeSession ? withoutUndiscoverableCommands(this.activeSession) : null
     };
   }
 
@@ -195,7 +213,7 @@ export class BridgeSessionStore {
         id: request.id,
         error: createProtocolError({
           code: ERROR_CODES.BRIDGE_TIMEOUT,
-          message: `Timed out waiting for Foundry bridge response to ${request.command} after ${requestTimeoutMs}ms; the request was forwarded so it MAY have committed — verify world state before retrying (a same idempotencyKey retry can fetch the cached late success once it lands)`,
+          message: `Timed out waiting for Foundry bridge response to ${request.command} after ${requestTimeoutMs}ms; the request was forwarded so it MAY have committed — verify world state before retrying (a same idempotencyKey retry can fetch the cached late success once it lands, unless the bridge session carrying it ends first, after which that key is refused)`,
           details: {
             reason: "timeout",
             command: request.command,
@@ -238,6 +256,7 @@ export class BridgeSessionStore {
     }, requestTimeoutMs);
 
     this.pendingRequests.set(request.id, {
+      command: request.command,
       waiters: [{ clientSocket, requestId: request.id }],
       timeout,
       bridgeSocket: this.activeBridgeSocket,
@@ -256,13 +275,14 @@ export class BridgeSessionStore {
 
   resolveResponse(response: CommandResponseEnvelope): {
     matched: boolean;
+    command: string | null;
     idempotency: IdempotencyMetadata | null;
 
     worldId: string | null;
   } {
     const pendingRequest = this.pendingRequests.get(response.id);
     if (!pendingRequest) {
-      return { matched: false, idempotency: null, worldId: null };
+      return { matched: false, command: null, idempotency: null, worldId: null };
     }
 
     clearTimeout(pendingRequest.timeout);
@@ -273,18 +293,19 @@ export class BridgeSessionStore {
     }
     return {
       matched: true,
+      command: pendingRequest.command,
       idempotency: pendingRequest.idempotency ?? null,
       worldId: pendingRequest.worldId ?? null
     };
   }
 
-  removeSocket(socket: WebSocket) {
+  removeSocket(socket: WebSocket): LostKeyedRequest[] {
     if (this.activeBridgeSocket === socket) {
-      this.failPendingForBridge(socket, "disconnected");
+      const lostKeyedRequests = this.failPendingForBridge(socket, "disconnected");
       this.activeBridgeSocket = null;
       this.activeSession = null;
       this.inFlightByKey.clear();
-      return;
+      return lostKeyedRequests;
     }
 
     for (const [requestId, pendingRequest] of this.pendingRequests.entries()) {
@@ -301,23 +322,39 @@ export class BridgeSessionStore {
       clearTimeout(pendingRequest.timeout);
       this.forgetPending(requestId);
     }
+
+    return [];
   }
 
-  failPendingForBridge(socket: WebSocket, reason: "disconnected" | "taken-over") {
+  failPendingForBridge(socket: WebSocket, reason: "disconnected" | "taken-over"): LostKeyedRequest[] {
+    const lostKeyedRequests: LostKeyedRequest[] = [];
+
     for (const [requestId, pendingRequest] of this.pendingRequests.entries()) {
       if (pendingRequest.bridgeSocket !== socket) {
         continue;
       }
       clearTimeout(pendingRequest.timeout);
       this.forgetPending(requestId);
+      const keyed = pendingRequest.idempotency !== undefined && pendingRequest.worldId !== undefined;
+      if (pendingRequest.idempotency && pendingRequest.worldId !== undefined) {
+        lostKeyedRequests.push({
+          worldId: pendingRequest.worldId,
+          key: pendingRequest.idempotency.key,
+          fingerprint: pendingRequest.idempotency.fingerprint
+        });
+      }
+      const cause =
+        reason === "taken-over"
+          ? "Authenticated Foundry bridge session was replaced by a newer socket from the same pairing while the request was pending"
+          : "Authenticated Foundry bridge session disconnected while the request was pending";
+      const retryAdvice = keyed
+        ? "verify world state before retrying, then send the command again under a FRESH idempotencyKey (reusing the same key is refused for the dedupe window on this daemon)"
+        : "verify world state before retrying";
       const disconnectError = createErrorResponse({
         id: requestId,
         error: createProtocolError({
           code: ERROR_CODES.BRIDGE_DISCONNECTED,
-          message:
-            reason === "taken-over"
-              ? "Authenticated Foundry bridge session was replaced by a newer socket from the same pairing while the request was pending; it was already forwarded so it MAY have committed — verify world state before retrying"
-              : "Authenticated Foundry bridge session disconnected while the request was pending; it was already forwarded so it MAY have committed — verify world state before retrying (this is NOT idempotency-key safe: the disconnect path caches nothing, so a keyed retry re-forwards)",
+          message: `${cause}; it was already forwarded so it MAY have committed — ${retryAdvice}`,
           details: { reason }
         })
       });
@@ -325,6 +362,8 @@ export class BridgeSessionStore {
         sendJson(waiter.clientSocket, { ...disconnectError, id: waiter.requestId });
       }
     }
+
+    return lostKeyedRequests;
   }
 
   clearAllPending() {

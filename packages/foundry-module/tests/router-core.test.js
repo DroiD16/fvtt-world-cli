@@ -3,9 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCommandRouter } from "../scripts/command-router.js";
 
 import {
+  COMMAND_NAMES,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
-  ERROR_CODES
+  DISCOVERABLE_COMMAND_NAMES,
+  ERROR_CODES,
+  PROTOCOL_VERSION
 } from "../scripts/generated/protocol.js";
 
 import {
@@ -43,11 +46,49 @@ describe("command router", () => {
     expect(response.result.commands).toContain("journal.update");
     expect(response.result.commands).toContain("actor.item.update");
 
+    expect(response.result.commands).toEqual([...DISCOVERABLE_COMMAND_NAMES]);
+    for (const hidden of COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name))) {
+      expect(response.result.commands, `${hidden} must not be discoverable`).not.toContain(hidden);
+    }
+
     expect(response.result.limits).toEqual({
       uploadBytes: DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
       wsMaxPayloadBytes: DEFAULT_WS_MAX_PAYLOAD_BYTES,
       uploadSource: "default"
     });
+  });
+
+  it("rejects a request from a daemon on another release and names the older component", async () => {
+    const router = createCommandRouter({
+      bridgeClient: {
+        getStatus: () => ({ status: "connected" })
+      }
+    });
+
+    const response = await router.route({ ...createRequest("system.info"), protocolVersion: "3.0" });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION);
+    expect(response.error.details).toEqual({
+      expectedVersion: PROTOCOL_VERSION,
+      actualVersion: "3.0",
+      staleComponent: "cli-daemon",
+      handshake: "command-request"
+    });
+  });
+
+  it("accepts a request envelope whose object was not built as a bare literal", async () => {
+    const router = createCommandRouter({
+      bridgeClient: {
+        getStatus: () => ({ status: "connected" })
+      }
+    });
+
+    class Envelope {}
+    const response = await router.route(Object.assign(new Envelope(), createRequest("system.ping")));
+
+    expect(response.ok).toBe(true);
+    expect(response.result.pong).toBe(true);
   });
 
   it("returns a deterministic permission error without stopping transport in the router", async () => {
@@ -2337,6 +2378,100 @@ describe("command router", () => {
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe("FILE_NOT_FOUND");
       expect(response.error.details.message).toMatch(/404/);
+    });
+  });
+
+  describe("guard ordering", () => {
+    it("reports Foundry as not ready before validating params", async () => {
+      globalThis.game.ready = false;
+      const router = createCommandRouter({
+        bridgeClient: { getStatus: () => ({ status: "connected" }) }
+      });
+
+      const response = await router.route(createRequest("actor.get", {}));
+
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe(ERROR_CODES.BRIDGE_NOT_READY);
+    });
+
+    it("refuses a non-GM session before validating params", async () => {
+      globalThis.game.user.isGM = false;
+      const router = createCommandRouter({
+        bridgeClient: { getStatus: () => ({ status: "connected" }) }
+      });
+
+      const response = await router.route(createRequest("actor.get", {}));
+
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe(ERROR_CODES.PERMISSION_DENIED);
+      expect(response.error.details).toEqual({ command: "actor.get" });
+      expect(response.error.message).toMatch(/current GM session/);
+    });
+
+    it("refuses a non-GM session for a read command that needs no write permission", async () => {
+      globalThis.game.user.isGM = false;
+      const router = createCommandRouter({
+        bridgeClient: { getStatus: () => ({ status: "connected" }) }
+      });
+
+      const response = await router.route(createRequest("system.ping"));
+
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe(ERROR_CODES.PERMISSION_DENIED);
+      expect(response.error.details).toEqual({ command: "system.ping" });
+      expect(response.error.message).toMatch(/current GM session/);
+    });
+
+    it("runs the guarded path on a direct invocation that skips envelope validation", async () => {
+      const router = createCommandRouter({
+        bridgeClient: { getStatus: () => ({ status: "connected" }) }
+      });
+
+      const response = await router.executeGuardedCommand({
+        command: "system.ping",
+        params: {},
+        messageId: "direct-1"
+      });
+
+      expect(response).toMatchObject({ ok: true, id: "direct-1" });
+      expect(response.result.pong).toBe(true);
+    });
+
+    describe("a known command whose handler is absent", () => {
+      afterEach(() => {
+        vi.doUnmock("../scripts/handlers/system.js");
+        vi.resetModules();
+      });
+
+      async function createRouterWithoutSystemHandlers() {
+        vi.resetModules();
+        vi.doMock("../scripts/handlers/system.js", () => ({ createSystemHandlers: () => ({}) }));
+        const module = await import("../scripts/command-router.js");
+        return module.createCommandRouter({
+          bridgeClient: { getStatus: () => ({ status: "connected" }) }
+        });
+      }
+
+      it("answers with the unsupported-command error", async () => {
+        const router = await createRouterWithoutSystemHandlers();
+
+        const response = await router.route(createRequest("system.ping"));
+
+        expect(response.ok).toBe(false);
+        expect(response.id).toBe("req_system.ping");
+        expect(response.error.code).toBe(ERROR_CODES.UNKNOWN_COMMAND);
+        expect(response.error.details).toEqual({ command: "system.ping" });
+      });
+
+      it("validates params before looking up the handler", async () => {
+        const router = await createRouterWithoutSystemHandlers();
+
+        const response = await router.route(createRequest("system.ping", { unexpected: true }));
+
+        expect(response.ok).toBe(false);
+        expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+        expect(response.error.details.command).toBe("system.ping");
+      });
     });
   });
 });

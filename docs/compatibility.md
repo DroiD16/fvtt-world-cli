@@ -7,7 +7,7 @@ result honestly.
 ## Operator contract
 
 - `fvtt-world-cli system info --json` reports the connected Foundry, system, module, limits, and
-  advertised command set.
+  discoverable command inventory.
 - `UNSUPPORTED_OPERATION` is a capability result, not a transient transport failure.
 - A dry run validates a proposed mutation, but values that require execution are not a forecast.
 

@@ -3,12 +3,15 @@ import { createServer } from "node:net";
 import { Readable } from "node:stream";
 
 import {
+  APPROVAL_RESULT_RETENTION_MS,
   AUTH_AWAIT_PARK_CAP_MS,
   AUTH_PRUNE_DEFAULT_DAYS,
   BRIDGE_LEASE_MS,
   BRIDGE_RELEASE_CLOSE_CODE,
+  COMMAND_NAMES,
   DAEMON_OPERATIONS,
   DAEMON_OPERATION_DEFINITIONS,
+  DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   MESSAGE_TYPES,
   PROTOCOL_VERSION,
@@ -330,6 +333,105 @@ async function startItemDaemon(options: Record<string, unknown> = {}) {
   return { daemon, bridge: bridge.socket, cli };
 }
 
+const TEST_APPROVAL_ID = "DDDDDDDDDDDDDDDDDDDDDD";
+const APPROVAL_BRIDGE_COMMANDS = ["item.create", "approval.await", "approval.cancel"];
+
+function approvalPendingResponse(id: string, expiresAt = Date.now() + 600_000) {
+  return JSON.stringify({
+    protocolVersion: PROTOCOL_VERSION,
+    type: MESSAGE_TYPES.COMMAND_RESPONSE,
+    id,
+    ok: false,
+    error: {
+      code: ERROR_CODES.APPROVAL_PENDING,
+      message: "Command item.create needs an approval from the GM of this bridge.",
+      details: { approvalId: TEST_APPROVAL_ID, expiresAt, command: "item.create" }
+    }
+  });
+}
+
+function approvalAwaitRequest(id: string) {
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    type: MESSAGE_TYPES.COMMAND_REQUEST,
+    id,
+    command: "approval.await",
+    params: { approvalId: TEST_APPROVAL_ID }
+  };
+}
+
+function deliveredResponse(result: Record<string, unknown>, id = TEST_APPROVAL_ID) {
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    type: MESSAGE_TYPES.COMMAND_RESPONSE,
+    id,
+    ok: true,
+    result
+  };
+}
+
+async function startApprovalDaemon(
+  options: Record<string, unknown> = {},
+  extraPairings: Array<Parameters<typeof addPairing>[1]> = []
+) {
+  const credential = "b".repeat(43);
+  const config = createEmptyConfig();
+  addPairing(config, { pairingId: "pair-1", credential });
+  for (const pairing of extraPairings) addPairing(config, pairing);
+  const daemon = createBridgeDaemon({
+    daemonUrl: `ws://127.0.0.1:${await freePort()}`,
+    config,
+    logger: pino({ level: "silent" }),
+    ...options
+  });
+  daemons.push(daemon);
+  await daemon.start();
+  const bridge = await connectBridge(daemon, {
+    pairingId: "pair-1",
+    credential,
+    commands: APPROVAL_BRIDGE_COMMANDS
+  });
+  const cli = await connectCli(daemon, config.deviceCredential);
+  return { daemon, bridge: bridge.socket, cli, config, credential };
+}
+
+async function sendPendingApproval(
+  bridge: WebSocket,
+  cli: WebSocket,
+  requestId: string,
+  idempotencyKey: string,
+  expiresAt?: number
+) {
+  const forwarded = next(bridge);
+  cli.send(JSON.stringify(itemCreateRequest(requestId, idempotencyKey)));
+  await forwarded;
+  const answer = next(cli);
+  bridge.send(approvalPendingResponse(requestId, expiresAt));
+  return await answer;
+}
+
+async function settleApproval(
+  bridge: WebSocket,
+  cli: WebSocket,
+  pollId: string,
+  result: Record<string, unknown>
+) {
+  const forwarded = next(bridge);
+  const answer = next(cli);
+  cli.send(JSON.stringify(approvalAwaitRequest(pollId)));
+  await forwarded;
+  bridge.send(
+    JSON.stringify({
+      protocolVersion: PROTOCOL_VERSION,
+      type: MESSAGE_TYPES.COMMAND_RESPONSE,
+      id: pollId,
+      ok: true,
+      result
+    })
+  );
+  return await answer;
+}
+
 function daysAgo(days: number) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
@@ -402,6 +504,138 @@ describe("authorization daemon", () => {
     sockets.push(socket);
     socket.send(JSON.stringify(createClientHello({ credential: config.deviceCredential })));
     expect(await next(socket)).toMatchObject({ type: MESSAGE_TYPES.CLIENT_HELLO_ACK, ok: true });
+  });
+
+  it("names the older component when a hello arrives from another release", async () => {
+    const daemon = await startPairingDaemon();
+
+    const client = await open(daemon.daemonUrl);
+    sockets.push(client);
+    const clientAck = next(client);
+    client.send(
+      JSON.stringify({ ...createClientHello({ credential: "c".repeat(43) }), protocolVersion: "3.0" })
+    );
+    expect(await clientAck).toMatchObject({
+      type: MESSAGE_TYPES.CLIENT_HELLO_ACK,
+      ok: false,
+      error: {
+        code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+        details: {
+          expectedVersion: PROTOCOL_VERSION,
+          actualVersion: "3.0",
+          staleComponent: "cli-daemon",
+          handshake: "cli-daemon"
+        }
+      }
+    });
+
+    const browser = await open(daemon.daemonUrl, "http://localhost:30000");
+    sockets.push(browser);
+    const bridgeAck = next(browser);
+    browser.send(
+      JSON.stringify({
+        ...createBridgeHello({
+          pairingId: "pair-1",
+          credential: "d".repeat(43),
+          clientId: DEFAULT_CLIENT_ID,
+          session: session()
+        }),
+        protocolVersion: "3.0"
+      })
+    );
+    expect(await bridgeAck).toMatchObject({
+      type: MESSAGE_TYPES.BRIDGE_HELLO_ACK,
+      ok: false,
+      error: {
+        code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+        details: {
+          expectedVersion: PROTOCOL_VERSION,
+          actualVersion: "3.0",
+          staleComponent: "module",
+          handshake: "module-daemon"
+        }
+      }
+    });
+  });
+
+  it("names the module as the older component when a pairing request arrives from another release", async () => {
+    const daemon = await startPairingDaemon();
+
+    const browser = await open(daemon.daemonUrl, "http://localhost:30000");
+    sockets.push(browser);
+    const result = next(browser);
+    browser.send(
+      JSON.stringify({
+        protocolVersion: "3.0",
+        type: MESSAGE_TYPES.PAIRING_REQUEST,
+        identity: pairingIdentity()
+      })
+    );
+    expect(await result).toMatchObject({
+      type: MESSAGE_TYPES.PAIRING_RESULT,
+      ok: false,
+      error: {
+        code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+        details: {
+          expectedVersion: PROTOCOL_VERSION,
+          actualVersion: "3.0",
+          staleComponent: "module",
+          handshake: "module-daemon"
+        }
+      }
+    });
+  });
+
+  it("names the client as the older component when an authorized client sends another release", async () => {
+    const config = createEmptyConfig();
+    const daemon = createBridgeDaemon({
+      daemonUrl: `ws://127.0.0.1:${await freePort()}`,
+      config,
+      logger: pino({ level: "silent" })
+    });
+    daemons.push(daemon);
+    await daemon.start();
+    const cli = await connectCli(daemon, config.deviceCredential);
+
+    const response = next(cli);
+    cli.send(JSON.stringify({ ...itemCreateRequest("req-skew", "key-skew"), protocolVersion: "3.0" }));
+    expect(await response).toMatchObject({
+      type: MESSAGE_TYPES.COMMAND_RESPONSE,
+      id: "req-skew",
+      ok: false,
+      error: {
+        code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+        details: {
+          expectedVersion: PROTOCOL_VERSION,
+          actualVersion: "3.0",
+          staleComponent: "cli-daemon",
+          handshake: "command-request"
+        }
+      }
+    });
+
+    const controlResponse = next(cli);
+    cli.send(
+      JSON.stringify({
+        protocolVersion: "3.0",
+        type: MESSAGE_TYPES.DAEMON_REQUEST,
+        id: "ctl-skew",
+        operation: "auth.pending",
+        params: {}
+      })
+    );
+    expect(await controlResponse).toMatchObject({
+      type: MESSAGE_TYPES.DAEMON_RESPONSE,
+      id: "ctl-skew",
+      ok: false,
+      error: {
+        code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+        details: {
+          staleComponent: "cli-daemon",
+          handshake: "daemon-request"
+        }
+      }
+    });
   });
 
   it("accepts the configured localhost authority after binding and rejects unrelated Host authorities", async () => {
@@ -574,11 +808,13 @@ describe("authorization daemon", () => {
 
     const replacement = await connectBridge(daemon, { pairingId: "pair-1", credential });
     expect(replacement.ack.ok).toBe(true);
-    expect(await failed).toMatchObject({
+    const failure = await failed;
+    expect(failure).toMatchObject({
       id: "pending-1",
       ok: false,
       error: { code: ERROR_CODES.BRIDGE_DISCONNECTED, details: { reason: "taken-over" } }
     });
+    expect(failure.error.message).not.toContain("idempotencyKey");
     expect(daemon.sessionStore.pendingRequests.size).toBe(0);
   });
 
@@ -770,6 +1006,75 @@ describe("authorization daemon", () => {
     expect(await bridgeClosed).toMatchObject({ code: BRIDGE_RELEASE_CLOSE_CODE, reason: "Bridge released" });
     expect(daemon.activePairingId).toBeNull();
     expect(daemon.leasePairingId).toBeNull();
+  });
+
+  it("omits undiscoverable commands from the bridge session status while still forwarding them", async () => {
+    const credential = "b".repeat(43);
+    const config = createEmptyConfig();
+    addPairing(config, { pairingId: "pair-1", credential });
+    const daemon = createBridgeDaemon({
+      daemonUrl: `ws://127.0.0.1:${await freePort()}`,
+      config,
+      logger: pino({ level: "silent" })
+    });
+    daemons.push(daemon);
+    await daemon.start();
+    const bridge = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: [...COMMAND_NAMES]
+    });
+    const cli = await connectCli(daemon, config.deviceCredential);
+
+    const status = await control(cli, "status-1", "auth.status");
+
+    expect(status).toMatchObject({ ok: true });
+    const reported = (status as { result: { bridge: { session: { commands: string[] } } } }).result.bridge
+      .session.commands;
+    expect(reported).toEqual([...DISCOVERABLE_COMMAND_NAMES]);
+    const undiscoverable = COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name));
+    expect(undiscoverable.length).toBeGreaterThan(0);
+    for (const command of undiscoverable)
+      expect(reported, `${command} must not be discoverable`).not.toContain(command);
+
+    expect(undiscoverable).toContain("policy.snapshot");
+    const forwarded = next(bridge.socket);
+    cli.send(
+      JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_REQUEST,
+        id: "hidden-1",
+        command: "policy.snapshot",
+        params: {}
+      })
+    );
+    expect(await forwarded).toMatchObject({ id: "hidden-1", command: "policy.snapshot" });
+  });
+
+  it("keeps a session command this CLI's registry does not contain in the bridge session status", async () => {
+    const credential = "b".repeat(43);
+    const config = createEmptyConfig();
+    addPairing(config, { pairingId: "pair-1", credential });
+    const daemon = createBridgeDaemon({
+      daemonUrl: `ws://127.0.0.1:${await freePort()}`,
+      config,
+      logger: pino({ level: "silent" })
+    });
+    daemons.push(daemon);
+    await daemon.start();
+    await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: [...COMMAND_NAMES, "future.command"]
+    });
+    const cli = await connectCli(daemon, config.deviceCredential);
+
+    const status = await control(cli, "status-1", "auth.status");
+
+    const reported = (status as { result: { bridge: { session: { commands: string[] } } } }).result.bridge
+      .session.commands;
+    expect(reported).toContain("future.command");
+    expect(reported).not.toContain("policy.snapshot");
   });
 
   it("revokes an active pairing without creating a lease and never discloses stored secrets", async () => {
@@ -2674,6 +2979,580 @@ describe("authorization daemon", () => {
       })
     );
     await response;
+    expect(daemon.idempotencyCache.size).toBe(1);
+  });
+
+  it("replays the same pending approval to a retry that lost the first answer", async () => {
+    const { bridge, cli } = await startApprovalDaemon();
+    const forwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+    const firstAnswer = next(cli);
+    bridge.send(approvalPendingResponse("item-1"));
+    expect(await firstAnswer).toMatchObject({
+      id: "item-1",
+      ok: false,
+      error: { code: ERROR_CODES.APPROVAL_PENDING, details: { approvalId: TEST_APPROVAL_ID } }
+    });
+
+    let reforwarded = false;
+    bridge.once("message", () => {
+      reforwarded = true;
+    });
+    const replay = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+
+    expect(await replay).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.APPROVAL_PENDING, details: { approvalId: TEST_APPROVAL_ID } }
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(reforwarded).toBe(false);
+  });
+
+  it("rejects a pending approval key reused for different params", async () => {
+    const { bridge, cli } = await startApprovalDaemon();
+    await sendPendingApproval(bridge, cli, "item-1", "key-1");
+
+    const conflict = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1", "Shield")));
+
+    expect(await conflict).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.IDEMPOTENCY_KEY_CONFLICT }
+    });
+  });
+
+  it("re-forwards a same-key retry when the pending answer named an approval it cannot poll", async () => {
+    const { bridge, cli } = await startApprovalDaemon();
+    const forwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+    const answer = next(cli);
+    bridge.send(
+      JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_RESPONSE,
+        id: "item-1",
+        ok: false,
+        error: {
+          code: ERROR_CODES.APPROVAL_PENDING,
+          message: "Command item.create needs an approval from the GM of this bridge.",
+          details: { approvalId: "short", expiresAt: Date.now() + 600_000, command: "item.create" }
+        }
+      })
+    );
+    await answer;
+
+    const reforwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+
+    expect(await reforwarded).toMatchObject({ id: "item-2", command: "item.create" });
+  });
+
+  it("serves an allowed command's own response to a later retry of the same key", async () => {
+    const { daemon, bridge, cli } = await startApprovalDaemon();
+    await sendPendingApproval(bridge, cli, "item-1", "key-1");
+    await settleApproval(bridge, cli, "poll-1", {
+      approvalId: TEST_APPROVAL_ID,
+      status: "resolved",
+      outcome: "approved",
+      response: deliveredResponse({ item: { id: "created-1" } })
+    });
+    expect(daemon.idempotencyCache.size).toBe(1);
+
+    let reforwarded = false;
+    bridge.once("message", () => {
+      reforwarded = true;
+    });
+    const cached = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+
+    expect(await cached).toMatchObject({ id: "item-2", ok: true, result: { item: { id: "created-1" } } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(reforwarded).toBe(false);
+  });
+
+  it("serves the failure of an allowed command to a later retry of the same key", async () => {
+    const { daemon, bridge, cli } = await startApprovalDaemon();
+    await sendPendingApproval(bridge, cli, "item-1", "key-1");
+    await settleApproval(bridge, cli, "poll-1", {
+      approvalId: TEST_APPROVAL_ID,
+      status: "resolved",
+      outcome: "approved",
+      response: {
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_RESPONSE,
+        id: TEST_APPROVAL_ID,
+        ok: false,
+        error: { code: ERROR_CODES.ITEM_NOT_FOUND, message: "gone", details: {} }
+      }
+    });
+    expect(daemon.idempotencyCache.size).toBe(1);
+
+    const cached = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+
+    expect(await cached).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.ITEM_NOT_FOUND }
+    });
+  });
+
+  it("promotes an approved response only once", async () => {
+    const { daemon, bridge, cli } = await startApprovalDaemon();
+    await sendPendingApproval(bridge, cli, "item-1", "key-1");
+    const report = {
+      approvalId: TEST_APPROVAL_ID,
+      status: "resolved",
+      outcome: "approved",
+      response: deliveredResponse({ item: { id: "created-1" } })
+    };
+    await settleApproval(bridge, cli, "poll-1", report);
+    await settleApproval(bridge, cli, "poll-2", report);
+
+    expect(daemon.idempotencyCache.size).toBe(1);
+    expect(daemon.approvalLinks.size).toBe(0);
+  });
+
+  it.each(["denied", "timeout", "cancelled"])(
+    "forwards a same-key retry again after the approval was %s",
+    async (outcome) => {
+      const { bridge, cli } = await startApprovalDaemon();
+      await sendPendingApproval(bridge, cli, "item-1", "key-1");
+      await settleApproval(bridge, cli, "poll-1", {
+        approvalId: TEST_APPROVAL_ID,
+        status: "resolved",
+        outcome
+      });
+
+      const forwarded = next(bridge);
+      cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+
+      expect(await forwarded).toMatchObject({ id: "item-2", command: "item.create" });
+    }
+  );
+
+  it("answers a same-key retry with an indeterminate outcome after an unresolvable approval", async () => {
+    let clock = 0;
+    const { bridge, cli } = await startApprovalDaemon({ approvalLinkOptions: { now: () => clock } });
+    await sendPendingApproval(bridge, cli, "item-1", "key-1", 600_000);
+    const poll = next(cli);
+    const forwardedPoll = next(bridge);
+    cli.send(JSON.stringify(approvalAwaitRequest("poll-1")));
+    await forwardedPoll;
+    bridge.send(
+      JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_RESPONSE,
+        id: "poll-1",
+        ok: false,
+        error: {
+          code: ERROR_CODES.APPROVAL_UNKNOWN,
+          message: "no approval state",
+          details: { approvalId: TEST_APPROVAL_ID }
+        }
+      })
+    );
+    await poll;
+
+    const indeterminate = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await indeterminate).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.APPROVAL_UNKNOWN, details: { approvalId: TEST_APPROVAL_ID } }
+    });
+
+    clock = 600_000 + APPROVAL_RESULT_RETENTION_MS;
+    const forwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-3", "key-1")));
+    expect(await forwarded).toMatchObject({ id: "item-3", command: "item.create" });
+  });
+
+  it("keeps an approval link across a bridge reconnect", async () => {
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon();
+    await sendPendingApproval(bridge, cli, "item-1", "key-1");
+
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    const reconnected = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+    expect(daemon.approvalLinks.size).toBe(1);
+
+    await settleApproval(reconnected.socket, cli, "poll-1", {
+      approvalId: TEST_APPROVAL_ID,
+      status: "resolved",
+      outcome: "approved",
+      response: deliveredResponse({ item: { id: "created-1" } })
+    });
+
+    const cached = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await cached).toMatchObject({ id: "item-2", ok: true, result: { item: { id: "created-1" } } });
+  });
+
+  it("refuses a same-key retry of a request the bridge lost before answering", async () => {
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon();
+    const forwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+
+    const disconnected = next(cli);
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    expect(await disconnected).toMatchObject({
+      id: "item-1",
+      ok: false,
+      error: { code: ERROR_CODES.BRIDGE_DISCONNECTED }
+    });
+
+    const reconnected = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+    const seenByBridge: Array<Record<string, unknown>> = [];
+    reconnected.socket.on("message", (raw) => seenByBridge.push(JSON.parse(raw.toString())));
+
+    const refused = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await refused).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: {
+        code: ERROR_CODES.BRIDGE_DISCONNECTED,
+        details: { reason: "lost-in-flight", command: "item.create", idempotencyKey: "key-1" }
+      }
+    });
+    expect(seenByBridge.filter((entry) => entry.command === "item.create")).toEqual([]);
+  });
+
+  it("keeps a pending approval answering its key when the bridge that raised it disconnects", async () => {
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon();
+    await sendPendingApproval(bridge, cli, "item-1", "key-1");
+
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    await connectBridge(daemon, { pairingId: "pair-1", credential, commands: APPROVAL_BRIDGE_COMMANDS });
+
+    const replay = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await replay).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.APPROVAL_PENDING, details: { approvalId: TEST_APPROVAL_ID } }
+    });
+  });
+
+  it("retains nothing for an unkeyed request the bridge lost before answering", async () => {
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon();
+    const forwarded = next(bridge);
+    cli.send(
+      JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_REQUEST,
+        id: "item-1",
+        command: "item.create",
+        params: { data: { name: "Sword", type: "weapon" } }
+      })
+    );
+    await forwarded;
+
+    const disconnected = next(cli);
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    await disconnected;
+    const reconnected = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+
+    expect(daemon.approvalLinks.size).toBe(0);
+    const reforwarded = next(reconnected.socket);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await reforwarded).toMatchObject({ id: "item-2", command: "item.create" });
+  });
+
+  it("refuses a same-key retry of a request the same pairing took over", async () => {
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon();
+    const forwarded = next(bridge);
+    const failed = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+
+    const replacement = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+    const failure = await failed;
+    expect(failure).toMatchObject({
+      id: "item-1",
+      ok: false,
+      error: { code: ERROR_CODES.BRIDGE_DISCONNECTED, details: { reason: "taken-over" } }
+    });
+    expect(failure.error.message).toContain("FRESH idempotencyKey");
+
+    const nextForwarded = next(replacement.socket);
+    const refused = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await refused).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.BRIDGE_DISCONNECTED, details: { reason: "lost-in-flight" } }
+    });
+
+    cli.send(JSON.stringify(itemCreateRequest("item-3", "key-2")));
+    expect(await nextForwarded).toMatchObject({ id: "item-3" });
+  });
+
+  it("keeps no lost-in-flight key when the takeover changes the bridge scope", async () => {
+    const secondCredential = "c".repeat(43);
+    const { daemon, bridge, cli } = await startApprovalDaemon({}, [
+      {
+        pairingId: "pair-second",
+        credential: secondCredential,
+        clientId: THIRD_CLIENT_ID,
+        worldId: "world-2"
+      }
+    ]);
+    const forwarded = next(bridge);
+    const disconnected = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    await disconnected;
+    expect(daemon.approvalLinks.size).toBe(1);
+
+    await connectBridge(daemon, {
+      pairingId: "pair-second",
+      credential: secondCredential,
+      clientId: THIRD_CLIENT_ID,
+      worldId: "world-2",
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+
+    expect(daemon.approvalLinks.size).toBe(0);
+  });
+
+  it("refuses a same-key retry of a request lost when the bridge was released", async () => {
+    const { daemon, bridge, cli } = await startApprovalDaemon();
+    const forwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+
+    const disconnected = next(cli);
+    const activeBridge = daemon.sessionStore.activeBridgeSocket;
+    expect(activeBridge).not.toBeNull();
+    daemon.releaseActiveBridge(activeBridge as WebSocket, 1000, "Bridge released");
+    await disconnected;
+
+    const refused = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await refused).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.BRIDGE_DISCONNECTED, details: { reason: "lost-in-flight" } }
+    });
+  });
+
+  it("refuses a same-key retry after a BRIDGE_TIMEOUT whose bridge session then ended", async () => {
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon({ requestTimeoutMs: 25 });
+    const forwarded = next(bridge);
+    const timedOut = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+    expect(await timedOut).toMatchObject({
+      id: "item-1",
+      ok: false,
+      error: { code: ERROR_CODES.BRIDGE_TIMEOUT }
+    });
+
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    const reconnected = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+
+    const nextForwarded = next(reconnected.socket);
+    const refused = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await refused).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.BRIDGE_DISCONNECTED, details: { reason: "lost-in-flight" } }
+    });
+
+    cli.send(JSON.stringify(itemCreateRequest("item-3", "key-2")));
+    expect(await nextForwarded).toMatchObject({ id: "item-3" });
+  });
+
+  it("refuses a different payload under a key whose reservation outlived its request", async () => {
+    const { daemon, bridge, cli } = await startApprovalDaemon();
+    daemon.approvalLinks.reserve({ key: "key-1", fingerprint: "stale-fingerprint", retainMs: 60_000 });
+
+    const nextForwarded = next(bridge);
+    const conflicted = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    const conflictResponse = (await conflicted) as { error: { message: string } };
+    expect(conflictResponse).toMatchObject({
+      id: "item-1",
+      ok: false,
+      error: { code: ERROR_CODES.IDEMPOTENCY_KEY_CONFLICT, details: { idempotencyKey: "key-1" } }
+    });
+    expect(conflictResponse.error.message).toContain("is still reserved for");
+
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-2")));
+    expect(await nextForwarded).toMatchObject({ id: "item-2" });
+  });
+
+  it("refuses a keyed request it has no room left to hold indeterminate", async () => {
+    const { daemon, bridge, cli } = await startApprovalDaemon({ approvalLinkOptions: { maxEntries: 1 } });
+    const firstForwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await firstForwarded;
+
+    const nextForwarded = next(bridge);
+    const refused = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-2")));
+    expect(await refused).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.IDEMPOTENCY_STORE_FULL, details: { idempotencyKey: "key-2" } }
+    });
+    expect(daemon.approvalLinks.size).toBe(1);
+
+    cli.send(JSON.stringify(itemCreateRequest("item-3", "key-1", "Shield", true)));
+    expect(await nextForwarded).toMatchObject({ id: "item-3" });
+  });
+
+  it("frees the reserved slot once the keyed request is answered", async () => {
+    const { daemon, bridge, cli } = await startApprovalDaemon({ approvalLinkOptions: { maxEntries: 1 } });
+    const firstForwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await firstForwarded;
+
+    const answered = next(cli);
+    bridge.send(JSON.stringify(deliveredResponse({ item: { id: "created-1" } }, "item-1")));
+    await answered;
+    expect(daemon.approvalLinks.size).toBe(0);
+
+    const secondForwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-2")));
+    expect(await secondForwarded).toMatchObject({ id: "item-2", command: "item.create" });
+  });
+
+  it("expires the lost-in-flight tombstone and forwards the same key again", async () => {
+    let clock = 1_000;
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon({
+      idempotencyTtlMs: 100_000,
+      approvalLinkOptions: { now: () => clock }
+    });
+    const forwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+
+    const disconnected = next(cli);
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    await disconnected;
+    const reconnected = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+    expect(daemon.approvalLinks.size).toBe(1);
+
+    clock = 1_000 + 100_000;
+    const reforwarded = next(reconnected.socket);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await reforwarded).toMatchObject({ id: "item-2", command: "item.create" });
+  });
+
+  it("drops approval links when the bridge scope changes", async () => {
+    const secondCredential = "c".repeat(43);
+    const { daemon, bridge, cli } = await startApprovalDaemon({}, [
+      {
+        pairingId: "pair-second",
+        credential: secondCredential,
+        clientId: THIRD_CLIENT_ID,
+        worldId: "world-2"
+      }
+    ]);
+    await sendPendingApproval(bridge, cli, "item-1", "key-1");
+
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    const second = await connectBridge(daemon, {
+      pairingId: "pair-second",
+      credential: secondCredential,
+      clientId: THIRD_CLIENT_ID,
+      worldId: "world-2",
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+
+    expect(daemon.approvalLinks.size).toBe(0);
+    const forwarded = next(second.socket);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await forwarded).toMatchObject({ id: "item-2", command: "item.create" });
+  });
+
+  it("delivers the terminal outcome to every client waiting on the same approval", async () => {
+    const { daemon, bridge, cli, config } = await startApprovalDaemon();
+    const secondCli = await connectCli(daemon, config.deviceCredential);
+    await sendPendingApproval(bridge, cli, "item-1", "key-1");
+    const replay = next(secondCli);
+    secondCli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await replay).toMatchObject({
+      ok: false,
+      error: { code: ERROR_CODES.APPROVAL_PENDING, details: { approvalId: TEST_APPROVAL_ID } }
+    });
+
+    const firstPoll = next(cli);
+    const secondPoll = next(secondCli);
+    const forwardedPolls = nextMessages(bridge, 2);
+    cli.send(JSON.stringify(approvalAwaitRequest("poll-1")));
+    secondCli.send(JSON.stringify(approvalAwaitRequest("poll-2")));
+    await forwardedPolls;
+    for (const id of ["poll-1", "poll-2"]) {
+      bridge.send(
+        JSON.stringify({
+          protocolVersion: PROTOCOL_VERSION,
+          type: MESSAGE_TYPES.COMMAND_RESPONSE,
+          id,
+          ok: true,
+          result: {
+            approvalId: TEST_APPROVAL_ID,
+            status: "resolved",
+            outcome: "approved",
+            response: deliveredResponse({ item: { id: "created-1" } })
+          }
+        })
+      );
+    }
+
+    expect((await firstPoll).result.outcome).toBe("approved");
+    expect((await secondPoll).result.outcome).toBe("approved");
     expect(daemon.idempotencyCache.size).toBe(1);
   });
 

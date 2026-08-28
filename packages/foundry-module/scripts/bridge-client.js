@@ -7,12 +7,15 @@ import {
   ERROR_CODES,
   MESSAGE_TYPES,
   MODULE_ID,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
   RECONNECT_BASE_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
   createBridgeHello,
   createErrorResponse,
   createProtocolError,
+  getProtocolVersionError,
   parseBridgeMessage,
   validateTransportMessage
 } from "./generated/protocol.js";
@@ -41,6 +44,7 @@ function normalizeAckLimits(limits) {
   return { uploadBytes, wsMaxPayloadBytes };
 }
 import { format, localize } from "./lib/i18n.js";
+import { utf8ByteLength } from "./lib/setting-values.js";
 import {
   getBridgeBusyWarningMessage,
   getDaemonUnavailableWarningMessage,
@@ -63,20 +67,28 @@ function defaultLogger(level, message, details = {}) {
   logMethod(prefix, message, details);
 }
 
-function normalizeMessageData(data) {
+// Weighed from the wire form, so nothing downstream serializes the request a second time.
+/**
+ * @param {unknown} data
+ * @returns {Promise<{ text: string, measureBytes: () => number }>}
+ */
+function normalizeMessageFrame(data) {
   if (typeof data === "string") {
-    return Promise.resolve(data);
+    return Promise.resolve({ text: data, measureBytes: () => utf8ByteLength(data) });
   }
 
   if (data instanceof ArrayBuffer) {
-    return Promise.resolve(new TextDecoder().decode(data));
+    const bytes = data.byteLength;
+    return Promise.resolve({ text: new TextDecoder().decode(data), measureBytes: () => bytes });
   }
 
   if (typeof Blob !== "undefined" && data instanceof Blob) {
-    return data.text();
+    const bytes = data.size;
+    return data.text().then((text) => ({ text, measureBytes: () => bytes }));
   }
 
-  return Promise.resolve(String(data ?? ""));
+  const text = String(data ?? "");
+  return Promise.resolve({ text, measureBytes: () => utf8ByteLength(text) });
 }
 
 export class BridgeClient {
@@ -117,6 +129,8 @@ export class BridgeClient {
     this.hasEstablishedSession = false;
     this.shouldReconnect = true;
     this.terminalStopReason = null;
+    /** @type {{ expectedVersion: string, actualVersion: string, staleComponent: string } | null} */
+    this.protocolVersionMismatch = null;
     this.hasWarnedTerminalStop = false;
     this.pendingDaemonRequests = new Map();
   }
@@ -146,8 +160,7 @@ export class BridgeClient {
     this.#emitStatusChange();
   }
 
-  // Reset without emitting. Every caller then transitions the status, and that emission carries the
-  // truthful snapshot; emitting here would publish a still-connected client with a dropped handshake.
+  // Emitting here would publish a still-connected client with a dropped handshake.
   #dropHandshakeAcknowledgement() {
     this.helloAcknowledged = false;
   }
@@ -174,7 +187,14 @@ export class BridgeClient {
     }
 
     this.#dropHandshakeAcknowledgement();
+    this.#releaseApprovals();
     this.#setStatus("stopped");
+  }
+
+  // A session ending with no reconnect to follow takes its approvals: a decision left armed would run
+  // a command whose caller was already answered with a failure. A reconnecting socket keeps them.
+  #releaseApprovals() {
+    this.router?.approvalStore?.clear?.();
   }
 
   connect() {
@@ -218,8 +238,8 @@ export class BridgeClient {
   }
 
   async handleMessage(event) {
-    const rawMessage = await normalizeMessageData(event.data);
-    const parsed = parseBridgeMessage(rawMessage);
+    const frame = await normalizeMessageFrame(event.data);
+    const parsed = parseBridgeMessage(frame.text);
 
     if (!parsed.ok) {
       this.logger("warn", "Received invalid JSON from daemon", parsed.error);
@@ -279,7 +299,7 @@ export class BridgeClient {
       return;
     }
 
-    const response = await this.router.route(message);
+    const response = await this.router.route(message, { measureRequestBytes: frame.measureBytes });
     this.send(response);
   }
 
@@ -336,6 +356,7 @@ export class BridgeClient {
       this.terminalStopReason = { code: "TAKEN_OVER", message: event.reason || BRIDGE_TAKEOVER_CLOSE_REASON };
       this.shouldReconnect = false;
       this.clearReconnectTimer();
+      this.#releaseApprovals();
       this.#setStatus("stopped");
       return;
     }
@@ -344,6 +365,7 @@ export class BridgeClient {
       this.terminalStopReason = { code: "RELEASED", message: event.reason || "Bridge released" };
       this.shouldReconnect = false;
       this.clearReconnectTimer();
+      this.#releaseApprovals();
       this.#setStatus("stopped");
       return;
     }
@@ -434,6 +456,7 @@ export class BridgeClient {
     this.terminalStopReason = { code, message };
     this.shouldReconnect = false;
     this.clearReconnectTimer();
+    this.#releaseApprovals();
     this.#setStatus("stopped");
 
     if (warn && !this.hasWarnedTerminalStop) {
@@ -457,15 +480,29 @@ export class BridgeClient {
     });
   }
 
+  // Not read off the ack: a daemon predating these details answers with none, which is the common case.
   stopForProtocolVersionSkew(message) {
-    const moduleVersion = PROTOCOL_VERSION;
-    const daemonVersion = message.protocolVersion ?? "unknown";
+    const daemonVersion = String(message.protocolVersion ?? "unknown");
+    const details = /** @type {{ staleComponent: string }} */ (
+      getProtocolVersionError(daemonVersion, {
+        peer: PROTOCOL_COMPONENTS.CLI_DAEMON,
+        reporter: PROTOCOL_COMPONENTS.MODULE,
+        handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+      }).details
+    );
+    const mismatch = {
+      expectedVersion: PROTOCOL_VERSION,
+      actualVersion: daemonVersion,
+      staleComponent: details.staleComponent
+    };
+    this.protocolVersionMismatch = mismatch;
+
     this.stopTerminally({
       code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
-      message: `Module protocol version ${moduleVersion} is incompatible with daemon version ${daemonVersion}`,
+      message: `Module protocol version ${PROTOCOL_VERSION} is incompatible with daemon version ${daemonVersion}`,
       warn: {
-        message: getProtocolVersionSkewWarningMessage(moduleVersion, daemonVersion),
-        details: { moduleVersion, daemonVersion }
+        message: getProtocolVersionSkewWarningMessage(mismatch),
+        details: mismatch
       }
     });
   }
@@ -607,7 +644,8 @@ export class BridgeClient {
       hasEstablishedSession: this.hasEstablishedSession,
       lastConnectedAt: this.lastConnectedAt,
       reconnectAttempts: this.reconnectAttempts,
-      terminalStopReason: this.terminalStopReason?.code ?? null
+      terminalStopReason: this.terminalStopReason?.code ?? null,
+      protocolVersionMismatch: this.protocolVersionMismatch
     };
   }
 }

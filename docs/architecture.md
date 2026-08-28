@@ -55,6 +55,7 @@ not copied into documentation.
 
 - second-boundary request validation;
 - GM permission checks;
+- the command-permission gate and the human approval loop it opens;
 - protected-metadata sanitization;
 - document lookup and serialization;
 - capability adaptation across supported Foundry versions;
@@ -62,6 +63,11 @@ not copied into documentation.
 - execution through Foundry Document APIs and reviewed typed actions;
 - observable write confirmation;
 - managed-file containment.
+
+The bridge checks command permissions after readiness, GM authority, parameter validation, and write
+permission. It checks them immediately before handler lookup. Direct commands and commands released
+by GM approval therefore use the same guards. The approved route skips only the permission gate for
+that invocation.
 
 The module ships plain browser-compatible JavaScript. Its generated protocol mirror is produced from
 the canonical protocol package.
@@ -89,6 +95,11 @@ CLI invocation
 
 The bridge advertises its supported commands during the handshake. The daemon forwards only commands
 advertised by the active session.
+
+A command that requires GM approval pauses before dispatch. The module keeps the invocation in
+memory and returns a pending approval. The CLI then requests the outcome through short polls keyed by
+the approval identifier. If the GM allows the command, the module runs the normal guard sequence
+again before dispatch.
 
 ## Validation boundaries
 
@@ -120,6 +131,10 @@ global transaction. The Foundry UI, systems, modules, and other clients remain c
 A dry run performs the same preparation and guards as a real command, then stops before persistence.
 Real commands confirm stored state where their contract depends on a write landing. Native Foundry
 batch calls can partially apply, so bulk results include per-element outcomes.
+
+A capability check asks whether the connected Foundry can perform an operation. Approval is the GM's
+decision to let one invocation run. Confirmation checks whether Foundry persisted a completed write.
+An approved command can still fail during execution or confirmation.
 
 Idempotency keys reduce duplicate effects across response loss while the relevant daemon/bridge cache
 entry exists. They do not create durable distributed transactions.
@@ -179,6 +194,14 @@ answer inside the caller's request timeout, so an unanswered wait ends in an emp
 re-issues rather than in a transport failure; a cap at or above the client's wait would turn every
 wait into one.
 
+Approval waits use the same bounded polling pattern inside the Foundry module. The module answers the
+original request with a pending approval. Later polls wait within the transport timeout and ask again
+after an ordinary reconnect.
+
+Both halves of the wait use runtime state. The browser session holds the decision and retained
+outcome. The daemon links an idempotency key to the approval in its idempotency store. Neither half
+persists this state. Losing it produces an indeterminate result rather than an automatic retry.
+
 Normative handshake, takeover, lease, and release semantics are defined in
 [Protocol](protocol.md#bridge-sessions); the authentication guarantees and host validation rules are
 stated in [Security](security.md#authentication).
@@ -193,11 +216,13 @@ carries no wire-protocol meaning; the daemon and the CLI neither send nor observ
 
 The hook fires once per actual change, on the client transport status or on the handshake
 acknowledgement, and receives the same snapshot that `system info` reports as `bridge`: `status`,
-`url`, `helloAcknowledged`, `hasEstablishedSession`, `lastConnectedAt`, `reconnectAttempts`, and
-`terminalStopReason`. Readiness is `status === "connected"` together with `helloAcknowledged`, because
-an open socket precedes the daemon's acknowledgement. A snapshot never reports an acknowledged
-handshake on a client that is no longer connected: losing the socket resets the acknowledgement before
-the status transition that publishes it, so consumers cannot observe that contradictory pair.
+`url`, `helloAcknowledged`, `hasEstablishedSession`, `lastConnectedAt`, `reconnectAttempts`,
+`terminalStopReason`, and `protocolVersionMismatch`. The last field is `null` unless the module
+refuses a handshake because the protocol versions differ. It then reports both versions and names
+the older component as `module`, `cli-daemon`, or `unknown`. The status window uses that value to
+show the required update. Readiness requires `status === "connected"` and `helloAcknowledged` because
+the socket opens before the daemon acknowledges the handshake. Losing the socket clears the
+acknowledgement before publishing the status change.
 `helloAcknowledged` stays in the snapshot for consumers that need the distinction; the module's own
 windows fold it into the connection state they display rather than showing it as its own field.
 

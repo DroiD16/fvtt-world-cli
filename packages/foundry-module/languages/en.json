@@ -19,6 +19,23 @@
       "LastConnectedAt": "Last connected at",
       "ReconnectAttempts": "Reconnect attempts",
       "TerminalStopReason": "Terminal stop reason",
+      "VersionMismatch": {
+        "ModuleVersion": "Module protocol version",
+        "DaemonVersion": "Daemon protocol version",
+        "FromRelease": "{version}, from release {release}",
+        "StaleComponent": "Older half",
+        "Remedy": "What to do",
+        "Component": {
+          "module": "This Foundry module",
+          "cliDaemon": "The CLI and daemon",
+          "unknown": "Not identifiable from these versions"
+        },
+        "Advice": {
+          "module": "Update the module in Foundry, or ask your agent to update it, then reload the client.",
+          "cliDaemon": "Update the fvtt-world-cli package and restart the daemon, or ask your agent to update it, then connect again.",
+          "unknown": "Bring the fvtt-world-cli package and the module to the same release, restart the daemon, and reload the client."
+        }
+      },
       "LocalPairing": "Local pairing",
       "Configured": "Configured",
       "NotConfigured": "Not configured",
@@ -81,7 +98,9 @@
       "DaemonUnavailable": "{module} stopped: the configured daemon is unavailable. Start the local daemon and reload the client.",
       "RejectedCredential": "{module} stopped: the pairing credential was rejected. Open Authorization and pair again.",
       "BridgeBusy": "{module} stopped: another pairing owns the daemon's active bridge slot. Release that bridge or use bridge release, then choose Connect in Authorization.",
-      "ProtocolVersionSkew": "{module} stopped: protocol version mismatch. This client speaks {expected} but the daemon speaks {actual}. Upgrade the daemon and module to matching versions and reload the client.",
+      "ProtocolVersionSkewModule": "{module} stopped: the daemon and this module come from different releases, which is refused by design. This client speaks protocol {expected} and the daemon speaks {actual}, so this module is the older half. Update the module in Foundry, or ask your agent to update it, then reload the client.",
+      "ProtocolVersionSkewDaemon": "{module} stopped: the daemon and this module come from different releases, which is refused by design. This client speaks protocol {expected} and the daemon speaks {actual}, so the CLI and daemon are the older half. Update the fvtt-world-cli package and restart the daemon, or ask your agent to update it, then connect again.",
+      "ProtocolVersionSkewUnknown": "{module} stopped: the daemon and this module come from different releases, which is refused by design. This client speaks protocol {expected} and the daemon speaks {actual}, and those versions cannot be ordered, so check both halves. Bring the fvtt-world-cli package and the module to the same release, restart the daemon, and reload the client.",
       "RejectedHandshake": "{module} stopped: the daemon rejected the bridge handshake. Fix the daemon configuration and reload the client.",
       "RejectedHandshakeWithReason": "{module} stopped: the daemon rejected the bridge handshake ({reason}). Fix the daemon configuration and reload the client.",
       "NotPaired": "{module} is not paired. Open Authorization from the World CLI scene-controls group, or from Configure Settings → Module Settings → Authorization."
@@ -95,7 +114,79 @@
       "ClientIdName": "Browser client identifier",
       "AuthorizationName": "Authorization",
       "AuthorizationLabel": "Manage Authorization",
-      "AuthorizationHint": "Pair this browser, world, and GM with the local daemon."
+      "AuthorizationHint": "Pair this browser, world, and GM with the local daemon.",
+      "CommandPolicyName": "Command policy",
+      "ApprovalTimeoutMinutesName": "Approval timeout (minutes)",
+      "ApprovalTimeoutMinutesHint": "How long a command that needs your approval waits for a decision in this browser. When the time runs out the command is refused without being executed, and the agent is told it can ask again.",
+      "ApprovalSoundName": "Play a sound on approval requests",
+      "ApprovalSoundHint": "Play the standard Foundry notification sound when a command starts waiting and the approval window opens. The sound follows the interface volume, and further requests that join the queue while the window is open are silent.",
+      "CommandPermissionsName": "Command permissions",
+      "CommandPermissionsLabel": "Configure Command Permissions",
+      "CommandPermissionsHint": "Choose which CLI commands run on their own, which wait for your approval in Foundry, and which are refused."
+    },
+    "Permissions": {
+      "Title": "World CLI Command Permissions",
+      "Filter": "Filter commands",
+      "FilterPlaceholder": "actor.item, delete, upload",
+      "MasterFill": "Set every command to",
+      "MasterFillFiltered": "Set the {count} filtered commands to",
+      "MasterFillHint": "Applies to whatever the filter leaves visible; with an empty filter that is every command.",
+      "TreeControls": "Groups",
+      "ExpandAll": "Expand all",
+      "ExpandAllHint": "Open every group and subgroup.",
+      "CollapseAll": "Collapse all",
+      "CollapseAllHint": "Close every group back to the top level.",
+      "Behavior": {
+        "Allow": "Allow",
+        "Approve": "Ask me",
+        "Deny": "Deny"
+      },
+      "BehaviorHint": {
+        "Allow": "Runs without asking.",
+        "Approve": "Waits for your approval in Foundry before it runs.",
+        "Deny": "Refused, and hidden from the agent's command list."
+      },
+      "NodeFillHint": {
+        "Allow": "Set this whole group, subgroups included, to run without asking.",
+        "Approve": "Set this whole group, subgroups included, to wait for your approval.",
+        "Deny": "Set this whole group, subgroups included, to refused."
+      },
+      "NodeSizeHint": "Commands in this group, including its subgroups.",
+      "Changed": "Something below this level differs from the defaults.",
+      "Destructive": "Destructive. This command deletes or overwrites content and waits for approval by default.",
+      "NoMatches": "No command matches this filter.",
+      "Dirty": "Unsaved changes",
+      "Reset": "Reset to defaults",
+      "ResetHint": "Drops every change back to the defaults. Nothing is stored until you save.",
+      "ResetConfirmTitle": "Reset command permissions",
+      "ResetConfirmContent": "Every command in the whole list returns to its default, whatever the filter shows: destructive commands wait for your approval and the rest run on their own. Nothing is stored until you save.",
+      "Save": "Save",
+      "SaveFailedPolicy": "Foundry refused to store the command permissions: {error}. Your changes are still here, and nothing was saved.",
+      "Close": "Close",
+      "DiscardTitle": "Discard unsaved changes",
+      "DiscardContent": "This window has unsaved changes. Close it and discard them?"
+    },
+    "Approval": {
+      "Title": "World CLI Command Approval",
+      "Arrived": "World CLI is waiting for your approval in the Command Approval window.",
+      "Command": "Command",
+      "BulkNotice": "One decision covers {count} elements.",
+      "Expires": "Decision expires in",
+      "TimeoutValue": "of {minutes} minutes",
+      "Waiting": "{count} more waiting",
+      "Targets": "Targets",
+      "TargetMissing": "not found",
+      "TargetUnspecified": "not specified",
+      "TargetsOmitted": "{count} more not shown.",
+      "TargetsNone": "No document target.",
+      "Params": "Parameters",
+      "ParamsSize": "{bytes} bytes",
+      "RedactedContent": "<content: {bytes} bytes>",
+      "RedactedText": "<text: {characters} characters>",
+      "Allow": "Allow",
+      "Deny": "Deny",
+      "Executing": "Running the approved command",
+      "Empty": "Nothing is waiting for approval."
     }
   }
 }

@@ -31,7 +31,19 @@ if (existsSync(compiledEntry) && process.env.FVTT_WORLD_CLI_FORCE_SRC !== "1") {
     stdio: "inherit"
   });
 
+  /** @type {NodeJS.Signals[]} */
+  const relayedSignals = ["SIGINT", "SIGTERM", "SIGHUP"];
+  for (const signal of relayedSignals) {
+    process.on(signal, () => {
+      child.kill(signal);
+    });
+  }
+
   child.on("exit", (code, signal) => {
+    for (const relayed of relayedSignals) {
+      process.removeAllListeners(relayed);
+    }
+
     if (signal) {
       process.kill(process.pid, signal);
       return;

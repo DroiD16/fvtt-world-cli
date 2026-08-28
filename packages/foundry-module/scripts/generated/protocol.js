@@ -3,7 +3,19 @@
 // The bundler strips the JSDoc that types the canonical source, so this copy is not type-checked.
 
 // packages/protocol/src/constants.js
-var PROTOCOL_VERSION = "3.0";
+var PROTOCOL_VERSION = "1.1.0";
+var PROTOCOL_COMPONENTS = Object.freeze({
+  MODULE: "module",
+  CLI_DAEMON: "cli-daemon",
+  UNKNOWN: "unknown"
+});
+var PROTOCOL_HANDSHAKES = Object.freeze({
+  CLI_DAEMON: "cli-daemon",
+  MODULE_DAEMON: "module-daemon",
+  COMMAND_REQUEST: "command-request",
+  DAEMON_REQUEST: "daemon-request",
+  UNKNOWN: "unknown"
+});
 var MODULE_ID = "fvtt-world-cli";
 var MODULE_TITLE = "World CLI for Foundry VTT";
 var DEFAULT_DAEMON_URL = "ws://127.0.0.1:47833";
@@ -22,6 +34,13 @@ var BRIDGE_TAKEOVER_CLOSE_CODE = 4001;
 var BRIDGE_TAKEOVER_CLOSE_REASON = "Bridge session taken over by the same pairing";
 var BRIDGE_RELEASE_CLOSE_CODE = 4002;
 var BRIDGE_RELEASE_CLOSE_REASON = "Bridge released";
+var APPROVAL_AWAIT_PARK_CAP_MS = 25e3;
+var APPROVAL_RESULT_RETENTION_MS = 5 * 60 * 1e3;
+var APPROVAL_PENDING_MAX = 20;
+var APPROVAL_TIMEOUT_DEFAULT_MINUTES = 60;
+var APPROVAL_TIMEOUT_MIN_MINUTES = 1;
+var APPROVAL_TIMEOUT_MAX_MINUTES = 35791;
+var POLICY_DISCOVERY_TIMEOUT_MS = 1500;
 var CLIENT_ID_MIN_LENGTH = 8;
 var CLIENT_ID_MAX_LENGTH = 64;
 var CLIENT_ID_PATTERN = "^[0-9a-fA-F-]+$";
@@ -183,6 +202,7 @@ var ERROR_CODES = Object.freeze({
   COMPENDIUM_NOT_FOUND: "COMPENDIUM_NOT_FOUND",
   COMPENDIUM_ENTRY_NOT_FOUND: "COMPENDIUM_ENTRY_NOT_FOUND",
   IDEMPOTENCY_KEY_CONFLICT: "IDEMPOTENCY_KEY_CONFLICT",
+  IDEMPOTENCY_STORE_FULL: "IDEMPOTENCY_STORE_FULL",
   EFFECT_NOT_FOUND: "EFFECT_NOT_FOUND",
   PLAYLIST_NOT_FOUND: "PLAYLIST_NOT_FOUND",
   PLAYLIST_SOUND_NOT_FOUND: "PLAYLIST_SOUND_NOT_FOUND",
@@ -216,11 +236,22 @@ var ERROR_CODES = Object.freeze({
   PAIRING_REQUIRED: "PAIRING_REQUIRED",
   PAIRING_NOT_FOUND: "PAIRING_NOT_FOUND",
   PAIRING_EXPIRED: "PAIRING_EXPIRED",
-  BRIDGE_BUSY: "BRIDGE_BUSY"
+  BRIDGE_BUSY: "BRIDGE_BUSY",
+  COMMAND_DENIED: "COMMAND_DENIED",
+  APPROVAL_PENDING: "APPROVAL_PENDING",
+  APPROVAL_DENIED: "APPROVAL_DENIED",
+  APPROVAL_TIMEOUT: "APPROVAL_TIMEOUT",
+  APPROVAL_CANCELLED: "APPROVAL_CANCELLED",
+  APPROVAL_QUEUE_FULL: "APPROVAL_QUEUE_FULL",
+  APPROVAL_UNKNOWN: "APPROVAL_UNKNOWN"
 });
 
 // packages/protocol/src/schemas/shared.js
-var cmd = (paramsSchema, { mutation = false } = {}) => ({ mutation, paramsSchema });
+var cmd = (paramsSchema, { mutation = false, discovery = true } = {}) => ({
+  mutation,
+  ...discovery ? {} : { discovery: false },
+  paramsSchema
+});
 function mergeCommandFamilies(families) {
   const merged = {};
   for (const family of families) {
@@ -888,6 +919,34 @@ var actorCommands = {
 };
 var actorCompendiumImportCommands = {
   "actor.import-from-compendium": cmd(compendiumImportSchema(actorPatchSchema), { mutation: true })
+};
+
+// packages/protocol/src/schemas/approval.js
+var approvalIdProperty = {
+  approvalId: { type: "string", minLength: 22, maxLength: 22, pattern: "^[A-Za-z0-9_-]{22}$" }
+};
+var approvalAwaitSchema = {
+  type: "object",
+  required: ["approvalId"],
+  properties: {
+    ...approvalIdProperty,
+    waitMs: { type: "integer", minimum: 0, maximum: APPROVAL_AWAIT_PARK_CAP_MS }
+  },
+  additionalProperties: false
+};
+var approvalCancelSchema = {
+  type: "object",
+  required: ["approvalId"],
+  properties: { ...approvalIdProperty },
+  additionalProperties: false
+};
+var APPROVAL_AWAIT_COMMAND = "approval.await";
+var APPROVAL_CANCEL_COMMAND = "approval.cancel";
+var POLICY_SNAPSHOT_COMMAND = "policy.snapshot";
+var approvalCommands = {
+  [APPROVAL_AWAIT_COMMAND]: cmd(approvalAwaitSchema, { discovery: false }),
+  [APPROVAL_CANCEL_COMMAND]: cmd(approvalCancelSchema, { discovery: false }),
+  [POLICY_SNAPSHOT_COMMAND]: cmd(emptyObjectSchema, { discovery: false })
 };
 
 // packages/protocol/src/schemas/cards.js
@@ -4471,12 +4530,16 @@ var COMMAND_DEFINITIONS = deepFreeze(
     settingCommands,
     actorCompendiumImportCommands,
     worldAuditCommands,
-    worldSearchCommands
+    worldSearchCommands,
+    approvalCommands
   ])
 );
 var COMMAND_NAMES = deepFreeze(Object.keys(COMMAND_DEFINITIONS));
 var WRITE_COMMANDS = deepFreeze(
   COMMAND_NAMES.filter((command) => COMMAND_DEFINITIONS[command].mutation === true)
+);
+var DISCOVERABLE_COMMAND_NAMES = deepFreeze(
+  COMMAND_NAMES.filter((command) => COMMAND_DEFINITIONS[command].discovery !== false)
 );
 var REQUEST_SCHEMA = {
   type: "object",
@@ -4825,6 +4888,348 @@ function getInvalidCommandError(command) {
   };
 }
 
+// packages/protocol/src/generated/default-command-profile.js
+var DEFAULT_COMMAND_PROFILE = deepFreeze({
+  "system.ping": "allow",
+  "system.info": "allow",
+  "scene.list": "allow",
+  "scene.get": "allow",
+  "scene.get-many": "allow",
+  "scene.update": "allow",
+  "scene.create": "allow",
+  "scene.delete": "approve",
+  "scene.clone": "allow",
+  "scene.import-from-compendium": "allow",
+  "scene.thumbnail.generate": "allow",
+  "scene.fog.reset": "approve",
+  "scene.ownership.set": "allow",
+  "scene.token.list": "allow",
+  "scene.token.get": "allow",
+  "scene.token.create": "allow",
+  "scene.token.update": "allow",
+  "scene.token.delete": "approve",
+  "scene.token.clone": "allow",
+  "scene.token.create-many": "allow",
+  "scene.token.update-many": "allow",
+  "scene.token.delete-many": "approve",
+  "scene.token.item.list": "allow",
+  "scene.token.item.get": "allow",
+  "scene.token.item.create": "allow",
+  "scene.token.item.update": "allow",
+  "scene.token.item.delete": "approve",
+  "scene.token.item.clone": "allow",
+  "scene.token.item.effect.list": "allow",
+  "scene.token.item.effect.get": "allow",
+  "scene.token.item.effect.create": "allow",
+  "scene.token.item.effect.update": "allow",
+  "scene.token.item.effect.delete": "approve",
+  "scene.token.item.effect.clone": "allow",
+  "scene.token.item.effect.create-many": "allow",
+  "scene.token.item.effect.update-many": "allow",
+  "scene.token.item.effect.delete-many": "approve",
+  "scene.token.effect.list": "allow",
+  "scene.token.effect.applied": "allow",
+  "scene.token.effect.get": "allow",
+  "scene.token.effect.create": "allow",
+  "scene.token.effect.update": "allow",
+  "scene.token.effect.delete": "approve",
+  "scene.token.effect.clone": "allow",
+  "scene.token.effect.create-many": "allow",
+  "scene.token.effect.update-many": "allow",
+  "scene.token.effect.delete-many": "approve",
+  "scene.tile.list": "allow",
+  "scene.tile.get": "allow",
+  "scene.tile.create": "allow",
+  "scene.tile.update": "allow",
+  "scene.tile.delete": "approve",
+  "scene.tile.clone": "allow",
+  "scene.tile.create-many": "allow",
+  "scene.tile.update-many": "allow",
+  "scene.tile.delete-many": "approve",
+  "scene.sound.list": "allow",
+  "scene.sound.get": "allow",
+  "scene.sound.create": "allow",
+  "scene.sound.update": "allow",
+  "scene.sound.delete": "approve",
+  "scene.sound.clone": "allow",
+  "scene.sound.create-many": "allow",
+  "scene.sound.update-many": "allow",
+  "scene.sound.delete-many": "approve",
+  "scene.wall.list": "allow",
+  "scene.wall.get": "allow",
+  "scene.wall.create": "allow",
+  "scene.wall.update": "allow",
+  "scene.wall.delete": "approve",
+  "scene.wall.clone": "allow",
+  "scene.wall.create-many": "allow",
+  "scene.wall.update-many": "allow",
+  "scene.wall.delete-many": "approve",
+  "scene.note.list": "allow",
+  "scene.note.get": "allow",
+  "scene.note.create": "allow",
+  "scene.note.update": "allow",
+  "scene.note.delete": "approve",
+  "scene.note.clone": "allow",
+  "scene.note.create-many": "allow",
+  "scene.note.update-many": "allow",
+  "scene.note.delete-many": "approve",
+  "scene.drawing.list": "allow",
+  "scene.drawing.get": "allow",
+  "scene.drawing.create": "allow",
+  "scene.drawing.update": "allow",
+  "scene.drawing.delete": "approve",
+  "scene.drawing.clone": "allow",
+  "scene.drawing.create-many": "allow",
+  "scene.drawing.update-many": "allow",
+  "scene.drawing.delete-many": "approve",
+  "scene.light.list": "allow",
+  "scene.light.get": "allow",
+  "scene.light.create": "allow",
+  "scene.light.update": "allow",
+  "scene.light.delete": "approve",
+  "scene.light.clone": "allow",
+  "scene.light.create-many": "allow",
+  "scene.light.update-many": "allow",
+  "scene.light.delete-many": "approve",
+  "scene.template.list": "allow",
+  "scene.template.get": "allow",
+  "scene.template.create": "allow",
+  "scene.template.update": "allow",
+  "scene.template.delete": "approve",
+  "scene.template.clone": "allow",
+  "scene.template.create-many": "allow",
+  "scene.template.update-many": "allow",
+  "scene.template.delete-many": "approve",
+  "scene.region.list": "allow",
+  "scene.region.get": "allow",
+  "scene.region.create": "allow",
+  "scene.region.update": "allow",
+  "scene.region.delete": "approve",
+  "scene.region.clone": "allow",
+  "scene.region.create-many": "allow",
+  "scene.region.update-many": "allow",
+  "scene.region.delete-many": "approve",
+  "scene.region.behavior.list": "allow",
+  "scene.region.behavior.get": "allow",
+  "scene.region.behavior.create": "allow",
+  "scene.region.behavior.update": "allow",
+  "scene.region.behavior.delete": "approve",
+  "scene.region.behavior.clone": "allow",
+  "item.list": "allow",
+  "item.get": "allow",
+  "item.get-many": "allow",
+  "item.create": "allow",
+  "item.update": "allow",
+  "item.delete": "approve",
+  "item.clone": "allow",
+  "item.import-from-compendium": "allow",
+  "item.ownership.set": "allow",
+  "item.update-many": "allow",
+  "item.delete-many": "approve",
+  "item.effect.list": "allow",
+  "item.effect.get": "allow",
+  "item.effect.create": "allow",
+  "item.effect.update": "allow",
+  "item.effect.delete": "approve",
+  "item.effect.clone": "allow",
+  "item.effect.create-many": "allow",
+  "item.effect.update-many": "allow",
+  "item.effect.delete-many": "approve",
+  "journal.list": "allow",
+  "journal.get": "allow",
+  "journal.get-many": "allow",
+  "journal.create": "allow",
+  "journal.update": "allow",
+  "journal.delete": "approve",
+  "journal.clone": "allow",
+  "journal.import-from-compendium": "allow",
+  "journal.ownership.set": "allow",
+  "journal.update-many": "allow",
+  "journal.delete-many": "approve",
+  "journal.category.list": "allow",
+  "journal.category.get": "allow",
+  "journal.category.create": "allow",
+  "journal.category.update": "allow",
+  "journal.category.delete": "approve",
+  "macro.list": "allow",
+  "macro.get": "allow",
+  "macro.get-many": "allow",
+  "macro.create": "allow",
+  "macro.update": "allow",
+  "macro.delete": "approve",
+  "macro.clone": "allow",
+  "macro.import-from-compendium": "allow",
+  "macro.ownership.set": "allow",
+  "playlist.list": "allow",
+  "playlist.get": "allow",
+  "playlist.get-many": "allow",
+  "playlist.create": "allow",
+  "playlist.update": "allow",
+  "playlist.delete": "approve",
+  "playlist.clone": "allow",
+  "playlist.import-from-compendium": "allow",
+  "playlist.ownership.set": "allow",
+  "playlist.sound.list": "allow",
+  "playlist.sound.get": "allow",
+  "playlist.sound.create": "allow",
+  "playlist.sound.update": "allow",
+  "playlist.sound.delete": "approve",
+  "playlist.sound.clone": "allow",
+  "playlist.play": "allow",
+  "playlist.stop": "allow",
+  "playlist.playNext": "allow",
+  "playlist.sound.play": "allow",
+  "playlist.sound.stop": "allow",
+  "table.list": "allow",
+  "table.get": "allow",
+  "table.get-many": "allow",
+  "table.create": "allow",
+  "table.update": "allow",
+  "table.delete": "approve",
+  "table.clone": "allow",
+  "table.import-from-compendium": "allow",
+  "table.draw": "allow",
+  "table.reset": "allow",
+  "table.ownership.set": "allow",
+  "table.result.list": "allow",
+  "table.result.get": "allow",
+  "table.result.create": "allow",
+  "table.result.update": "allow",
+  "table.result.delete": "approve",
+  "table.result.clone": "allow",
+  "combat.list": "allow",
+  "combat.get": "allow",
+  "combat.create": "allow",
+  "combat.update": "allow",
+  "combat.delete": "approve",
+  "combat.start": "allow",
+  "combat.activate": "allow",
+  "combat.next-turn": "allow",
+  "combat.previous-turn": "allow",
+  "combat.next-round": "allow",
+  "combat.previous-round": "allow",
+  "combat.reset-initiative": "allow",
+  "combat.roll-initiative": "allow",
+  "combat.set-initiative": "allow",
+  "combat.combatant.list": "allow",
+  "combat.combatant.get": "allow",
+  "combat.combatant.create": "allow",
+  "combat.combatant.update": "allow",
+  "combat.combatant.delete": "approve",
+  "combat.group.list": "allow",
+  "combat.group.get": "allow",
+  "combat.group.create": "allow",
+  "combat.group.update": "allow",
+  "combat.group.delete": "approve",
+  "cards.list": "allow",
+  "cards.get": "allow",
+  "cards.get-many": "allow",
+  "cards.create": "allow",
+  "cards.update": "allow",
+  "cards.clone": "allow",
+  "cards.import-from-compendium": "allow",
+  "cards.delete": "approve",
+  "cards.ownership.set": "allow",
+  "cards.shuffle": "allow",
+  "cards.reset": "allow",
+  "cards.deal": "allow",
+  "cards.draw": "allow",
+  "cards.pass": "allow",
+  "cards.card.list": "allow",
+  "cards.card.get": "allow",
+  "cards.card.create": "allow",
+  "cards.card.update": "allow",
+  "cards.card.clone": "allow",
+  "cards.card.delete": "approve",
+  "chat.list": "allow",
+  "chat.get": "allow",
+  "chat.create": "allow",
+  "chat.delete": "approve",
+  "actor.list": "allow",
+  "actor.get": "allow",
+  "actor.get-many": "allow",
+  "actor.create": "allow",
+  "actor.update": "allow",
+  "actor.delete": "approve",
+  "actor.clone": "allow",
+  "actor.ownership.set": "allow",
+  "actor.item.list": "allow",
+  "actor.item.create": "allow",
+  "actor.item.update": "allow",
+  "actor.item.get": "allow",
+  "actor.item.delete": "approve",
+  "actor.item.clone": "allow",
+  "actor.item.import-from-compendium": "allow",
+  "actor.update-many": "allow",
+  "actor.delete-many": "approve",
+  "actor.effect.list": "allow",
+  "actor.effect.applied": "allow",
+  "actor.effect.get": "allow",
+  "actor.effect.create": "allow",
+  "actor.effect.update": "allow",
+  "actor.effect.delete": "approve",
+  "actor.effect.clone": "allow",
+  "actor.effect.create-many": "allow",
+  "actor.effect.update-many": "allow",
+  "actor.effect.delete-many": "approve",
+  "actor.item.effect.list": "allow",
+  "actor.item.effect.get": "allow",
+  "actor.item.effect.create": "allow",
+  "actor.item.effect.update": "allow",
+  "actor.item.effect.delete": "approve",
+  "actor.item.effect.clone": "allow",
+  "actor.item.effect.create-many": "allow",
+  "actor.item.effect.update-many": "allow",
+  "actor.item.effect.delete-many": "approve",
+  "file.list": "allow",
+  "file.stat": "allow",
+  "file.read": "allow",
+  "file.mkdir": "allow",
+  "file.upload": "allow",
+  "file.delete": "approve",
+  "file.move": "approve",
+  "compendium.list": "allow",
+  "compendium.index": "allow",
+  "compendium.get": "allow",
+  "folder.list": "allow",
+  "folder.get": "allow",
+  "folder.create": "allow",
+  "folder.update": "allow",
+  "folder.delete": "approve",
+  "user.list": "allow",
+  "user.get": "allow",
+  "setting.list": "allow",
+  "setting.get": "allow",
+  "actor.import-from-compendium": "allow",
+  "world.audit-files": "allow",
+  "world.search": "allow",
+  "approval.await": "allow",
+  "approval.cancel": "allow",
+  "policy.snapshot": "allow"
+});
+
+// packages/protocol/src/destructive-commands.js
+var DESTRUCTIVE_VERBS = Object.freeze(["delete", "delete-many"]);
+var DESTRUCTIVE_COMMANDS = Object.freeze(["file.delete", "file.move", "scene.fog.reset"]);
+function isDestructiveCommand(name) {
+  const separator = name.lastIndexOf(".");
+  const verb = separator === -1 ? "" : name.slice(separator + 1);
+  return DESTRUCTIVE_VERBS.includes(verb) || DESTRUCTIVE_COMMANDS.includes(name);
+}
+
+// packages/protocol/src/policy.js
+var POLICY_BEHAVIORS = Object.freeze(["allow", "approve", "deny"]);
+var POLICY_EXEMPT_COMMANDS = Object.freeze([
+  "system.ping",
+  "system.info",
+  "approval.await",
+  "approval.cancel",
+  "policy.snapshot"
+]);
+function defaultProfile(name) {
+  return Object.hasOwn(DEFAULT_COMMAND_PROFILE, name) ? DEFAULT_COMMAND_PROFILE[name] : void 0;
+}
+
 // packages/protocol/src/validation.js
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -5158,13 +5563,68 @@ function createProtocolError({ code, message, details = {} }) {
     details
   };
 }
-function getProtocolVersionError(actualVersion) {
+var LEGACY_PROTOCOL_RELEASES = Object.freeze({ "3.0": "1.0.0" });
+var RELEASE_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+function normalizeComparableProtocolVersion(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  if (Object.hasOwn(LEGACY_PROTOCOL_RELEASES, value)) {
+    return LEGACY_PROTOCOL_RELEASES[value];
+  }
+  return RELEASE_VERSION_PATTERN.test(value) ? value : null;
+}
+function compareReleaseVersions(left, right) {
+  const leftParts = left.split(".").map(Number);
+  const rightParts = right.split(".").map(Number);
+  for (let index = 0; index < leftParts.length; index += 1) {
+    if (leftParts[index] !== rightParts[index]) {
+      return leftParts[index] < rightParts[index] ? -1 : 1;
+    }
+  }
+  return 0;
+}
+function isNamedComponent(component) {
+  return component === PROTOCOL_COMPONENTS.MODULE || component === PROTOCOL_COMPONENTS.CLI_DAEMON;
+}
+function resolveStaleness(actualVersion, peer, reporter) {
+  const actual = normalizeComparableProtocolVersion(actualVersion);
+  const expected = normalizeComparableProtocolVersion(PROTOCOL_VERSION);
+  if (actual === null || expected === null) {
+    return { staleComponent: PROTOCOL_COMPONENTS.UNKNOWN, comparable: false };
+  }
+  const order = compareReleaseVersions(actual, expected);
+  const older = order < 0 ? peer : order > 0 ? reporter : PROTOCOL_COMPONENTS.UNKNOWN;
+  return {
+    staleComponent: isNamedComponent(older) ? older : PROTOCOL_COMPONENTS.UNKNOWN,
+    comparable: true
+  };
+}
+function describeStaleness({ staleComponent, comparable }) {
+  if (staleComponent === PROTOCOL_COMPONENTS.MODULE) {
+    return "the Foundry module is the older component, so update the module in Foundry until both halves come from the same release, then reload the GM client";
+  }
+  if (staleComponent === PROTOCOL_COMPONENTS.CLI_DAEMON) {
+    return "the CLI and daemon are the older component, so update the fvtt-world-cli package until both halves come from the same release, then restart the daemon";
+  }
+  const cause = comparable ? "the older component is not identified here" : "these versions cannot be ordered, so the older component is unknown";
+  return `${cause}: bring the fvtt-world-cli package and the Foundry module to the same release, restart the daemon, and reload the GM client`;
+}
+function getProtocolVersionError(actualVersion, options = {}) {
+  const {
+    peer = PROTOCOL_COMPONENTS.UNKNOWN,
+    reporter = PROTOCOL_COMPONENTS.UNKNOWN,
+    handshake = PROTOCOL_HANDSHAKES.UNKNOWN
+  } = options;
+  const staleness = resolveStaleness(actualVersion, peer, reporter);
   return createProtocolError({
     code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
-    message: `Unsupported protocol version: ${actualVersion}`,
+    message: `Unsupported protocol version: ${actualVersion} (expected ${PROTOCOL_VERSION}); ${describeStaleness(staleness)}. Components from different releases are refused by design.`,
     details: {
       expectedVersion: PROTOCOL_VERSION,
-      actualVersion
+      actualVersion,
+      staleComponent: staleness.staleComponent,
+      handshake
     }
   });
 }
@@ -5201,6 +5661,14 @@ function parseBridgeMessage(rawMessage) {
   }
 }
 export {
+  APPROVAL_AWAIT_COMMAND,
+  APPROVAL_AWAIT_PARK_CAP_MS,
+  APPROVAL_CANCEL_COMMAND,
+  APPROVAL_PENDING_MAX,
+  APPROVAL_RESULT_RETENTION_MS,
+  APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+  APPROVAL_TIMEOUT_MAX_MINUTES,
+  APPROVAL_TIMEOUT_MIN_MINUTES,
   AUDIT_FILES_MAX_DIRS,
   AUDIT_FILE_SCOPES,
   AUTH_AWAIT_PARK_CAP_MS,
@@ -5250,9 +5718,11 @@ export {
   DAEMON_REQUEST_SCHEMA,
   DAEMON_REQUEST_VARIANT_SCHEMAS,
   DAEMON_RESPONSE_SCHEMA,
+  DEFAULT_COMMAND_PROFILE,
   DEFAULT_DAEMON_URL,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
+  DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
   FOG_RESET_CONFIRM_TIMEOUT_MS,
@@ -5265,6 +5735,12 @@ export {
   PAIRING_REQUEST_SCHEMA,
   PAIRING_REQUEST_TTL_MS,
   PAIRING_RESULT_SCHEMA,
+  POLICY_BEHAVIORS,
+  POLICY_DISCOVERY_TIMEOUT_MS,
+  POLICY_EXEMPT_COMMANDS,
+  POLICY_SNAPSHOT_COMMAND,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
   RECONNECT_BASE_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
@@ -5312,14 +5788,17 @@ export {
   createCommandResponse,
   createErrorResponse,
   createProtocolError,
+  defaultProfile,
   estimateSearchIndexBytes,
   getCommandDefinition,
   getInvalidCommandError,
   getInvalidMessageError,
   getInvalidParamsError,
   getProtocolVersionError,
+  isDestructiveCommand,
   isKnownCommand,
   isWriteCommand,
+  normalizeComparableProtocolVersion,
   pairingPruneCutoffAt,
   parseBridgeMessage,
   resolveEffectiveLimits,

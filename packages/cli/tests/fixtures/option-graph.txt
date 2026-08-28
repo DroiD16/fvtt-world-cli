@@ -91,7 +91,7 @@ command bridge serve
 
 command commands
   aliases=[]
-  summary=List all protocol commands and whether each mutates world state
+  summary=List discoverable protocol commands and whether each mutates world state
 
 command schema
   aliases=[]

@@ -2,7 +2,7 @@ import { ERROR_CODES, MESSAGE_TYPES, PROTOCOL_VERSION } from "@fvtt-world-cli/pr
 import { CommanderError } from "commander";
 import { z } from "zod";
 
-import type { CommandResponseEnvelope } from "./transport-util.js";
+import type { CommandResponseEnvelope, ProtocolErrorShape } from "./transport-util.js";
 import { DaemonTransportError } from "./client/send-command.js";
 import { CliConfigError } from "./config.js";
 
@@ -98,6 +98,41 @@ export function toTransportErrorEnvelope(error: unknown): CommandResponseEnvelop
     ERROR_CODES.INTERNAL_ERROR,
     error instanceof Error ? error.message : String(error)
   );
+}
+
+const TRANSPORT_DETAIL_REASONS = new Set([
+  "timeout",
+  "disconnected",
+  "invalid_json",
+  "unexpected_type",
+  "closed",
+  "connect_error"
+]);
+
+function normalizeTransportMessage(message: string): string {
+  if (/ECONNREFUSED/.test(message)) {
+    return "Could not connect to the daemon (connection refused). Is `fvtt-world-cli bridge serve` running?";
+  }
+  if (/ETIMEDOUT/.test(message)) {
+    return "Could not connect to the daemon (connection timed out).";
+  }
+  if (/ENOTFOUND|EAI_AGAIN/.test(message)) {
+    return "Could not resolve the daemon host.";
+  }
+  if (/ECONNRESET/.test(message)) {
+    return "The daemon connection was reset.";
+  }
+  return message;
+}
+
+export function renderProtocolError(error: ProtocolErrorShape | undefined) {
+  const code = error?.code ?? "UNKNOWN_ERROR";
+  const message = normalizeTransportMessage(String(error?.message ?? "Unknown error"));
+  const reason = error?.details?.reason;
+  const showDetails =
+    Boolean(error?.details) && !(typeof reason === "string" && TRANSPORT_DETAIL_REASONS.has(reason));
+  const details = showDetails ? `\n${JSON.stringify(error?.details, null, 2)}` : "";
+  return `${code}: ${message}${details}`;
 }
 
 export function planLocalError(

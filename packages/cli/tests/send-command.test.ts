@@ -1,7 +1,13 @@
 import { createServer, type Server as NetServer, type Socket as NetSocket } from "node:net";
 import type { AddressInfo } from "node:net";
 
-import { ERROR_CODES, MESSAGE_TYPES, PROTOCOL_VERSION } from "@fvtt-world-cli/protocol";
+import {
+  ERROR_CODES,
+  MESSAGE_TYPES,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
+  PROTOCOL_VERSION
+} from "@fvtt-world-cli/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket, { WebSocketServer } from "ws";
 
@@ -11,6 +17,8 @@ import {
   resetUnsafeClientTimeoutWarningForTests,
   sendCommand
 } from "../src/client/send-command.js";
+
+const LEGACY_PROTOCOL_VERSION = "3.0";
 
 const CREDENTIAL = "a".repeat(43);
 
@@ -211,6 +219,29 @@ describe("one-shot sendCommand transport", () => {
     expect(stderr[0]).toContain("--timeout-ms (200000)");
   });
 
+  it("gives up its connection when the caller aborts the request", async () => {
+    const controller = new AbortController();
+    let serverSocket: WebSocket | null = null;
+    const server = await startScriptedServer((socket) => {
+      serverSocket = socket;
+      acceptThen(socket, () => controller.abort());
+    });
+
+    const error = await expectTransportRejection(
+      sendCommand({
+        daemonUrl: server.url,
+        deviceCredential: CREDENTIAL,
+        command: "system.ping",
+        timeoutMs: 10_000,
+        signal: controller.signal
+      })
+    );
+
+    expect(error.code).toBe(ERROR_CODES.DAEMON_UNAVAILABLE);
+    expect(error.details).toMatchObject({ command: "system.ping" });
+    await closedOnServer(serverSocket as unknown as WebSocket);
+  });
+
   describe("hello-ack phase", () => {
     it("rejects with the daemon's own error when the hello ack reports failure", async () => {
       const server = await startScriptedServer((socket) => {
@@ -282,6 +313,72 @@ describe("one-shot sendCommand transport", () => {
       expect(error.code).toBe(ERROR_CODES.INVALID_MESSAGE);
       expect(error.details?.reason).toBe("invalid_message");
       expect(error.details?.errors).toContain("$.error is required when $.ok is false");
+    });
+
+    it("names the version skew when a daemon from another release answers the hello", async () => {
+      const server = await startScriptedServer((socket) => {
+        afterHello(socket, () =>
+          socket.send(
+            JSON.stringify({
+              protocolVersion: LEGACY_PROTOCOL_VERSION,
+              type: MESSAGE_TYPES.CLIENT_HELLO_ACK,
+              ok: false,
+              error: {
+                code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+                message: `Unsupported protocol version: ${PROTOCOL_VERSION}`,
+                details: {}
+              }
+            })
+          )
+        );
+      });
+
+      const error = await expectTransportRejection(
+        sendCommand({
+          daemonUrl: server.url,
+          deviceCredential: CREDENTIAL,
+          command: "system.ping",
+          timeoutMs: 2_000
+        })
+      );
+
+      expect(error.code).toBe(ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION);
+      expect(error.details).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_PROTOCOL_VERSION,
+        staleComponent: PROTOCOL_COMPONENTS.CLI_DAEMON,
+        handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON
+      });
+      expect(error.message).toContain("restart the daemon");
+    });
+
+    it("names the version skew on a persistent connection too", async () => {
+      const server = await startScriptedServer((socket) => {
+        afterHello(socket, () =>
+          socket.send(
+            JSON.stringify({
+              protocolVersion: LEGACY_PROTOCOL_VERSION,
+              type: MESSAGE_TYPES.CLIENT_HELLO_ACK,
+              ok: false,
+              error: {
+                code: ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION,
+                message: `Unsupported protocol version: ${PROTOCOL_VERSION}`,
+                details: {}
+              }
+            })
+          )
+        );
+      });
+
+      const error = await expectTransportRejection(
+        connectDaemonClient({ daemonUrl: server.url, deviceCredential: CREDENTIAL, timeoutMs: 2_000 })
+      );
+
+      expect(error.code).toBe(ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION);
+      expect(error.details).toMatchObject({
+        actualVersion: LEGACY_PROTOCOL_VERSION,
+        staleComponent: PROTOCOL_COMPONENTS.CLI_DAEMON
+      });
     });
 
     it("rejects a malformed hello ack as an invalid transport message", async () => {
@@ -631,6 +728,35 @@ describe("persistent daemon client transport", () => {
       expect(server.frames[1]).toMatchObject({
         type: MESSAGE_TYPES.DAEMON_REQUEST,
         operation: "auth.list"
+      });
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("abandons a command whose signal aborts before the daemon answers", async () => {
+    const server = await startScriptedServer((socket) => {
+      acceptThen(socket, () => {});
+    });
+
+    const client = await connectDaemonClient({
+      daemonUrl: server.url,
+      deviceCredential: CREDENTIAL,
+      timeoutMs: 2_000
+    });
+    const controller = new AbortController();
+
+    try {
+      const pending = client.send({
+        command: "system.ping",
+        timeoutMs: 60_000,
+        signal: controller.signal
+      });
+      controller.abort();
+
+      await expect(pending).rejects.toMatchObject({
+        code: ERROR_CODES.DAEMON_UNAVAILABLE,
+        details: { reason: "closed", command: "system.ping" }
       });
     } finally {
       await client.close();

@@ -4,10 +4,21 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { OUTPUT_PATH, buildGeneratedSource } from "../../../scripts/generate-protocol.mjs";
+import {
+  OUTPUT_PATH,
+  PROFILE_PATH,
+  buildDefaultCommandProfileSource,
+  buildGeneratedSource
+} from "../../../scripts/generate-protocol.mjs";
 import * as moduleProtocol from "../../foundry-module/scripts/generated/protocol.js";
 import * as protocol from "../src/index.js";
 import {
+  APPROVAL_AWAIT_PARK_CAP_MS,
+  APPROVAL_PENDING_MAX,
+  APPROVAL_RESULT_RETENTION_MS,
+  APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+  APPROVAL_TIMEOUT_MAX_MINUTES,
+  APPROVAL_TIMEOUT_MIN_MINUTES,
   AUTH_AWAIT_PARK_CAP_MS,
   AUTH_PRUNE_DEFAULT_DAYS,
   BATCH_GET_MAX_IDS,
@@ -15,19 +26,30 @@ import {
   BATCH_WRITE_PERSISTED_STATUSES,
   BATCH_WRITE_STATUSES,
   BATCH_WRITE_SUCCESS_STATUSES,
+  BRIDGE_LEASE_MS,
   COMMAND_DEFINITIONS,
   COMMAND_NAMES,
+  DAEMON_OPERATIONS,
   DAEMON_OPERATION_DEFINITIONS,
   DAEMON_REQUEST_SCHEMA,
   DAEMON_REQUEST_VARIANT_SCHEMAS,
+  DEFAULT_COMMAND_PROFILE,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
+  DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   SETTING_VALUE_MAX_BYTES,
   SETTING_VALUE_MAX_DEPTH,
   SETTING_VALUE_MAX_NODES,
   MESSAGE_TYPES,
+  POLICY_BEHAVIORS,
+  POLICY_DISCOVERY_TIMEOUT_MS,
+  POLICY_EXEMPT_COMMANDS,
+  PROTOCOL_COMPONENTS,
+  PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
+  defaultProfile,
+  isDestructiveCommand,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
   FOG_RESET_CONFIRM_TIMEOUT_MS,
   SCENE_THUMBNAIL_MAX_BYTES,
@@ -81,7 +103,9 @@ import {
   UPLOAD_SIZE_LIMIT_MAX_BYTES,
   WRITE_COMMANDS,
   createBridgeHello,
+  getProtocolVersionError,
   isWriteCommand,
+  normalizeComparableProtocolVersion,
   resolveEffectiveLimits,
   validateCommandRequest,
   validateDaemonRequest,
@@ -1449,7 +1473,211 @@ describe("protocol contract", () => {
     });
 
     it("pins the protocol version the daemon and module must share exactly", () => {
-      expect(PROTOCOL_VERSION).toBe("3.0");
+      expect(PROTOCOL_VERSION).toBe("1.1.0");
+    });
+  });
+
+  describe("protocol version mismatch details", () => {
+    const { MODULE, CLI_DAEMON, UNKNOWN } = PROTOCOL_COMPONENTS;
+    const LEGACY_VERSION = "3.0";
+    const HIGHER_VERSION = "9.9.0";
+
+    it("maps the one pre-lockstep protocol value onto its release and passes releases through", () => {
+      expect(normalizeComparableProtocolVersion(LEGACY_VERSION)).toBe("1.0.0");
+      expect(normalizeComparableProtocolVersion(PROTOCOL_VERSION)).toBe(PROTOCOL_VERSION);
+      expect(normalizeComparableProtocolVersion("2.10.3")).toBe("2.10.3");
+    });
+
+    it("reports every other spelling as not comparable instead of parsing it", () => {
+      for (const value of [
+        "3.1",
+        "abc",
+        "",
+        "1.1",
+        "1.1.0-rc1",
+        "1.1.0.1",
+        "v1.1.0",
+        " 1.1.0",
+        undefined,
+        null,
+        1.1
+      ]) {
+        expect(normalizeComparableProtocolVersion(value), String(value)).toBeNull();
+      }
+    });
+
+    it("pins the component and handshake literals callers may report", () => {
+      expect(PROTOCOL_COMPONENTS).toEqual({
+        MODULE: "module",
+        CLI_DAEMON: "cli-daemon",
+        UNKNOWN: "unknown"
+      });
+      expect(PROTOCOL_HANDSHAKES).toEqual({
+        CLI_DAEMON: "cli-daemon",
+        MODULE_DAEMON: "module-daemon",
+        COMMAND_REQUEST: "command-request",
+        DAEMON_REQUEST: "daemon-request",
+        UNKNOWN: "unknown"
+      });
+      expect(Object.isFrozen(PROTOCOL_COMPONENTS)).toBe(true);
+      expect(Object.isFrozen(PROTOCOL_HANDSHAKES)).toBe(true);
+      expect(moduleProtocol.PROTOCOL_COMPONENTS).toEqual({ ...PROTOCOL_COMPONENTS });
+      expect(moduleProtocol.PROTOCOL_HANDSHAKES).toEqual({ ...PROTOCOL_HANDSHAKES });
+    });
+
+    it("blames the peer that reports the lower release, on either side of the connection", () => {
+      const fromModule = getProtocolVersionError(LEGACY_VERSION, {
+        peer: CLI_DAEMON,
+        reporter: MODULE,
+        handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
+      });
+      expect(fromModule.code).toBe(ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION);
+      expect(fromModule.details).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_VERSION,
+        staleComponent: CLI_DAEMON,
+        handshake: "command-request"
+      });
+      expect(fromModule.message).toContain("update the fvtt-world-cli package");
+
+      const fromDaemon = getProtocolVersionError(LEGACY_VERSION, {
+        peer: MODULE,
+        reporter: CLI_DAEMON,
+        handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+      });
+      expect(fromDaemon.details).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_VERSION,
+        staleComponent: MODULE,
+        handshake: "module-daemon"
+      });
+      expect(fromDaemon.message).toContain("update the module in Foundry");
+      expect(fromDaemon.message).toContain("refused by design");
+    });
+
+    it("blames the reporting side when the peer reports the higher release", () => {
+      expect(
+        getProtocolVersionError(HIGHER_VERSION, {
+          peer: MODULE,
+          reporter: CLI_DAEMON,
+          handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+        }).details
+      ).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: HIGHER_VERSION,
+        staleComponent: CLI_DAEMON,
+        handshake: "module-daemon"
+      });
+
+      expect(
+        getProtocolVersionError("1.2.0", {
+          peer: CLI_DAEMON,
+          reporter: MODULE,
+          handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
+        }).details
+      ).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: "1.2.0",
+        staleComponent: MODULE,
+        handshake: "command-request"
+      });
+    });
+
+    it("names the same component on both ends of a CLI-to-daemon skew", () => {
+      expect(
+        getProtocolVersionError(LEGACY_VERSION, {
+          peer: CLI_DAEMON,
+          reporter: CLI_DAEMON,
+          handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON
+        }).details
+      ).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_VERSION,
+        staleComponent: CLI_DAEMON,
+        handshake: "cli-daemon"
+      });
+
+      expect(
+        getProtocolVersionError(HIGHER_VERSION, {
+          peer: CLI_DAEMON,
+          reporter: CLI_DAEMON,
+          handshake: PROTOCOL_HANDSHAKES.CLI_DAEMON
+        }).details.staleComponent
+      ).toBe(CLI_DAEMON);
+
+      expect(
+        getProtocolVersionError(LEGACY_VERSION, {
+          peer: CLI_DAEMON,
+          reporter: CLI_DAEMON,
+          handshake: PROTOCOL_HANDSHAKES.DAEMON_REQUEST
+        }).details
+      ).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_VERSION,
+        staleComponent: CLI_DAEMON,
+        handshake: "daemon-request"
+      });
+    });
+
+    it("refuses to guess when a version cannot be ordered or a side is unidentified", () => {
+      const uncomparable = getProtocolVersionError("9.9", {
+        peer: CLI_DAEMON,
+        reporter: MODULE,
+        handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
+      });
+
+      expect(uncomparable.details).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: "9.9",
+        staleComponent: UNKNOWN,
+        handshake: "command-request"
+      });
+      expect(uncomparable.message).toContain("cannot be ordered");
+
+      for (const options of [
+        { peer: UNKNOWN, reporter: MODULE, handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST },
+        { peer: "browser", reporter: MODULE, handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST }
+      ]) {
+        expect(getProtocolVersionError(LEGACY_VERSION, options).details.staleComponent).toBe(UNKNOWN);
+      }
+
+      expect(
+        getProtocolVersionError(HIGHER_VERSION, {
+          peer: MODULE,
+          handshake: PROTOCOL_HANDSHAKES.MODULE_DAEMON
+        }).details.staleComponent
+      ).toBe(UNKNOWN);
+    });
+
+    it("still reports both versions when the caller identifies nothing", () => {
+      const error = getProtocolVersionError(LEGACY_VERSION);
+
+      expect(error.code).toBe(ERROR_CODES.UNSUPPORTED_PROTOCOL_VERSION);
+      expect(error.details).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_VERSION,
+        staleComponent: UNKNOWN,
+        handshake: "unknown"
+      });
+      expect(error.message).toContain("bring the fvtt-world-cli package and the Foundry module");
+      expect(error.message).not.toContain("cannot be ordered");
+    });
+
+    it("carries the comparison and the enriched error into the module mirror", () => {
+      expect(moduleProtocol.normalizeComparableProtocolVersion(LEGACY_VERSION)).toBe("1.0.0");
+      expect(moduleProtocol.normalizeComparableProtocolVersion("1.1")).toBeNull();
+      expect(
+        moduleProtocol.getProtocolVersionError(LEGACY_VERSION, {
+          peer: CLI_DAEMON,
+          reporter: MODULE,
+          handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
+        }).details
+      ).toEqual({
+        expectedVersion: PROTOCOL_VERSION,
+        actualVersion: LEGACY_VERSION,
+        staleComponent: CLI_DAEMON,
+        handshake: "command-request"
+      });
     });
   });
 
@@ -1927,6 +2155,340 @@ describe("protocol contract", () => {
     expect(lockfile.packages["packages/protocol"].version).toBe(version);
     expect(lockfile.packages["packages/foundry-module"].version).toBe(version);
     expect(lockfile.packages["packages/cli"].devDependencies["@fvtt-world-cli/protocol"]).toBe(version);
+  });
+
+  it("keeps every error code a self-named entry with no duplicate value", () => {
+    for (const [key, value] of Object.entries(ERROR_CODES)) {
+      expect(value, `${key} must name itself`).toBe(key);
+      expect(key).toMatch(/^[A-Z][A-Z0-9_]*$/);
+    }
+
+    expect(new Set(Object.values(ERROR_CODES)).size).toBe(Object.keys(ERROR_CODES).length);
+  });
+
+  describe("command policy primitives", () => {
+    const DESTRUCTIVE_EXTRAS = ["file.move", "scene.fog.reset"];
+    const finalSegment = (name) => name.slice(name.lastIndexOf(".") + 1);
+
+    it("exposes a code for the deny verdict and for every approval outcome", () => {
+      for (const code of [
+        "COMMAND_DENIED",
+        "APPROVAL_PENDING",
+        "APPROVAL_DENIED",
+        "APPROVAL_TIMEOUT",
+        "APPROVAL_CANCELLED",
+        "APPROVAL_QUEUE_FULL",
+        "APPROVAL_UNKNOWN"
+      ]) {
+        expect(ERROR_CODES[code]).toBe(code);
+      }
+    });
+
+    it("pins the tri-state behavior list", () => {
+      expect(POLICY_BEHAVIORS).toEqual(["allow", "approve", "deny"]);
+      expect(Object.isFrozen(POLICY_BEHAVIORS)).toBe(true);
+    });
+
+    it("exempts exactly the status reads and the plumbing commands, and nothing that mutates", () => {
+      expect(Object.isFrozen(POLICY_EXEMPT_COMMANDS)).toBe(true);
+      expect(new Set(POLICY_EXEMPT_COMMANDS).size).toBe(POLICY_EXEMPT_COMMANDS.length);
+      expect(POLICY_EXEMPT_COMMANDS).toEqual([
+        "system.ping",
+        "system.info",
+        "approval.await",
+        "approval.cancel",
+        "policy.snapshot"
+      ]);
+
+      for (const command of POLICY_EXEMPT_COMMANDS) {
+        expect(
+          COMMAND_DEFINITIONS[command].mutation,
+          `${command} bypasses the policy gate, so it must not mutate`
+        ).toBe(false);
+      }
+    });
+
+    it("classifies registry commands as destructive by delete verb plus the explicit extras", () => {
+      const deleteVerbs = COMMAND_NAMES.filter((name) =>
+        ["delete", "delete-many"].includes(finalSegment(name))
+      );
+
+      for (const name of COMMAND_NAMES) {
+        const expected =
+          ["delete", "delete-many"].includes(finalSegment(name)) || DESTRUCTIVE_EXTRAS.includes(name);
+
+        expect(isDestructiveCommand(name), name).toBe(expected);
+      }
+
+      for (const name of DESTRUCTIVE_EXTRAS) {
+        expect(COMMAND_NAMES).toContain(name);
+        expect(deleteVerbs).not.toContain(name);
+      }
+
+      expect(deleteVerbs.length).toBeGreaterThan(0);
+      expect(COMMAND_NAMES.filter(isDestructiveCommand).length).toBe(
+        deleteVerbs.length + DESTRUCTIVE_EXTRAS.length
+      );
+    });
+
+    it("reads only the final dot-separated segment, so malformed names are not destructive", () => {
+      for (const name of ["", "delete", "actor.deleted", "actor.delete.extra"]) {
+        expect(isDestructiveCommand(name), name).toBe(false);
+      }
+
+      expect(isDestructiveCommand("actor.delete")).toBe(true);
+      expect(isDestructiveCommand("actor.item.delete-many")).toBe(true);
+    });
+
+    it("parks an approval poll for the same ceiling the pairing wait uses", () => {
+      expect(APPROVAL_AWAIT_PARK_CAP_MS).toBe(25_000);
+      expect(APPROVAL_AWAIT_PARK_CAP_MS).toBe(AUTH_AWAIT_PARK_CAP_MS);
+      expect(APPROVAL_AWAIT_PARK_CAP_MS).toBeLessThan(BRIDGE_LEASE_MS);
+      expect(APPROVAL_RESULT_RETENTION_MS).toBe(300_000);
+      expect(APPROVAL_RESULT_RETENTION_MS).toBeGreaterThan(APPROVAL_AWAIT_PARK_CAP_MS);
+    });
+
+    it("bounds the pending approval count and the policy discovery wait", () => {
+      expect(APPROVAL_PENDING_MAX).toBe(20);
+      expect(POLICY_DISCOVERY_TIMEOUT_MS).toBe(1_500);
+    });
+
+    it("keeps the configurable approval timeout inside the browser timer ceiling", () => {
+      const timerCeilingMs = 2 ** 31 - 1;
+
+      expect(APPROVAL_TIMEOUT_MIN_MINUTES).toBe(1);
+      expect(APPROVAL_TIMEOUT_DEFAULT_MINUTES).toBe(60);
+      expect(APPROVAL_TIMEOUT_MIN_MINUTES).toBeLessThanOrEqual(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
+      expect(APPROVAL_TIMEOUT_DEFAULT_MINUTES).toBeLessThanOrEqual(APPROVAL_TIMEOUT_MAX_MINUTES);
+      expect(APPROVAL_TIMEOUT_MAX_MINUTES * 60_000).toBeLessThan(timerCeilingMs);
+      expect((APPROVAL_TIMEOUT_MAX_MINUTES + 1) * 60_000).toBeGreaterThan(timerCeilingMs);
+    });
+
+    it("carries the approval and policy primitives into the module mirror", () => {
+      const numeric = /** @type {Record<string, number>} */ ({
+        APPROVAL_AWAIT_PARK_CAP_MS,
+        APPROVAL_RESULT_RETENTION_MS,
+        APPROVAL_PENDING_MAX,
+        APPROVAL_TIMEOUT_DEFAULT_MINUTES,
+        APPROVAL_TIMEOUT_MIN_MINUTES,
+        APPROVAL_TIMEOUT_MAX_MINUTES,
+        POLICY_DISCOVERY_TIMEOUT_MS
+      });
+
+      for (const [key, value] of Object.entries(numeric)) {
+        expect(moduleProtocol[key], `${key} must reach the module mirror`).toBe(value);
+      }
+
+      expect(moduleProtocol.POLICY_BEHAVIORS).toEqual([...POLICY_BEHAVIORS]);
+      expect(moduleProtocol.POLICY_EXEMPT_COMMANDS).toEqual([...POLICY_EXEMPT_COMMANDS]);
+      expect(moduleProtocol.isDestructiveCommand("scene.fog.reset")).toBe(true);
+    });
+  });
+
+  describe("default command profile", () => {
+    const expectedBehavior = (command) => (isDestructiveCommand(command) ? "approve" : "allow");
+
+    it("stays byte-identical to what the generator emits", () => {
+      expect(
+        readFileSync(PROFILE_PATH, "utf8"),
+        "the snapshot is stale; run `npm run generate:protocol`"
+      ).toBe(buildDefaultCommandProfileSource());
+    });
+
+    it("covers every registry command exactly once, in registry order", () => {
+      expect(Object.keys(DEFAULT_COMMAND_PROFILE)).toEqual([...COMMAND_NAMES]);
+    });
+
+    it("assigns every command the behavior the destructive rule dictates", () => {
+      for (const command of COMMAND_NAMES) {
+        expect(POLICY_BEHAVIORS, command).toContain(DEFAULT_COMMAND_PROFILE[command]);
+        expect(DEFAULT_COMMAND_PROFILE[command], command).toBe(expectedBehavior(command));
+      }
+    });
+
+    it("puts exactly the destructive commands in the approve bucket", () => {
+      const approved = COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === "approve");
+
+      expect(approved).toEqual(COMMAND_NAMES.filter(isDestructiveCommand));
+      expect(approved.length).toBeGreaterThan(0);
+      expect(approved.length).toBeLessThan(COMMAND_NAMES.length);
+      for (const command of ["actor.delete", "actor.delete-many", "file.move", "scene.fog.reset"]) {
+        expect(DEFAULT_COMMAND_PROFILE[command], command).toBe("approve");
+      }
+      expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
+    });
+
+    it("counts 54 approve-listed and 262 self-running commands in a registry of 316", () => {
+      const approved = COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === "approve");
+
+      expect(
+        {
+          commands: COMMAND_NAMES.length,
+          approve: approved.length,
+          allow: COMMAND_NAMES.length - approved.length
+        },
+        'the totals moved: update every count docs/commands.md states ("54 of the 316 commands in the registry; the other 262 run on their own") in the same change'
+      ).toEqual({ commands: 316, approve: 54, allow: 262 });
+    });
+
+    it("leaves 311 governed commands in 16 top-level groups once the exempt ones are removed", () => {
+      const exempt = new Set(POLICY_EXEMPT_COMMANDS);
+      const governed = COMMAND_NAMES.filter((command) => !exempt.has(command));
+
+      expect(
+        {
+          governed: governed.length,
+          groups: new Set(governed.map((command) => command.split(".")[0])).size
+        },
+        'the window totals moved: update the counts docs/commands.md states ("the 311 commands the permissions govern, in 16 top-level groups") in the same change'
+      ).toEqual({ governed: 311, groups: 16 });
+    });
+
+    it("cannot be mutated in place", () => {
+      const table = /** @type {Record<string, string>} */ (DEFAULT_COMMAND_PROFILE);
+
+      expect(Object.isFrozen(DEFAULT_COMMAND_PROFILE)).toBe(true);
+      expect(() => {
+        table["actor.delete"] = "allow";
+      }).toThrow(TypeError);
+      expect(() => {
+        table["bogus.command"] = "deny";
+      }).toThrow(TypeError);
+    });
+
+    it("looks up a command and reports nothing for a name the registry does not carry", () => {
+      for (const command of COMMAND_NAMES) {
+        expect(defaultProfile(command), command).toBe(expectedBehavior(command));
+      }
+
+      for (const name of ["bogus.command", "", "toString", "constructor", "__proto__"]) {
+        expect(defaultProfile(name), name).toBeUndefined();
+      }
+    });
+
+    it("reaches the module mirror with the same table and lookup", () => {
+      expect(moduleProtocol.DEFAULT_COMMAND_PROFILE).toEqual({ ...DEFAULT_COMMAND_PROFILE });
+      expect(moduleProtocol.defaultProfile("actor.delete")).toBe("approve");
+      expect(moduleProtocol.defaultProfile("actor.get")).toBe("allow");
+      expect(moduleProtocol.defaultProfile("bogus.command")).toBeUndefined();
+    });
+  });
+
+  describe("approval and policy plumbing commands", () => {
+    const HIDDEN_COMMANDS = Object.freeze(["approval.await", "approval.cancel", "policy.snapshot"]);
+    const APPROVAL_ID = "AbCdEf0123456789_-wxyZ";
+    const hiddenNames = () => COMMAND_NAMES.filter((name) => COMMAND_DEFINITIONS[name].discovery === false);
+
+    it("hides exactly the plumbing commands from discovery", () => {
+      expect(hiddenNames()).toEqual([...HIDDEN_COMMANDS]);
+      expect(DISCOVERABLE_COMMAND_NAMES).toHaveLength(COMMAND_NAMES.length - HIDDEN_COMMANDS.length);
+      for (const command of HIDDEN_COMMANDS) {
+        expect(DISCOVERABLE_COMMAND_NAMES, `${command} must not be discoverable`).not.toContain(command);
+      }
+      expect(DISCOVERABLE_COMMAND_NAMES).toContain("system.info");
+    });
+
+    it("exports the plumbing command names the CLI polls as registry keys", () => {
+      const exported = [
+        protocol.APPROVAL_AWAIT_COMMAND,
+        protocol.APPROVAL_CANCEL_COMMAND,
+        protocol.POLICY_SNAPSHOT_COMMAND
+      ];
+      expect(exported).toEqual([...HIDDEN_COMMANDS]);
+      for (const command of exported) {
+        expect(COMMAND_NAMES, `${command} must name a registry command`).toContain(command);
+        expect(Object.hasOwn(COMMAND_DEFINITIONS, command)).toBe(true);
+      }
+      expect(moduleProtocol.APPROVAL_AWAIT_COMMAND).toBe(protocol.APPROVAL_AWAIT_COMMAND);
+      expect(moduleProtocol.APPROVAL_CANCEL_COMMAND).toBe(protocol.APPROVAL_CANCEL_COMMAND);
+      expect(moduleProtocol.POLICY_SNAPSHOT_COMMAND).toBe(protocol.POLICY_SNAPSHOT_COMMAND);
+    });
+
+    it("carries no discovery field on a discoverable command", () => {
+      const annotated = DISCOVERABLE_COMMAND_NAMES.filter(
+        (command) => "discovery" in COMMAND_DEFINITIONS[command]
+      );
+      expect(annotated, "the flag marks hidden entries only, never every discoverable one").toEqual([]);
+    });
+
+    it("keeps the discoverable set frozen and in registry order", () => {
+      expect(Object.isFrozen(DISCOVERABLE_COMMAND_NAMES)).toBe(true);
+      expect(() => {
+        DISCOVERABLE_COMMAND_NAMES.push("bogus.command");
+      }).toThrow(TypeError);
+
+      const positions = DISCOVERABLE_COMMAND_NAMES.map((command) => COMMAND_NAMES.indexOf(command));
+      expect(positions).toEqual([...positions].sort((left, right) => left - right));
+      expect(positions).not.toContain(-1);
+      expect(moduleProtocol.DISCOVERABLE_COMMAND_NAMES).toEqual([...DISCOVERABLE_COMMAND_NAMES]);
+    });
+
+    it("keeps every hidden command exempt read-only plumbing", () => {
+      for (const command of hiddenNames()) {
+        expect(POLICY_EXEMPT_COMMANDS, `${command} must be exempt`).toContain(command);
+        expect(COMMAND_DEFINITIONS[command].mutation, `${command} must not mutate`).toBe(false);
+      }
+    });
+
+    it("keeps every exempt name a module command, since daemon operations never reach the module", () => {
+      for (const command of POLICY_EXEMPT_COMMANDS) {
+        expect(COMMAND_NAMES, `${command} must be a registry command`).toContain(command);
+        expect(command.startsWith("auth."), `${command} must not be a daemon operation`).toBe(false);
+      }
+
+      for (const operation of DAEMON_OPERATIONS) {
+        expect(COMMAND_NAMES, `${operation} is a daemon operation, not a module command`).not.toContain(
+          operation
+        );
+        expect(POLICY_EXEMPT_COMMANDS, `${operation} is exempt by construction`).not.toContain(operation);
+      }
+    });
+
+    it("keeps a hidden command callable and validated", () => {
+      for (const command of HIDDEN_COMMANDS) {
+        expect(protocol.REQUEST_SCHEMA.properties.command.enum).toContain(command);
+        expect(protocol.isKnownCommand(command)).toBe(true);
+        expect(protocol.getCommandDefinition(command).paramsSchema.additionalProperties).toBe(false);
+        expect(WRITE_COMMANDS).not.toContain(command);
+      }
+    });
+
+    it("accepts an approval id of the generated shape, with or without a park duration", () => {
+      expectValid("approval.await", { approvalId: APPROVAL_ID });
+      expectValid("approval.await", { approvalId: APPROVAL_ID, waitMs: 0 });
+      expectValid("approval.await", { approvalId: APPROVAL_ID, waitMs: APPROVAL_AWAIT_PARK_CAP_MS });
+      expectValid("approval.cancel", { approvalId: APPROVAL_ID });
+      expectValid("policy.snapshot", {});
+    });
+
+    it("rejects an approval id outside the base64url shape the store generates", () => {
+      for (const command of ["approval.await", "approval.cancel"]) {
+        expectRejected(command, {}, "approvalId");
+        expectRejected(command, { approvalId: "" }, "approvalId");
+        expectRejected(command, { approvalId: APPROVAL_ID.slice(0, 21) }, "approvalId");
+        expectRejected(command, { approvalId: `${APPROVAL_ID}A` }, "approvalId");
+        expectRejected(command, { approvalId: `${APPROVAL_ID.slice(0, 20)}+/` }, "approvalId");
+        expectRejected(command, { approvalId: 1 }, "approvalId");
+        expectRejected(command, { approvalId: APPROVAL_ID, extra: true }, "extra");
+      }
+    });
+
+    it("rejects a park duration outside the poll ceiling", () => {
+      expectRejected("approval.await", { approvalId: APPROVAL_ID, waitMs: -1 }, "waitMs");
+      expectRejected(
+        "approval.await",
+        { approvalId: APPROVAL_ID, waitMs: APPROVAL_AWAIT_PARK_CAP_MS + 1 },
+        "waitMs"
+      );
+      expectRejected("approval.await", { approvalId: APPROVAL_ID, waitMs: 1.5 }, "waitMs");
+      expectRejected("approval.cancel", { approvalId: APPROVAL_ID, waitMs: 0 }, "waitMs");
+    });
+
+    it("takes no parameters for the policy snapshot", () => {
+      expect(COMMAND_DEFINITIONS["policy.snapshot"].paramsSchema.required).toEqual([]);
+      expect(Object.keys(COMMAND_DEFINITIONS["policy.snapshot"].paramsSchema.properties)).toEqual([]);
+      expectRejected("policy.snapshot", { approvalId: APPROVAL_ID }, "approvalId");
+    });
   });
 
   describe("editable flags / prototypeToken on world documents", () => {

@@ -13,6 +13,7 @@ package-lock.json
 
 packages/foundry-module/scripts/vendor/minisearch.mjs
 packages/foundry-module/scripts/generated/protocol.js
+packages/protocol/src/generated/default-command-profile.js
 
 packages/cli/docs/
 packages/cli/skills/

@@ -1,4 +1,19 @@
-export const PROTOCOL_VERSION = "3.0";
+export const PROTOCOL_VERSION = "1.1.0";
+
+export const PROTOCOL_COMPONENTS = Object.freeze({
+  MODULE: "module",
+  CLI_DAEMON: "cli-daemon",
+  UNKNOWN: "unknown"
+});
+
+export const PROTOCOL_HANDSHAKES = Object.freeze({
+  CLI_DAEMON: "cli-daemon",
+  MODULE_DAEMON: "module-daemon",
+  COMMAND_REQUEST: "command-request",
+  DAEMON_REQUEST: "daemon-request",
+  UNKNOWN: "unknown"
+});
+
 export const MODULE_ID = "fvtt-world-cli";
 export const MODULE_TITLE = "World CLI for Foundry VTT";
 export const DEFAULT_DAEMON_URL = "ws://127.0.0.1:47833";
@@ -18,6 +33,16 @@ export const BRIDGE_TAKEOVER_CLOSE_CODE = 4001;
 export const BRIDGE_TAKEOVER_CLOSE_REASON = "Bridge session taken over by the same pairing";
 export const BRIDGE_RELEASE_CLOSE_CODE = 4002;
 export const BRIDGE_RELEASE_CLOSE_REASON = "Bridge released";
+
+export const APPROVAL_AWAIT_PARK_CAP_MS = 25_000;
+export const APPROVAL_RESULT_RETENTION_MS = 5 * 60 * 1_000;
+export const APPROVAL_PENDING_MAX = 20;
+export const APPROVAL_TIMEOUT_DEFAULT_MINUTES = 60;
+export const APPROVAL_TIMEOUT_MIN_MINUTES = 1;
+// Largest whole-minute duration whose millisecond value stays below the browser timer ceiling of 2**31 - 1.
+export const APPROVAL_TIMEOUT_MAX_MINUTES = 35_791;
+
+export const POLICY_DISCOVERY_TIMEOUT_MS = 1_500;
 
 export const CLIENT_ID_MIN_LENGTH = 8;
 export const CLIENT_ID_MAX_LENGTH = 64;
@@ -224,6 +249,7 @@ export const ERROR_CODES = Object.freeze({
   COMPENDIUM_NOT_FOUND: "COMPENDIUM_NOT_FOUND",
   COMPENDIUM_ENTRY_NOT_FOUND: "COMPENDIUM_ENTRY_NOT_FOUND",
   IDEMPOTENCY_KEY_CONFLICT: "IDEMPOTENCY_KEY_CONFLICT",
+  IDEMPOTENCY_STORE_FULL: "IDEMPOTENCY_STORE_FULL",
   EFFECT_NOT_FOUND: "EFFECT_NOT_FOUND",
   PLAYLIST_NOT_FOUND: "PLAYLIST_NOT_FOUND",
   PLAYLIST_SOUND_NOT_FOUND: "PLAYLIST_SOUND_NOT_FOUND",
@@ -283,5 +309,19 @@ export const ERROR_CODES = Object.freeze({
   PAIRING_REQUIRED: "PAIRING_REQUIRED",
   PAIRING_NOT_FOUND: "PAIRING_NOT_FOUND",
   PAIRING_EXPIRED: "PAIRING_EXPIRED",
-  BRIDGE_BUSY: "BRIDGE_BUSY"
+  BRIDGE_BUSY: "BRIDGE_BUSY",
+
+  COMMAND_DENIED: "COMMAND_DENIED",
+
+  APPROVAL_PENDING: "APPROVAL_PENDING",
+
+  APPROVAL_DENIED: "APPROVAL_DENIED",
+
+  APPROVAL_TIMEOUT: "APPROVAL_TIMEOUT",
+
+  APPROVAL_CANCELLED: "APPROVAL_CANCELLED",
+
+  APPROVAL_QUEUE_FULL: "APPROVAL_QUEUE_FULL",
+
+  APPROVAL_UNKNOWN: "APPROVAL_UNKNOWN"
 });
