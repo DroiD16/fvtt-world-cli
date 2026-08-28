@@ -12,6 +12,7 @@ const DEFAULT_MAX_ENTRIES = 1_000;
 
 interface ApprovalLink {
   key: string;
+  kind: "reserved" | "link" | "lost";
   fingerprint: string;
   approvalId: string | null;
   pendingResponse: CommandResponseEnvelope | null;
@@ -131,42 +132,63 @@ export class ApprovalIdempotencyLinks {
 
     this.links.set(key, {
       key,
+      kind: "link",
       fingerprint,
       approvalId,
       pendingResponse,
       expiresAt: expiresAt + this.retentionMs
     });
     this.keysByApprovalId.set(approvalId, key);
-
-    this.enforceCap();
   }
 
-  recordLostInFlight({ key, fingerprint, retainMs }: { key: string; fingerprint: string; retainMs: number }) {
+  // The reservation outlives the pending request it covers, so a tombstone always converts an
+  // existing entry instead of competing for capacity with newer keys.
+  reserve({ key, fingerprint, retainMs }: { key: string; fingerprint: string; retainMs: number }) {
     this.prune();
-    if (this.links.has(key)) {
+
+    const existing = this.links.get(key);
+    if (existing) {
+      return existing.kind === "reserved" && existing.fingerprint === fingerprint;
+    }
+
+    if (this.links.size >= this.maxEntries) {
       return false;
     }
 
     this.links.set(key, {
       key,
+      kind: "reserved",
       fingerprint,
       approvalId: null,
       pendingResponse: null,
       expiresAt: this.now() + retainMs
     });
-
-    this.enforceCap();
     return true;
   }
 
-  private enforceCap() {
-    while (this.links.size > this.maxEntries) {
-      const oldestKey = this.links.keys().next().value;
-      if (oldestKey === undefined) {
-        break;
-      }
-      this.forget(oldestKey);
+  release(key: string) {
+    if (this.links.get(key)?.kind === "reserved") {
+      this.forget(key);
     }
+  }
+
+  recordLostInFlight({ key, fingerprint, retainMs }: { key: string; fingerprint: string; retainMs: number }) {
+    this.prune();
+
+    const existing = this.links.get(key);
+    if (existing && existing.kind !== "reserved") {
+      return false;
+    }
+
+    this.links.set(key, {
+      key,
+      kind: "lost",
+      fingerprint,
+      approvalId: null,
+      pendingResponse: null,
+      expiresAt: this.now() + retainMs
+    });
+    return true;
   }
 
   lookup(key: string, fingerprint: string): ApprovalLinkLookup {
@@ -174,6 +196,10 @@ export class ApprovalIdempotencyLinks {
 
     const link = this.links.get(key);
     if (!link) {
+      return { status: "miss" };
+    }
+
+    if (link.kind === "reserved") {
       return { status: "miss" };
     }
 

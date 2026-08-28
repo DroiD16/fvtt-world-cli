@@ -360,11 +360,11 @@ function approvalAwaitRequest(id: string) {
   };
 }
 
-function deliveredResponse(result: Record<string, unknown>) {
+function deliveredResponse(result: Record<string, unknown>, id = TEST_APPROVAL_ID) {
   return {
     protocolVersion: PROTOCOL_VERSION,
     type: MESSAGE_TYPES.COMMAND_RESPONSE,
-    id: TEST_APPROVAL_ID,
+    id,
     ok: true,
     result
   };
@@ -3281,6 +3281,42 @@ describe("authorization daemon", () => {
     const reforwarded = next(reconnected.socket);
     cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
     expect(await reforwarded).toMatchObject({ id: "item-2", command: "item.create" });
+  });
+
+  it("refuses a keyed request it has no room left to hold indeterminate", async () => {
+    const { daemon, bridge, cli } = await startApprovalDaemon({ approvalLinkOptions: { maxEntries: 1 } });
+    const firstForwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await firstForwarded;
+
+    const nextForwarded = next(bridge);
+    const refused = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-2")));
+    expect(await refused).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.IDEMPOTENCY_STORE_FULL, details: { idempotencyKey: "key-2" } }
+    });
+    expect(daemon.approvalLinks.size).toBe(1);
+
+    cli.send(JSON.stringify(itemCreateRequest("item-3", "key-1", "Shield", true)));
+    expect(await nextForwarded).toMatchObject({ id: "item-3" });
+  });
+
+  it("frees the reserved slot once the keyed request is answered", async () => {
+    const { daemon, bridge, cli } = await startApprovalDaemon({ approvalLinkOptions: { maxEntries: 1 } });
+    const firstForwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await firstForwarded;
+
+    const answered = next(cli);
+    bridge.send(JSON.stringify(deliveredResponse({ item: { id: "created-1" } }, "item-1")));
+    await answered;
+    expect(daemon.approvalLinks.size).toBe(0);
+
+    const secondForwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-2")));
+    expect(await secondForwarded).toMatchObject({ id: "item-2", command: "item.create" });
   });
 
   it("expires the lost-in-flight tombstone and forwards the same key again", async () => {

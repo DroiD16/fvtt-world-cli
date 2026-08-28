@@ -1022,6 +1022,7 @@ export class BridgeDaemon {
 
     if (idempotency && message.ok === true) {
       this.idempotencyCache.storeIfAbsent(idempotency.key, idempotency.fingerprint, message);
+      this.approvalLinks.release(idempotency.key);
       return;
     }
 
@@ -1034,7 +1035,9 @@ export class BridgeDaemon {
           pendingResponse: message,
           ...pendingApproval
         });
+        return;
       }
+      this.approvalLinks.release(idempotency.key);
       return;
     }
 
@@ -1048,9 +1051,11 @@ export class BridgeDaemon {
   tombstoneLostKeyedRequests(lostKeyedRequests: LostKeyedRequest[]) {
     for (const lost of lostKeyedRequests) {
       if (lost.worldId !== this.cachedWorldId) {
+        this.approvalLinks.release(lost.key);
         continue;
       }
       if (this.idempotencyCache.lookup(lost.key, lost.fingerprint).status !== "miss") {
+        this.approvalLinks.release(lost.key);
         continue;
       }
       this.approvalLinks.recordLostInFlight({
@@ -1199,6 +1204,28 @@ export class BridgeDaemon {
         }
       }
 
+      if (this.cachedWorldId !== null) {
+        const reserved = this.approvalLinks.reserve({
+          key: idempotencyKey,
+          fingerprint,
+          retainMs: this.requestTimeoutMs + this.idempotencyCache.ttlMs
+        });
+        if (!reserved) {
+          sendJson(
+            socket,
+            createErrorResponse({
+              id: requestId,
+              error: createProtocolError({
+                code: ERROR_CODES.IDEMPOTENCY_STORE_FULL,
+                message: `This daemon is holding its maximum of ${this.approvalLinks.maxEntries} indeterminate idempotency keys, so it cannot guarantee that a ${message.command} request forwarded under key "${idempotencyKey}" would stay deduplicated if the bridge session ended mid-flight; nothing was forwarded and the world is unchanged. Retry once earlier keys settle or their dedupe window expires.`,
+                details: { command: message.command, idempotencyKey }
+              })
+            })
+          );
+          return;
+        }
+      }
+
       idempotency = { key: idempotencyKey, fingerprint };
     }
 
@@ -1214,6 +1241,9 @@ export class BridgeDaemon {
     });
 
     if (!result.ok) {
+      if (idempotency) {
+        this.approvalLinks.release(idempotency.key);
+      }
       sendJson(
         socket,
         createErrorResponse({

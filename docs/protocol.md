@@ -210,7 +210,7 @@ code set is exported by the protocol package. The classes consumers act on:
 | Lookup | `*_NOT_FOUND` | Refresh ids and world state |
 | Safety/policy | `DELETE_FORBIDDEN`, `PATH_NOT_ALLOWED` | Change the requested operation |
 | Capability | `UNSUPPORTED_OPERATION` | Choose a supported workflow or runtime |
-| Size/resource | `PAYLOAD_TOO_LARGE`, `QUERY_TOO_BROAD` | Reduce or page the request |
+| Size/resource | `PAYLOAD_TOO_LARGE`, `QUERY_TOO_BROAD`, `IDEMPOTENCY_STORE_FULL` | Reduce, page, or resend the request later |
 | Command policy | `COMMAND_DENIED` | Treat the command as unavailable on that GM client |
 | Approval | `APPROVAL_PENDING`, `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED`, `APPROVAL_QUEUE_FULL`, `APPROVAL_UNKNOWN` | Apply the approval rules below |
 | Bridge state | `BRIDGE_NOT_READY`, `BRIDGE_TIMEOUT`, `BRIDGE_DISCONNECTED` | Apply the delivery rules below |
@@ -337,6 +337,15 @@ outcome readable afterwards, because the caller never received an `approvalId` t
 retention simply expires and the key becomes forwardable again. Verifying world state and using a
 fresh key is the way through. An unkeyed request retains nothing.
 
+Holding that state is what makes the guarantee, so the room for it is claimed before the request is
+forwarded rather than after it is lost. A keyed request that no longer fits the bounded store is
+refused as `IDEMPOTENCY_STORE_FULL` and never reaches Foundry, so the world is unchanged and the
+same request is safe to send again once earlier keys settle or their dedupe windows expire. The
+alternative — admitting the request and discarding an older key to make room — would silently turn
+a still-indeterminate key back into a forwardable one, which is the duplicate execution the store
+exists to prevent. Neither an approval link nor a lost-in-flight key is ever traded away for newer
+state.
+
 The link is runtime state with the same limits as the idempotency cache: a daemon restart, a switch
 to another world or pairing, and expiry all forget it. A retry after one of those reaches Foundry as
 a new request, so an indeterminate delivery still ends with a read rather than a blind retry.
@@ -350,11 +359,12 @@ Retry safety is a function of whether the request reached Foundry:
 | Client could not connect | No | Safe to retry after restoring the daemon |
 | `BRIDGE_NOT_READY` | No | Safe to retry after a bridge connects |
 | Response timeout after send | Possibly | May have committed; inspect state or reuse the same idempotency key |
-| `BRIDGE_TIMEOUT` | Yes | May have committed; inspect state or reuse the same idempotency key |
+| `BRIDGE_TIMEOUT` | Yes | May have committed; inspect state or reuse the same idempotency key while that bridge session lasts |
 | `BRIDGE_DISCONNECTED` | Yes or in flight | May have committed; inspect state, then re-request under a fresh idempotency key |
 | `COMMAND_DENIED` | Refused before dispatch | Not executed; the command is unavailable on that GM client |
 | `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED` | Reached Foundry, never dispatched | Not executed; the same request is safe to send again |
 | `APPROVAL_QUEUE_FULL` | Refused before admission | Not executed; safe to retry when the waiting decisions clear |
+| `IDEMPOTENCY_STORE_FULL` | No | Not executed; safe to retry when earlier keys settle or expire |
 | `APPROVAL_UNKNOWN` | Unknown | May have committed; inspect state, then re-request under a fresh idempotency key |
 | Structured command rejection | Resolved with an error | Correct according to the code |
 

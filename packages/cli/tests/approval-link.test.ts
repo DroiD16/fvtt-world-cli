@@ -12,6 +12,7 @@ import { readPendingApprovalDetails, type CommandResponseEnvelope } from "../src
 
 const APPROVAL_ID = "CCCCCCCCCCCCCCCCCCCCCC";
 const EXPIRES_AT = 1_000_000;
+const RETAIN_MS = 600_000;
 
 function pendingResponse(approvalId = APPROVAL_ID, expiresAt: unknown = EXPIRES_AT) {
   return createErrorResponse({
@@ -172,9 +173,12 @@ describe("approval idempotency links", () => {
     expect(links.size).toBe(0);
   });
 
-  it("bounds how many links it holds", () => {
+  it("refuses a reservation once the bound is reached instead of evicting an approval link", () => {
     const links = new ApprovalIdempotencyLinks({ maxEntries: 2, now: () => 0 });
-    for (const index of [1, 2, 3]) {
+    for (const index of [1, 2]) {
+      expect(links.reserve({ key: `key-${index}`, fingerprint: `fp-${index}`, retainMs: RETAIN_MS })).toBe(
+        true
+      );
       links.record({
         key: `key-${index}`,
         fingerprint: `fp-${index}`,
@@ -184,9 +188,66 @@ describe("approval idempotency links", () => {
       });
     }
 
+    expect(links.reserve({ key: "key-3", fingerprint: "fp-3", retainMs: RETAIN_MS })).toBe(false);
     expect(links.size).toBe(2);
+    expect(links.lookup("key-1", "fp-1")).toMatchObject({ status: "pending" });
+    expect(links.lookup("key-3", "fp-3")).toEqual({ status: "miss" });
+  });
+
+  it("refuses a reservation rather than evicting a lost-in-flight key", () => {
+    const links = new ApprovalIdempotencyLinks({ maxEntries: 2, now: () => 0 });
+    for (const index of [1, 2]) {
+      links.reserve({ key: `key-${index}`, fingerprint: `fp-${index}`, retainMs: RETAIN_MS });
+      links.recordLostInFlight({ key: `key-${index}`, fingerprint: `fp-${index}`, retainMs: RETAIN_MS });
+    }
+
+    expect(links.reserve({ key: "key-3", fingerprint: "fp-3", retainMs: RETAIN_MS })).toBe(false);
+    expect(links.lookup("key-1", "fp-1")).toEqual({ status: "lost-in-flight" });
+    expect(links.lookup("key-2", "fp-2")).toEqual({ status: "lost-in-flight" });
+  });
+
+  it("tombstones a reserved key at the bound without displacing the other kind of state", () => {
+    const links = new ApprovalIdempotencyLinks({ maxEntries: 2, now: () => 0 });
+    links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS });
+    links.record({
+      key: "key-1",
+      fingerprint: "fp-1",
+      approvalId: APPROVAL_ID,
+      expiresAt: EXPIRES_AT,
+      pendingResponse: pendingResponse()
+    });
+    expect(links.reserve({ key: "key-2", fingerprint: "fp-2", retainMs: RETAIN_MS })).toBe(true);
+
+    expect(links.recordLostInFlight({ key: "key-2", fingerprint: "fp-2", retainMs: RETAIN_MS })).toBe(true);
+    expect(links.size).toBe(2);
+    expect(links.lookup("key-1", "fp-1")).toMatchObject({ status: "pending" });
+    expect(links.lookup("key-2", "fp-2")).toEqual({ status: "lost-in-flight" });
+  });
+
+  it("keeps a reserved key invisible until it settles and reusable once released", () => {
+    const links = new ApprovalIdempotencyLinks({ maxEntries: 1, now: () => 0 });
+    links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS });
+
     expect(links.lookup("key-1", "fp-1")).toEqual({ status: "miss" });
-    expect(links.lookup("key-3", "fp-3")).toMatchObject({ status: "pending" });
+    expect(links.reserve({ key: "key-2", fingerprint: "fp-2", retainMs: RETAIN_MS })).toBe(false);
+
+    links.release("key-1");
+    expect(links.size).toBe(0);
+    expect(links.reserve({ key: "key-2", fingerprint: "fp-2", retainMs: RETAIN_MS })).toBe(true);
+  });
+
+  it("refuses same-key and different-fingerprint retries of a lost key until the retention expires", () => {
+    let clock = 0;
+    const links = new ApprovalIdempotencyLinks({ maxEntries: 2, now: () => clock });
+    links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS });
+    links.recordLostInFlight({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS });
+
+    expect(links.lookup("key-1", "fp-1")).toEqual({ status: "lost-in-flight" });
+    expect(links.lookup("key-1", "other-fp")).toEqual({ status: "conflict", approvalId: null });
+
+    clock = RETAIN_MS;
+    expect(links.lookup("key-1", "fp-1")).toEqual({ status: "miss" });
+    expect(links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS })).toBe(true);
   });
 
   it("ignores responses that carry no approval settlement", () => {
