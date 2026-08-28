@@ -155,8 +155,6 @@
       "NodeSizeHint": "Commands in this group, including its subgroups.",
       "Changed": "Something below this level differs from the defaults.",
       "Destructive": "Destructive. This command deletes or overwrites content and waits for approval by default.",
-      "Exempt": "Always allowed",
-      "ExemptHint": "Status, approval, and policy-reading commands stay allowed so a policy can never lock the bridge out of answering or out of resolving a pending approval.",
       "NoMatches": "No command matches this filter.",
       "Dirty": "Unsaved changes",
       "Reset": "Reset to defaults",

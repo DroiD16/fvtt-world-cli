@@ -263,12 +263,6 @@
   font-size: var(--font-size-11);
 }
 
-.fvtt-world-cli-policy-exempt {
-  padding: 0 0.5rem;
-  font-size: var(--font-size-11);
-  color: var(--color-text-subtle);
-}
-
 .fvtt-world-cli-policy-empty {
   padding: 0.5rem;
   color: var(--color-text-subtle);

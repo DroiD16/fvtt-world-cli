@@ -102,7 +102,7 @@ function buildContext(draft) {
   return {
     ...view,
     fillLabel: view.filtered
-      ? format("FVTTWORLDCLI.Permissions.MasterFillFiltered", { count: view.fillableCount })
+      ? format("FVTTWORLDCLI.Permissions.MasterFillFiltered", { count: view.visibleCount })
       : localize("FVTTWORLDCLI.Permissions.MasterFill"),
     dirty: hasUnsavedWork(draft),
     saveError: draft.saveError,

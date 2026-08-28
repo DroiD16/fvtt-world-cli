@@ -8,6 +8,7 @@ import {
 import { normalizeStoredPolicy, resolveNormalizedBehavior } from "./policy.js";
 
 const EXEMPT_COMMANDS = new Set(POLICY_EXEMPT_COMMANDS);
+const GOVERNED_COMMANDS = COMMAND_NAMES.filter((command) => !EXEMPT_COMMANDS.has(command));
 
 /** @typedef {import("./policy.js").CommandPolicy} CommandPolicy */
 /** @typedef {import("./policy.js").PolicyBehavior} PolicyBehavior */
@@ -18,7 +19,6 @@ const EXEMPT_COMMANDS = new Set(POLICY_EXEMPT_COMMANDS);
  *   name: string,
  *   verb: string,
  *   behavior: PolicyBehavior,
- *   exempt: boolean,
  *   destructive: boolean,
  *   changed: boolean,
  *   pressed: Record<string, boolean>,
@@ -38,13 +38,14 @@ const EXEMPT_COMMANDS = new Set(POLICY_EXEMPT_COMMANDS);
  *   changed: number,
  *   commandCount: number,
  *   pressed: Record<string, boolean>,
- *   exempt: boolean,
  *   hidden: boolean,
  *   open: boolean
  * }} PolicyNode
  */
 
-const PROFILE_APPROVE_COUNT = COMMAND_NAMES.filter((command) => defaultProfile(command) === "approve").length;
+const PROFILE_APPROVE_COUNT = GOVERNED_COMMANDS.filter(
+  (command) => defaultProfile(command) === "approve"
+).length;
 
 /**
  * @param {unknown} value
@@ -71,7 +72,7 @@ function matchesFilterTerm(command, term) {
  */
 export function listFillableCommands(filter) {
   const term = normalizeFilterTerm(filter);
-  return COMMAND_NAMES.filter((command) => !EXEMPT_COMMANDS.has(command) && matchesFilterTerm(command, term));
+  return GOVERNED_COMMANDS.filter((command) => matchesFilterTerm(command, term));
 }
 
 /**
@@ -80,7 +81,7 @@ export function listFillableCommands(filter) {
  */
 export function listSubtreeCommands(path) {
   const prefix = `${path}.`;
-  return COMMAND_NAMES.filter((command) => command.startsWith(prefix));
+  return GOVERNED_COMMANDS.filter((command) => command.startsWith(prefix));
 }
 
 /**
@@ -149,7 +150,6 @@ function finalizeBranch(branch, depth) {
   }
 
   const commandCount = branch.commands.length + nodes.reduce((total, node) => total + node.commandCount, 0);
-  const exempt = branch.commands.every((command) => command.exempt) && nodes.every((node) => node.exempt);
   const visible = branch.commands.some((command) => !command.hidden) || nodes.some((node) => !node.hidden);
 
   let band = 0;
@@ -171,7 +171,6 @@ function finalizeBranch(branch, depth) {
     pressed: Object.fromEntries(
       POLICY_BEHAVIORS.map((behavior) => [behavior, counts[behavior] === commandCount])
     ),
-    exempt,
     hidden: !visible,
     open: false
   };
@@ -197,9 +196,8 @@ export function buildPolicyView(storedPolicy, { filter = "" } = {}) {
   const term = normalizeFilterTerm(filter);
   const root = createBranch("", "");
   let visibleCount = 0;
-  let fillableCount = 0;
 
-  for (const command of COMMAND_NAMES) {
+  for (const command of GOVERNED_COMMANDS) {
     const segments = command.split(".");
     const verb = segments.pop() ?? command;
     let branch = root;
@@ -212,16 +210,13 @@ export function buildPolicyView(storedPolicy, { filter = "" } = {}) {
     }
 
     const baseBehavior = resolveNormalizedBehavior(policy, command);
-    const exempt = EXEMPT_COMMANDS.has(command);
     const hidden = !matchesFilterTerm(command, term);
     if (!hidden) visibleCount += 1;
-    if (!hidden && !exempt) fillableCount += 1;
 
     branch.commands.push({
       name: command,
       verb,
       behavior: baseBehavior,
-      exempt,
       destructive: isDestructiveCommand(command),
       changed: Object.hasOwn(policy.overrides, command),
       pressed: Object.fromEntries(POLICY_BEHAVIORS.map((value) => [value, value === baseBehavior])),
@@ -237,10 +232,9 @@ export function buildPolicyView(storedPolicy, { filter = "" } = {}) {
     nodes,
     filter: term,
     filtered: term !== "",
-    commandCount: COMMAND_NAMES.length,
+    commandCount: GOVERNED_COMMANDS.length,
     groupCount: nodes.length,
     profileApproveCount: PROFILE_APPROVE_COUNT,
-    visibleCount,
-    fillableCount
+    visibleCount
   };
 }

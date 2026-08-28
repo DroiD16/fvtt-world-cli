@@ -290,13 +290,16 @@ says the cancellation is unconfirmed and reports the indeterminate outcome.
 By default the commands that wait for approval are the destructive ones: every `delete` and
 `delete-many` verb, plus `file.delete`, `file.move`, and `scene.fog.reset`, whose fog-exploration
 data cannot be recovered. That is 54 of the 316 commands in the registry; the other 262 run on their
-own, and the Command permissions window states those same two numbers as the default it describes. An
+own. The Command permissions window lists the 311 commands the permissions govern, in 16 top-level
+groups, and states that 54 of them wait for approval by default. An
 installation that updates into this behavior therefore starts asking the GM before deletions it used
 to perform silently, until the permissions are edited.
 
 `system.ping`, `system.info`, and the plumbing commands the approval wait itself uses are always
 allowed and cannot be denied, so no permission set can lock the bridge out of answering or out of
-resolving a decision already taken. Pairing and other `auth` operations are answered by the daemon
+resolving a decision already taken. Nothing about them can be changed, so the Command permissions
+window does not list them, and the `system`, `approval`, and `policy` groups they make up are absent
+from it. Pairing and other `auth` operations are answered by the daemon
 without reaching Foundry, so no permission applies to them.
 
 The approval timeout is the `Approval timeout (minutes)` field in the same Module Settings form, and

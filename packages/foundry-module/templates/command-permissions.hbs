@@ -68,10 +68,6 @@
           <span class="fvtt-world-cli-policy-count fvtt-world-cli-policy-count--deny" data-count="deny"
             data-tooltip="{{localize "FVTTWORLDCLI.Permissions.Behavior.Deny"}}">{{this.counts.deny}}</span>
         </span>
-        {{#if this.exempt}}
-        <span class="fvtt-world-cli-policy-exempt" data-tooltip="{{localize
-          "FVTTWORLDCLI.Permissions.ExemptHint"}}">{{localize "FVTTWORLDCLI.Permissions.Exempt"}}</span>
-        {{else}}
         <span class="fvtt-world-cli-policy-switch fvtt-world-cli-policy-switch--node" role="group">
           <button type="button" data-action="fillNode" data-path="{{this.path}}" data-behavior="allow"
             aria-pressed="{{this.pressed.allow}}" data-tooltip="{{localize
@@ -86,7 +82,6 @@
             "FVTTWORLDCLI.Permissions.NodeFillHint.Deny"}}">{{localize
             "FVTTWORLDCLI.Permissions.Behavior.Deny"}}</button>
         </span>
-        {{/if}}
       </summary>
 
       <div class="fvtt-world-cli-policy-children">
@@ -100,10 +95,6 @@
               fvtt-world-cli-policy-destructive" data-tooltip="{{localize
               "FVTTWORLDCLI.Permissions.Destructive"}}"></i>{{/if}}
           </span>
-          {{#if this.exempt}}
-          <span class="fvtt-world-cli-policy-exempt" data-tooltip="{{localize
-            "FVTTWORLDCLI.Permissions.ExemptHint"}}">{{localize "FVTTWORLDCLI.Permissions.Exempt"}}</span>
-          {{else}}
           <span class="fvtt-world-cli-policy-switch" role="group">
             <button type="button" data-action="setBehavior" data-command="{{this.name}}" data-behavior="allow"
               aria-pressed="{{this.pressed.allow}}" data-tooltip="{{localize
@@ -118,7 +109,6 @@
               "FVTTWORLDCLI.Permissions.BehaviorHint.Deny"}}">{{localize
               "FVTTWORLDCLI.Permissions.Behavior.Deny"}}</button>
           </span>
-          {{/if}}
         </div>
         {{/each}}
         {{#each this.nodes}}{{> policyNode}}{{/each}}

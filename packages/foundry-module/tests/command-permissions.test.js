@@ -57,30 +57,29 @@ function flatSection(start, end) {
 }
 
 const EXEMPT_COMMANDS = new Set(POLICY_EXEMPT_COMMANDS);
-const TOP_LEVEL_GROUPS = new Set(COMMAND_NAMES.map((command) => command.split(".")[0]));
-const PROFILE_APPROVALS = COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === "approve");
-const DEEPEST_COMMAND = COMMAND_NAMES.reduce((deepest, command) =>
+const GOVERNED_COMMANDS = COMMAND_NAMES.filter((command) => !EXEMPT_COMMANDS.has(command));
+const GOVERNED_GROUPS = new Set(GOVERNED_COMMANDS.map((command) => command.split(".")[0]));
+const PROFILE_APPROVALS = GOVERNED_COMMANDS.filter(
+  (command) => DEFAULT_COMMAND_PROFILE[command] === "approve"
+);
+const DEEPEST_COMMAND = GOVERNED_COMMANDS.reduce((deepest, command) =>
   command.split(".").length > deepest.split(".").length ? command : deepest
 );
 const DEEP_NODE_PATH = DEEPEST_COMMAND.split(".").slice(0, -1).join(".");
-const ALLOWED_BY_PROFILE = COMMAND_NAMES.find(
-  (command) => !EXEMPT_COMMANDS.has(command) && DEFAULT_COMMAND_PROFILE[command] === "allow"
+const ALLOWED_BY_PROFILE = GOVERNED_COMMANDS.find((command) => DEFAULT_COMMAND_PROFILE[command] === "allow");
+const APPROVED_BY_PROFILE = GOVERNED_COMMANDS.find(
+  (command) => DEFAULT_COMMAND_PROFILE[command] === "approve"
 );
-const APPROVED_BY_PROFILE = COMMAND_NAMES.find(
-  (command) => !EXEMPT_COMMANDS.has(command) && DEFAULT_COMMAND_PROFILE[command] === "approve"
-);
-const EXEMPT_GROUP = POLICY_EXEMPT_COMMANDS[0].split(".")[0];
-const EXEMPT_ONLY_GROUPS = [...TOP_LEVEL_GROUPS].filter((group) =>
-  listSubtreeCommands(group).every((command) => EXEMPT_COMMANDS.has(command))
+const EXEMPT_ONLY_GROUPS = [...new Set(COMMAND_NAMES.map((command) => command.split(".")[0]))].filter(
+  (group) =>
+    COMMAND_NAMES.filter((command) => command.startsWith(`${group}.`)).every((command) =>
+      EXEMPT_COMMANDS.has(command)
+    )
 );
 const STORED_TIMEOUT_MINUTES =
   APPROVAL_TIMEOUT_DEFAULT_MINUTES === APPROVAL_TIMEOUT_MAX_MINUTES
     ? APPROVAL_TIMEOUT_MIN_MINUTES
     : APPROVAL_TIMEOUT_DEFAULT_MINUTES + 1;
-
-function profileBehaviorOf(command) {
-  return EXEMPT_COMMANDS.has(command) ? "allow" : DEFAULT_COMMAND_PROFILE[command];
-}
 
 function* eachNode(nodes) {
   for (const node of nodes) {
@@ -311,13 +310,13 @@ describe("Command permissions application", () => {
     }
   });
 
-  it("describes the registry's command total, groups and default approvals", async () => {
+  it("describes the governed command total, groups and default approvals", async () => {
     const { app } = application();
 
     const context = await app._prepareContext();
 
-    expect(context.commandCount).toBe(COMMAND_NAMES.length);
-    expect(context.groupCount).toBe(TOP_LEVEL_GROUPS.size);
+    expect(context.commandCount).toBe(GOVERNED_COMMANDS.length);
+    expect(context.groupCount).toBe(GOVERNED_GROUPS.size);
     expect(context.profileApproveCount).toBe(PROFILE_APPROVALS.length);
     expect(context.timeoutMinutes).toBe(APPROVAL_TIMEOUT_DEFAULT_MINUTES);
     expect(context.dirty).toBe(false);
@@ -336,7 +335,7 @@ describe("Command permissions application", () => {
     const groupPath = ALLOWED_BY_PROFILE.split(".")[0];
     const expectedCounts = { allow: 0, approve: 0, deny: 0 };
     for (const command of listSubtreeCommands(groupPath)) {
-      expectedCounts[command === ALLOWED_BY_PROFILE ? "deny" : profileBehaviorOf(command)] += 1;
+      expectedCounts[command === ALLOWED_BY_PROFILE ? "deny" : DEFAULT_COMMAND_PROFILE[command]] += 1;
     }
     expect(findNode(context.nodes, groupPath).counts).toEqual(expectedCounts);
     expect(findNode(context.nodes, groupPath).changed).toBe(1);
@@ -397,13 +396,13 @@ describe("Command permissions application", () => {
     expect(rowMarkup).not.toContain("fvtt-world-cli-policy-caret");
   });
 
-  it("places every command of the registry in the tree exactly once", async () => {
+  it("places every governed command in the tree exactly once", async () => {
     const { app } = application();
 
     const rows = eachRow((await app._prepareContext()).nodes).map((row) => row.name);
 
-    expect(rows.length).toBe(COMMAND_NAMES.length);
-    expect([...rows].sort()).toEqual([...COMMAND_NAMES].sort());
+    expect(rows.length).toBe(GOVERNED_COMMANDS.length);
+    expect([...rows].sort()).toEqual([...GOVERNED_COMMANDS].sort());
   });
 
   it("keeps a node's subtree the commands its path prefixes", async () => {
@@ -416,39 +415,28 @@ describe("Command permissions application", () => {
     }
   });
 
-  it("shows an exempt command as always allowed and leaves it out of a mass fill", async () => {
+  it("leaves an always-allowed command out of the tree and out of a mass fill", async () => {
     const { app, dispatch } = application();
 
     await dispatch("fillAll", { behavior: "deny" });
     const context = await app._prepareContext();
 
     for (const command of POLICY_EXEMPT_COMMANDS) {
-      const row = findRow(context.nodes, command);
-      expect(row.exempt).toBe(true);
-      expect(row.behavior).toBe("allow");
-      expect(row.changed).toBe(false);
+      expect(findRow(context.nodes, command), command).toBeUndefined();
     }
     expect(Object.keys(draftOf(app).policy.overrides)).not.toContain(POLICY_EXEMPT_COMMANDS[0]);
-    expect(TEMPLATE).toMatch(
-      /{{#if this\.exempt}}[\s\S]*FVTTWORLDCLI\.Permissions\.Exempt"}}[\s\S]*{{else}}[\s\S]*data-action="setBehavior"/
-    );
   });
 
-  it("marks a group that holds only always-allowed commands and gives it no switch", async () => {
+  it("renders no group that would hold only always-allowed commands", async () => {
     const { app } = application();
     expect(EXEMPT_ONLY_GROUPS.length).toBeGreaterThan(0);
 
     const context = await app._prepareContext();
 
     for (const group of EXEMPT_ONLY_GROUPS) {
-      expect(findNode(context.nodes, group).exempt).toBe(true);
+      expect(findNode(context.nodes, group), group).toBeUndefined();
     }
-    for (const node of eachNode(context.nodes)) {
-      expect(node.exempt).toBe(eachRow([node]).every((row) => row.exempt));
-    }
-    expect(TEMPLATE).toMatch(
-      /{{#if this\.exempt}}[\s\S]*FVTTWORLDCLI\.Permissions\.Exempt"}}[\s\S]*{{else}}[\s\S]*data-action="fillNode"/
-    );
+    expect(context.nodes.length).toBe(GOVERNED_GROUPS.size);
   });
 
   it("stores an override only while it differs from the default profile", async () => {
@@ -491,18 +479,6 @@ describe("Command permissions application", () => {
     await dispatch("fillNode", { path: DEEP_NODE_PATH, behavior: "deny" });
 
     expect(events.at(-1).preventDefault).toHaveBeenCalled();
-  });
-
-  it("counts an exempt command at its allowed value, so its group never reads as uniform", async () => {
-    const { app, dispatch } = application();
-
-    await dispatch("fillNode", { path: EXEMPT_GROUP, behavior: "deny" });
-    const node = findNode((await app._prepareContext()).nodes, EXEMPT_GROUP);
-
-    const exemptInGroup = POLICY_EXEMPT_COMMANDS.filter((command) => command.startsWith(`${EXEMPT_GROUP}.`));
-    expect(exemptInGroup.length).toBeGreaterThan(0);
-    expect(node.counts.allow).toBe(exemptInGroup.length);
-    expect(node.pressed.deny).toBe(false);
   });
 
   it("drops every override on a confirmed reset, whatever the filter shows", async () => {
@@ -687,13 +663,15 @@ describe("Command permissions application", () => {
       const visible = eachRow(view.nodes)
         .filter((row) => !row.hidden)
         .map((row) => row.name);
-      expect(visible.sort()).toEqual(COMMAND_NAMES.filter((command) => command.includes("delete")).sort());
+      expect(visible.sort()).toEqual(
+        GOVERNED_COMMANDS.filter((command) => command.includes("delete")).sort()
+      );
     });
 
     it("returns the tree to fully collapsed once it is cleared", () => {
       const view = buildPolicyView({}, { filter: "" });
 
-      expect(view.visibleCount).toBe(COMMAND_NAMES.length);
+      expect(view.visibleCount).toBe(GOVERNED_COMMANDS.length);
       expect([...eachNode(view.nodes)].every((node) => node.open === false && node.hidden === false)).toBe(
         true
       );
@@ -808,7 +786,7 @@ describe("Command permissions application", () => {
       expect(view.emptyNotice.hidden).toBe(true);
     });
 
-    it("counts only what a filter scoped to always-allowed commands can change", async () => {
+    it("matches nothing when the filter names an always-allowed command", async () => {
       const view = render();
       const exemptCommand = POLICY_EXEMPT_COMMANDS[0];
       await view.app._onRender({}, {});
@@ -817,12 +795,12 @@ describe("Command permissions application", () => {
       await view.dispatch("fillAll", { behavior: "deny" });
 
       const context = await view.app._prepareContext();
-      expect(context.visibleCount).toBe(1);
+      expect(context.visibleCount).toBe(0);
       expect(view.fillLabel.textContent).toBe(
         formatEnglish("FVTTWORLDCLI.Permissions.MasterFillFiltered", { count: 0 })
       );
       expect(draftOf(view.app).policy.overrides).toEqual({});
-      expect(view.emptyNotice.hidden).toBe(true);
+      expect(view.emptyNotice.hidden).toBe(false);
     });
 
     it("reports an empty result and reopens the whole tree when the filter is cleared", async () => {
