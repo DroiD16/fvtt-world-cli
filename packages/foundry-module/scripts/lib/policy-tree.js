@@ -2,7 +2,6 @@ import {
   COMMAND_NAMES,
   POLICY_BEHAVIORS,
   POLICY_EXEMPT_COMMANDS,
-  defaultProfile,
   isDestructiveCommand
 } from "../generated/protocol.js";
 import { normalizeStoredPolicy, resolveNormalizedBehavior } from "./policy.js";
@@ -42,10 +41,6 @@ const GOVERNED_COMMANDS = COMMAND_NAMES.filter((command) => !EXEMPT_COMMANDS.has
  *   open: boolean
  * }} PolicyNode
  */
-
-const PROFILE_APPROVE_COUNT = GOVERNED_COMMANDS.filter(
-  (command) => defaultProfile(command) === "approve"
-).length;
 
 /**
  * @param {unknown} value
@@ -232,9 +227,6 @@ export function buildPolicyView(storedPolicy, { filter = "" } = {}) {
     nodes,
     filter: term,
     filtered: term !== "",
-    commandCount: GOVERNED_COMMANDS.length,
-    groupCount: nodes.length,
-    profileApproveCount: PROFILE_APPROVE_COUNT,
     visibleCount
   };
 }

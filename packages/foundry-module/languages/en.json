@@ -136,7 +136,6 @@
       "ExpandAllHint": "Open every group and subgroup.",
       "CollapseAll": "Collapse all",
       "CollapseAllHint": "Close every group back to the top level.",
-      "Profile": "{commands} commands in {groups} top-level groups. By default {approve} of them wait for your approval and the rest run on their own.",
       "Behavior": {
         "Allow": "Allow",
         "Approve": "Ask me",

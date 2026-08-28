@@ -293,7 +293,7 @@ By default the commands that wait for approval are the destructive ones: every `
 `delete-many` verb, plus `file.delete`, `file.move`, and `scene.fog.reset`, whose fog-exploration
 data cannot be recovered. That is 54 of the 316 commands in the registry; the other 262 run on their
 own. The Command permissions window lists the 311 commands the permissions govern, in 16 top-level
-groups, and states that 54 of them wait for approval by default. An installation that updates into
+groups. An installation that updates into
 this behavior therefore starts asking the GM before deletions it used to perform silently, until the
 permissions are edited.
 

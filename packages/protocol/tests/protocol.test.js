@@ -2338,11 +2338,10 @@ describe("protocol contract", () => {
       expect(
         {
           governed: governed.length,
-          groups: new Set(governed.map((command) => command.split(".")[0])).size,
-          approve: governed.filter((command) => DEFAULT_COMMAND_PROFILE[command] === "approve").length
+          groups: new Set(governed.map((command) => command.split(".")[0])).size
         },
-        'the window totals moved: update the counts docs/commands.md states ("the 311 commands the permissions govern, in 16 top-level groups, and states that 54 of them wait for approval by default") in the same change'
-      ).toEqual({ governed: 311, groups: 16, approve: 54 });
+        'the window totals moved: update the counts docs/commands.md states ("the 311 commands the permissions govern, in 16 top-level groups") in the same change'
+      ).toEqual({ governed: 311, groups: 16 });
     });
 
     it("cannot be mutated in place", () => {

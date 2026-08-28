@@ -55,9 +55,6 @@ function flatSection(start, end) {
 const EXEMPT_COMMANDS = new Set(POLICY_EXEMPT_COMMANDS);
 const GOVERNED_COMMANDS = COMMAND_NAMES.filter((command) => !EXEMPT_COMMANDS.has(command));
 const GOVERNED_GROUPS = new Set(GOVERNED_COMMANDS.map((command) => command.split(".")[0]));
-const PROFILE_APPROVALS = GOVERNED_COMMANDS.filter(
-  (command) => DEFAULT_COMMAND_PROFILE[command] === "approve"
-);
 const DEEPEST_COMMAND = GOVERNED_COMMANDS.reduce((deepest, command) =>
   command.split(".").length > deepest.split(".").length ? command : deepest
 );
@@ -296,17 +293,6 @@ describe("Command permissions application", () => {
           `data-behavior="${behavior}"`
       );
     }
-  });
-
-  it("describes the governed command total, groups and default approvals", async () => {
-    const { app } = application();
-
-    const context = await app._prepareContext();
-
-    expect(context.commandCount).toBe(GOVERNED_COMMANDS.length);
-    expect(context.groupCount).toBe(GOVERNED_GROUPS.size);
-    expect(context.profileApproveCount).toBe(PROFILE_APPROVALS.length);
-    expect(context.dirty).toBe(false);
   });
 
   it("opens on the stored overrides and keeps them when another command changes", async () => {
