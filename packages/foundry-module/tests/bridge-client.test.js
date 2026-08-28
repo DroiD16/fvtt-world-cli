@@ -1234,7 +1234,7 @@ describe("BridgeClient approvals held for the GM", () => {
       })
     });
 
-    return { client, store, send, parked };
+    return { approvalId: admission.approvalId, client, store, send, parked };
   }
 
   /** @param {any} send */
@@ -1243,6 +1243,21 @@ describe("BridgeClient approvals held for the GM", () => {
       .map(([frame]) => JSON.parse(frame))
       .filter((message) => message.type === MESSAGE_TYPES.COMMAND_RESPONSE);
   }
+
+  it("answer a parked poll when the decision is taken and the socket is open", async () => {
+    const { approvalId, store, send, parked } = clientWithParkedApproval();
+
+    await store.decide(approvalId, "allow");
+    await parked;
+
+    expect(commandResponses(send)).toEqual([
+      expect.objectContaining({
+        id: "poll-1",
+        ok: true,
+        result: expect.objectContaining({ status: "resolved" })
+      })
+    ]);
+  });
 
   it("leave a parked poll unanswered when the GM rebuilds the connection", async () => {
     const { client, store, send, parked } = clientWithParkedApproval();
