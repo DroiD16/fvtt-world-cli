@@ -285,9 +285,9 @@ The wait is two-phase, because a decision can outlast any request timeout:
   session ends with no reconnect to follow — disconnecting, unpairing, losing the bridge slot to
   another client, a refused handshake, or a connection rebuilt from the settings window — because the
   decisions that session held can no longer be reached. A decision still waiting for the GM when that
-  happens is settled as `cancelled` for the caller parked on it, because nothing had been dispatched;
-  a later poll for the same id, against a runtime that no longer knows it, is `APPROVAL_UNKNOWN` all
-  the same. The transport's own reconnect after a dropped
+  happens is abandoned undecided rather than dispatched, but that verdict reaches nobody: the session
+  that would have carried it to the caller parked on it is already gone, so that poll and every later
+  poll for the same id answer `APPROVAL_UNKNOWN`. The transport's own reconnect after a dropped
   socket keeps them. A retained outcome expires as well. The answer is indeterminate — the command may
   never have started or may have completed — so world state is the only authority, and a read comes
   before any re-request.
