@@ -180,7 +180,7 @@ describe("approval store admission", () => {
   });
 
   it("falls back to the default timeout when the setting is out of range or corrupt", () => {
-    for (const stored of ["banana", 0, -1, 10 ** 9, null, 1.5]) {
+    for (const stored of ["banana", 0, -1, 10 ** 9, null, 0.4]) {
       const { store, clock } = createHarness({ timeoutMinutesProvider: () => stored });
 
       const admission = admitRequest(store);

@@ -106,15 +106,18 @@ export function resolveApprovalTimeoutMinutes(value) {
         ? Number(value.trim())
         : Number.NaN;
 
+  // The settings field is an unstepped number, so a GM can store a fraction: rounding keeps the
+  // stored intent rather than discarding a deliberate value in favour of the default.
+  const rounded = Number.isFinite(minutes) ? Math.round(minutes) : Number.NaN;
   if (
-    !Number.isInteger(minutes) ||
-    minutes < APPROVAL_TIMEOUT_MIN_MINUTES ||
-    minutes > APPROVAL_TIMEOUT_MAX_MINUTES
+    !Number.isInteger(rounded) ||
+    rounded < APPROVAL_TIMEOUT_MIN_MINUTES ||
+    rounded > APPROVAL_TIMEOUT_MAX_MINUTES
   ) {
     return APPROVAL_TIMEOUT_DEFAULT_MINUTES;
   }
 
-  return minutes;
+  return rounded;
 }
 
 /**

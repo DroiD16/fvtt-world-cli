@@ -254,6 +254,12 @@ describe("resolveApprovalTimeoutMinutes", () => {
     expect(resolveApprovalTimeoutMinutes(" 30 ")).toBe(30);
   });
 
+  it("rounds a fraction the unstepped settings field allowed", () => {
+    expect(resolveApprovalTimeoutMinutes(90.5)).toBe(91);
+    expect(resolveApprovalTimeoutMinutes(90.4)).toBe(90);
+    expect(resolveApprovalTimeoutMinutes(1.5)).toBe(2);
+  });
+
   it("falls back to the default for anything else", () => {
     for (const value of [
       undefined,
@@ -265,7 +271,8 @@ describe("resolveApprovalTimeoutMinutes", () => {
       0,
       -1,
       APPROVAL_TIMEOUT_MAX_MINUTES + 1,
-      1.5,
+      APPROVAL_TIMEOUT_MAX_MINUTES + 0.6,
+      0.4,
       Number.NaN,
       Number.POSITIVE_INFINITY,
       "",
