@@ -469,6 +469,8 @@ const POLICY_SEGMENT_EARLY_EXIT_HINT =
 
 const APPROVAL_POLL_INTERVAL_MS = 250;
 
+const STDIO_DRAIN_WAIT_MS = 2_000;
+
 const APPROVAL_WINDOW_WAIT_MS = 30_000;
 const APPROVAL_WAIT_LINE = "Waiting for GM approval in Foundry";
 const APPROVAL_WAIT_LINE_WAIT_MS = 15_000;
@@ -549,12 +551,50 @@ async function evaluateInGmPage(gmControlUrl, script) {
   return body.value ?? null;
 }
 
+const liveFoundryctlChildren = new Set();
+let foundryctlInterruptRelayInstalled = false;
+
+function signalFoundryctlGroup(child, signal) {
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    return false;
+  }
+
+  return true;
+}
+
+function installFoundryctlInterruptRelay() {
+  if (foundryctlInterruptRelayInstalled) {
+    return;
+  }
+
+  foundryctlInterruptRelayInstalled = true;
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    const relay = () => {
+      for (const child of liveFoundryctlChildren) {
+        signalFoundryctlGroup(child, "SIGKILL");
+      }
+
+      process.off(signal, relay);
+      process.kill(process.pid, signal);
+    };
+
+    process.on(signal, relay);
+  }
+}
+
 function startFoundryctl(args) {
+  installFoundryctlInterruptRelay();
   const child = spawn(process.execPath, [localCliPath, ...args, "--json"], {
     cwd: repoRoot,
     env: localCliEnvironment,
+    detached: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
+
+  liveFoundryctlChildren.add(child);
+  child.on("exit", () => liveFoundryctlChildren.delete(child));
 
   let stdout = "";
   let stderr = "";
@@ -567,33 +607,60 @@ function startFoundryctl(args) {
     stderr += chunk;
   });
 
-  const done = new Promise((resolve) => {
-    child.on("close", (code) => {
-      let response = null;
-      try {
-        response = stdout ? JSON.parse(stdout) : null;
-      } catch {
-        response = null;
-      }
-
-      resolve({
-        command: commandLabel(args),
-        exitCode: Number.isInteger(code) ? code : 1,
-        stdout,
-        stderr,
-        response,
-        ...(response ? {} : { transportError: stderr.trim() || "the command wrote no JSON body" })
-      });
+  let exitCode = null;
+  const exited = new Promise((resolve) => {
+    child.on("exit", (code) => {
+      exitCode = code;
+      resolve();
     });
   });
 
-  return { child, done, stderrSoFar: () => stderr };
+  const buildResult = (code) => {
+    let response = null;
+    try {
+      response = stdout ? JSON.parse(stdout) : null;
+    } catch {
+      response = null;
+    }
+
+    return {
+      command: commandLabel(args),
+      exitCode: Number.isInteger(code) ? code : 1,
+      stdout,
+      stderr,
+      response,
+      ...(response ? {} : { transportError: stderr.trim() || "the command wrote no JSON body" })
+    };
+  };
+
+  const done = new Promise((resolve) => {
+    child.on("close", (code) => resolve(buildResult(code)));
+  });
+
+  return {
+    child,
+    done,
+    exited,
+    pendingResult: () => buildResult(exitCode),
+    stderrSoFar: () => stderr
+  };
+}
+
+function drainedResult(call) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(call.pendingResult()), STDIO_DRAIN_WAIT_MS);
+    call.done.then((result) => {
+      clearTimeout(timer);
+      resolve(result);
+    });
+  });
 }
 
 async function settleFoundryctl(call, waitMs) {
-  const timer = setTimeout(() => call.child.kill("SIGKILL"), waitMs);
+  const timer = setTimeout(() => signalFoundryctlGroup(call.child, "SIGKILL"), waitMs);
   try {
-    return await call.done;
+    await call.exited;
+    return await drainedResult(call);
   } finally {
     clearTimeout(timer);
   }
