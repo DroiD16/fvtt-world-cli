@@ -2318,6 +2318,15 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
+    it("counts 54 approve-listed commands in a registry of 316", () => {
+      const approved = COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === "approve");
+
+      expect(
+        { commands: COMMAND_NAMES.length, approve: approved.length },
+        'the totals moved: update the counts docs/commands.md states ("54 of the 316 commands in the registry") in the same change'
+      ).toEqual({ commands: 316, approve: 54 });
+    });
+
     it("cannot be mutated in place", () => {
       const table = /** @type {Record<string, string>} */ (DEFAULT_COMMAND_PROFILE);
 
