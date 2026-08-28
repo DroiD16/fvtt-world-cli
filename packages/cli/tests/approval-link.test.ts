@@ -224,6 +224,14 @@ describe("approval idempotency links", () => {
     expect(links.lookup("key-2", "fp-2")).toEqual({ status: "lost-in-flight" });
   });
 
+  it("lets a repeat forward of an unsettled key share the reservation it already holds", () => {
+    const links = new ApprovalIdempotencyLinks({ maxEntries: 1, now: () => 0 });
+    links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS });
+
+    expect(links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS })).toBe(true);
+    expect(links.size).toBe(1);
+  });
+
   it("keeps a reserved key invisible until it settles and reusable once released", () => {
     const links = new ApprovalIdempotencyLinks({ maxEntries: 1, now: () => 0 });
     links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS });

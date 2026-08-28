@@ -141,8 +141,9 @@ export class ApprovalIdempotencyLinks {
     this.keysByApprovalId.set(approvalId, key);
   }
 
-  // The reservation outlives the pending request it covers, so a tombstone always converts an
-  // existing entry instead of competing for capacity with newer keys.
+  // The reservation is held for the pending request's whole lifetime, so a tombstone converts an
+  // existing entry instead of competing for capacity with newer keys. recordLostInFlight stays
+  // unconditional so that the boundary tick, where both expire at once, still retains the key.
   reserve({ key, fingerprint, retainMs }: { key: string; fingerprint: string; retainMs: number }) {
     this.prune();
 
