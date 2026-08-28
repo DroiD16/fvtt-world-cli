@@ -247,7 +247,9 @@ The wait is two-phase, because a decision can outlast any request timeout:
   into a blocking wait, so a caller using the CLI never branches on the code itself.
 - `approval.await { approvalId, waitMs? }` polls that id. A poll parks in the Foundry module for at
   most `APPROVAL_AWAIT_PARK_CAP_MS`; its optional `waitMs` may ask for a shorter park and is bounded
-  by the cap. The result echoes the id and is either
+  by the cap. The number of parks one approval holds at a time is bounded as well, so a client that
+  polls the same undecided id in a loop has its oldest park answered early with the pending state it
+  would have reported anyway. The result echoes the id and is either
   `{ approvalId, status: "pending", expiresAt? }` or `{ approvalId, status: "resolved", outcome,
   response? }`. The deadline is reported while the decision is still open; an approved command that is
   already running can no longer time out, and its answer carries no deadline.
