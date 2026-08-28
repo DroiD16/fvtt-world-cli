@@ -625,7 +625,7 @@ function noteAbandonedRun(summary, reason, remedy) {
 
 async function preparePolicyHarness(summary, options) {
   summary.notes.push(
-    "Command policy: the allow path is what the rest of this run exercises. With a GM control endpoint the script sets a policy that allows every command for the run and restores the stored one afterwards; without one it first checks that the connected client holds no command for approval, because the shipped defaults hold every delete for a human and the suite deletes what it creates."
+    "Command policy: the allow path is what the rest of this run exercises. With a GM control endpoint the script sets a policy that allows every command for the run and restores the stored one afterwards; without one it runs only when a policy read from that client confirms it holds no command for approval, because the shipped defaults hold every delete for a human and the suite deletes what it creates."
   );
 
   if (!options.gmControlUrl) {
@@ -633,12 +633,27 @@ async function preparePolicyHarness(summary, options) {
     noteSkippedTimeoutBranch(summary, "the segment it belongs to did not run");
 
     const discoveryRun = runFoundryctl(["commands"]);
-    const applied = discoveryRun.response?.policy?.applied === true;
+
+    if (discoveryRun.response?.policy?.applied !== true) {
+      markAndPush(summary, "policy.preconditions", false, {
+        ...summarizeCommand(discoveryRun),
+        policy: discoveryRun.response?.policy || null,
+        reason:
+          "The command policy of the connected GM client could not be read, so the listing is the static registry and says nothing about what that client holds for approval."
+      });
+      noteAbandonedRun(
+        summary,
+        "the connected GM client's command policy could not be read",
+        `An unread policy cannot rule out a delete the client holds for a human decision, and that would block the suite's cleanup until the approval expires, so the run refuses to start rather than hang: make the bridge answer a policy read and run the smoke again, or ${POLICY_SEGMENT_ENABLE_HINT}`
+      );
+      return { ready: false, restore: null };
+    }
+
     const approvals = Array.isArray(discoveryRun.response?.result)
       ? discoveryRun.response.result.filter((entry) => entry?.approval === true).map((entry) => entry.command)
       : [];
 
-    if (applied && approvals.length > 0) {
+    if (approvals.length > 0) {
       markAndPush(summary, "policy.preconditions", false, {
         ...summarizeCommand(discoveryRun),
         approvalCommands: approvals,
@@ -653,9 +668,8 @@ async function preparePolicyHarness(summary, options) {
       return { ready: false, restore: null };
     }
 
-    markAndPush(summary, "policy.preconditions", isCommandSuccess(discoveryRun), {
+    markAndPush(summary, "policy.preconditions", true, {
       ...summarizeCommand(discoveryRun),
-      policyApplied: applied,
       approvalCommands: approvals
     });
     return { ready: true, restore: null };
@@ -698,16 +712,21 @@ async function preparePolicyHarness(summary, options) {
   return {
     ready: true,
     restore: async () => {
-      await evaluateInGmPage(
-        options.gmControlUrl,
-        moduleSettingWriteScript(POLICY_SETTING_KEY, previousPolicy)
-      );
+      const failures = [];
+      const restoreSetting = async (key, value) => {
+        try {
+          await evaluateInGmPage(options.gmControlUrl, moduleSettingWriteScript(key, value));
+        } catch (error) {
+          failures.push({ setting: key, reason: error.message });
+        }
+      };
+
+      await restoreSetting(POLICY_SETTING_KEY, previousPolicy);
       if (typeof previousTimeoutMinutes === "number") {
-        await evaluateInGmPage(
-          options.gmControlUrl,
-          moduleSettingWriteScript(APPROVAL_TIMEOUT_SETTING_KEY, previousTimeoutMinutes)
-        );
+        await restoreSetting(APPROVAL_TIMEOUT_SETTING_KEY, previousTimeoutMinutes);
       }
+
+      return failures;
     }
   };
 }
@@ -13323,13 +13342,13 @@ async function main() {
       );
     }
     if (policyHarness?.restore) {
-      let restoredReason = null;
+      let failures = [];
       try {
-        await policyHarness.restore();
+        failures = await policyHarness.restore();
       } catch (error) {
-        restoredReason = error.message;
+        failures = [{ setting: null, reason: error.message }];
       }
-      markAndPush(summary, "policy.restore", restoredReason === null, { reason: restoredReason });
+      markAndPush(summary, "policy.restore", failures.length === 0, { failures });
     }
 
     if (tempDir) {
