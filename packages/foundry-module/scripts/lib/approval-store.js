@@ -619,10 +619,11 @@ export class ApprovalStore {
    * @param {ApprovalRecord} record
    */
   #markDelivered(record) {
-    record.delivered = true;
-    if (record.deliveredAt === null) {
-      record.deliveredAt = this.now();
+    if (record.delivered) {
+      return;
     }
+    record.delivered = true;
+    record.deliveredAt = this.now();
   }
 
   /**

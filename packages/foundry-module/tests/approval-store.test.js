@@ -330,6 +330,18 @@ describe("approval store admission", () => {
     });
   });
 
+  it("keeps admitting while a client polls the id it just cancelled", async () => {
+    const { store } = createHarness({ recordMax: 2 });
+    const first = admitRequest(store);
+    store.cancel(first.approvalId);
+    await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
+    const second = admitRequest(store);
+    store.cancel(second.approvalId);
+    await store.awaitOutcome({ approvalId: second.approvalId, waitMs: 0 });
+
+    expect(admitRequest(store).approvalId).toMatch(APPROVAL_ID_PATTERN);
+  });
+
   it("keeps admitting while approved commands are still running", async () => {
     const executor = createDeferred();
     const { store } = createHarness({ recordMax: 2, execute: () => executor.promise });
