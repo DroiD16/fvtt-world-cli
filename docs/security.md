@@ -119,8 +119,9 @@ allowed whatever the stored permissions say. The exemption exists so that a perm
 lock the bridge out of reporting its own state or out of resolving a decision the GM has already
 taken; none of the exempt commands changes world content. They are outside the stored permissions
 entirely — an override naming one is dropped when the permissions are read — and the Command
-permissions window does not show them, because there is nothing about them to change. Pairing and the other `auth` operations
-are answered by the daemon and never reach the module, so no command permission applies to them.
+permissions window does not show them, because there is nothing about them to change. Pairing and
+the other `auth` operations are answered by the daemon and never reach the module, so no command
+permission applies to them.
 
 A denied command is also absent from what the CLI's `commands` listing reports while the bridge is
 reachable. That is context hygiene for an agent, not a security boundary: the static registry,
