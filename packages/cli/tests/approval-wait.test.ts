@@ -524,6 +524,36 @@ describe("approval wait", () => {
     expect(abortStates).toEqual([true]);
   });
 
+  it("answers a cancellation taken while the retry backoff is still waiting", async () => {
+    const signals = createSignalScope();
+    let releaseSleep: () => void = () => {};
+    const harness = createHarness([
+      transportEnvelope(ERROR_CODES.DAEMON_UNAVAILABLE),
+      createCommandResponse({ id: "cancel", result: { approvalId: APPROVAL_ID, status: "cancelled" } })
+    ]);
+
+    const pending = awaitApprovalOutcome({
+      pendingResponse: pendingEnvelope(),
+      stderr: harness.stderr,
+      signalScope: signals.scope,
+      ...harness.options,
+      sleep: () =>
+        new Promise<void>((resolve) => {
+          releaseSleep = resolve;
+        }),
+      reconnect: async () => {}
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    signals.fire();
+    const envelope = await pending;
+    releaseSleep();
+
+    expect(envelope.error?.code).toBe(ERROR_CODES.APPROVAL_CANCELLED);
+    expect(harness.calls[1].command).toBe("approval.cancel");
+  });
+
   it("tells the caller a cancellation was requested", async () => {
     const signals = createSignalScope();
     const harness = createHarness([

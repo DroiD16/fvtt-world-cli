@@ -59,6 +59,8 @@ type WaitStep =
   | { kind: "pending" }
   | { kind: "transport"; envelope: CommandResponseEnvelope };
 
+type SettledStep = Extract<WaitStep, { kind: "settled" }>;
+
 function readPendingApproval(response: CommandResponseEnvelope): PendingApproval | null {
   const details = readPendingApprovalDetails(response);
   if (!details) {
@@ -204,7 +206,7 @@ export async function awaitApprovalOutcome({
     return { kind: "settled", envelope: response };
   }
 
-  async function requestCancellation(): Promise<WaitStep> {
+  async function requestCancellation(): Promise<SettledStep> {
     let response: CommandResponseEnvelope;
     try {
       response = await send({
@@ -261,8 +263,8 @@ export async function awaitApprovalOutcome({
       "Press Ctrl+C to request cancellation.\n"
   );
 
-  let settleCancellation: (step: WaitStep) => void = () => {};
-  const cancellation = new Promise<WaitStep>((resolve) => {
+  let settleCancellation: (step: SettledStep) => void = () => {};
+  const cancellation = new Promise<SettledStep>((resolve) => {
     settleCancellation = resolve;
   });
   let cancelling = false;
@@ -278,6 +280,13 @@ export async function awaitApprovalOutcome({
     cancelling = true;
     onCancelRequested?.();
     void requestCancellation().then(settleCancellation);
+  }
+
+  // A cancellation the user asked for is answered as soon as it is decided: the retry backoff and a
+  // reconnect that only fails at its own timeout would otherwise hold the CLI for seconds after
+  // Ctrl+C, and the next interrupt reaches the default handler.
+  async function raceCancellation(work: Promise<unknown>): Promise<SettledStep | null> {
+    return await Promise.race([work.then(() => null), cancellation]);
   }
 
   signalScope.on("SIGINT", onSignal);
@@ -298,7 +307,10 @@ export async function awaitApprovalOutcome({
 
       if (step.kind === "pending") {
         retryDelayMs = APPROVAL_RETRY_BASE_DELAY_MS;
-        await sleep(APPROVAL_EMPTY_POLL_DELAY_MS);
+        const cancelled = await raceCancellation(sleep(APPROVAL_EMPTY_POLL_DELAY_MS));
+        if (cancelled) {
+          return cancelled.envelope;
+        }
         continue;
       }
 
@@ -306,16 +318,24 @@ export async function awaitApprovalOutcome({
         return step.envelope;
       }
 
-      await sleep(retryDelayMs);
+      const cancelledWhileWaiting = await raceCancellation(sleep(retryDelayMs));
+      if (cancelledWhileWaiting) {
+        return cancelledWhileWaiting.envelope;
+      }
       retryDelayMs = Math.min(retryDelayMs * 2, APPROVAL_RETRY_MAX_DELAY_MS);
 
       if (reconnect) {
-        try {
-          await reconnect();
-        } catch (error) {
-          if (now() > expiresAt + APPROVAL_RETRY_MARGIN_MS) {
-            return toTransportErrorEnvelope(error);
-          }
+        let failure: unknown = null;
+        const cancelledWhileReconnecting = await raceCancellation(
+          reconnect().catch((error: unknown) => {
+            failure = error;
+          })
+        );
+        if (cancelledWhileReconnecting) {
+          return cancelledWhileReconnecting.envelope;
+        }
+        if (failure !== null && now() > expiresAt + APPROVAL_RETRY_MARGIN_MS) {
+          return toTransportErrorEnvelope(failure);
         }
       }
     }
