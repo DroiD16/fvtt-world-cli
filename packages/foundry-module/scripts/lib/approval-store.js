@@ -508,7 +508,6 @@ export class ApprovalStore {
     this.#publish();
   }
 
-  // Only spent outcomes are displaced, and only once their combined weight is known to be enough.
   /**
    * @param {ApprovalRecord} record
    * @param {number} responseBytes
@@ -524,9 +523,13 @@ export class ApprovalStore {
       return true;
     }
 
-    const candidates = [...this.#requests.values()].filter(
-      (candidate) => candidate !== record && candidate.hasResponse && this.#isSpent(candidate)
+    const delivered = [...this.#requests.values()].filter(
+      (candidate) => candidate !== record && candidate.hasResponse && candidate.delivered
     );
+    const candidates = [
+      ...delivered.filter((candidate) => this.#isSpent(candidate)),
+      ...delivered.filter((candidate) => !this.#isSpent(candidate))
+    ];
     const reclaimable = candidates.reduce((total, candidate) => total + candidate.responseBytes, 0);
     if (this.#retainedResponseBytes - reclaimable + responseBytes > budget) {
       return false;

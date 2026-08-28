@@ -925,7 +925,33 @@ describe("approval store retention", () => {
     });
   });
 
-  it("keeps a just-read response until its answer has had time to reach the client", async () => {
+  it("displaces a long-read response before one whose answer may still be in flight", async () => {
+    const { store, clock } = createHarness({ ...weighedResponses, resultByteBudgetProvider: () => 100 });
+    const longRead = admitWeighed(store, 40);
+    const justRead = admitWeighed(store, 40);
+    const latest = admitWeighed(store, 40);
+
+    await store.decide(longRead.approvalId, "allow");
+    await store.awaitOutcome({ approvalId: longRead.approvalId, waitMs: 0 });
+    await clock.advance(APPROVAL_DELIVERY_GRACE_MS);
+    await store.decide(justRead.approvalId, "allow");
+    await store.awaitOutcome({ approvalId: justRead.approvalId, waitMs: 0 });
+    await store.decide(latest.approvalId, "allow");
+
+    await expect(store.awaitOutcome({ approvalId: longRead.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: longRead.approvalId,
+      status: "unknown",
+      reason: APPROVAL_UNKNOWN_REASONS.RESULT_RETENTION_CAP
+    });
+    await expect(store.awaitOutcome({ approvalId: justRead.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: justRead.approvalId,
+      status: "resolved",
+      outcome: "approved",
+      response: { ok: true, weight: 40 }
+    });
+  });
+
+  it("retains a second outcome decided within the grace window with no waiter parked", async () => {
     const { store } = createHarness({ ...weighedResponses, resultByteBudgetProvider: () => 100 });
     const first = admitWeighed(store, 60);
     const second = admitWeighed(store, 60);
@@ -934,8 +960,8 @@ describe("approval store retention", () => {
     await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
     await store.decide(second.approvalId, "allow");
 
-    await expect(store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 })).resolves.toEqual({
-      approvalId: first.approvalId,
+    await expect(store.awaitOutcome({ approvalId: second.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: second.approvalId,
       status: "resolved",
       outcome: "approved",
       response: { ok: true, weight: 60 }
