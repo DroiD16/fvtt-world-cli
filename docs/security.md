@@ -139,7 +139,7 @@ outcome nor cancel the decision.
 
 The decision is taken in the GM-only Command Approval window, which shows one waiting request at a
 time: the command name, the remaining time, the names of the documents or managed paths it would
-change, and its full parameters. It opens by itself when a request arrives, and again when the queue
+change, and its parameters. It opens by itself when a request arrives, and again when the queue
 moves on to another waiting request, so a request that reaches the front of the queue while the
 window is closed is still shown rather than expiring unseen. Binary upload content is summarized as
 its size rather than printed, so a large payload cannot bury the fields that describe what the

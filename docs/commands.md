@@ -241,17 +241,19 @@ applies its own.
 
 A command that waits for approval blocks the CLI call instead of failing it. Foundry raises its
 Command Approval window with the command name, the documents or managed paths it would change, and
-its full parameters, and the CLI writes one status line to stderr:
+its parameters, where an upload's encoded content is shown as its size rather than its bytes, and
+the CLI writes one status line to stderr:
 
 ```
 Waiting for GM approval in Foundry (command actor.delete, expires 2026-08-28T18:20:00.000Z). Press Ctrl+C to request cancellation.
 ```
 
 The line goes to stderr in both output modes, so `--json` stdout still carries exactly one envelope.
-When the GM chooses Allow, the command runs at that moment and the CLI prints what a direct call
-would have printed, including a handler error. Because execution happens at the decision rather than
-at the request, the world can have moved on in between; the command's own guards and not-found
-errors apply as they would to a call sent then.
+When the GM chooses Allow, the command runs at that moment and the CLI reports its own outcome,
+success or handler error, as a direct call would have reported it; the envelope carrying that
+outcome is the approval's answer, which [Protocol](protocol.md#approval-flow) describes. Because
+execution happens at the decision rather than at the request, the world can have moved on in
+between; the command's own guards and not-found errors apply as they would to a call sent then.
 
 The other endings are structured errors, and all but the last guarantee that nothing ran:
 
