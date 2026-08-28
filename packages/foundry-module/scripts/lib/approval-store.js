@@ -17,6 +17,8 @@ const APPROVAL_RECORD_MAX = 200;
 
 export const APPROVAL_DELIVERY_GRACE_MS = 10_000;
 
+export const APPROVAL_WAITERS_MAX = 4;
+
 export const APPROVAL_UNKNOWN_REASONS = Object.freeze({
   EXECUTOR_FAILED: "executor-failed",
   RESULT_RETENTION_CAP: "result-retention-cap",
@@ -144,6 +146,7 @@ export class ApprovalStore {
    *   recordMax?: number,
    *   resultRetentionMs?: number,
    *   deliveryGraceMs?: number,
+   *   waitersMax?: number,
    *   parkCapMs?: number,
    *   timeoutMinutesProvider?: () => unknown,
    *   pendingByteBudgetProvider?: () => number,
@@ -160,6 +163,7 @@ export class ApprovalStore {
     recordMax = APPROVAL_RECORD_MAX,
     resultRetentionMs = APPROVAL_RESULT_RETENTION_MS,
     deliveryGraceMs = APPROVAL_DELIVERY_GRACE_MS,
+    waitersMax = APPROVAL_WAITERS_MAX,
     parkCapMs = APPROVAL_AWAIT_PARK_CAP_MS,
     timeoutMinutesProvider = readApprovalTimeoutMinutes,
     pendingByteBudgetProvider = () => DEFAULT_WS_MAX_PAYLOAD_BYTES,
@@ -174,6 +178,7 @@ export class ApprovalStore {
     this.recordMax = recordMax;
     this.resultRetentionMs = resultRetentionMs;
     this.deliveryGraceMs = deliveryGraceMs;
+    this.waitersMax = waitersMax;
     this.parkCapMs = parkCapMs;
     this.timeoutMinutesProvider = timeoutMinutesProvider;
     this.pendingByteBudgetProvider = pendingByteBudgetProvider;
@@ -256,6 +261,18 @@ export class ApprovalStore {
     const parkMs = this.#resolveParkMs(waitMs);
     if (record.terminalAt !== null || parkMs <= 0) {
       return Promise.resolve(this.#report(record));
+    }
+
+    // Nothing stops a client from polling the same undecided id in a loop, so the oldest park is
+    // answered with the state it would have reported anyway rather than held alongside the new one.
+    while (record.waiters.size >= this.waitersMax) {
+      const oldest = record.waiters.values().next().value;
+      if (!oldest) {
+        break;
+      }
+      record.waiters.delete(oldest);
+      this.clearTimer(oldest.timer);
+      oldest.settle(this.#report(record));
     }
 
     return new Promise((resolve) => {

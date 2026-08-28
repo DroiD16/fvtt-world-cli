@@ -1137,6 +1137,28 @@ describe("approval store queue view", () => {
     });
   });
 
+  it("answers the oldest park rather than hold an unbounded number of them", async () => {
+    const { store, clock } = createHarness({ waitersMax: 2 });
+    const admission = admitRequest(store);
+    const first = track(store.awaitOutcome({ approvalId: admission.approvalId }));
+    const second = track(store.awaitOutcome({ approvalId: admission.approvalId }));
+    await flush();
+
+    expect(first.settled).toBe(false);
+
+    const third = track(store.awaitOutcome({ approvalId: admission.approvalId }));
+    await flush();
+
+    expect(first.value).toEqual({
+      approvalId: admission.approvalId,
+      status: "pending",
+      expiresAt: admission.expiresAt
+    });
+    expect(second.settled).toBe(false);
+    expect(third.settled).toBe(false);
+    expect(clock.liveTimers()).toBe(3);
+  });
+
   it("answers a waiter on an undecided request with a verdict that nothing ran", async () => {
     const { store, clock } = createHarness();
     const admission = admitRequest(store);
