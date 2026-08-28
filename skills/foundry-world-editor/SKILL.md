@@ -43,6 +43,15 @@ means another paired browser holds the active bridge slot: clear it with
 `fvtt-world-cli bridge release` and have the GM choose Connect in the module's Authorization
 window or World CLI scene-controls group — do not start a new pairing.
 
+`UNSUPPORTED_PROTOCOL_VERSION` means the two halves come from different releases. Read
+`details.staleComponent` and tell the user what to update: `module` is the Foundry module,
+`cli-daemon` is the CLI plus a restart of the running daemon, `unknown` means the two versions in
+`details` have to be compared by hand.
+
+A command that seems to hang is usually waiting for a GM approval, not stuck: the CLI prints a
+waiting line on stderr and Foundry shows a Command Approval window. Check that window before
+concluding anything is broken.
+
 ## Hard rules
 
 - Pass `--json` on every automated call.
@@ -55,16 +64,22 @@ window or World CLI scene-controls group — do not start a new pairing.
 - The CLI cannot execute JavaScript, write settings, edit compendium packs in place, or reach
   outside the managed file boundary, and executable region-behavior types are rejected on write.
   Do not look for workarounds; report the limitation instead.
+- A command can block on a human: the GM client's command permissions send some commands, deletions
+  by default, to an approval window in Foundry, and the call waits for that decision.
 
 ## The working loop
 
 Discover → inspect schema → locate → read → smallest patch → dry-run → commit → verify. Never
 guess a command name or parameter.
 
-1. `fvtt-world-cli commands --json` lists the installed commands and marks mutations. Dotted
-   protocol names map to spaced CLI subcommands (`actor.item.update` → `actor item update`). A
-   command present in the registry but not advertised by the connected bridge is a client/bridge
-   version mismatch.
+1. `fvtt-world-cli commands --json` lists the commands the connected GM client will run and marks
+   mutations. Dotted protocol names map to spaced CLI subcommands (`actor.item.update` →
+   `actor item update`). Treat the list as that client's permissions only when the envelope reports
+   `policy.applied: true`; `false` means no bridge answered and the full static registry is printed
+   instead. Under an applied policy, an absent command is missing functionality — do not work around
+   it, tell the user — and a command marked `"approval": true` blocks the real call until a GM
+   allows it, so warn the user before starting and prefer one `*-many` envelope over many
+   single-approval calls.
 2. `fvtt-world-cli schema <command>` shows the exact request parameters, required fields, enums,
    and whether unknown fields are accepted; `fvtt-world-cli <command path> --help` maps flags.
 3. Locate targets with the narrowest query: a family `list --name <substring> --limit <n>` when
@@ -80,9 +95,13 @@ guess a command name or parameter.
 6. Dry-run every nontrivial mutation with the global `--dry-run` flag. It runs the same
    validation, sanitization, permission, capability, and security checks, then stops before
    persistence; check both `ok` and `.result.dryRun`. A preview reports only what is knowable
-   before execution and reserves nothing.
+   before execution and reserves nothing. A preview is never held for approval, but a denied
+   command is refused in preview too, and `approvalRequired: true` in the result means the commit
+   below will wait on a GM.
 7. Commit with the same content. Attach `--idempotency-key <stable-key>` to any create, clone,
-   import, upload, or action that might be retried — one stable key per logical operation.
+   import, upload, or action that might be retried — one stable key per logical operation. Reuse
+   that same key if you send the command again after a lost response, including one lost while an
+   approval was pending.
 8. Verify with a fresh read. This matters most after open-schema writes, bulk operations, and
    actions, where confirmation can say less than an observed post-state.
 
@@ -118,6 +137,16 @@ Classify a failure before reacting:
 - Forwarded but unresolved (`BRIDGE_TIMEOUT`, `BRIDGE_DISCONNECTED`, a timeout after send) — the
   mutation may already have committed: inspect world state first, and reuse the same idempotency
   key when retrying the same logical request. Never mint a new key because a response was lost.
+- Refused by the GM client's command permissions (`COMMAND_DENIED`) — nothing ran; the command is
+  unavailable there. Report it as a limitation instead of reaching for another command that has the
+  same effect.
+- Approval refused (`APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED`) or never admitted
+  (`APPROVAL_QUEUE_FULL`) — the command did not execute and nothing changed. Only queue-full clears
+  on its own; a denial or a timeout is a human decision, so report it and ask, rather than looping
+  the same request.
+- Approval outcome lost (`APPROVAL_UNKNOWN`, or a cancellation the CLI reported as unconfirmed) —
+  indeterminate: the command may have run. Read the documents it would have written, report what you
+  found, and use a fresh idempotency key if you send it again.
 - Structured Foundry rejection — correct the content and resubmit as a new operation.
 
 ## Bulk writes and actions
