@@ -262,11 +262,11 @@ The wait is two-phase, because a decision can outlast any request timeout:
 - A terminal outcome is not consumed by the first waiter. It stays available for
   `APPROVAL_RESULT_RETENTION_MS`, which covers a lost poll response and several waiters on one id,
   and then expires. That window is what a bounded store offers rather than a promise it can keep
-  under pressure: an outcome already handed to a poll is the first one the store forgets when a
-  later request needs the room, so a repeated poll can answer `APPROVAL_UNKNOWN` before the window is
-  over. An outcome is only counted as handed out once its answer has had time to reach the client, so
-  a poll repeated immediately after a lost response still finds it. An outcome no client has read yet
-  is never traded away at all.
+  under pressure: an outcome a poll has already read is the first one the store forgets when a later
+  request needs the room, so a repeated poll can answer `APPROVAL_UNKNOWN` before the window is over.
+  Outcomes read long enough ago that their answers have reached their clients go first; an outcome
+  read within the last few seconds is forgotten only when those do not free enough room. An outcome
+  no client has read yet is never traded away at all.
 - `approval.cancel { approvalId }` asks for a still-pending decision to be abandoned and answers
   `{ approvalId, status }`, where `status` is `cancelled`, `executing`, `resolved`, or `unknown`. Only
   `cancelled` guarantees that the command will not run: `executing` means the GM's decision already
