@@ -71,9 +71,13 @@ function settlementForCancel(envelope: CommandResponseEnvelope): ApprovalSettlem
     return { kind: "none" };
   }
 
-  return report.status === "cancelled"
-    ? { kind: "clear", approvalId }
-    : { kind: "indeterminate", approvalId };
+  if (report.status === "cancelled") {
+    return { kind: "clear", approvalId };
+  }
+
+  // A decision the cancellation lost to is still readable through approval.await, so the link stays
+  // whole for that follow-up poll to promote or clear rather than becoming a tombstone here.
+  return report.status === "resolved" ? { kind: "none" } : { kind: "indeterminate", approvalId };
 }
 
 export function readApprovalSettlement(

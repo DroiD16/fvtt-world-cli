@@ -179,14 +179,14 @@ export async function awaitApprovalOutcome({
     return { kind: "settled", envelope: report.response };
   }
 
-  async function pollOnce(signal: AbortSignal): Promise<WaitStep> {
+  async function pollOnce(signal?: AbortSignal, waitMs = APPROVAL_AWAIT_PARK_CAP_MS): Promise<WaitStep> {
     let response: CommandResponseEnvelope;
     try {
       response = await send({
         command: APPROVAL_AWAIT_COMMAND,
-        params: { approvalId, waitMs: APPROVAL_AWAIT_PARK_CAP_MS },
+        params: { approvalId, waitMs },
         timeoutMs: pollTimeoutMs,
-        signal
+        ...(signal ? { signal } : {})
       });
     } catch (error) {
       return { kind: "transport", envelope: toTransportErrorEnvelope(error) };
@@ -236,6 +236,13 @@ export async function awaitApprovalOutcome({
     const status = (response.result as { status?: unknown } | undefined)?.status;
     if (status === "cancelled") {
       return { kind: "settled", envelope: outcomeEnvelope("cancelled") };
+    }
+
+    if (status === "resolved") {
+      const settled = await pollOnce(undefined, 0);
+      if (settled.kind === "settled") {
+        return settled;
+      }
     }
 
     return {

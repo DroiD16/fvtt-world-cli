@@ -128,6 +128,25 @@ describe("approval idempotency links", () => {
     });
   });
 
+  it("leaves the link whole when a cancellation lost to a decision already taken", () => {
+    const links = createLinks();
+
+    links.settle(
+      readApprovalSettlement("approval.cancel", awaitReport({ approvalId: APPROVAL_ID, status: "resolved" }))
+    );
+
+    expect(links.lookup("key-1", "fp-1")).toMatchObject({ status: "pending", approvalId: APPROVAL_ID });
+
+    links.settle(
+      readApprovalSettlement(
+        "approval.await",
+        awaitReport({ approvalId: APPROVAL_ID, status: "resolved", outcome: "denied" })
+      )
+    );
+
+    expect(links.lookup("key-1", "fp-1")).toEqual({ status: "miss" });
+  });
+
   it("keeps an indeterminate marker when the approval id is no longer known", () => {
     const links = createLinks();
     const unknown = createErrorResponse({

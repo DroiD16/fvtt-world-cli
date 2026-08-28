@@ -268,7 +268,9 @@ The wait is two-phase, because a decision can outlast any request timeout:
 - `approval.cancel { approvalId }` asks for a still-pending decision to be abandoned and answers
   `{ approvalId, status }`, where `status` is `cancelled`, `executing`, `resolved`, or `unknown`. Only
   `cancelled` guarantees that the command will not run: `executing` means the GM's decision already
-  won the race, and a started handler cannot be recalled.
+  won the race, and a started handler cannot be recalled. `resolved` means the decision was taken
+  before the cancellation arrived, and the outcome it settled on is still retained, so one further
+  `approval.await` reads the real verdict rather than leaving the call indeterminate.
 - `APPROVAL_QUEUE_FULL` is admission control. The bounded store refused the request before anything
   was displayed or executed, so nothing ran. Its details carry the `command` and the `reason` the
   admission was refused: `pending-count` and `pending-bytes` for the number and the combined weight
@@ -311,7 +313,9 @@ instead of asking the GM twice; a different payload under that key is the usual
 `IDEMPOTENCY_KEY_CONFLICT`. When the decision settles, the daemon promotes an approved outcome —
 success or handler error alike, because execution started — to the key's cached final response, and
 drops the link after a denial, a timeout, or a confirmed cancellation so that re-sending the same
-key is a fresh request. An outcome that could not be read leaves the key indeterminate: retrying it
+key is a fresh request. A cancellation that arrives after the decision was taken settles
+nothing on its own: the link stays whole so that the poll reading the real verdict promotes or drops
+it. An outcome that could not be read leaves the key indeterminate: retrying it
 answers `APPROVAL_UNKNOWN` until the link expires, because the daemon cannot say whether the command
 ran. That is a verify-then-act state, and the way out of it is a world-state read followed by a
 fresh key.

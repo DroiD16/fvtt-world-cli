@@ -280,9 +280,10 @@ GM has worked through them succeeds.
 
 Ctrl+C while a call waits asks the GM client to abandon the decision instead of leaving it on the
 GM's screen. Only the confirmed answer, reported as `APPROVAL_CANCELLED`, guarantees that the
-command will not run; if the GM's Allow already won the race, or the GM client could not be reached,
-the CLI says the cancellation is unconfirmed and reports the indeterminate outcome rather than a
-guarantee.
+command will not run. A cancellation that arrives after the GM has already decided is answered with
+that decision instead, so a denial a moment before Ctrl+C is still reported as `APPROVAL_DENIED`. It
+is only when the decision was already executing, or the GM client could not be reached, that the CLI
+says the cancellation is unconfirmed and reports the indeterminate outcome.
 
 By default the commands that wait for approval are the destructive ones: every `delete` and
 `delete-many` verb, plus `file.delete`, `file.move`, and `scene.fog.reset`, whose fog-exploration

@@ -433,6 +433,51 @@ describe("approval wait", () => {
     expect(signals.size).toBe(0);
   });
 
+  it("reads the verdict a cancellation lost to instead of reporting it indeterminate", async () => {
+    const signals = createSignalScope();
+    const harness = createHarness([
+      () => new Promise<CommandResponseEnvelope>(() => {}),
+      createCommandResponse({ id: "cancel", result: { approvalId: APPROVAL_ID, status: "resolved" } }),
+      awaitResolved("denied")
+    ]);
+
+    const pending = awaitApprovalOutcome({
+      pendingResponse: pendingEnvelope(),
+      stderr: harness.stderr,
+      signalScope: signals.scope,
+      ...harness.options
+    });
+    signals.fire();
+    const envelope = await pending;
+
+    expect(envelope.error?.code).toBe(ERROR_CODES.APPROVAL_DENIED);
+    expect(harness.calls[2]).toMatchObject({
+      command: "approval.await",
+      params: { approvalId: APPROVAL_ID, waitMs: 0 }
+    });
+  });
+
+  it("falls back to the indeterminate outcome when the follow-up poll cannot read the verdict", async () => {
+    const signals = createSignalScope();
+    const harness = createHarness([
+      () => new Promise<CommandResponseEnvelope>(() => {}),
+      createCommandResponse({ id: "cancel", result: { approvalId: APPROVAL_ID, status: "resolved" } }),
+      transportEnvelope(ERROR_CODES.DAEMON_UNAVAILABLE)
+    ]);
+
+    const pending = awaitApprovalOutcome({
+      pendingResponse: pendingEnvelope(),
+      stderr: harness.stderr,
+      signalScope: signals.scope,
+      ...harness.options
+    });
+    signals.fire();
+    const envelope = await pending;
+
+    expect(envelope.error?.code).toBe(ERROR_CODES.APPROVAL_UNKNOWN);
+    expect(envelope.error?.details).toMatchObject({ cancellation: "unconfirmed", status: "resolved" });
+  });
+
   it("never claims a cancellation the daemon never received", async () => {
     const signals = createSignalScope();
     const harness = createHarness([
