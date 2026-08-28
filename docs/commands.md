@@ -272,8 +272,9 @@ The other endings are structured errors, and all but the last guarantee that not
 | `APPROVAL_UNKNOWN` | The waiting decision can no longer be correlated | Indeterminate |
 
 `APPROVAL_UNKNOWN` is the one indeterminate outcome. It answers a decision the GM client no longer
-holds — after a reload of that client, after the retained outcome expired, or after a daemon restart
-lost the link — and the command may never have started or may have finished. Reading the documents
+holds — after a reload of that client, or after the retained outcome expired — or a keyed retry whose
+approval the daemon could not read an outcome for, and the command may never have started or may
+have finished. Reading the documents
 it would have written is the only way to tell. `APPROVAL_QUEUE_FULL` is a bound, not a verdict: the
 number and the combined size of the decisions waiting for the GM are limited, and retrying once the
 GM has worked through them succeeds.
