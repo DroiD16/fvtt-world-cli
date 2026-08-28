@@ -89,7 +89,6 @@ function createApprovalId() {
     .slice(0, APPROVAL_ID_LENGTH);
 }
 
-// The budget is a raw-frame byte budget, so string length would undercount non-ASCII characters.
 /**
  * @param {unknown} value
  * @returns {number}
@@ -114,7 +113,6 @@ function resolveByteBudget(provider) {
     : DEFAULT_WS_MAX_PAYLOAD_BYTES;
 }
 
-// A weight that cannot be expressed is charged the whole budget, so the request is refused.
 /**
  * @param {unknown} value
  * @returns {number}
@@ -218,7 +216,6 @@ export class ApprovalStore {
       approvalId,
       command,
       params,
-      // Resolved past every bound: a refused caller must not be able to buy a lookup per document.
       targets: resolveTargets(),
       createdAt,
       expiresAt: createdAt + timeoutMs,
@@ -260,7 +257,6 @@ export class ApprovalStore {
       return Promise.resolve(this.#report(record));
     }
 
-    // A polling loop must not accumulate parks, so the oldest is answered rather than kept.
     while (record.waiters.size >= this.waitersMax) {
       const oldest = record.waiters.values().next().value;
       if (!oldest) {
@@ -568,8 +564,6 @@ export class ApprovalStore {
     record.unknownReason = APPROVAL_UNKNOWN_REASONS.RESULT_RETENTION_CAP;
   }
 
-  // An unread answer is never traded for a new request, and a running command never counts: it can
-  // be neither reclaimed nor re-created, so it must not hold the cap when its handler never settles.
   /**
    * @returns {boolean}
    */
@@ -673,7 +667,6 @@ export class ApprovalStore {
     };
   }
 
-  // Retention expires without a timer: every entry point prunes first, so an idle store holds none.
   #pruneExpired() {
     if (this.#requests.size === 0) {
       return;

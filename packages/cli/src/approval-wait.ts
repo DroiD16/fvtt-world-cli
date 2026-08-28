@@ -269,9 +269,7 @@ export async function awaitApprovalOutcome({
   });
   let cancelling = false;
 
-  // The listener goes as the first signal arrives, not in the finally: while the cancellation
-  // request is in flight a still-registered listener would swallow the next Ctrl+C, leaving the
-  // user with no way out of a daemon that never answers it.
+  // The listener goes as the first signal arrives: a still-registered one swallows the next Ctrl+C.
   function onSignal() {
     signalScope.off("SIGINT", onSignal);
     if (cancelling) {
@@ -282,14 +280,11 @@ export async function awaitApprovalOutcome({
     void requestCancellation().then(settleCancellation);
   }
 
-  // The backoff and a reconnect that only fails at its own timeout must not outlast a Ctrl+C.
   async function raceCancellation(work: Promise<unknown>): Promise<SettledStep | null> {
     return await Promise.race([work.then(() => null), cancellation]);
   }
 
   signalScope.on("SIGINT", onSignal);
-  // A poll the cancellation outran is still holding a live connection, and nothing else will close
-  // it before its own timeout: abandoning it without this abort leaves the CLI running after Ctrl+C.
   let pollAbort: AbortController | null = null;
 
   try {

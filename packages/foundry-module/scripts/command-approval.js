@@ -47,7 +47,6 @@ const NO_TARGET_SUMMARY = Object.freeze({
 
 const APPROVAL_PARAM_TEXT_MAX_CHARS = 16_384;
 
-// The encoded length is read rather than the payload: decoding it is the allocation this avoids.
 /**
  * @param {string} value
  * @returns {number}
@@ -68,7 +67,6 @@ function redactValue(value, field) {
     return format("FVTTWORLDCLI.Approval.RedactedContent", { bytes: decodedBase64Bytes(value) });
   }
 
-  // Any long string is summarized: an unbounded one is serialized into the DOM on every re-render.
   if (typeof value === "string" && value.length > APPROVAL_PARAM_TEXT_MAX_CHARS) {
     return format("FVTTWORLDCLI.Approval.RedactedText", { characters: value.length });
   }
@@ -190,9 +188,6 @@ export function createCommandApprovalApplication({ approvalStore }) {
   const { ApplicationV2, HandlebarsApplicationMixin } = globalThis.foundry.applications.api;
 
   /**
-   * The clicked row carries the id it was rendered with: a timeout, a cancellation or a preceding
-   * decision advances the queue synchronously while the re-render is not, so a decision that no longer
-   * names the request on screen must not fall through onto the one that took its place.
    * @this {{ element?: any }}
    * @param {Event} event
    * @param {any} target
@@ -266,7 +261,6 @@ export function createCommandApprovalApplication({ approvalStore }) {
       this.countdownTimer = null;
     }
 
-    // The store drops a claimed request's parameters, so this entry is the only copy left to render.
     _onClose(options) {
       super._onClose(options);
       this.stopCountdown();
@@ -275,8 +269,6 @@ export function createCommandApprovalApplication({ approvalStore }) {
   };
 }
 
-// The queue view names only the request on screen, so an arrival is read from the count the store
-// holds: admission is the one transition that raises it.
 /**
  * @param {{ approvalStore: ApprovalStore }} runtime
  */
