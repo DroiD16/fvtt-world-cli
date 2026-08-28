@@ -76,7 +76,8 @@ guess a command name or parameter.
    mutations. Dotted protocol names map to spaced CLI subcommands (`actor.item.update` →
    `actor item update`). Treat the list as that client's permissions only when the envelope reports
    `policy.applied: true`; `false` means no bridge answered and the full static registry is printed
-   instead. Under an applied policy, an absent command is missing functionality — do not work around
+   instead. A daemon that rejects the client's credential fails the command outright rather than
+   falling back, which means this install is not paired with that daemon: pairing comes first. Under an applied policy, an absent command is missing functionality — do not work around
    it, tell the user — and a command marked `"approval": true` blocks the real call until a GM
    allows it, so warn the user before starting and prefer one `*-many` envelope over many
    single-approval calls.
