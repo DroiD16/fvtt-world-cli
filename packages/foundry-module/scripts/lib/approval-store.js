@@ -21,8 +21,7 @@ export const APPROVAL_WAITERS_MAX = 4;
 
 export const APPROVAL_UNKNOWN_REASONS = Object.freeze({
   EXECUTOR_FAILED: "executor-failed",
-  RESULT_RETENTION_CAP: "result-retention-cap",
-  STORE_CLEARED: "store-cleared"
+  RESULT_RETENTION_CAP: "result-retention-cap"
 });
 
 export const APPROVAL_REFUSAL_REASONS = Object.freeze({
@@ -393,15 +392,9 @@ export class ApprovalStore {
       if (record.state === "pending") {
         record.state = "cancelled";
         record.terminalAt = this.now();
-        this.#wakeWaiters(record);
-        continue;
       }
 
-      this.#wakeWaiters(record, {
-        approvalId: record.approvalId,
-        status: "unknown",
-        reason: APPROVAL_UNKNOWN_REASONS.STORE_CLEARED
-      });
+      this.#wakeWaiters(record);
     }
 
     this.#requests.clear();

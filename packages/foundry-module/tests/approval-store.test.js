@@ -1219,7 +1219,7 @@ describe("approval store queue view", () => {
     });
   });
 
-  it("answers a waiter on a running command indeterminately when it is cleared", async () => {
+  it("wakes a waiter on a running command when it is cleared", async () => {
     const executor = createDeferred();
     const { store } = createHarness({ execute: () => executor.promise });
     const admission = admitRequest(store);
@@ -1231,11 +1231,7 @@ describe("approval store queue view", () => {
     store.clear();
     await flush();
 
-    expect(poll.value).toEqual({
-      approvalId: admission.approvalId,
-      status: "unknown",
-      reason: APPROVAL_UNKNOWN_REASONS.STORE_CLEARED
-    });
+    expect(poll.value).toEqual({ approvalId: admission.approvalId, status: "pending" });
   });
 
   it("admits again after a clear, so the budget is released with the state", () => {
