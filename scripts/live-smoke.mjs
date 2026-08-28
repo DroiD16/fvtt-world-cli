@@ -1,11 +1,17 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DISCOVERABLE_COMMAND_NAMES, ERROR_CODES, MODULE_ID } from "../packages/protocol/src/index.js";
+import {
+  COMMAND_NAMES,
+  DISCOVERABLE_COMMAND_NAMES,
+  ERROR_CODES,
+  MODULE_ID,
+  defaultProfile
+} from "../packages/protocol/src/index.js";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:30000";
 const EXPECTED_COMMANDS = [...DISCOVERABLE_COMMAND_NAMES].sort();
@@ -26,7 +32,9 @@ function parseArgs(argv) {
     json: false,
     actorId: process.env.FVTT_WORLD_CLI_TEST_ACTOR_ID || null,
     baseUrl: process.env.FVTT_WORLD_CLI_TEST_BASE_URL || DEFAULT_BASE_URL,
-    foundryDataDir: process.env.FVTT_WORLD_CLI_TEST_FOUNDRY_DATA_DIR || null
+    foundryDataDir: process.env.FVTT_WORLD_CLI_TEST_FOUNDRY_DATA_DIR || null,
+    gmControlUrl: process.env.FVTT_WORLD_CLI_TEST_GM_CONTROL || null,
+    policyTimeoutBranch: process.env.FVTT_WORLD_CLI_TEST_POLICY_TIMEOUT_BRANCH === "1"
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -54,6 +62,17 @@ function parseArgs(argv) {
       continue;
     }
 
+    if (arg === "--gm-control") {
+      options.gmControlUrl = argv[index + 1] || options.gmControlUrl;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--policy-timeout-branch") {
+      options.policyTimeoutBranch = true;
+      continue;
+    }
+
     if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -74,6 +93,7 @@ function printHelp() {
   process.stdout.write(
     [
       "Usage: npm run smoke:live -- [--json] [--actor-id <actorId>] [--base-url <url>] [--foundry-data-dir <path>]",
+      "                              [--gm-control <url>] [--policy-timeout-branch]",
       "",
       "Defaults:",
       `  base URL: ${DEFAULT_BASE_URL}`,
@@ -82,7 +102,18 @@ function printHelp() {
       "Environment overrides:",
       "  FVTT_WORLD_CLI_TEST_ACTOR_ID",
       "  FVTT_WORLD_CLI_TEST_BASE_URL",
-      "  FVTT_WORLD_CLI_TEST_FOUNDRY_DATA_DIR"
+      "  FVTT_WORLD_CLI_TEST_FOUNDRY_DATA_DIR",
+      "  FVTT_WORLD_CLI_TEST_GM_CONTROL",
+      "  FVTT_WORLD_CLI_TEST_POLICY_TIMEOUT_BRANCH=1",
+      "",
+      "--gm-control names a loopback endpoint that evaluates JavaScript in the logged-in GM page.",
+      'It receives POST {"script": "<javascript>"} — the body of an async function whose return',
+      'value must be JSON-serializable — and answers {"ok": true, "value": <result>} or',
+      '{"ok": false, "error": "<reason>"}. Without it the command-policy segment is skipped and',
+      "every skipped branch is reported in the summary notes; with it the run also relaxes the GM",
+      "client's command policy for its own duration, because the shipped defaults hold every delete",
+      "for a human decision. --policy-timeout-branch additionally exercises the approval timeout with",
+      "a one-minute setting, which costs about a minute of wall clock."
     ].join("\n") + "\n"
   );
 }
@@ -392,6 +423,541 @@ function expectOk(summary, name, run, extra = {}) {
 
 function expectErr(summary, name, run, code, extra = {}) {
   markAndPush(summary, name, isExpectedError(run, code), { ...summarizeCommand(run), ...extra });
+}
+
+const POLICY_SETTING_KEY = "commandPolicy";
+
+const APPROVAL_TIMEOUT_SETTING_KEY = "approvalTimeoutMinutes";
+
+const POLICY_STORAGE_VERSION = 1;
+
+const POLICY_SEGMENT_BRANCHES = Object.freeze([
+  "deny refuses a read",
+  "deny refuses a write and leaves the document unchanged",
+  "a preview of an approve-listed write returns approvalRequired without asking the GM",
+  "Allow executes the held command and the change lands",
+  "Deny refuses it and leaves the document unchanged",
+  "a client cancellation is confirmed and clears the approval window",
+  "discovery hides the denied command and marks the approve-listed one"
+]);
+
+const POLICY_SEGMENT_ENABLE_HINT =
+  "pass --gm-control <url>, or set FVTT_WORLD_CLI_TEST_GM_CONTROL, and run the smoke again";
+
+const APPROVAL_POLL_INTERVAL_MS = 250;
+
+const APPROVAL_WINDOW_WAIT_MS = 30_000;
+
+const APPROVAL_DECISION_WAIT_MS = 60_000;
+
+const POLICY_TIMEOUT_BRANCH_MINUTES = 1;
+
+const POLICY_TIMEOUT_BRANCH_WAIT_MS = 180_000;
+
+const APPROVAL_WINDOW_SCRIPT = `
+const root = document.querySelector(".fvtt-world-cli-approval-window");
+const button = root ? root.querySelector('button[data-action="allow"]') : null;
+if (!button) return null;
+const name = root.querySelector(".fvtt-world-cli-approval-command-name");
+return {
+  approvalId: button.dataset.approvalId || null,
+  command: name ? name.textContent.trim() : null,
+  executing: button.disabled === true
+};
+`;
+
+function approvalClickScript(action) {
+  return `
+const root = document.querySelector(".fvtt-world-cli-approval-window");
+const button = root ? root.querySelector('button[data-action="${action}"]') : null;
+if (!button || button.disabled) return false;
+button.click();
+return true;
+`;
+}
+
+function moduleSettingReadScript(key) {
+  return `return globalThis.game.settings.get(${JSON.stringify(MODULE_ID)}, ${JSON.stringify(key)}) ?? null;`;
+}
+
+function moduleSettingWriteScript(key, value) {
+  return `await globalThis.game.settings.set(${JSON.stringify(MODULE_ID)}, ${JSON.stringify(key)}, ${JSON.stringify(value)});
+return true;`;
+}
+
+function allowEverythingOverrides() {
+  return Object.fromEntries(
+    COMMAND_NAMES.filter((command) => defaultProfile(command) !== "allow").map((command) => [
+      command,
+      "allow"
+    ])
+  );
+}
+
+function scratchPolicy(overrides) {
+  return { version: POLICY_STORAGE_VERSION, overrides: { ...allowEverythingOverrides(), ...overrides } };
+}
+
+function delayMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function evaluateInGmPage(gmControlUrl, script) {
+  const response = await fetch(gmControlUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ script })
+  });
+
+  if (!response.ok) {
+    throw new Error(`GM control endpoint answered HTTP ${response.status}`);
+  }
+
+  const body = await response.json();
+  if (body?.ok !== true) {
+    throw new Error(`GM control evaluation failed: ${body?.error || "no reason reported"}`);
+  }
+
+  return body.value ?? null;
+}
+
+function startFoundryctl(args) {
+  const child = spawn(process.execPath, [localCliPath, ...args, "--json"], {
+    cwd: repoRoot,
+    env: localCliEnvironment,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+
+  const done = new Promise((resolve) => {
+    child.on("close", (code) => {
+      let response = null;
+      try {
+        response = stdout ? JSON.parse(stdout) : null;
+      } catch {
+        response = null;
+      }
+
+      resolve({
+        command: commandLabel(args),
+        exitCode: Number.isInteger(code) ? code : 1,
+        stdout,
+        stderr,
+        response,
+        ...(response ? {} : { transportError: stderr.trim() || "the command wrote no JSON body" })
+      });
+    });
+  });
+
+  return { child, done };
+}
+
+async function settleFoundryctl(call, waitMs) {
+  const timer = setTimeout(() => call.child.kill("SIGKILL"), waitMs);
+  try {
+    return await call.done;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function waitForApprovalWindow(gmControlUrl, command) {
+  const deadline = Date.now() + APPROVAL_WINDOW_WAIT_MS;
+
+  for (;;) {
+    const view = await evaluateInGmPage(gmControlUrl, APPROVAL_WINDOW_SCRIPT);
+    if (view && view.command === command && view.executing === false) {
+      return view;
+    }
+
+    if (Date.now() >= deadline) {
+      return null;
+    }
+
+    await delayMs(APPROVAL_POLL_INTERVAL_MS);
+  }
+}
+
+async function waitForEmptyApprovalWindow(gmControlUrl) {
+  const deadline = Date.now() + APPROVAL_WINDOW_WAIT_MS;
+
+  for (;;) {
+    const view = await evaluateInGmPage(gmControlUrl, APPROVAL_WINDOW_SCRIPT);
+    if (!view) {
+      return true;
+    }
+
+    if (Date.now() >= deadline) {
+      return false;
+    }
+
+    await delayMs(APPROVAL_POLL_INTERVAL_MS);
+  }
+}
+
+function noteSkippedPolicySegment(summary, reason) {
+  summary.notes.push(
+    `COMMAND POLICY SEGMENT SKIPPED (${reason}). Not verified by this run: ${POLICY_SEGMENT_BRANCHES.join("; ")}. To cover them, ${POLICY_SEGMENT_ENABLE_HINT}.`
+  );
+}
+
+function noteSkippedTimeoutBranch(summary, reason) {
+  summary.notes.push(
+    `Approval timeout branch SKIPPED (${reason}); no run verified that an undecided approval expires without executing its command. It costs about a minute of wall clock and is enabled with --policy-timeout-branch (or FVTT_WORLD_CLI_TEST_POLICY_TIMEOUT_BRANCH=1).`
+  );
+}
+
+async function preparePolicyHarness(summary, options) {
+  summary.notes.push(
+    "Command policy: the allow path is what the rest of this run exercises. With a GM control endpoint the script sets a policy that allows every command for the run and restores the stored one afterwards; without one it first checks that the connected client holds no command for approval, because the shipped defaults hold every delete for a human and the suite deletes what it creates."
+  );
+
+  if (!options.gmControlUrl) {
+    noteSkippedPolicySegment(summary, "no GM control endpoint was supplied");
+    noteSkippedTimeoutBranch(summary, "the segment it belongs to did not run");
+
+    const discoveryRun = runFoundryctl(["commands"]);
+    const applied = discoveryRun.response?.policy?.applied === true;
+    const approvals = Array.isArray(discoveryRun.response?.result)
+      ? discoveryRun.response.result.filter((entry) => entry?.approval === true).map((entry) => entry.command)
+      : [];
+
+    if (applied && approvals.length > 0) {
+      markAndPush(summary, "policy.preconditions", false, {
+        ...summarizeCommand(discoveryRun),
+        approvalCommands: approvals,
+        reason:
+          "The connected GM client holds commands for approval, so the suite would block on a human decision. Set those commands to allow in Module Settings → Command permissions, or supply --gm-control so this script can do it for the run."
+      });
+      return { ready: false, restore: null };
+    }
+
+    markAndPush(summary, "policy.preconditions", isCommandSuccess(discoveryRun), {
+      ...summarizeCommand(discoveryRun),
+      policyApplied: applied,
+      approvalCommands: approvals
+    });
+    return { ready: true, restore: null };
+  }
+
+  let previousPolicy = null;
+  let previousTimeoutMinutes = null;
+
+  try {
+    previousPolicy =
+      (await evaluateInGmPage(options.gmControlUrl, moduleSettingReadScript(POLICY_SETTING_KEY))) ?? {};
+    previousTimeoutMinutes = await evaluateInGmPage(
+      options.gmControlUrl,
+      moduleSettingReadScript(APPROVAL_TIMEOUT_SETTING_KEY)
+    );
+    await evaluateInGmPage(
+      options.gmControlUrl,
+      moduleSettingWriteScript(POLICY_SETTING_KEY, scratchPolicy({}))
+    );
+  } catch (error) {
+    markAndPush(summary, "policy.preconditions", false, {
+      gmControlUrl: options.gmControlUrl,
+      reason: `The GM control endpoint could not read or write the command policy: ${error.message}`
+    });
+    noteSkippedPolicySegment(summary, "the GM control endpoint did not answer");
+    noteSkippedTimeoutBranch(summary, "the segment it belongs to did not run");
+    return { ready: false, restore: null };
+  }
+
+  markAndPush(summary, "policy.preconditions", true, {
+    gmControlUrl: options.gmControlUrl,
+    previousTimeoutMinutes
+  });
+
+  return {
+    ready: true,
+    restore: async () => {
+      await evaluateInGmPage(
+        options.gmControlUrl,
+        moduleSettingWriteScript(POLICY_SETTING_KEY, previousPolicy)
+      );
+      if (typeof previousTimeoutMinutes === "number") {
+        await evaluateInGmPage(
+          options.gmControlUrl,
+          moduleSettingWriteScript(APPROVAL_TIMEOUT_SETTING_KEY, previousTimeoutMinutes)
+        );
+      }
+    }
+  };
+}
+
+async function runPolicySegment(summary, options, { stamp }) {
+  const gmControlUrl = options.gmControlUrl;
+  if (!gmControlUrl) {
+    return;
+  }
+
+  const journalName = `CLI Smoke Policy ${stamp}`;
+  const createRun = runFoundryctl(["journal", "create", "--name", journalName]);
+  const journalId = createRun.response?.result?.journal?.id || null;
+  markAndPush(summary, "policy.fixture", Boolean(journalId), {
+    ...summarizeCommand(createRun),
+    journalId
+  });
+
+  if (!journalId) {
+    noteSkippedPolicySegment(summary, "the scratch journal the segment writes to could not be created");
+    noteSkippedTimeoutBranch(summary, "the segment it belongs to did not run");
+    return;
+  }
+
+  try {
+    await evaluateInGmPage(
+      gmControlUrl,
+      moduleSettingWriteScript(
+        POLICY_SETTING_KEY,
+        scratchPolicy({ "journal.get": "deny", "journal.update": "deny" })
+      )
+    );
+
+    expectErr(
+      summary,
+      "policy.deny(read)",
+      runFoundryctl(["journal", "get", "--journal-id", journalId]),
+      ERROR_CODES.COMMAND_DENIED
+    );
+
+    expectErr(
+      summary,
+      "policy.deny(write)",
+      runFoundryctl(["journal", "update", "--journal-id", journalId, "--name", `${journalName} denied`]),
+      ERROR_CODES.COMMAND_DENIED
+    );
+
+    await evaluateInGmPage(
+      gmControlUrl,
+      moduleSettingWriteScript(
+        POLICY_SETTING_KEY,
+        scratchPolicy({ "journal.update": "approve", "chat.delete": "deny" })
+      )
+    );
+
+    const afterDenyRun = runFoundryctl(["journal", "get", "--journal-id", journalId]);
+    const afterDenyName = afterDenyRun.response?.result?.journal?.name || null;
+    markAndPush(
+      summary,
+      "policy.deny(write unchanged)",
+      Boolean(afterDenyRun.response?.ok && afterDenyName === journalName),
+      {
+        ...summarizeCommand(afterDenyRun),
+        expectedName: journalName,
+        actualName: afterDenyName
+      }
+    );
+
+    const previewName = `${journalName} preview`;
+    const previewRun = runFoundryctl([
+      "--dry-run",
+      "journal",
+      "update",
+      "--journal-id",
+      journalId,
+      "--name",
+      previewName
+    ]);
+    const previewResult = previewRun.response?.result || null;
+    const previewWindow = await evaluateInGmPage(gmControlUrl, APPROVAL_WINDOW_SCRIPT);
+    markAndPush(
+      summary,
+      "policy.approve(dry-run)",
+      Boolean(
+        previewRun.response?.ok &&
+        previewResult?.dryRun === true &&
+        previewResult?.approvalRequired === true &&
+        previewWindow === null
+      ),
+      {
+        ...summarizeCommand(previewRun),
+        dryRun: previewResult?.dryRun ?? null,
+        approvalRequired: previewResult?.approvalRequired ?? null,
+        approvalWindow: previewWindow
+      }
+    );
+
+    const allowedName = `${journalName} allowed`;
+    const allowCall = startFoundryctl([
+      "journal",
+      "update",
+      "--journal-id",
+      journalId,
+      "--name",
+      allowedName
+    ]);
+    const allowWindow = await waitForApprovalWindow(gmControlUrl, "journal.update");
+    const allowClicked = allowWindow
+      ? await evaluateInGmPage(gmControlUrl, approvalClickScript("allow"))
+      : false;
+    if (!allowWindow) {
+      allowCall.child.kill("SIGKILL");
+    }
+    const allowRun = await settleFoundryctl(allowCall, APPROVAL_DECISION_WAIT_MS);
+    const allowGetRun = runFoundryctl(["journal", "get", "--journal-id", journalId]);
+    markAndPush(
+      summary,
+      "policy.approve(allow)",
+      Boolean(
+        allowClicked === true &&
+        allowRun.response?.ok &&
+        allowRun.response?.result?.journal?.name === allowedName &&
+        allowGetRun.response?.result?.journal?.name === allowedName
+      ),
+      {
+        ...summarizeCommand(allowRun),
+        approvalWindow: allowWindow,
+        clicked: allowClicked,
+        waitingLine: allowRun.stderr.trim() || null,
+        storedName: allowGetRun.response?.result?.journal?.name || null
+      }
+    );
+
+    const deniedName = `${journalName} refused`;
+    const denyCall = startFoundryctl(["journal", "update", "--journal-id", journalId, "--name", deniedName]);
+    const denyWindow = await waitForApprovalWindow(gmControlUrl, "journal.update");
+    const denyClicked = denyWindow
+      ? await evaluateInGmPage(gmControlUrl, approvalClickScript("deny"))
+      : false;
+    if (!denyWindow) {
+      denyCall.child.kill("SIGKILL");
+    }
+    const denyRun = await settleFoundryctl(denyCall, APPROVAL_DECISION_WAIT_MS);
+    const denyGetRun = runFoundryctl(["journal", "get", "--journal-id", journalId]);
+    markAndPush(
+      summary,
+      "policy.approve(deny)",
+      Boolean(
+        denyClicked === true &&
+        isExpectedError(denyRun, ERROR_CODES.APPROVAL_DENIED) &&
+        denyGetRun.response?.result?.journal?.name === allowedName
+      ),
+      {
+        ...summarizeCommand(denyRun),
+        clicked: denyClicked,
+        storedName: denyGetRun.response?.result?.journal?.name || null
+      }
+    );
+
+    const cancelCall = startFoundryctl([
+      "journal",
+      "update",
+      "--journal-id",
+      journalId,
+      "--name",
+      `${journalName} cancelled`
+    ]);
+    const cancelWindow = await waitForApprovalWindow(gmControlUrl, "journal.update");
+    if (cancelWindow) {
+      cancelCall.child.kill("SIGINT");
+    } else {
+      cancelCall.child.kill("SIGKILL");
+    }
+    const cancelRun = await settleFoundryctl(cancelCall, APPROVAL_DECISION_WAIT_MS);
+    const cancelWindowCleared = await waitForEmptyApprovalWindow(gmControlUrl);
+    const cancelGetRun = runFoundryctl(["journal", "get", "--journal-id", journalId]);
+    markAndPush(
+      summary,
+      "policy.approve(cancel)",
+      Boolean(
+        isExpectedError(cancelRun, ERROR_CODES.APPROVAL_CANCELLED) &&
+        cancelWindowCleared &&
+        cancelGetRun.response?.result?.journal?.name === allowedName
+      ),
+      {
+        ...summarizeCommand(cancelRun),
+        approvalWindow: cancelWindow,
+        windowCleared: cancelWindowCleared,
+        storedName: cancelGetRun.response?.result?.journal?.name || null
+      }
+    );
+
+    const discoveryRun = runFoundryctl(["commands"]);
+    const listed = Array.isArray(discoveryRun.response?.result) ? discoveryRun.response.result : [];
+    const deniedEntry = listed.find((entry) => entry?.command === "chat.delete") || null;
+    const approveEntry = listed.find((entry) => entry?.command === "journal.update") || null;
+    markAndPush(
+      summary,
+      "policy.discovery",
+      Boolean(
+        discoveryRun.response?.ok &&
+        discoveryRun.response?.policy?.applied === true &&
+        discoveryRun.response?.policy?.source === "bridge" &&
+        deniedEntry === null &&
+        approveEntry?.approval === true &&
+        listed.length === DISCOVERABLE_COMMAND_NAMES.length - 1
+      ),
+      {
+        ...summarizeCommand(discoveryRun),
+        policy: discoveryRun.response?.policy || null,
+        deniedCommandListed: deniedEntry !== null,
+        approveCommandMarked: approveEntry?.approval ?? null,
+        listedCount: listed.length,
+        expectedCount: DISCOVERABLE_COMMAND_NAMES.length - 1
+      }
+    );
+
+    if (!options.policyTimeoutBranch) {
+      noteSkippedTimeoutBranch(summary, "it was not requested");
+    } else {
+      await evaluateInGmPage(
+        gmControlUrl,
+        moduleSettingWriteScript(APPROVAL_TIMEOUT_SETTING_KEY, POLICY_TIMEOUT_BRANCH_MINUTES)
+      );
+      const timeoutCall = startFoundryctl([
+        "journal",
+        "update",
+        "--journal-id",
+        journalId,
+        "--name",
+        `${journalName} expired`
+      ]);
+      const timeoutWindow = await waitForApprovalWindow(gmControlUrl, "journal.update");
+      if (!timeoutWindow) {
+        timeoutCall.child.kill("SIGKILL");
+      }
+      const timeoutRun = await settleFoundryctl(timeoutCall, POLICY_TIMEOUT_BRANCH_WAIT_MS);
+      const timeoutGetRun = runFoundryctl(["journal", "get", "--journal-id", journalId]);
+      markAndPush(
+        summary,
+        "policy.approve(timeout)",
+        Boolean(
+          isExpectedError(timeoutRun, ERROR_CODES.APPROVAL_TIMEOUT) &&
+          timeoutGetRun.response?.result?.journal?.name === allowedName
+        ),
+        {
+          ...summarizeCommand(timeoutRun),
+          timeoutMinutes: POLICY_TIMEOUT_BRANCH_MINUTES,
+          storedName: timeoutGetRun.response?.result?.journal?.name || null
+        }
+      );
+    }
+  } catch (error) {
+    markAndPush(summary, "policy.segment", false, { reason: error.message });
+    noteSkippedPolicySegment(summary, `the segment stopped on an error: ${error.message}`);
+  } finally {
+    await evaluateInGmPage(
+      gmControlUrl,
+      moduleSettingWriteScript(POLICY_SETTING_KEY, scratchPolicy({}))
+    ).catch(() => null);
+    expectOk(
+      summary,
+      "policy.fixture(cleanup)",
+      runFoundryctl(["journal", "delete", "--journal-id", journalId])
+    );
+  }
 }
 
 function runExtendedCoverage(
@@ -11602,6 +12168,7 @@ async function main() {
   };
 
   let tempDir = null;
+  let policyHarness = null;
 
   try {
     const systemInfoRun = runFoundryctl(["system", "info"]);
@@ -11634,6 +12201,11 @@ async function main() {
       missing: inventory.missing,
       unexpected: inventory.unexpected
     });
+
+    policyHarness = await preparePolicyHarness(summary, options);
+    if (!policyHarness.ready) {
+      return { options, summary };
+    }
 
     const actorFixtureOk = typeof options.actorId === "string" && options.actorId.length > 0;
     markAndPush(summary, "actor.fixture", actorFixtureOk, {
@@ -12701,6 +13273,8 @@ async function main() {
       }
     );
 
+    await runPolicySegment(summary, options, { stamp });
+
     return { options, summary };
   } finally {
     if (summary.artifacts.actorItemId && options.actorId) {
@@ -12732,6 +13306,16 @@ async function main() {
         runFoundryctl(["journal", "delete", "--journal-id", summary.artifacts.journalId])
       );
     }
+    if (policyHarness?.restore) {
+      let restoredReason = null;
+      try {
+        await policyHarness.restore();
+      } catch (error) {
+        restoredReason = error.message;
+      }
+      markAndPush(summary, "policy.restore", restoredReason === null, { reason: restoredReason });
+    }
+
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
     }
