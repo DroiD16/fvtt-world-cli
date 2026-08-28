@@ -282,9 +282,7 @@ export async function awaitApprovalOutcome({
     void requestCancellation().then(settleCancellation);
   }
 
-  // A cancellation the user asked for is answered as soon as it is decided: the retry backoff and a
-  // reconnect that only fails at its own timeout would otherwise hold the CLI for seconds after
-  // Ctrl+C, and the next interrupt reaches the default handler.
+  // The backoff and a reconnect that only fails at its own timeout must not outlast a Ctrl+C.
   async function raceCancellation(work: Promise<unknown>): Promise<SettledStep | null> {
     return await Promise.race([work.then(() => null), cancellation]);
   }

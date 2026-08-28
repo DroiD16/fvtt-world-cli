@@ -42,8 +42,6 @@ const DISPLAY_STATE_LABELS = Object.freeze({
   unpaired: "FVTTWORLDCLI.BridgeStatus.State.unpaired"
 });
 
-// A raw status equal to its display state's canonical status adds nothing, so it stays unparenthesised.
-// The empty string for offline never matches a real status, which is how every offline reason surfaces.
 const CANONICAL_RAW_STATUS = Object.freeze({
   connected: "connected",
   pending: "connecting",
@@ -86,8 +84,6 @@ const STALE_COMPONENT_REMEDIES = Object.freeze({
   [PROTOCOL_COMPONENTS.UNKNOWN]: "FVTTWORLDCLI.BridgeStatus.VersionMismatch.Advice.unknown"
 });
 
-// A protocol version published before the two numbers matched reads as newer than the release it came
-// from, so the release is spelled out wherever that version is shown as evidence of who is behind.
 /** @param {string} version */
 export function describeProtocolVersion(version) {
   const release = normalizeComparableProtocolVersion(version);

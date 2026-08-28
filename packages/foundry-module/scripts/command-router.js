@@ -91,8 +91,6 @@ function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// A marked result is a copy, and spreading a document or any other class instance would drop its
-// prototype: marking is stricter about its input than the envelope check above.
 function isSpreadableResult(value) {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -115,8 +113,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
     pendingByteBudgetProvider: () =>
       bridgeClient?.getEffectiveLimits?.()?.wsMaxPayloadBytes ?? DEFAULT_WS_MAX_PAYLOAD_BYTES,
     ...approvalStoreOptions,
-    // The guarded path is what makes a delayed decision safe to run, so the executor is the one
-    // option a caller may not replace.
+    // The guarded path is what makes a delayed decision safe to run: this option is not replaceable.
     execute: ({ approvalId, command, params }) =>
       executeGuardedCommand({ command, params, messageId: approvalId, skipApprovalGate: true })
   });

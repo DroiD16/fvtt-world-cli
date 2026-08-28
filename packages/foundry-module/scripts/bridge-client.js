@@ -67,10 +67,7 @@ function defaultLogger(level, message, details = {}) {
   logMethod(prefix, message, details);
 }
 
-// The frame is weighed from the wire form it arrives in, so nothing downstream serializes a request a
-// second time to learn how heavy it is. Counting a text frame walks it, and only a command sent to
-// approval is ever weighed, so the measurement stays a call the router makes on that branch alone; a
-// binary frame reports its own size.
+// Weighed from the wire form, so nothing downstream serializes the request a second time.
 /**
  * @param {unknown} data
  * @returns {Promise<{ text: string, measureBytes: () => number }>}
@@ -163,8 +160,7 @@ export class BridgeClient {
     this.#emitStatusChange();
   }
 
-  // Reset without emitting. Every caller then transitions the status, and that emission carries the
-  // truthful snapshot; emitting here would publish a still-connected client with a dropped handshake.
+  // Emitting here would publish a still-connected client with a dropped handshake.
   #dropHandshakeAcknowledgement() {
     this.helloAcknowledged = false;
   }
@@ -195,10 +191,8 @@ export class BridgeClient {
     this.#setStatus("stopped");
   }
 
-  // A session that ends with no reconnect to follow takes its approvals with it: nothing can poll their
-  // outcome any more, so a decision left armed would run a command whose caller was already answered
-  // with a failure, and its timer, params and parked polls would be held for nobody. A dropped socket
-  // that reconnects is not such an end, and keeps them.
+  // A session ending with no reconnect to follow takes its approvals: a decision left armed would run
+  // a command whose caller was already answered with a failure. A reconnecting socket keeps them.
   #releaseApprovals() {
     this.router?.approvalStore?.clear?.();
   }
@@ -486,8 +480,7 @@ export class BridgeClient {
     });
   }
 
-  // The older half is worked out here rather than read off the ack: a daemon from a release that
-  // predates these details answers with none, and that is exactly the mismatch a GM meets first.
+  // Not read off the ack: a daemon predating these details answers with none, which is the common case.
   stopForProtocolVersionSkew(message) {
     const daemonVersion = String(message.protocolVersion ?? "unknown");
     const details = /** @type {{ staleComponent: string }} */ (

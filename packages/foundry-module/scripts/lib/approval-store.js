@@ -89,8 +89,7 @@ function createApprovalId() {
     .slice(0, APPROVAL_ID_LENGTH);
 }
 
-// A weighed response is charged against a raw-frame byte budget, so it is counted in UTF-8 bytes:
-// string length would undercount every non-ASCII character by half or more.
+// The budget is a raw-frame byte budget, so string length would undercount non-ASCII characters.
 /**
  * @param {unknown} value
  * @returns {number}
@@ -115,8 +114,7 @@ function resolveByteBudget(provider) {
     : DEFAULT_WS_MAX_PAYLOAD_BYTES;
 }
 
-// The byte budget is the only bound between a caller's frame and this store's memory, so a weight it
-// cannot express is charged the whole budget rather than nothing, and refuses the request.
+// A weight that cannot be expressed is charged the whole budget, so the request is refused.
 /**
  * @param {unknown} value
  * @returns {number}
@@ -220,8 +218,7 @@ export class ApprovalStore {
       approvalId,
       command,
       params,
-      // Naming the documents a request would change costs a lookup per document, so it happens once
-      // the request is past every bound: a refused caller must not be able to buy that work.
+      // Resolved past every bound: a refused caller must not be able to buy a lookup per document.
       targets: resolveTargets(),
       createdAt,
       expiresAt: createdAt + timeoutMs,
@@ -263,8 +260,7 @@ export class ApprovalStore {
       return Promise.resolve(this.#report(record));
     }
 
-    // Nothing stops a client from polling the same undecided id in a loop, so the oldest park is
-    // answered with the state it would have reported anyway rather than held alongside the new one.
+    // A polling loop must not accumulate parks, so the oldest is answered rather than kept.
     while (record.waiters.size >= this.waitersMax) {
       const oldest = record.waiters.values().next().value;
       if (!oldest) {
@@ -300,8 +296,7 @@ export class ApprovalStore {
 
     if (record.state === "pending") {
       this.#settleTerminal(record, "cancelled");
-      // The client that asked to cancel receives this verdict as the return value, so it is already
-      // delivered; without that, a cancel loop would fill the record table with unreclaimable slots.
+      // The caller receives this verdict as the return value, so the record is already delivered.
       record.delivered = true;
       return "cancelled";
     }
@@ -440,8 +435,7 @@ export class ApprovalStore {
     return Math.min(Math.max(requested, 0), this.parkCapMs);
   }
 
-  // Leaving `pending` is what every terminal guarantee rests on, so it happens here, synchronously,
-  // before any caller awaits: a decision that arrives afterwards finds a state it may no longer change.
+  // Every terminal guarantee rests on leaving `pending` synchronously, before any caller awaits.
   /**
    * @param {ApprovalRecord} record
    * @param {ApprovalState} nextState
@@ -514,9 +508,7 @@ export class ApprovalStore {
     this.#publish();
   }
 
-  // An outcome nobody has read yet is worth more than one already handed to a waiter, so a new
-  // response displaces retained responses that were already delivered before it gives up its own —
-  // but only once their combined weight is known to be enough, so no outcome is spent for nothing.
+  // Only spent outcomes are displaced, and only once their combined weight is known to be enough.
   /**
    * @param {ApprovalRecord} record
    * @param {number} responseBytes
@@ -550,9 +542,7 @@ export class ApprovalStore {
     return true;
   }
 
-  // #report() marks a record delivered when the answer is built, which is before the frame reaches
-  // the client, so a reported outcome is only an eviction candidate once the grace window has passed
-  // and a repoll could no longer be recovering a response whose frame was lost.
+  // #report() marks a record delivered before its frame reaches the client, hence the grace window.
   /**
    * @param {ApprovalRecord} record
    * @returns {boolean}
@@ -575,13 +565,8 @@ export class ApprovalStore {
     record.unknownReason = APPROVAL_UNKNOWN_REASONS.RESULT_RETENTION_CAP;
   }
 
-  // Terminal records outlive their request for the whole retention window, so their number is
-  // capped too: without this, a client that requests and cancels in a loop grows the store freely.
-  // Only an outcome its client already holds, or one already reduced to a tombstone, is forgotten to
-  // make room; an answer nobody has read is never traded for a new request, which is refused instead.
-  // A command the GM approved and that is still running is neither: it can be neither reclaimed nor
-  // re-created by a client, so it is left out of the count rather than allowed to consume the cap
-  // for good when its handler never settles.
+  // An unread answer is never traded for a new request, and a running command never counts: it can
+  // be neither reclaimed nor re-created, so it must not hold the cap when its handler never settles.
   /**
    * @returns {boolean}
    */
@@ -652,8 +637,6 @@ export class ApprovalStore {
     switch (record.state) {
       case "pending":
         return { approvalId: record.approvalId, status: "pending", expiresAt: record.expiresAt };
-      // An approved command that is already running can no longer expire, and its former deadline may
-      // be long past, so the report carries no deadline a caller could mistake for a live one.
       case "executing":
         return { approvalId: record.approvalId, status: "pending" };
       case "resolved":
@@ -686,8 +669,7 @@ export class ApprovalStore {
     };
   }
 
-  // Retention expires without a timer so an idle store holds none: every entry point prunes first,
-  // and a retained outcome that nobody asks for costs only the bytes its budget already bounds.
+  // Retention expires without a timer: every entry point prunes first, so an idle store holds none.
   #pruneExpired() {
     if (this.#requests.size === 0) {
       return;

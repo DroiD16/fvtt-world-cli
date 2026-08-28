@@ -188,8 +188,6 @@ function openMatchingNodes(nodes, filtered) {
   }
 }
 
-// A command name is a path: every segment before the verb is a level, so a tree built from any other
-// split would place `scene.token.item.effect.delete` somewhere other than four levels down.
 /**
  * @param {unknown} storedPolicy
  * @param {{ filter?: unknown }} [options]

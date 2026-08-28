@@ -124,8 +124,6 @@ function* eachNode(nodes) {
 }
 
 /**
- * A row and its behavior buttons both carry `data-command`, so each element is looked up by the
- * class that only its own kind of element has.
  * @param {any} root
  * @returns {PaintTargets}
  */
@@ -334,8 +332,6 @@ const handleAction = async function (event, target) {
     return;
   }
 
-  // The fill sits beside the filter, so it means what the filter shows: with no term every command
-  // is visible and the fill is global.
   if (action === "fillAll") {
     draft.policy = writeBehaviors(draft.policy, listFillableCommands(draft.filter), target.dataset.behavior);
     paintState(root, draft);

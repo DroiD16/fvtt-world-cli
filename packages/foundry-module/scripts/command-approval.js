@@ -47,8 +47,7 @@ const NO_TARGET_SUMMARY = Object.freeze({
 
 const APPROVAL_PARAM_TEXT_MAX_CHARS = 16_384;
 
-// The encoded length is read rather than the payload: decoding a 512 MiB upload to count its bytes is
-// the allocation the redaction exists to avoid.
+// The encoded length is read rather than the payload: decoding it is the allocation this avoids.
 /**
  * @param {string} value
  * @returns {number}
@@ -69,9 +68,7 @@ function redactValue(value, field) {
     return format("FVTTWORLDCLI.Approval.RedactedContent", { bytes: decodedBase64Bytes(value) });
   }
 
-  // Any long string is summarized, whatever its field: the window is a decision aid, and a document
-  // body legal under the payload limit would otherwise be serialized twice into the DOM on every
-  // re-render.
+  // Any long string is summarized: an unbounded one is serialized into the DOM on every re-render.
   if (typeof value === "string" && value.length > APPROVAL_PARAM_TEXT_MAX_CHARS) {
     return format("FVTTWORLDCLI.Approval.RedactedText", { characters: value.length });
   }
@@ -109,9 +106,6 @@ function formatRemaining(milliseconds) {
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
 }
 
-// Rows of one command can name documents of the same type in different roles — the stack a deal draws
-// from and the one it fills — and nothing but the parameter each row came from tells them apart. A
-// descriptor row always names its parameter, so the rows beside it name theirs too.
 /**
  * @param {ApprovalTargetSummary} summary
  * @returns {ApprovalTargetRow[]}
@@ -272,8 +266,7 @@ export function createCommandApprovalApplication({ approvalStore }) {
       this.countdownTimer = null;
     }
 
-    // The store drops the parameters of a request it has claimed for execution, so the entry prepared
-    // while it was still pending is the only copy left to render if the window opens again.
+    // The store drops a claimed request's parameters, so this entry is the only copy left to render.
     _onClose(options) {
       super._onClose(options);
       this.stopCountdown();
@@ -282,10 +275,8 @@ export function createCommandApprovalApplication({ approvalStore }) {
   };
 }
 
-// The queue view names only the request on screen, so an arrival is read from the number of decisions
-// the store holds: admission is the one transition that raises it. A request the queue advances to
-// reopens the window as an arrival does, because nothing else can bring it back on screen: it has
-// already pinged while it waited, and the window opens from the queue alone.
+// The queue view names only the request on screen, so an arrival is read from the count the store
+// holds: admission is the one transition that raises it.
 /**
  * @param {{ approvalStore: ApprovalStore }} runtime
  */
