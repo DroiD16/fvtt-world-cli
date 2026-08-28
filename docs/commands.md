@@ -164,6 +164,8 @@ on the CLI:
 
 Use `fvtt-world-cli commands --json` for the current inventory. The exact operation set
 varies by family, so a nearby document family is not a reliable guide to what another one supports.
+With a bridge connected, that inventory is also filtered by the GM client's command permissions, as
+[Discovery under a policy](#discovery-under-a-policy) describes.
 
 ## Capability map
 
@@ -227,6 +229,92 @@ Document references are updated separately with an explicit document command.
 See [Security](security.md#file-write-boundary) before automating file writes.
 
 ## Shared command behavior
+
+### Command permissions and approval
+
+Every command carries a permission in the GM client that holds the bridge: it runs on its own, it
+waits for the GM's approval in Foundry, or it is refused. The permissions are edited in Foundry, in
+Configure Settings → Module Settings → World CLI → Command permissions, which only a GM can open.
+They are stored per browser profile rather than per world, so the permissions that govern a call are
+the ones configured in the browser currently holding the bridge; another browser or another machine
+applies its own.
+
+A command that waits for approval blocks the CLI call instead of failing it. Foundry raises its
+Command Approval window with the command name, the documents or managed paths it would change, and
+its full parameters, and the CLI writes one status line to stderr:
+
+```
+Waiting for GM approval in Foundry (command actor.delete, expires 2026-08-28T18:20:00.000Z). Press Ctrl+C to request cancellation.
+```
+
+The line goes to stderr in both output modes, so `--json` stdout still carries exactly one envelope.
+When the GM chooses Allow, the command runs at that moment and the CLI prints what a direct call
+would have printed, including a handler error. Because execution happens at the decision rather than
+at the request, the world can have moved on in between; the command's own guards and not-found
+errors apply as they would to a call sent then.
+
+The other endings are structured errors, and all but the last guarantee that nothing ran:
+
+| Code | Meaning | State |
+|---|---|---|
+| `COMMAND_DENIED` | The permission is deny; the refusal happens before dispatch | Not executed |
+| `APPROVAL_DENIED` | The GM chose Deny | Not executed |
+| `APPROVAL_TIMEOUT` | No decision was taken before the approval expired | Not executed |
+| `APPROVAL_CANCELLED` | A cancellation the GM client confirmed won the decision | Not executed |
+| `APPROVAL_QUEUE_FULL` | Admission was refused before the request reached the GM | Not executed |
+| `APPROVAL_UNKNOWN` | The waiting decision can no longer be correlated | Indeterminate |
+
+`APPROVAL_UNKNOWN` is the one indeterminate outcome. It answers a decision the GM client no longer
+holds — after a reload of that client, after the retained outcome expired, or after a daemon restart
+lost the link — and the command may never have started or may have finished. Reading the documents
+it would have written is the only way to tell. `APPROVAL_QUEUE_FULL` is a bound, not a verdict: the
+number and the combined size of the decisions waiting for the GM are limited, and retrying once the
+GM has worked through them succeeds.
+
+Ctrl+C while a call waits asks the GM client to abandon the decision instead of leaving it on the
+GM's screen. Only the confirmed answer, reported as `APPROVAL_CANCELLED`, guarantees that the
+command will not run; if the GM's Allow already won the race, or the GM client could not be reached,
+the CLI says the cancellation is unconfirmed and reports the indeterminate outcome rather than a
+guarantee.
+
+By default the commands that wait for approval are the destructive ones: every `delete` and
+`delete-many` verb, plus `file.delete`, `file.move`, and `scene.fog.reset`, whose fog-exploration
+data cannot be recovered. Everything else runs on its own. The Command permissions window states how
+many commands there are and how many of them the defaults send to approval. An installation that
+updates into this behavior therefore starts asking the GM before deletions it used to perform
+silently, until the permissions are edited.
+
+`system.ping`, `system.info`, and the plumbing commands the approval wait itself uses are always
+allowed and cannot be denied, so no permission set can lock the bridge out of answering or out of
+resolving a decision already taken. Pairing and other `auth` operations are answered by the daemon
+without reaching Foundry, so no permission applies to them.
+
+The approval timeout is the `Approval timeout (minutes)` field in the same Module Settings form, and
+in the permissions window: 60 minutes by default, at least 1 and at most 35791, and a stored value
+outside that range falls back to 60. When it runs out, the waiting command is refused without being
+executed.
+
+Approval state lives only in the GM client's memory. Reloading that client, or ending its bridge
+session, discards the decisions it was holding, and the commands waiting on them report
+`APPROVAL_UNKNOWN`.
+
+### Discovery under a policy
+
+With the bridge reachable, `commands` and `commands --json` describe what that GM client will
+actually run: denied commands are left out of the listing entirely, and commands that wait for
+approval are marked — `"approval": true` in JSON, an `approval` tag in the plain listing. The JSON
+envelope records which it is in a top-level `policy` object, `{ "applied": true, "source":
+"bridge" }`.
+
+When no bridge answers, the listing falls back to the full static registry and says so:
+`policy: { "applied": false, "source": "static", "reason": … }` in JSON, and a warning on stderr in
+plain output. Only unavailability — no daemon, no bridge, a disconnected bridge — falls back that
+way; an authentication, validation, or protocol failure fails the command instead of being disguised
+as an absent bridge.
+
+`schema`, `--help`, and this documentation are static and describe the whole registry whatever the
+permissions say. A denied command found there and called anyway is refused with `COMMAND_DENIED`:
+the listing hides, the GM client enforces.
 
 ### JSON output
 
@@ -306,6 +394,11 @@ fvtt-world-cli --dry-run actor update --actor-id <id> --name "New name" --json
 The result uses the normal command shape and includes `dryRun: true`. The preview contract — what a
 dry run executes, what it can report, and its non-reservation of state — is defined in
 [Protocol](protocol.md#dry-run).
+
+A preview is not held for approval: a command whose permission is approve previews without asking
+the GM, and its result carries `approvalRequired: true` so the caller knows the commit step will
+wait for a decision. A denied command is refused in preview exactly as in a real call, so a dry run
+never reports a preview for something the GM client would not run.
 
 ### Idempotency and retries
 

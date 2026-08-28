@@ -81,6 +81,13 @@ fvtt-world-cli system info --json
 
 It reports `bridge.status` as `connected`.
 
+From then on the agent's commands run in that browser session, under the command permissions stored
+in it. Out of the box the destructive ones — deletions, file removal and moves, and fog reset — do
+not run on their own: they raise a Command Approval window in Foundry, and the waiting command runs
+only after Allow. Configure Settings → Module Settings → World CLI → Command permissions is where
+that is changed, command by command, along with how long a request waits for the decision.
+[Commands](commands.md#command-permissions-and-approval) describes the behavior in full.
+
 ## When something deviates
 
 The Bridge status window (in the scene controls or the module settings) is the first place to

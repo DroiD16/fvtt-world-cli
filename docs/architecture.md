@@ -55,6 +55,7 @@ not copied into documentation.
 
 - second-boundary request validation;
 - GM permission checks;
+- the command-permission gate and the human approval loop it opens;
 - protected-metadata sanitization;
 - document lookup and serialization;
 - capability adaptation across supported Foundry versions;
@@ -62,6 +63,13 @@ not copied into documentation.
 - execution through Foundry Document APIs and reviewed typed actions;
 - observable write confirmation;
 - managed-file containment.
+
+The command-permission gate sits at the end of the guard sequence, after readiness, GM authority,
+parameter validation, and the write-permission check, and immediately before the handler is looked
+up. That position is what lets one guarded execution path serve both routes: a command dispatched
+straight away and a command dispatched from a GM's later approval run the same guards in the same
+order, and the approved route skips only the gate itself, because the GM's decision is that verdict
+for that one invocation.
 
 The module ships plain browser-compatible JavaScript. Its generated protocol mirror is produced from
 the canonical protocol package.
@@ -128,6 +136,13 @@ A dry run performs the same preparation and guards as a real command, then stops
 Real commands confirm stored state where their contract depends on a write landing. Native Foundry
 batch calls can partially apply, so bulk results include per-element outcomes.
 
+Three checks are easy to conflate and mean different things. A capability check asks whether the
+connected Foundry can perform an operation at all. A confirmation is the post-write verification that
+Foundry persisted what the command asked for. An approval is neither: it is a human GM's decision,
+taken before the mutation is dispatched, about whether this invocation may run. A command can be
+approved and then fail its confirmation, and a confirmed write was never subject to an approval
+unless its permission said so.
+
 Idempotency keys reduce duplicate effects across response loss while the relevant daemon/bridge cache
 entry exists. They do not create durable distributed transactions.
 
@@ -185,6 +200,19 @@ response until a request arrives or the daemon's own park cap elapses. That cap 
 answer inside the caller's request timeout, so an unanswered wait ends in an empty result the CLI
 re-issues rather than in a transport failure; a cap at or above the client's wait would turn every
 wait into one.
+
+Waiting for a GM's approval uses the same shape one layer further in, with the Foundry module as the
+parking side: the module answers the original request at once with a pending approval, and the CLI
+polls for the decision in separate requests that the module parks inside its own cap. The park cap
+is again what keeps each answer inside the caller's timeout, which is what makes a decision that may
+take an hour survivable on a transport built for two-minute requests — and what lets the wait ride
+out an ordinary bridge reconnect, since the next poll simply asks again.
+
+Both halves of that wait are runtime state. The module holds a decision and its retained outcome in
+the browser session only, so reloading the GM client or ending its bridge session discards them; the
+daemon holds the link between an idempotency key and the approval it created for the lifetime of its
+own idempotency cache. Neither is persisted, and both losses surface to the caller as an
+indeterminate outcome rather than as a silent retry.
 
 Normative handshake, takeover, lease, and release semantics are defined in
 [Protocol](protocol.md#bridge-sessions); the authentication guarantees and host validation rules are

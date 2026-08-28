@@ -106,6 +106,26 @@ Foundry hooks can veto or partially apply writes. Mutation handlers confirm obse
 where the command contract requires it and return structured partial or failed outcomes instead of
 claiming success.
 
+Every command also carries a permission in the GM client holding the bridge: allow, approve, or
+deny. The permission is resolved and enforced in the Foundry module, after authentication and the
+GM and write-permission checks and before the command is dispatched, so it governs reads, writes,
+bulk envelopes, and previews alike. The defaults send the destructive commands — every `delete` and
+`delete-many` verb, plus `file.delete`, `file.move`, and `scene.fog.reset` — to approval and allow
+the rest, which means an installation that updates into this behavior asks the GM before deletions
+it used to perform silently.
+
+`system.ping`, `system.info`, and the commands the approval wait itself uses are exempt and stay
+allowed whatever the stored permissions say. The exemption exists so that a permission set cannot
+lock the bridge out of reporting its own state or out of resolving a decision the GM has already
+taken; none of the exempt commands changes world content. Pairing and the other `auth` operations
+are answered by the daemon and never reach the module, so no command permission applies to them.
+
+A denied command is also absent from what the CLI's `commands` listing reports while the bridge is
+reachable. That is context hygiene for an agent, not a security boundary: the static registry,
+`schema`, and this documentation still name the command, and the boundary is the module's refusal at
+dispatch. A caller that finds a denied command elsewhere and sends it is answered with
+`COMMAND_DENIED` and nothing runs.
+
 A command the policy sends to approval is not run by the request that carried it. The module holds it,
 in memory only, until the GM decides, and an allowed command then travels the same guarded path a
 direct call takes: Foundry readiness, current-GM authority, parameter validation, the write-permission
@@ -257,6 +277,17 @@ multi-user scheduling.
 - Native Foundry batch operations are not transactional and can partially apply.
 - Search and read commands can expose GM-visible world content to the local caller.
 - Large but permitted content can consume browser memory and processing time.
+- An approved command executes at the decision rather than at the request, so the world may have
+  changed while the decision waited. An approval is a decision about that request, not a lock on the
+  state it was read against.
+- Decisions waiting for a GM live only in that browser session. Reloading the GM client, or ending
+  its bridge session, discards them, and the callers waiting on them are answered indeterminately.
+- A caller that disappears without a confirmed cancellation leaves its request actionable on the
+  GM's screen until the GM decides or the timeout expires. The command envelope carries no client
+  identity, so the module cannot tell that the caller is gone.
+- Command permissions belong to a browser profile. A second paired browser, or the same browser with
+  a fresh profile, holds its own permissions, and whichever client holds the bridge is the one whose
+  permissions apply.
 - Declarative content can reference existing executable or module-interpreted content.
 
 ## Operator guidance
@@ -266,6 +297,11 @@ multi-user scheduling.
 - Use JSON output, dry runs, stable idempotency keys, and post-write reads for automation.
 - Review every outcome of a bulk operation.
 - Treat forwarded timeouts and disconnects as potentially committed.
+- Set the approval timeout to the time a GM realistically needs to answer. A long timeout keeps a
+  request actionable long after its caller gave up; a short one refuses work the GM would have
+  approved. Either way the expiry never executes the command.
+- Configure command permissions in every browser profile that holds the bridge, and review them
+  after an update that adds commands.
 - Review installed systems and modules before authoring automation-sensitive data.
 - Back up important worlds before large migrations.
 - Run the live smoke workflow only in a designated test world.

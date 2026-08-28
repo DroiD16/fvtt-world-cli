@@ -302,6 +302,23 @@ schemas. The handshake set is deliberately wider than those surfaces, because it
 forwarding gate rather than a display: a session advertises every command it can execute, including
 the plumbing, and a command missing from that set is unreachable.
 
+An idempotency key spans both phases. When a keyed request is answered with `APPROVAL_PENDING`, the
+daemon remembers which approval that key created, in the same scope and with the same in-memory
+lifetime as its ordinary idempotency cache. A byte-identical retry of the same key is answered with
+the same pending answer, so a caller that lost the first one rejoins the decision already waiting
+instead of asking the GM twice; a different payload under that key is the usual
+`IDEMPOTENCY_KEY_CONFLICT`. When the decision settles, the daemon promotes an approved outcome —
+success or handler error alike, because execution started — to the key's cached final response, and
+drops the link after a denial, a timeout, or a confirmed cancellation so that re-sending the same
+key is a fresh request. An outcome that could not be read leaves the key indeterminate: retrying it
+answers `APPROVAL_UNKNOWN` until the link expires, because the daemon cannot say whether the command
+ran. That is a verify-then-act state, and the way out of it is a world-state read followed by a
+fresh key.
+
+The link is runtime state with the same limits as the idempotency cache: a daemon restart, a switch
+to another world or pairing, and expiry all forget it. A retry after one of those reaches Foundry as
+a new request, so an indeterminate delivery still ends with a read rather than a blind retry.
+
 ## Delivery states and retries
 
 Retry safety is a function of whether the request reached Foundry:
@@ -313,6 +330,10 @@ Retry safety is a function of whether the request reached Foundry:
 | Response timeout after send | Possibly | May have committed; inspect state or reuse the same idempotency key |
 | `BRIDGE_TIMEOUT` | Yes | May have committed; inspect state or reuse the same idempotency key |
 | `BRIDGE_DISCONNECTED` | Yes or in flight | May have committed; inspect state |
+| `COMMAND_DENIED` | Refused before dispatch | Not executed; the command is unavailable on that GM client |
+| `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED` | Reached Foundry, never dispatched | Not executed; the same request is safe to send again |
+| `APPROVAL_QUEUE_FULL` | Refused before admission | Not executed; safe to retry when the waiting decisions clear |
+| `APPROVAL_UNKNOWN` | Unknown | May have committed; inspect state, then re-request under a fresh idempotency key |
 | Structured command rejection | Resolved with an error | Correct according to the code |
 
 The distinction between connection-phase and response-wait failures is carried in structured error
