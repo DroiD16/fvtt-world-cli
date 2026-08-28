@@ -464,11 +464,16 @@ const POLICY_SEGMENT_ENDPOINT_HINT =
 const POLICY_SEGMENT_FIXTURE_HINT =
   "let the connected client create a journal, which is what the segment writes to, and run the smoke again";
 
+const POLICY_SEGMENT_EARLY_EXIT_HINT =
+  "satisfy the failed step that stopped the run above and run the smoke again";
+
 const APPROVAL_POLL_INTERVAL_MS = 250;
 
 const APPROVAL_WINDOW_WAIT_MS = 30_000;
 
 const APPROVAL_DECISION_WAIT_MS = 60_000;
+
+const POLICY_PREVIEW_WAIT_MS = 30_000;
 
 const POLICY_TIMEOUT_BRANCH_MINUTES = 1;
 
@@ -645,26 +650,50 @@ function reportedStep(summary, name) {
   return summary.steps.some((step) => step.name === name);
 }
 
-function noteSkippedPolicySegment(summary, reason, remedy) {
-  const skipped = POLICY_SEGMENT_BRANCHES.filter((entry) => !reportedStep(summary, entry.step));
-  if (skipped.length === 0) {
+function createPolicyCoverage() {
+  return { segment: null, timeout: null };
+}
+
+function recordSkippedPolicySegment(coverage, reason, remedy) {
+  if (coverage.segment) {
     return;
   }
 
-  const ran = POLICY_SEGMENT_BRANCHES.length - skipped.length;
-  const lead =
-    ran === 0
-      ? `COMMAND POLICY SEGMENT SKIPPED (${reason})`
-      : `COMMAND POLICY SEGMENT INCOMPLETE (${reason}); ${ran} of its ${POLICY_SEGMENT_BRANCHES.length} branches ran and are reported as steps above`;
-
-  summary.notes.push(
-    `${lead}. Not verified by this run: ${skipped.map((entry) => entry.branch).join("; ")}. To cover ${skipped.length === 1 ? "it" : "them"}, ${remedy}.`
-  );
+  coverage.segment = { reason, remedy };
 }
 
-function noteSkippedTimeoutBranch(summary, reason) {
+function recordSkippedTimeoutBranch(coverage, reason) {
+  if (coverage.timeout) {
+    return;
+  }
+
+  coverage.timeout = { reason };
+}
+
+function flushPolicyCoverageNotes(summary, coverage) {
+  const skipped = POLICY_SEGMENT_BRANCHES.filter((entry) => !reportedStep(summary, entry.step));
+  if (skipped.length > 0) {
+    const { reason, remedy } = coverage.segment ?? {
+      reason: "the run ended before the segment",
+      remedy: POLICY_SEGMENT_EARLY_EXIT_HINT
+    };
+    const ran = POLICY_SEGMENT_BRANCHES.length - skipped.length;
+    const lead =
+      ran === 0
+        ? `COMMAND POLICY SEGMENT SKIPPED (${reason})`
+        : `COMMAND POLICY SEGMENT INCOMPLETE (${reason}); ${ran} of its ${POLICY_SEGMENT_BRANCHES.length} branches ran and are reported as steps above`;
+
+    summary.notes.push(
+      `${lead}. Not verified by this run: ${skipped.map((entry) => entry.branch).join("; ")}. To cover ${skipped.length === 1 ? "it" : "them"}, ${remedy}.`
+    );
+  }
+
+  if (reportedStep(summary, POLICY_TIMEOUT_BRANCH_STEP)) {
+    return;
+  }
+
   summary.notes.push(
-    `Approval timeout branch SKIPPED (${reason}); no run verified that an undecided approval expires without executing its command. It costs about a minute of wall clock and is enabled with --policy-timeout-branch (or FVTT_WORLD_CLI_TEST_POLICY_TIMEOUT_BRANCH=1).`
+    `Approval timeout branch SKIPPED (${coverage.timeout?.reason ?? "the run ended before the segment it belongs to"}); no run verified that an undecided approval expires without executing its command. It costs about a minute of wall clock and is enabled with --policy-timeout-branch (or FVTT_WORLD_CLI_TEST_POLICY_TIMEOUT_BRANCH=1).`
   );
 }
 
@@ -674,14 +703,14 @@ function noteAbandonedRun(summary, reason, remedy) {
   );
 }
 
-async function preparePolicyHarness(summary, options) {
+async function preparePolicyHarness(summary, options, coverage) {
   summary.notes.push(
     "Command policy: the allow path is what the rest of this run exercises. With a GM control endpoint the script sets a policy that allows every command for the run and restores the stored one afterwards; without one it runs only when a policy read from that client confirms it holds no command for approval, because the shipped defaults hold every delete for a human and the suite deletes what it creates."
   );
 
   if (!options.gmControlUrl) {
-    noteSkippedPolicySegment(summary, "no GM control endpoint was supplied", POLICY_SEGMENT_ENABLE_HINT);
-    noteSkippedTimeoutBranch(summary, "the segment it belongs to did not run");
+    recordSkippedPolicySegment(coverage, "no GM control endpoint was supplied", POLICY_SEGMENT_ENABLE_HINT);
+    recordSkippedTimeoutBranch(coverage, "the segment it belongs to did not run");
 
     const discoveryRun = runFoundryctl(["commands"]);
 
@@ -729,33 +758,7 @@ async function preparePolicyHarness(summary, options) {
   let previousPolicy = null;
   let previousTimeoutMinutes = null;
 
-  try {
-    previousPolicy =
-      (await evaluateInGmPage(options.gmControlUrl, moduleSettingReadScript(POLICY_SETTING_KEY))) ?? {};
-    previousTimeoutMinutes = await evaluateInGmPage(
-      options.gmControlUrl,
-      moduleSettingReadScript(APPROVAL_TIMEOUT_SETTING_KEY)
-    );
-    await evaluateInGmPage(
-      options.gmControlUrl,
-      moduleSettingWriteScript(POLICY_SETTING_KEY, scratchPolicy({}))
-    );
-  } catch (error) {
-    markAndPush(summary, "policy.preconditions", false, {
-      gmControlUrl: options.gmControlUrl,
-      reason: `The GM control endpoint could not read or write the command policy: ${error.message}`
-    });
-    noteSkippedPolicySegment(summary, "the GM control endpoint did not answer", POLICY_SEGMENT_ENDPOINT_HINT);
-    noteSkippedTimeoutBranch(summary, "the segment it belongs to did not run");
-    noteAbandonedRun(
-      summary,
-      "the GM control endpoint did not answer",
-      "The script could not read or write the command policy through the endpoint named by --gm-control, so it could not keep the run from blocking on a human decision: make that endpoint reachable and run the smoke again"
-    );
-    return { ready: false, restore: null };
-  }
-
-  const restore = async () => {
+  const restoreStoredSettings = async () => {
     const failures = [];
     const restoreSetting = async (key, value) => {
       try {
@@ -772,6 +775,39 @@ async function preparePolicyHarness(summary, options) {
 
     return failures;
   };
+
+  let restore = null;
+
+  try {
+    previousPolicy =
+      (await evaluateInGmPage(options.gmControlUrl, moduleSettingReadScript(POLICY_SETTING_KEY))) ?? {};
+    previousTimeoutMinutes = await evaluateInGmPage(
+      options.gmControlUrl,
+      moduleSettingReadScript(APPROVAL_TIMEOUT_SETTING_KEY)
+    );
+    restore = restoreStoredSettings;
+    await evaluateInGmPage(
+      options.gmControlUrl,
+      moduleSettingWriteScript(POLICY_SETTING_KEY, scratchPolicy({}))
+    );
+  } catch (error) {
+    markAndPush(summary, "policy.preconditions", false, {
+      gmControlUrl: options.gmControlUrl,
+      reason: `The GM control endpoint could not read or write the command policy: ${error.message}`
+    });
+    recordSkippedPolicySegment(
+      coverage,
+      "the GM control endpoint did not answer",
+      POLICY_SEGMENT_ENDPOINT_HINT
+    );
+    recordSkippedTimeoutBranch(coverage, "the segment it belongs to did not run");
+    noteAbandonedRun(
+      summary,
+      "the GM control endpoint did not answer",
+      "The script could not read or write the command policy through the endpoint named by --gm-control, so it could not keep the run from blocking on a human decision: make that endpoint reachable and run the smoke again"
+    );
+    return { ready: false, restore };
+  }
 
   const confirmRun = runFoundryctl(["commands"]);
   const listed = Array.isArray(confirmRun.response?.result) ? confirmRun.response.result : [];
@@ -792,12 +828,12 @@ async function preparePolicyHarness(summary, options) {
       reason:
         "The policy this script wrote through the GM control endpoint is not the policy the client holding the bridge reports, so the endpoint drives a different Foundry client than the one that answers commands."
     });
-    noteSkippedPolicySegment(
-      summary,
+    recordSkippedPolicySegment(
+      coverage,
       "the policy written through the GM control endpoint never reached the client holding the bridge",
       POLICY_SEGMENT_ENDPOINT_HINT
     );
-    noteSkippedTimeoutBranch(summary, "the segment it belongs to did not run");
+    recordSkippedTimeoutBranch(coverage, "the segment it belongs to did not run");
     noteAbandonedRun(
       summary,
       "the policy written through the GM control endpoint never reached the client holding the bridge",
@@ -815,7 +851,7 @@ async function preparePolicyHarness(summary, options) {
   return { ready: true, restore };
 }
 
-async function runPolicySegment(summary, options, { stamp }) {
+async function runPolicySegment(summary, options, { stamp, coverage }) {
   const gmControlUrl = options.gmControlUrl;
   if (!gmControlUrl) {
     return;
@@ -831,12 +867,12 @@ async function runPolicySegment(summary, options, { stamp }) {
   });
 
   if (!journalId) {
-    noteSkippedPolicySegment(
-      summary,
+    recordSkippedPolicySegment(
+      coverage,
       "the scratch journal the segment writes to could not be created",
       POLICY_SEGMENT_FIXTURE_HINT
     );
-    noteSkippedTimeoutBranch(summary, "the segment it belongs to did not run");
+    recordSkippedTimeoutBranch(coverage, "the segment it belongs to did not run");
     return;
   }
 
@@ -885,17 +921,15 @@ async function runPolicySegment(summary, options, { stamp }) {
     );
 
     const previewName = `${journalName} preview`;
-    const previewRun = runFoundryctl([
-      "--dry-run",
-      "journal",
-      "update",
-      "--journal-id",
-      journalId,
-      "--name",
-      previewName
-    ]);
+    const previewRun = await settleFoundryctl(
+      startFoundryctl(["--dry-run", "journal", "update", "--journal-id", journalId, "--name", previewName]),
+      POLICY_PREVIEW_WAIT_MS
+    );
     const previewResult = previewRun.response?.result || null;
     const previewWindow = await evaluateInGmPage(gmControlUrl, APPROVAL_WINDOW_SCRIPT);
+    if (previewWindow) {
+      handledApprovalIds.add(previewWindow.approvalId);
+    }
     markAndPush(
       summary,
       "policy.approve(dry-run)",
@@ -1077,18 +1111,16 @@ async function runPolicySegment(summary, options, { stamp }) {
     }
   } catch (error) {
     markAndPush(summary, "policy.segment", false, { reason: error.message });
-    noteSkippedPolicySegment(
-      summary,
+    recordSkippedPolicySegment(
+      coverage,
       `the segment stopped on an error: ${error.message}`,
       POLICY_SEGMENT_ENDPOINT_HINT
     );
   } finally {
-    if (!reportedStep(summary, POLICY_TIMEOUT_BRANCH_STEP)) {
-      noteSkippedTimeoutBranch(
-        summary,
-        options.policyTimeoutBranch ? "the segment stopped before it" : "it was not requested"
-      );
-    }
+    recordSkippedTimeoutBranch(
+      coverage,
+      options.policyTimeoutBranch ? "the segment stopped before it" : "it was not requested"
+    );
 
     await evaluateInGmPage(
       gmControlUrl,
@@ -12309,6 +12341,7 @@ async function main() {
     steps: []
   };
 
+  const policyCoverage = createPolicyCoverage();
   let tempDir = null;
   let policyHarness = null;
 
@@ -12344,7 +12377,7 @@ async function main() {
       unexpected: inventory.unexpected
     });
 
-    policyHarness = await preparePolicyHarness(summary, options);
+    policyHarness = await preparePolicyHarness(summary, options, policyCoverage);
     if (!policyHarness.ready) {
       return { options, summary };
     }
@@ -13415,7 +13448,7 @@ async function main() {
       }
     );
 
-    await runPolicySegment(summary, options, { stamp });
+    await runPolicySegment(summary, options, { stamp, coverage: policyCoverage });
 
     return { options, summary };
   } finally {
@@ -13457,6 +13490,8 @@ async function main() {
       }
       markAndPush(summary, "policy.restore", failures.length === 0, { failures });
     }
+
+    flushPolicyCoverageNotes(summary, policyCoverage);
 
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
