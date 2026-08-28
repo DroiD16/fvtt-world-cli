@@ -427,6 +427,21 @@ describe("Command permissions application", () => {
     expect(Object.keys(draftOf(app).policy.overrides)).not.toContain(POLICY_EXEMPT_COMMANDS[0]);
   });
 
+  it("ignores a crafted switch or fill that names an always-allowed command", async () => {
+    const { app, dispatch } = application();
+    expect(EXEMPT_ONLY_GROUPS.length).toBeGreaterThan(0);
+
+    await dispatch("setBehavior", { command: POLICY_EXEMPT_COMMANDS[0], behavior: "deny" });
+    await dispatch("fillNode", { path: EXEMPT_ONLY_GROUPS[0], behavior: "deny" });
+    const context = await app._prepareContext();
+
+    for (const command of POLICY_EXEMPT_COMMANDS) {
+      expect(Object.keys(draftOf(app).policy.overrides), command).not.toContain(command);
+    }
+    expect(draftOf(app).policy.overrides).toEqual({});
+    expect(context.dirty).toBe(false);
+  });
+
   it("renders no group that would hold only always-allowed commands", async () => {
     const { app } = application();
     expect(EXEMPT_ONLY_GROUPS.length).toBeGreaterThan(0);
