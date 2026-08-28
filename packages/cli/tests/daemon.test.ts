@@ -3283,6 +3283,90 @@ describe("authorization daemon", () => {
     expect(await reforwarded).toMatchObject({ id: "item-2", command: "item.create" });
   });
 
+  it("refuses a same-key retry of a request the same pairing took over", async () => {
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon();
+    const forwarded = next(bridge);
+    const failed = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+
+    const replacement = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+    expect(await failed).toMatchObject({
+      id: "item-1",
+      ok: false,
+      error: { code: ERROR_CODES.BRIDGE_DISCONNECTED, details: { reason: "taken-over" } }
+    });
+
+    const nextForwarded = next(replacement.socket);
+    const refused = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await refused).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.BRIDGE_DISCONNECTED, details: { reason: "lost-in-flight" } }
+    });
+
+    cli.send(JSON.stringify(itemCreateRequest("item-3", "key-2")));
+    expect(await nextForwarded).toMatchObject({ id: "item-3" });
+  });
+
+  it("keeps no lost-in-flight key when the takeover changes the bridge scope", async () => {
+    const secondCredential = "c".repeat(43);
+    const { daemon, bridge, cli } = await startApprovalDaemon({}, [
+      {
+        pairingId: "pair-second",
+        credential: secondCredential,
+        clientId: THIRD_CLIENT_ID,
+        worldId: "world-2"
+      }
+    ]);
+    const forwarded = next(bridge);
+    const disconnected = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    await disconnected;
+    expect(daemon.approvalLinks.size).toBe(1);
+
+    await connectBridge(daemon, {
+      pairingId: "pair-second",
+      credential: secondCredential,
+      clientId: THIRD_CLIENT_ID,
+      worldId: "world-2",
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+
+    expect(daemon.approvalLinks.size).toBe(0);
+  });
+
+  it("refuses a same-key retry of a request lost when the bridge was released", async () => {
+    const { daemon, bridge, cli } = await startApprovalDaemon();
+    const forwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+
+    const disconnected = next(cli);
+    const activeBridge = daemon.sessionStore.activeBridgeSocket;
+    expect(activeBridge).not.toBeNull();
+    daemon.releaseActiveBridge(activeBridge as WebSocket, 1000, "Bridge released");
+    await disconnected;
+
+    const refused = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await refused).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.BRIDGE_DISCONNECTED, details: { reason: "lost-in-flight" } }
+    });
+  });
+
   it("refuses a same-key retry after a BRIDGE_TIMEOUT whose bridge session then ended", async () => {
     const { daemon, bridge, cli, credential } = await startApprovalDaemon({ requestTimeoutMs: 25 });
     const forwarded = next(bridge);
