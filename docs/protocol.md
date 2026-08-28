@@ -184,7 +184,8 @@ world can change between preview and commit.
 Commands with duplicate-creation or non-repeatable-action risk accept or require an idempotency
 key identifying one logical request. Reusing a key with a different command or payload is rejected
 as `IDEMPOTENCY_KEY_CONFLICT`. Idempotency memory is runtime state: bounded, and cleared by daemon
-restart, bridge replacement, world switch, expiry, or eviction. It reduces duplicate effects across
+restart, bridge replacement, world switch, expiry, or — for cached successes only —
+eviction. It reduces duplicate effects across
 response loss; it is not a durable transaction, so an indeterminate delivery still ends with a
 world-state read.
 
@@ -338,17 +339,27 @@ retention simply expires and the key becomes forwardable again. Verifying world 
 fresh key is the way through. An unkeyed request retains nothing.
 
 Holding that state is what makes the guarantee, so the room for it is claimed before the request is
-forwarded rather than after it is lost. A keyed request that no longer fits the bounded store is
-refused as `IDEMPOTENCY_STORE_FULL` and never reaches Foundry, so the world is unchanged and the
-same request is safe to send again once earlier keys settle or their dedupe windows expire. The
-alternative — admitting the request and discarding an older key to make room — would silently turn
-a still-indeterminate key back into a forwardable one, which is the duplicate execution the store
+forwarded rather than after it is lost. That reservation is taken when the keyed request is
+forwarded and lasts until the request settles, or, if nothing settles it, for the request timeout
+plus the idempotency dedupe window. One store of 1,000 entries, shared by every keyed caller of the
+daemon, holds those reservations together with the approval links and lost-in-flight tombstones they
+become; the size is deliberately fixed rather than operator-configurable, because a larger bound
+trades memory for a longer duplicate-execution window without removing it. A keyed request that no
+longer fits the bounded store is refused as `IDEMPOTENCY_STORE_FULL` and never reaches Foundry, so
+the world is unchanged and the same request is safe to send again once earlier keys settle or their
+dedupe windows expire. Exhaustion therefore clears on its own, and a daemon restart or a switch to
+another world or pairing empties the store immediately. A repeat forward of a key that is still
+reserved shares the reservation it already holds, while the same key carrying a different payload is
+refused as `IDEMPOTENCY_KEY_CONFLICT` for as long as the reservation lasts. The alternative —
+admitting the request and discarding an older key to make room — would silently turn a
+still-indeterminate key back into a forwardable one, which is the duplicate execution the store
 exists to prevent. Neither an approval link nor a lost-in-flight key is ever traded away for newer
 state.
 
-The link is runtime state with the same limits as the idempotency cache: a daemon restart, a switch
-to another world or pairing, and expiry all forget it. A retry after one of those reaches Foundry as
-a new request, so an indeterminate delivery still ends with a read rather than a blind retry.
+The link is runtime state: a daemon restart, a switch to another world or pairing, and expiry all
+forget it, and nothing else does — it is never evicted to admit another key. A retry after one of
+those reaches Foundry as a new request, so an indeterminate delivery still ends with a read rather
+than a blind retry.
 
 ## Delivery states and retries
 

@@ -133,8 +133,9 @@ Classify a failure before reacting:
 - Usage or validation error — fix the request.
 - Permission, safety, or capability error — a different operation or runtime is needed; retrying
   the same call cannot succeed.
-- Not forwarded (connection refused, `BRIDGE_NOT_READY`) — safe to retry once the stack is
-  restored.
+- Not forwarded (connection refused, `BRIDGE_NOT_READY`, `IDEMPOTENCY_STORE_FULL`) — nothing ran
+  and the world is unchanged; safe to retry once the stack is restored, and for a store-full refusal
+  reuse the same request and idempotency key once the daemon's earlier keys settle or expire.
 - Forwarded but unresolved (`BRIDGE_TIMEOUT`, a timeout after send) — the mutation may already have
   committed: inspect world state first, and reuse the same idempotency key when retrying the same
   logical request. Never mint a new key because a response merely timed out. That reuse holds while

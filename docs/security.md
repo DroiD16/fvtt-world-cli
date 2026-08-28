@@ -287,6 +287,12 @@ multi-user scheduling.
 - A caller that disappears without a confirmed cancellation leaves its request actionable on the
   GM's screen until the GM decides or the timeout expires. The command envelope carries no client
   identity, so the module cannot tell that the caller is gone.
+- The daemon holds indeterminate idempotency keys — reservations for forwarded keyed requests,
+  approval links, and lost-in-flight tombstones — in one bounded store of 1,000 entries shared by
+  every client of that daemon. The store refuses new keyed requests with `IDEMPOTENCY_STORE_FULL`
+  rather than evicting an older key, because evicting one would make a possibly executed command
+  forwardable again. The size is fixed rather than operator-configurable, and exhaustion ends when
+  earlier keys settle, when their windows expire, or on a daemon restart or world or pairing switch.
 - Command permissions belong to a browser profile. A second paired browser, or the same browser with
   a fresh profile, holds its own permissions, and whichever client holds the bridge is the one whose
   permissions apply.
