@@ -939,10 +939,13 @@ var approvalCancelSchema = {
   properties: { ...approvalIdProperty },
   additionalProperties: false
 };
+var APPROVAL_AWAIT_COMMAND = "approval.await";
+var APPROVAL_CANCEL_COMMAND = "approval.cancel";
+var POLICY_SNAPSHOT_COMMAND = "policy.snapshot";
 var approvalCommands = {
-  "approval.await": cmd(approvalAwaitSchema, { discovery: false }),
-  "approval.cancel": cmd(approvalCancelSchema, { discovery: false }),
-  "policy.snapshot": cmd(emptyObjectSchema, { discovery: false })
+  [APPROVAL_AWAIT_COMMAND]: cmd(approvalAwaitSchema, { discovery: false }),
+  [APPROVAL_CANCEL_COMMAND]: cmd(approvalCancelSchema, { discovery: false }),
+  [POLICY_SNAPSHOT_COMMAND]: cmd(emptyObjectSchema, { discovery: false })
 };
 
 // packages/protocol/src/schemas/cards.js
@@ -5657,7 +5660,9 @@ function parseBridgeMessage(rawMessage) {
   }
 }
 export {
+  APPROVAL_AWAIT_COMMAND,
   APPROVAL_AWAIT_PARK_CAP_MS,
+  APPROVAL_CANCEL_COMMAND,
   APPROVAL_PENDING_MAX,
   APPROVAL_RESULT_RETENTION_MS,
   APPROVAL_TIMEOUT_DEFAULT_MINUTES,
@@ -5732,6 +5737,7 @@ export {
   POLICY_BEHAVIORS,
   POLICY_DISCOVERY_TIMEOUT_MS,
   POLICY_EXEMPT_COMMANDS,
+  POLICY_SNAPSHOT_COMMAND,
   PROTOCOL_COMPONENTS,
   PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,

@@ -2375,6 +2375,22 @@ describe("protocol contract", () => {
       expect(DISCOVERABLE_COMMAND_NAMES).toContain("system.info");
     });
 
+    it("exports the plumbing command names the CLI polls as registry keys", () => {
+      const exported = [
+        protocol.APPROVAL_AWAIT_COMMAND,
+        protocol.APPROVAL_CANCEL_COMMAND,
+        protocol.POLICY_SNAPSHOT_COMMAND
+      ];
+      expect(exported).toEqual([...HIDDEN_COMMANDS]);
+      for (const command of exported) {
+        expect(COMMAND_NAMES, `${command} must name a registry command`).toContain(command);
+        expect(Object.hasOwn(COMMAND_DEFINITIONS, command)).toBe(true);
+      }
+      expect(moduleProtocol.APPROVAL_AWAIT_COMMAND).toBe(protocol.APPROVAL_AWAIT_COMMAND);
+      expect(moduleProtocol.APPROVAL_CANCEL_COMMAND).toBe(protocol.APPROVAL_CANCEL_COMMAND);
+      expect(moduleProtocol.POLICY_SNAPSHOT_COMMAND).toBe(protocol.POLICY_SNAPSHOT_COMMAND);
+    });
+
     it("carries no discovery field on a discoverable command", () => {
       const annotated = DISCOVERABLE_COMMAND_NAMES.filter(
         (command) => "discovery" in COMMAND_DEFINITIONS[command]

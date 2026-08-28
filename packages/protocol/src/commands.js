@@ -32,6 +32,11 @@ import { systemCommands } from "./schemas/system.js";
 import { tableCommands } from "./schemas/table.js";
 
 export {
+  APPROVAL_AWAIT_COMMAND,
+  APPROVAL_CANCEL_COMMAND,
+  POLICY_SNAPSHOT_COMMAND
+} from "./schemas/approval.js";
+export {
   CARDS_ACTION_CHAT_STATUSES,
   CARDS_ACTION_MUTATION_OUTCOMES,
   CARDS_ACTION_RECONCILIATIONS,

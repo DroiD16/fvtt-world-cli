@@ -22,8 +22,12 @@ const approvalCancelSchema = {
   additionalProperties: false
 };
 
+export const APPROVAL_AWAIT_COMMAND = "approval.await";
+export const APPROVAL_CANCEL_COMMAND = "approval.cancel";
+export const POLICY_SNAPSHOT_COMMAND = "policy.snapshot";
+
 export const approvalCommands = {
-  "approval.await": cmd(approvalAwaitSchema, { discovery: false }),
-  "approval.cancel": cmd(approvalCancelSchema, { discovery: false }),
-  "policy.snapshot": cmd(emptyObjectSchema, { discovery: false })
+  [APPROVAL_AWAIT_COMMAND]: cmd(approvalAwaitSchema, { discovery: false }),
+  [APPROVAL_CANCEL_COMMAND]: cmd(approvalCancelSchema, { discovery: false }),
+  [POLICY_SNAPSHOT_COMMAND]: cmd(emptyObjectSchema, { discovery: false })
 };

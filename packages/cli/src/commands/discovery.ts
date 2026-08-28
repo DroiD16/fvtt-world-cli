@@ -6,6 +6,7 @@ import {
   DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   POLICY_DISCOVERY_TIMEOUT_MS,
+  POLICY_SNAPSHOT_COMMAND,
   getCommandDefinition,
   isKnownCommand
 } from "@fvtt-world-cli/protocol";
@@ -22,8 +23,6 @@ import {
   toTransportErrorEnvelope
 } from "../errors.js";
 import { type CliDependencies, write } from "../deps.js";
-
-const POLICY_SNAPSHOT_COMMAND = "policy.snapshot";
 
 const POLICY_AVAILABILITY_CODES: ReadonlySet<string> = new Set([
   ERROR_CODES.DAEMON_UNAVAILABLE,

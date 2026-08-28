@@ -1,4 +1,6 @@
 import {
+  APPROVAL_AWAIT_COMMAND,
+  APPROVAL_CANCEL_COMMAND,
   ERROR_CODES,
   MESSAGE_TYPES,
   PROTOCOL_COMPONENTS,
@@ -11,8 +13,7 @@ import {
 import type WebSocket from "ws";
 import type { RawData } from "ws";
 
-export const APPROVAL_AWAIT_COMMAND = "approval.await";
-export const APPROVAL_CANCEL_COMMAND = "approval.cancel";
+export { APPROVAL_AWAIT_COMMAND, APPROVAL_CANCEL_COMMAND };
 
 export interface ProtocolErrorShape {
   code: string;
