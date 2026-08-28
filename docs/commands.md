@@ -304,8 +304,10 @@ whole minutes. When it runs out, the waiting command is refused without being
 executed.
 
 Approval state lives only in the GM client's memory. Reloading that client, or ending its bridge
-session, discards the decisions it was holding, and the commands waiting on them report
-`APPROVAL_UNKNOWN`.
+session, discards the decisions it was holding. A decision no GM had answered is abandoned rather
+than lost, so the command waiting on it is told it was cancelled and never ran; a command already
+executing when the state went is the one that reports `APPROVAL_UNKNOWN`, and so is any later poll
+for a decision the new runtime has no state for.
 
 ### Discovery under a policy
 

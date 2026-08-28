@@ -1137,7 +1137,7 @@ describe("approval store queue view", () => {
     });
   });
 
-  it("drops every timer and answers parked waiters when it is cleared", async () => {
+  it("answers a waiter on an undecided request with a verdict that nothing ran", async () => {
     const { store, clock } = createHarness();
     const admission = admitRequest(store);
     const poll = track(store.awaitOutcome({ approvalId: admission.approvalId }));
@@ -1148,14 +1148,33 @@ describe("approval store queue view", () => {
 
     expect(poll.value).toEqual({
       approvalId: admission.approvalId,
-      status: "unknown",
-      reason: APPROVAL_UNKNOWN_REASONS.STORE_CLEARED
+      status: "resolved",
+      outcome: "cancelled"
     });
     expect(store.getQueueView()).toEqual({ current: null, waitingCount: 0 });
     expect(clock.liveTimers()).toBe(0);
     await expect(store.awaitOutcome({ approvalId: admission.approvalId, waitMs: 0 })).resolves.toEqual({
       approvalId: admission.approvalId,
       status: "unknown"
+    });
+  });
+
+  it("answers a waiter on a running command indeterminately when it is cleared", async () => {
+    const executor = createDeferred();
+    const { store } = createHarness({ execute: () => executor.promise });
+    const admission = admitRequest(store);
+    void store.decide(admission.approvalId, "allow");
+    await flush();
+    const poll = track(store.awaitOutcome({ approvalId: admission.approvalId }));
+    await flush();
+
+    store.clear();
+    await flush();
+
+    expect(poll.value).toEqual({
+      approvalId: admission.approvalId,
+      status: "unknown",
+      reason: APPROVAL_UNKNOWN_REASONS.STORE_CLEARED
     });
   });
 

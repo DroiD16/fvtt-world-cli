@@ -381,6 +381,14 @@ export class ApprovalStore {
       this.clearTimer(record.timer);
       record.timer = null;
       record.params = null;
+
+      if (record.state === "pending") {
+        record.state = "cancelled";
+        record.terminalAt = this.now();
+        this.#wakeWaiters(record);
+        continue;
+      }
+
       this.#wakeWaiters(record, {
         approvalId: record.approvalId,
         status: "unknown",

@@ -282,7 +282,10 @@ The wait is two-phase, because a decision can outlast any request timeout:
   state: it does not survive a GM client reload, and it is released whenever that client's bridge
   session ends with no reconnect to follow — disconnecting, unpairing, losing the bridge slot to
   another client, a refused handshake, or a connection rebuilt from the settings window — because the
-  decisions that session held can no longer be reached. The transport's own reconnect after a dropped
+  decisions that session held can no longer be reached. A decision still waiting for the GM when that
+  happens is settled as `cancelled` for the caller parked on it, because nothing had been dispatched;
+  a later poll for the same id, against a runtime that no longer knows it, is `APPROVAL_UNKNOWN` all
+  the same. The transport's own reconnect after a dropped
   socket keeps them. A retained outcome expires as well. The answer is indeterminate — the command may
   never have started or may have completed — so world state is the only authority, and a read comes
   before any re-request.
