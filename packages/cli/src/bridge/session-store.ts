@@ -335,6 +335,7 @@ export class BridgeSessionStore {
       }
       clearTimeout(pendingRequest.timeout);
       this.forgetPending(requestId);
+      const keyed = pendingRequest.idempotency !== undefined && pendingRequest.worldId !== undefined;
       if (pendingRequest.idempotency && pendingRequest.worldId !== undefined) {
         lostKeyedRequests.push({
           worldId: pendingRequest.worldId,
@@ -342,14 +343,18 @@ export class BridgeSessionStore {
           fingerprint: pendingRequest.idempotency.fingerprint
         });
       }
+      const cause =
+        reason === "taken-over"
+          ? "Authenticated Foundry bridge session was replaced by a newer socket from the same pairing while the request was pending"
+          : "Authenticated Foundry bridge session disconnected while the request was pending";
+      const retryAdvice = keyed
+        ? "verify world state before retrying, then send the command again under a FRESH idempotencyKey (reusing the same key is refused for the dedupe window on this daemon)"
+        : "verify world state before retrying";
       const disconnectError = createErrorResponse({
         id: requestId,
         error: createProtocolError({
           code: ERROR_CODES.BRIDGE_DISCONNECTED,
-          message:
-            reason === "taken-over"
-              ? "Authenticated Foundry bridge session was replaced by a newer socket from the same pairing while the request was pending; it was already forwarded so it MAY have committed — verify world state before retrying, then send the command again under a FRESH idempotencyKey (reusing the same key is refused while the daemon holds it indeterminate)"
-              : "Authenticated Foundry bridge session disconnected while the request was pending; it was already forwarded so it MAY have committed — verify world state before retrying, then send the command again under a FRESH idempotencyKey (reusing the same key is refused while the daemon holds it indeterminate)",
+          message: `${cause}; it was already forwarded so it MAY have committed — ${retryAdvice}`,
           details: { reason }
         })
       });

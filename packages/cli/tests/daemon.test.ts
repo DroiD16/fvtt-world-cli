@@ -808,11 +808,13 @@ describe("authorization daemon", () => {
 
     const replacement = await connectBridge(daemon, { pairingId: "pair-1", credential });
     expect(replacement.ack.ok).toBe(true);
-    expect(await failed).toMatchObject({
+    const failure = await failed;
+    expect(failure).toMatchObject({
       id: "pending-1",
       ok: false,
       error: { code: ERROR_CODES.BRIDGE_DISCONNECTED, details: { reason: "taken-over" } }
     });
+    expect(failure.error.message).not.toContain("idempotencyKey");
     expect(daemon.sessionStore.pendingRequests.size).toBe(0);
   });
 
@@ -3295,11 +3297,13 @@ describe("authorization daemon", () => {
       credential,
       commands: APPROVAL_BRIDGE_COMMANDS
     });
-    expect(await failed).toMatchObject({
+    const failure = await failed;
+    expect(failure).toMatchObject({
       id: "item-1",
       ok: false,
       error: { code: ERROR_CODES.BRIDGE_DISCONNECTED, details: { reason: "taken-over" } }
     });
+    expect(failure.error.message).toContain("FRESH idempotencyKey");
 
     const nextForwarded = next(replacement.socket);
     const refused = next(cli);
