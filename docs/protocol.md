@@ -286,9 +286,10 @@ The wait is two-phase, because a decision can outlast any request timeout:
   another client, a refused handshake, or a connection rebuilt from the settings window — because the
   decisions that session held can no longer be reached. A decision still waiting for the GM when that
   happens is abandoned undecided rather than dispatched, but that verdict reaches nobody: the session
-  that would have carried it to the caller parked on it is already gone, so that poll and every later
-  poll for the same id answer `APPROVAL_UNKNOWN`. The transport's own reconnect after a dropped
-  socket keeps them. A retained outcome expires as well. The answer is indeterminate — the command may
+  that would have carried it to the caller parked on it is already gone, so that poll ends as
+  `BRIDGE_DISCONNECTED` like any other request in flight, and the next poll for the same id, against a
+  runtime that no longer knows it, is the one that answers `APPROVAL_UNKNOWN`. The transport's own
+  reconnect after a dropped socket keeps them. A retained outcome expires as well. The answer is indeterminate — the command may
   never have started or may have completed — so world state is the only authority, and a read comes
   before any re-request.
 - A dry run is not gated by an approval: the preview of an approval-listed command runs without a
