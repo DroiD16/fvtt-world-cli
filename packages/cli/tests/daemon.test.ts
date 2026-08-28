@@ -3283,6 +3283,40 @@ describe("authorization daemon", () => {
     expect(await reforwarded).toMatchObject({ id: "item-2", command: "item.create" });
   });
 
+  it("refuses a same-key retry after a BRIDGE_TIMEOUT whose bridge session then ended", async () => {
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon({ requestTimeoutMs: 25 });
+    const forwarded = next(bridge);
+    const timedOut = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+    expect(await timedOut).toMatchObject({
+      id: "item-1",
+      ok: false,
+      error: { code: ERROR_CODES.BRIDGE_TIMEOUT }
+    });
+
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    const reconnected = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+
+    const nextForwarded = next(reconnected.socket);
+    const refused = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await refused).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.BRIDGE_DISCONNECTED, details: { reason: "lost-in-flight" } }
+    });
+
+    cli.send(JSON.stringify(itemCreateRequest("item-3", "key-2")));
+    expect(await nextForwarded).toMatchObject({ id: "item-3" });
+  });
+
   it("refuses a keyed request it has no room left to hold indeterminate", async () => {
     const { daemon, bridge, cli } = await startApprovalDaemon({ approvalLinkOptions: { maxEntries: 1 } });
     const firstForwarded = next(bridge);

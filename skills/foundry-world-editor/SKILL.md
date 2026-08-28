@@ -137,7 +137,9 @@ Classify a failure before reacting:
   restored.
 - Forwarded but unresolved (`BRIDGE_TIMEOUT`, a timeout after send) — the mutation may already have
   committed: inspect world state first, and reuse the same idempotency key when retrying the same
-  logical request. Never mint a new key because a response merely timed out.
+  logical request. Never mint a new key because a response merely timed out. That reuse holds while
+  the bridge session that carried the request is still connected; if it ends first, the same key is
+  answered as `BRIDGE_DISCONNECTED` and the rule below applies instead.
 - Forwarded when the bridge session ended (`BRIDGE_DISCONNECTED`) — indeterminate, and the same key
   will be refused: the command may have committed, or it may still be waiting on a GM approval that
   is actionable. Inspect world state, report what you found, and send it again only under a fresh

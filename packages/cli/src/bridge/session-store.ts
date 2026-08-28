@@ -213,7 +213,7 @@ export class BridgeSessionStore {
         id: request.id,
         error: createProtocolError({
           code: ERROR_CODES.BRIDGE_TIMEOUT,
-          message: `Timed out waiting for Foundry bridge response to ${request.command} after ${requestTimeoutMs}ms; the request was forwarded so it MAY have committed — verify world state before retrying (a same idempotencyKey retry can fetch the cached late success once it lands)`,
+          message: `Timed out waiting for Foundry bridge response to ${request.command} after ${requestTimeoutMs}ms; the request was forwarded so it MAY have committed — verify world state before retrying (a same idempotencyKey retry can fetch the cached late success once it lands, unless the bridge session carrying it ends first, after which that key is refused)`,
           details: {
             reason: "timeout",
             command: request.command,
