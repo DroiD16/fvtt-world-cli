@@ -255,6 +255,11 @@ outcome is the approval's answer, which [Protocol](protocol.md#approval-flow) de
 execution happens at the decision rather than at the request, the world can have moved on in
 between; the command's own guards and not-found errors apply as they would to a call sent then.
 
+The wait outlives a transient break in the local transport. A daemon that is briefly unreachable, a
+bridge session that reconnects, and a poll the daemon times out before the GM decides are all
+retried, up to a margin past the approval's own deadline, because in each case the decision is still
+open in the GM's window.
+
 The other endings are structured errors, and all but the last guarantee that nothing ran:
 
 | Code | Meaning | State |

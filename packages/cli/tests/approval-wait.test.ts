@@ -312,6 +312,44 @@ describe("approval wait", () => {
     expect(harness.calls).toHaveLength(2);
   });
 
+  it("keeps polling when the daemon times the park out before the GM decides", async () => {
+    const harness = createHarness([
+      transportEnvelope(ERROR_CODES.BRIDGE_TIMEOUT),
+      transportEnvelope(ERROR_CODES.BRIDGE_TIMEOUT),
+      awaitResolved("approved", deliveredSuccess())
+    ]);
+
+    const envelope = await awaitApprovalOutcome({
+      pendingResponse: pendingEnvelope(),
+      stderr: harness.stderr,
+      ...harness.options
+    });
+
+    expect(envelope).toEqual(deliveredSuccess());
+    expect(harness.calls).toHaveLength(3);
+  });
+
+  it("stops re-polling a timing-out park once the approval deadline has passed", async () => {
+    const harness = createHarness([
+      transportEnvelope(ERROR_CODES.BRIDGE_TIMEOUT),
+      transportEnvelope(ERROR_CODES.BRIDGE_TIMEOUT)
+    ]);
+    harness.advanceTo(EXPIRES_AT);
+
+    const envelope = await awaitApprovalOutcome({
+      pendingResponse: pendingEnvelope(),
+      stderr: harness.stderr,
+      ...harness.options,
+      sleep: async (ms: number) => {
+        harness.sleeps.push(ms);
+        harness.advanceTo(EXPIRES_AT + APPROVAL_RETRY_MARGIN_MS + 1);
+      }
+    });
+
+    expect(envelope.error?.code).toBe(ERROR_CODES.BRIDGE_TIMEOUT);
+    expect(harness.calls).toHaveLength(2);
+  });
+
   it("surfaces a non-transient error immediately", async () => {
     const unauthorized = createErrorResponse({
       id: "poll",
