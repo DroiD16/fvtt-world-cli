@@ -135,9 +135,13 @@ Classify a failure before reacting:
   the same call cannot succeed.
 - Not forwarded (connection refused, `BRIDGE_NOT_READY`) — safe to retry once the stack is
   restored.
-- Forwarded but unresolved (`BRIDGE_TIMEOUT`, `BRIDGE_DISCONNECTED`, a timeout after send) — the
-  mutation may already have committed: inspect world state first, and reuse the same idempotency
-  key when retrying the same logical request. Never mint a new key because a response was lost.
+- Forwarded but unresolved (`BRIDGE_TIMEOUT`, a timeout after send) — the mutation may already have
+  committed: inspect world state first, and reuse the same idempotency key when retrying the same
+  logical request. Never mint a new key because a response merely timed out.
+- Forwarded when the bridge session ended (`BRIDGE_DISCONNECTED`) — indeterminate, and the same key
+  will be refused: the command may have committed, or it may still be waiting on a GM approval that
+  is actionable. Inspect world state, report what you found, and send it again only under a fresh
+  idempotency key.
 - Refused by the GM client's command permissions (`COMMAND_DENIED`) — nothing ran; the command is
   unavailable there. Report it as a limitation instead of reaching for another command that has the
   same effect.

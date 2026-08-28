@@ -13,7 +13,7 @@ const DEFAULT_MAX_ENTRIES = 1_000;
 interface ApprovalLink {
   key: string;
   fingerprint: string;
-  approvalId: string;
+  approvalId: string | null;
   pendingResponse: CommandResponseEnvelope | null;
   expiresAt: number;
 }
@@ -21,8 +21,9 @@ interface ApprovalLink {
 export type ApprovalLinkLookup =
   | { status: "miss" }
   | { status: "pending"; approvalId: string; response: CommandResponseEnvelope }
-  | { status: "conflict"; approvalId: string }
-  | { status: "indeterminate"; approvalId: string };
+  | { status: "conflict"; approvalId: string | null }
+  | { status: "indeterminate"; approvalId: string }
+  | { status: "lost-in-flight" };
 
 export type ApprovalSettlement =
   | { kind: "none" }
@@ -137,6 +138,28 @@ export class ApprovalIdempotencyLinks {
     });
     this.keysByApprovalId.set(approvalId, key);
 
+    this.enforceCap();
+  }
+
+  recordLostInFlight({ key, fingerprint, retainMs }: { key: string; fingerprint: string; retainMs: number }) {
+    this.prune();
+    if (this.links.has(key)) {
+      return false;
+    }
+
+    this.links.set(key, {
+      key,
+      fingerprint,
+      approvalId: null,
+      pendingResponse: null,
+      expiresAt: this.now() + retainMs
+    });
+
+    this.enforceCap();
+    return true;
+  }
+
+  private enforceCap() {
     while (this.links.size > this.maxEntries) {
       const oldestKey = this.links.keys().next().value;
       if (oldestKey === undefined) {
@@ -156,6 +179,10 @@ export class ApprovalIdempotencyLinks {
 
     if (link.fingerprint !== fingerprint) {
       return { status: "conflict", approvalId: link.approvalId };
+    }
+
+    if (link.approvalId === null) {
+      return { status: "lost-in-flight" };
     }
 
     return link.pendingResponse
@@ -208,7 +235,7 @@ export class ApprovalIdempotencyLinks {
       return;
     }
     this.links.delete(key);
-    if (this.keysByApprovalId.get(link.approvalId) === key) {
+    if (link.approvalId !== null && this.keysByApprovalId.get(link.approvalId) === key) {
       this.keysByApprovalId.delete(link.approvalId);
     }
   }

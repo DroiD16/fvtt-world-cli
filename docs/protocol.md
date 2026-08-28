@@ -327,6 +327,16 @@ answers `APPROVAL_UNKNOWN` until the link expires, because the daemon cannot say
 ran. That is a verify-then-act state, and the way out of it is a world-state read followed by a
 fresh key.
 
+A key whose request was forwarded but whose answer never arrived — the bridge session ended, by
+disconnect or by takeover, before the module replied at all — is indeterminate for the same reason
+and is held the same way. The daemon cannot tell whether the command ran, and for an approval-listed
+command the module may already be holding a decision the GM can still allow, so re-forwarding that
+key could execute the operation twice. Instead the key is retained for the idempotency cache's own
+lifetime and answers `BRIDGE_DISCONNECTED` with `reason: "lost-in-flight"`; nothing makes the real
+outcome readable afterwards, because the caller never received an `approvalId` to poll, so the
+retention simply expires and the key becomes forwardable again. Verifying world state and using a
+fresh key is the way through. An unkeyed request retains nothing.
+
 The link is runtime state with the same limits as the idempotency cache: a daemon restart, a switch
 to another world or pairing, and expiry all forget it. A retry after one of those reaches Foundry as
 a new request, so an indeterminate delivery still ends with a read rather than a blind retry.
@@ -341,7 +351,7 @@ Retry safety is a function of whether the request reached Foundry:
 | `BRIDGE_NOT_READY` | No | Safe to retry after a bridge connects |
 | Response timeout after send | Possibly | May have committed; inspect state or reuse the same idempotency key |
 | `BRIDGE_TIMEOUT` | Yes | May have committed; inspect state or reuse the same idempotency key |
-| `BRIDGE_DISCONNECTED` | Yes or in flight | May have committed; inspect state |
+| `BRIDGE_DISCONNECTED` | Yes or in flight | May have committed; inspect state, then re-request under a fresh idempotency key |
 | `COMMAND_DENIED` | Refused before dispatch | Not executed; the command is unavailable on that GM client |
 | `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED` | Reached Foundry, never dispatched | Not executed; the same request is safe to send again |
 | `APPROVAL_QUEUE_FULL` | Refused before admission | Not executed; safe to retry when the waiting decisions clear |

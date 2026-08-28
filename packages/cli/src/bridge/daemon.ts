@@ -53,7 +53,8 @@ import {
   DEFAULT_CLIENT_TIMEOUT_MS,
   DEFAULT_REQUEST_TIMEOUT_MS,
   type BridgeSessionInfo,
-  type CommandRequestEnvelope
+  type CommandRequestEnvelope,
+  type LostKeyedRequest
 } from "./session-store.js";
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
@@ -363,7 +364,7 @@ export class BridgeDaemon {
           this.leaseExpiresAt = Date.now() + BRIDGE_LEASE_MS;
           this.activePairingId = null;
         }
-        this.sessionStore.removeSocket(socket);
+        this.tombstoneLostKeyedRequests(this.sessionStore.removeSocket(socket));
       });
     });
 
@@ -664,7 +665,7 @@ export class BridgeDaemon {
       state.role = "unknown";
       state.pairingId = null;
     }
-    this.sessionStore.removeSocket(socket);
+    this.tombstoneLostKeyedRequests(this.sessionStore.removeSocket(socket));
     socket.close(closeCode, closeReason);
   }
 
@@ -993,7 +994,8 @@ export class BridgeDaemon {
         this.approvalLinks.clear();
       }
       this.cachedWorldId = idempotencyScope;
-      this.sessionStore.registerBridge(socket, newSession);
+      const { lostKeyedRequests } = this.sessionStore.registerBridge(socket, newSession);
+      this.tombstoneLostKeyedRequests(lostKeyedRequests);
       sendJson(
         socket,
         createBridgeHelloAck({
@@ -1040,6 +1042,22 @@ export class BridgeDaemon {
     const promoted = this.approvalLinks.settle(settlement);
     if (promoted && settlement.kind === "promote") {
       this.idempotencyCache.storeIfAbsent(promoted.key, promoted.fingerprint, settlement.response);
+    }
+  }
+
+  tombstoneLostKeyedRequests(lostKeyedRequests: LostKeyedRequest[]) {
+    for (const lost of lostKeyedRequests) {
+      if (lost.worldId !== this.cachedWorldId) {
+        continue;
+      }
+      if (this.idempotencyCache.lookup(lost.key, lost.fingerprint).status !== "miss") {
+        continue;
+      }
+      this.approvalLinks.recordLostInFlight({
+        key: lost.key,
+        fingerprint: lost.fingerprint,
+        retainMs: this.idempotencyCache.ttlMs
+      });
     }
   }
 
@@ -1101,8 +1119,29 @@ export class BridgeDaemon {
             requestId,
             String(message.command),
             idempotencyKey,
-            "resend the byte-identical original request to keep waiting on the approval it already created"
+            link.approvalId === null
+              ? "verify world state and use a fresh idempotencyKey"
+              : "resend the byte-identical original request to keep waiting on the approval it already created"
           )
+        );
+        return;
+      }
+
+      if (link.status === "lost-in-flight") {
+        sendJson(
+          socket,
+          createErrorResponse({
+            id: requestId,
+            error: createProtocolError({
+              code: ERROR_CODES.BRIDGE_DISCONNECTED,
+              message: `Idempotency key "${idempotencyKey}" belongs to a ${message.command} request that was already forwarded to Foundry when the bridge session ended, so this daemon never learned whether it ran: it may have changed the world, and it may already be waiting on a GM approval that is still actionable. Read the documents that request would have written before anything else, report what you found, and send the command again only under a fresh idempotencyKey.`,
+              details: {
+                reason: "lost-in-flight",
+                command: message.command,
+                idempotencyKey
+              }
+            })
+          })
         );
         return;
       }

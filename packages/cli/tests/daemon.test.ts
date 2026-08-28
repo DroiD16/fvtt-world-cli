@@ -3197,6 +3197,120 @@ describe("authorization daemon", () => {
     expect(await cached).toMatchObject({ id: "item-2", ok: true, result: { item: { id: "created-1" } } });
   });
 
+  it("refuses a same-key retry of a request the bridge lost before answering", async () => {
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon();
+    const forwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+
+    const disconnected = next(cli);
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    expect(await disconnected).toMatchObject({
+      id: "item-1",
+      ok: false,
+      error: { code: ERROR_CODES.BRIDGE_DISCONNECTED }
+    });
+
+    const reconnected = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+    const seenByBridge: Array<Record<string, unknown>> = [];
+    reconnected.socket.on("message", (raw) => seenByBridge.push(JSON.parse(raw.toString())));
+
+    const refused = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await refused).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: {
+        code: ERROR_CODES.BRIDGE_DISCONNECTED,
+        details: { reason: "lost-in-flight", command: "item.create", idempotencyKey: "key-1" }
+      }
+    });
+    expect(seenByBridge.filter((entry) => entry.command === "item.create")).toEqual([]);
+  });
+
+  it("keeps a pending approval answering its key when the bridge that raised it disconnects", async () => {
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon();
+    await sendPendingApproval(bridge, cli, "item-1", "key-1");
+
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    await connectBridge(daemon, { pairingId: "pair-1", credential, commands: APPROVAL_BRIDGE_COMMANDS });
+
+    const replay = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await replay).toMatchObject({
+      id: "item-2",
+      ok: false,
+      error: { code: ERROR_CODES.APPROVAL_PENDING, details: { approvalId: TEST_APPROVAL_ID } }
+    });
+  });
+
+  it("retains nothing for an unkeyed request the bridge lost before answering", async () => {
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon();
+    const forwarded = next(bridge);
+    cli.send(
+      JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_REQUEST,
+        id: "item-1",
+        command: "item.create",
+        params: { data: { name: "Sword", type: "weapon" } }
+      })
+    );
+    await forwarded;
+
+    const disconnected = next(cli);
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    await disconnected;
+    const reconnected = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+
+    expect(daemon.approvalLinks.size).toBe(0);
+    const reforwarded = next(reconnected.socket);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await reforwarded).toMatchObject({ id: "item-2", command: "item.create" });
+  });
+
+  it("expires the lost-in-flight tombstone and forwards the same key again", async () => {
+    let clock = 1_000;
+    const { daemon, bridge, cli, credential } = await startApprovalDaemon({
+      idempotencyTtlMs: 100_000,
+      approvalLinkOptions: { now: () => clock }
+    });
+    const forwarded = next(bridge);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    await forwarded;
+
+    const disconnected = next(cli);
+    const goodbye = closed(bridge);
+    bridge.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, type: MESSAGE_TYPES.BRIDGE_GOODBYE }));
+    await goodbye;
+    await disconnected;
+    const reconnected = await connectBridge(daemon, {
+      pairingId: "pair-1",
+      credential,
+      commands: APPROVAL_BRIDGE_COMMANDS
+    });
+    expect(daemon.approvalLinks.size).toBe(1);
+
+    clock = 1_000 + 100_000;
+    const reforwarded = next(reconnected.socket);
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-1")));
+    expect(await reforwarded).toMatchObject({ id: "item-2", command: "item.create" });
+  });
+
   it("drops approval links when the bridge scope changes", async () => {
     const secondCredential = "c".repeat(43);
     const { daemon, bridge, cli } = await startApprovalDaemon({}, [

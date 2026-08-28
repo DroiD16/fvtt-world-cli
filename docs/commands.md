@@ -272,8 +272,8 @@ The other endings are structured errors, and all but the last guarantee that not
 | `APPROVAL_QUEUE_FULL` | Admission was refused before the request reached the GM | Not executed |
 | `APPROVAL_UNKNOWN` | The waiting decision can no longer be correlated | Indeterminate |
 
-`APPROVAL_UNKNOWN` is the one indeterminate outcome. It answers a decision the GM client no longer
-holds — after a reload of that client, or after the retained outcome expired — or a keyed retry whose
+`APPROVAL_UNKNOWN` is the one indeterminate outcome of a decision that was reached. It answers a
+decision the GM client no longer holds — after a reload of that client, or after the retained outcome expired — or a keyed retry whose
 approval the daemon could not read an outcome for, and the command may never have started or may
 have finished. Reading the documents
 it would have written is the only way to tell. `APPROVAL_QUEUE_FULL` is a bound, not a verdict: the
@@ -310,6 +310,12 @@ session, discards the decisions it was holding. A decision no GM had answered is
 and is never dispatched, but no answer for it leaves the session that held it, so the command waiting
 on it reports `APPROVAL_UNKNOWN`, as does a command that was already executing when the state went,
 and so does any later poll for a decision the new runtime has no state for.
+
+A request whose session ended before the GM client answered it at all is a separate case: the CLI
+never learned whether a decision was even raised for it, so it reports `BRIDGE_DISCONNECTED` and the
+daemon refuses that idempotency key for the length of its ordinary dedupe window rather than sending
+the command a second time. That refusal is also indeterminate — reading world state and, if the
+command still needs to run, sending it under a fresh idempotency key is the way through.
 
 ### Discovery under a policy
 

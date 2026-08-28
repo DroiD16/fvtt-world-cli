@@ -57,6 +57,12 @@ interface PendingRequest {
   worldId?: string;
 }
 
+export interface LostKeyedRequest {
+  worldId: string;
+  key: string;
+  fingerprint: string;
+}
+
 function inFlightIndexKey(worldId: string, idempotencyKey: string) {
   return JSON.stringify([worldId, idempotencyKey]);
 }
@@ -90,9 +96,7 @@ export class BridgeSessionStore {
     const staleSocket =
       this.activeBridgeSocket && this.activeBridgeSocket !== socket ? this.activeBridgeSocket : null;
 
-    if (staleSocket) {
-      this.failPendingForBridge(staleSocket, "taken-over");
-    }
+    const lostKeyedRequests = staleSocket ? this.failPendingForBridge(staleSocket, "taken-over") : [];
 
     this.activeBridgeSocket = socket;
     this.activeSession = session;
@@ -101,7 +105,7 @@ export class BridgeSessionStore {
       staleSocket.close(BRIDGE_TAKEOVER_CLOSE_CODE, BRIDGE_TAKEOVER_CLOSE_REASON);
     }
 
-    return { ok: true };
+    return { ok: true, lostKeyedRequests };
   }
 
   getBridgeStatus() {
@@ -295,13 +299,13 @@ export class BridgeSessionStore {
     };
   }
 
-  removeSocket(socket: WebSocket) {
+  removeSocket(socket: WebSocket): LostKeyedRequest[] {
     if (this.activeBridgeSocket === socket) {
-      this.failPendingForBridge(socket, "disconnected");
+      const lostKeyedRequests = this.failPendingForBridge(socket, "disconnected");
       this.activeBridgeSocket = null;
       this.activeSession = null;
       this.inFlightByKey.clear();
-      return;
+      return lostKeyedRequests;
     }
 
     for (const [requestId, pendingRequest] of this.pendingRequests.entries()) {
@@ -318,23 +322,34 @@ export class BridgeSessionStore {
       clearTimeout(pendingRequest.timeout);
       this.forgetPending(requestId);
     }
+
+    return [];
   }
 
-  failPendingForBridge(socket: WebSocket, reason: "disconnected" | "taken-over") {
+  failPendingForBridge(socket: WebSocket, reason: "disconnected" | "taken-over"): LostKeyedRequest[] {
+    const lostKeyedRequests: LostKeyedRequest[] = [];
+
     for (const [requestId, pendingRequest] of this.pendingRequests.entries()) {
       if (pendingRequest.bridgeSocket !== socket) {
         continue;
       }
       clearTimeout(pendingRequest.timeout);
       this.forgetPending(requestId);
+      if (pendingRequest.idempotency && pendingRequest.worldId !== undefined) {
+        lostKeyedRequests.push({
+          worldId: pendingRequest.worldId,
+          key: pendingRequest.idempotency.key,
+          fingerprint: pendingRequest.idempotency.fingerprint
+        });
+      }
       const disconnectError = createErrorResponse({
         id: requestId,
         error: createProtocolError({
           code: ERROR_CODES.BRIDGE_DISCONNECTED,
           message:
             reason === "taken-over"
-              ? "Authenticated Foundry bridge session was replaced by a newer socket from the same pairing while the request was pending; it was already forwarded so it MAY have committed — verify world state before retrying"
-              : "Authenticated Foundry bridge session disconnected while the request was pending; it was already forwarded so it MAY have committed — verify world state before retrying (this is NOT idempotency-key safe: the disconnect path caches nothing, so a keyed retry re-forwards)",
+              ? "Authenticated Foundry bridge session was replaced by a newer socket from the same pairing while the request was pending; it was already forwarded so it MAY have committed — verify world state before retrying, then send the command again under a FRESH idempotencyKey (reusing the same key is refused while the daemon holds it indeterminate)"
+              : "Authenticated Foundry bridge session disconnected while the request was pending; it was already forwarded so it MAY have committed — verify world state before retrying, then send the command again under a FRESH idempotencyKey (reusing the same key is refused while the daemon holds it indeterminate)",
           details: { reason }
         })
       });
@@ -342,6 +357,8 @@ export class BridgeSessionStore {
         sendJson(waiter.clientSocket, { ...disconnectError, id: waiter.requestId });
       }
     }
+
+    return lostKeyedRequests;
   }
 
   clearAllPending() {
