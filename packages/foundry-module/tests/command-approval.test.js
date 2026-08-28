@@ -320,6 +320,15 @@ describe("Command approval window", () => {
     expect(rendered.bytes).toBe(new TextEncoder().encode(rendered.json).length);
   });
 
+  it("summarizes a long parameter string instead of rendering it into the window", () => {
+    const long = "x".repeat(20_000);
+    const rendered = formatApprovalParams({ content: long, note: "kept" });
+
+    expect(rendered.json).toContain("<text: 20000 characters>");
+    expect(rendered.json).not.toContain(long);
+    expect(rendered.json).toContain("kept");
+  });
+
   it("opens on the first arrival and pings once for every request that arrives", async () => {
     const store = createStore();
     createApprovalWindow({ approvalStore: store });

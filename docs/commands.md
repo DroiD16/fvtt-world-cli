@@ -241,7 +241,8 @@ applies its own.
 
 A command that waits for approval blocks the CLI call instead of failing it. Foundry raises its
 Command Approval window with the command name, the documents or managed paths it would change, and
-its parameters, where an upload's encoded content is shown as its size rather than its bytes, and
+its parameters, where an upload's encoded content is shown as its size rather than its bytes and any
+other long text as its length, and
 the CLI writes one status line to stderr:
 
 ```

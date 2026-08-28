@@ -186,6 +186,7 @@
       "Params": "Parameters",
       "ParamsSize": "{bytes} bytes",
       "RedactedContent": "<content: {bytes} bytes>",
+      "RedactedText": "<text: {characters} characters>",
       "Allow": "Allow",
       "Deny": "Deny",
       "Executing": "Running the approved command",

@@ -45,6 +45,8 @@ const NO_TARGET_SUMMARY = Object.freeze({
   descriptor: []
 });
 
+const APPROVAL_PARAM_TEXT_MAX_CHARS = 16_384;
+
 // The encoded length is read rather than the payload: decoding a 512 MiB upload to count its bytes is
 // the allocation the redaction exists to avoid.
 /**
@@ -65,6 +67,13 @@ function decodedBase64Bytes(value) {
 function redactValue(value, field) {
   if (typeof value === "string" && field !== null && APPROVAL_REDACTED_PARAM_FIELDS.includes(field)) {
     return format("FVTTWORLDCLI.Approval.RedactedContent", { bytes: decodedBase64Bytes(value) });
+  }
+
+  // Any long string is summarized, whatever its field: the window is a decision aid, and a document
+  // body legal under the payload limit would otherwise be serialized twice into the DOM on every
+  // re-render.
+  if (typeof value === "string" && value.length > APPROVAL_PARAM_TEXT_MAX_CHARS) {
+    return format("FVTTWORLDCLI.Approval.RedactedText", { characters: value.length });
   }
 
   if (Array.isArray(value)) {
