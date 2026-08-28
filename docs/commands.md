@@ -264,7 +264,7 @@ The other endings are structured errors, and all but the last guarantee that not
 
 | Code | Meaning | State |
 |---|---|---|
-| `COMMAND_DENIED` | The permission is deny; the refusal happens before dispatch | Not executed |
+| `COMMAND_DENIED` | The permission is deny, whether at the request or by the time an approved command runs | Not executed |
 | `APPROVAL_DENIED` | The GM chose Deny | Not executed |
 | `APPROVAL_TIMEOUT` | No decision was taken before the approval expired | Not executed |
 | `APPROVAL_CANCELLED` | A cancellation the GM client confirmed won the decision | Not executed |

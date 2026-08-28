@@ -180,7 +180,22 @@ describe("a command the policy sends to the GM", () => {
     expect(response.result.response.error.code).toBe(ERROR_CODES.ACTOR_NOT_FOUND);
   });
 
-  it("keeps the verdict of the queued invocation when the policy changes under it", async () => {
+  it("keeps the verdict of the queued invocation when the command is still runnable", async () => {
+    await storePolicy({ "actor.update": "approve" });
+    const approvalId = await askForApproval("actor.update", {
+      actorId: "actor-1",
+      patch: { name: "Approved Rename" }
+    });
+
+    await storePolicy({ "actor.update": "allow" });
+    await router.approvalStore.decide(approvalId, "allow");
+    const response = await pollOutcome(approvalId);
+
+    expect(response.result.response.ok).toBe(true);
+    expect(actorName()).toBe("Approved Rename");
+  });
+
+  it("refuses a command the policy denied while its decision was waiting", async () => {
     await storePolicy({ "actor.update": "approve" });
     const approvalId = await askForApproval("actor.update", {
       actorId: "actor-1",
@@ -191,8 +206,9 @@ describe("a command the policy sends to the GM", () => {
     await router.approvalStore.decide(approvalId, "allow");
     const response = await pollOutcome(approvalId);
 
-    expect(response.result.response.ok).toBe(true);
-    expect(actorName()).toBe("Approved Rename");
+    expect(response.result.response.ok).toBe(false);
+    expect(response.result.response.error.code).toBe(ERROR_CODES.COMMAND_DENIED);
+    expect(actorName()).not.toBe("Approved Rename");
   });
 });
 

@@ -118,7 +118,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
     // The guarded path is what makes a delayed decision safe to run, so the executor is the one
     // option a caller may not replace.
     execute: ({ approvalId, command, params }) =>
-      executeGuardedCommand({ command, params, messageId: approvalId, skipPolicyGate: true })
+      executeGuardedCommand({ command, params, messageId: approvalId, skipApprovalGate: true })
   });
 
   const handlers = /** @type {Record<string, (params: any, context: any) => Promise<any>>} */ ({
@@ -217,7 +217,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
    *   params: any,
    *   messageId: string,
    *   measureRequestBytes?: () => number,
-   *   skipPolicyGate?: boolean
+   *   skipApprovalGate?: boolean
    * }} request
    */
   async function executeGuardedCommand({
@@ -225,7 +225,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
     params,
     messageId,
     measureRequestBytes,
-    skipPolicyGate = false
+    skipApprovalGate = false
   }) {
     try {
       assertFoundryReady();
@@ -240,9 +240,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
       assertWritePermission(command);
 
       const dryRun = isDryRun(params);
-      const policy = skipPolicyGate
-        ? null
-        : resolveCommandPolicy(readStoredCommandPolicy(), command, { dryRun });
+      const policy = resolveCommandPolicy(readStoredCommandPolicy(), command, { dryRun });
 
       if (policy?.behavior === "deny") {
         throw createBridgeError(
@@ -253,7 +251,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
         );
       }
 
-      if (policy?.behavior === "approve") {
+      if (!skipApprovalGate && policy?.behavior === "approve") {
         throw admitForApproval({ command, params, measureRequestBytes });
       }
 
@@ -268,7 +266,10 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
       const result = await handler(params, { bridgeClient });
       return createCommandResponse({
         id: messageId,
-        result: dryRun && policy?.baseBehavior === "approve" ? withApprovalRequired(result) : result
+        result:
+          dryRun && !skipApprovalGate && policy?.baseBehavior === "approve"
+            ? withApprovalRequired(result)
+            : result
       });
     } catch (error) {
       const bridgeError = /** @type {any} */ (error);

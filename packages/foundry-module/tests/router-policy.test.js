@@ -542,7 +542,7 @@ describe("command policy gate", () => {
 
       const response = await router().route({
         ...createRequest("actor.update", { actorId: "actor-1", patch: { name: "Smuggled Rename" } }),
-        skipPolicyGate: true
+        skipApprovalGate: true
       });
 
       expect(response.ok).toBe(false);
@@ -550,26 +550,39 @@ describe("command policy gate", () => {
       expect(actorName("actor-1")).toBe("Valeros");
     });
 
-    it("dispatches a command the stored policy denies", async () => {
-      await storePolicy({ "actor.update": "deny" });
-
+    it("dispatches a command the stored policy still allows", async () => {
       const response = await router().executeGuardedCommand({
         command: "actor.update",
         params: { actorId: "actor-1", patch: { name: "Approved Rename" } },
         messageId: "approved-1",
-        skipPolicyGate: true
+        skipApprovalGate: true
       });
 
       expect(response).toMatchObject({ ok: true, id: "approved-1" });
       expect(actorName("actor-1")).toBe("Approved Rename");
     });
 
-    it("adds no approval marker to a preview it no longer resolves a policy for", async () => {
+    it("refuses a command the stored policy denied while the decision was waiting", async () => {
+      await storePolicy({ "actor.update": "deny" });
+
+      const response = await router().executeGuardedCommand({
+        command: "actor.update",
+        params: { actorId: "actor-1", patch: { name: "Approved Rename" } },
+        messageId: "approved-1",
+        skipApprovalGate: true
+      });
+
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe(ERROR_CODES.COMMAND_DENIED);
+      expect(actorName("actor-1")).toBe("Valeros");
+    });
+
+    it("adds no approval marker to a preview taken past the approval gate", async () => {
       const response = await router().executeGuardedCommand({
         command: "actor.delete",
         params: { actorId: await createDeletableActor(), dryRun: true },
         messageId: "approved-2",
-        skipPolicyGate: true
+        skipApprovalGate: true
       });
 
       expect(response.ok).toBe(true);
@@ -583,7 +596,7 @@ describe("command policy gate", () => {
         command: "actor.get",
         params: { actorId: "actor-1" },
         messageId: "approved-3",
-        skipPolicyGate: true
+        skipApprovalGate: true
       });
 
       expect(response.ok).toBe(false);
@@ -597,7 +610,7 @@ describe("command policy gate", () => {
         command: "actor.update",
         params: { actorId: "actor-1", patch: { name: "Approved Rename" } },
         messageId: "approved-4",
-        skipPolicyGate: true
+        skipApprovalGate: true
       });
 
       expect(response.ok).toBe(false);
@@ -610,7 +623,7 @@ describe("command policy gate", () => {
         command: "actor.update",
         params: { actorId: "actor-1", patch: { _id: "spoofed" } },
         messageId: "approved-5",
-        skipPolicyGate: true
+        skipApprovalGate: true
       });
 
       expect(response.ok).toBe(false);
@@ -635,7 +648,7 @@ describe("command policy gate", () => {
             command: "actor.get",
             params: { actorId: "actor-1" },
             messageId: "approved-6",
-            skipPolicyGate: true
+            skipApprovalGate: true
           });
 
         expect(response.ok).toBe(false);

@@ -129,9 +129,11 @@ dispatch. A caller that finds a denied command elsewhere and sends it is answere
 A command the policy sends to approval is not run by the request that carried it. The module holds it,
 in memory only, until the GM decides, and an allowed command then travels the same guarded path a
 direct call takes: Foundry readiness, current-GM authority, parameter validation, the write-permission
-check, and the family's own guards are all evaluated again at that moment. Only the policy verdict is
-not asked a second time, because the GM's allow is that verdict for that one invocation; a policy
-edited while the decision waits therefore does not change what was already approved. Nothing runs
+check, and the family's own guards are all evaluated again at that moment, and so is the stored
+permission of the command itself: a command set to deny while its decision waited is refused with
+`COMMAND_DENIED` even after an allow, because deny is a standing refusal rather than a verdict on one
+invocation. What the GM's allow settles is the approval the command was waiting on, so a permission
+moved between allow and approve while the decision waits does not send it back to the queue. Nothing runs
 unless the request first leaves the waiting state, so a denial, an expiry, or a cancellation the
 module confirmed means the command never ran. The correlating `approvalId` is a 128-bit random token
 revealed only in the answer to the original request, and a caller without it can neither read the
