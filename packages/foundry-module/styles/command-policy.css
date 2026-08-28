@@ -356,10 +356,9 @@
   font-size: var(--font-size-12);
 }
 
-/* One run of text: only the digits switch to monospace so the countdown does not change width as it
-   ticks. Size, weight and colour stay those of the line around it. */
+/* Tabular digits keep the countdown from changing width as it ticks without switching typeface. */
 .fvtt-world-cli-approval-expiry strong {
-  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
   font-weight: inherit;
 }
 
