@@ -279,10 +279,10 @@ guarantee.
 
 By default the commands that wait for approval are the destructive ones: every `delete` and
 `delete-many` verb, plus `file.delete`, `file.move`, and `scene.fog.reset`, whose fog-exploration
-data cannot be recovered. Everything else runs on its own. The Command permissions window states how
-many commands there are and how many of them the defaults send to approval. An installation that
-updates into this behavior therefore starts asking the GM before deletions it used to perform
-silently, until the permissions are edited.
+data cannot be recovered. That is 54 of the 316 commands in the registry; the other 262 run on their
+own, and the Command permissions window states the same two numbers for the policy it is editing. An
+installation that updates into this behavior therefore starts asking the GM before deletions it used
+to perform silently, until the permissions are edited.
 
 `system.ping`, `system.info`, and the plumbing commands the approval wait itself uses are always
 allowed and cannot be denied, so no permission set can lock the bridge out of answering or out of
