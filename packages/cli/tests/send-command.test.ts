@@ -734,6 +734,35 @@ describe("persistent daemon client transport", () => {
     }
   });
 
+  it("abandons a command whose signal aborts before the daemon answers", async () => {
+    const server = await startScriptedServer((socket) => {
+      acceptThen(socket, () => {});
+    });
+
+    const client = await connectDaemonClient({
+      daemonUrl: server.url,
+      deviceCredential: CREDENTIAL,
+      timeoutMs: 2_000
+    });
+    const controller = new AbortController();
+
+    try {
+      const pending = client.send({
+        command: "system.ping",
+        timeoutMs: 60_000,
+        signal: controller.signal
+      });
+      controller.abort();
+
+      await expect(pending).rejects.toMatchObject({
+        code: ERROR_CODES.DAEMON_UNAVAILABLE,
+        details: { reason: "closed", command: "system.ping" }
+      });
+    } finally {
+      await client.close();
+    }
+  });
+
   it("resolves a command request from the command.response frame the daemon relays", async () => {
     const server = await startScriptedServer((socket) => {
       acceptThen(socket, (request) => socket.send(commandResponse(String(request.id), { pong: true })));

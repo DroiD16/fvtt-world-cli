@@ -286,6 +286,7 @@ export interface PersistentDaemonClient {
     command: string;
     params?: Record<string, unknown>;
     timeoutMs?: number;
+    signal?: AbortSignal;
   }): Promise<CommandResponseEnvelope>;
   requestControl(options: {
     operation: string;
@@ -455,7 +456,7 @@ export async function connectDaemonClient({
   });
 
   return {
-    async send({ command, params = {}, timeoutMs = DEFAULT_CLIENT_TIMEOUT_MS }) {
+    async send({ command, params = {}, timeoutMs = DEFAULT_CLIENT_TIMEOUT_MS, signal }) {
       warnIfClientTimeoutUnsafe(timeoutMs);
 
       if (closedError) {
@@ -469,8 +470,22 @@ export async function connectDaemonClient({
       const request = built.request;
 
       return await new Promise<CommandResponseEnvelope>((resolve, reject) => {
+        function onAbort() {
+          clearTimeout(timer);
+          pending.delete(request.id);
+          signal?.removeEventListener("abort", onAbort);
+          reject(
+            new DaemonTransportError(
+              ERROR_CODES.DAEMON_UNAVAILABLE,
+              `Stopped waiting for the daemon response to ${command}`,
+              { reason: "closed", command }
+            )
+          );
+        }
+
         const timer = setTimeout(() => {
           pending.delete(request.id);
+          signal?.removeEventListener("abort", onAbort);
           reject(
             new DaemonTransportError(
               ERROR_CODES.DAEMON_UNAVAILABLE,
@@ -480,7 +495,23 @@ export async function connectDaemonClient({
           );
         }, timeoutMs);
 
-        pending.set(request.id, { resolve, reject, timer });
+        if (signal?.aborted) {
+          onAbort();
+          return;
+        }
+        signal?.addEventListener("abort", onAbort);
+
+        pending.set(request.id, {
+          resolve: (envelope) => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve(envelope);
+          },
+          reject: (error) => {
+            signal?.removeEventListener("abort", onAbort);
+            reject(error);
+          },
+          timer
+        });
         socket.send(JSON.stringify(request));
       });
     },
