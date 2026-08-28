@@ -146,6 +146,15 @@ function registerSettings() {
     default: APPROVAL_TIMEOUT_DEFAULT_MINUTES
   });
 
+  globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.APPROVAL_SOUND, {
+    name: "FVTTWORLDCLI.Settings.ApprovalSoundName",
+    hint: "FVTTWORLDCLI.Settings.ApprovalSoundHint",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+
   const AuthorizationApplication = createAuthorizationApplication({ connect: startBridge });
   globalThis.game.settings.registerMenu(MODULE_ID, "authorization", {
     name: "FVTTWORLDCLI.Settings.AuthorizationName",

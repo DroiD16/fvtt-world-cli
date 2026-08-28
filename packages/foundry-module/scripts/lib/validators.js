@@ -14,7 +14,8 @@ export const MODULE_SETTING_KEYS = Object.freeze({
   CLIENT_ID: "clientId",
   AUTO_CONNECT: "autoConnect",
   COMMAND_POLICY: "commandPolicy",
-  APPROVAL_TIMEOUT_MINUTES: "approvalTimeoutMinutes"
+  APPROVAL_TIMEOUT_MINUTES: "approvalTimeoutMinutes",
+  APPROVAL_SOUND: "approvalSound"
 });
 
 export function getGame() {

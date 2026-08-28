@@ -146,7 +146,10 @@ The decision is taken in the GM-only Command Approval window, which shows one wa
 time: the command name, the remaining time, the names of the documents or managed paths it would
 change, and its parameters. It opens by itself when a request arrives, and again when the queue
 moves on to another waiting request, so a request that reaches the front of the queue while the
-window is closed is still shown rather than expiring unseen. Binary upload content is summarized as
+window is closed is still shown rather than expiring unseen. Opening it for a request that arrives
+into an empty queue also plays Foundry's standard notification sound, controlled by the client-scoped
+`Play a sound on approval requests` setting that is on by default, so a waiting command is less
+likely to expire because the GM was looking elsewhere. Binary upload content is summarized as
 its size rather than printed, so a large payload cannot bury the fields that describe what the
 command does. The window names no requester, because the command envelope carries no client
 identity: what the GM approves is the invocation in front of them, not a particular caller.

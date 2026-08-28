@@ -11,7 +11,15 @@ const MODULE_SCRIPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "
 const FOUNDRY_GLOBALS = [
   "game", // the active game object (collections, world, user, version, release, system)
   "foundry", // namespaced API root (foundry.applications.apps.FilePicker, foundry.data.validation)
+  "CONFIG", // CONFIG.sounds.notification — the core notification sound the approval window plays
   "Roll"
+];
+
+// The bare `AudioHelper` global is a v13 deprecation shim that v14 removed, so both audio reads go
+// through the `foundry.audio` namespace.
+const AUDIO_API_ANCHORS = [
+  "foundry?.audio?.AudioHelper?.play?.(",
+  "foundry?.audio?.AudioHelper?.getDefaultSoundName"
 ];
 
 const DEPRECATED_FOUNDRY_API_PATTERNS = [
@@ -173,6 +181,10 @@ describe("Foundry API surface the module depends on (v14 migration checklist)", 
     }
 
     expect(new RegExp(`\\.${name}\\b`).test(source)).toBe(true);
+  });
+
+  it.each(AUDIO_API_ANCHORS)("reads the audio API through `%s`", (anchor) => {
+    expect(source).toContain(anchor);
   });
 
   it.each(FILEPICKER_API)("references FilePicker.%s", (name) => {

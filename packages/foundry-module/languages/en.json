@@ -118,6 +118,8 @@
       "CommandPolicyName": "Command policy",
       "ApprovalTimeoutMinutesName": "Approval timeout (minutes)",
       "ApprovalTimeoutMinutesHint": "How long a command that needs your approval waits for a decision in this browser. When the time runs out the command is refused without being executed, and the agent is told it can ask again.",
+      "ApprovalSoundName": "Play a sound on approval requests",
+      "ApprovalSoundHint": "Play the standard Foundry notification sound when a command starts waiting and the approval window opens. The sound follows the interface volume, and further requests that join the queue while the window is open are silent.",
       "CommandPermissionsName": "Command permissions",
       "CommandPermissionsLabel": "Configure Command Permissions",
       "CommandPermissionsHint": "Choose which CLI commands run on their own, which wait for your approval in Foundry, and which are refused."

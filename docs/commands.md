@@ -302,6 +302,12 @@ window does not list them, and the `system`, `approval`, and `policy` groups the
 from it. Pairing and other `auth` operations are answered by the daemon without reaching Foundry, so
 no permission applies to them.
 
+When the window opens for a request that arrives into an empty queue, Foundry also plays its
+standard notification sound on the interface channel, so a GM working in another window hears that a
+command is waiting. The `Play a sound on approval requests` checkbox in Module Settings turns that
+sound off; it is on by default, follows the interface volume, and a request that joins the queue
+while the window is already open is silent.
+
 The approval timeout is the `Approval timeout (minutes)` field in the same Module Settings form, and
 in the permissions window: 60 minutes by default, at least 1 and at most 35791, and a stored value
 outside that range falls back to 60, and a fraction the field accepts is rounded to

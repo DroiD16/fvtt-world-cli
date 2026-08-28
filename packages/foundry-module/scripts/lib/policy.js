@@ -181,3 +181,14 @@ export function readApprovalTimeoutMinutes() {
 
   return resolveApprovalTimeoutMinutes(stored);
 }
+
+/**
+ * @returns {boolean}
+ */
+export function readApprovalSoundEnabled() {
+  try {
+    return readSetting(MODULE_SETTING_KEYS.APPROVAL_SOUND) !== false;
+  } catch {
+    return true;
+  }
+}

@@ -197,6 +197,26 @@ describe("module settings registration", () => {
     expect(registration[2].range).not.toHaveProperty("step");
   });
 
+  it("registers the approval sound as a visible client-scoped boolean that defaults to enabled", async () => {
+    await import("../scripts/index.js");
+
+    hookCallbacks.get("init")();
+
+    const registration = globalThis.game.settings.register.mock.calls.find(
+      ([, key]) => key === "approvalSound"
+    );
+
+    expect(registration).toBeDefined();
+    expect(registration[2]).toMatchObject({
+      name: "FVTTWORLDCLI.Settings.ApprovalSoundName",
+      hint: "FVTTWORLDCLI.Settings.ApprovalSoundHint",
+      scope: "client",
+      config: true,
+      type: Boolean,
+      default: true
+    });
+  });
+
   it("skips bridge startup on ready when auto-connect is disabled", async () => {
     storedSettings.autoConnect = false;
     storedSettings.credentials = { "world-1:gm-1": { pairingId: "pair-1", credential: "secret" } };

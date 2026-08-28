@@ -4176,8 +4176,18 @@ export function installFakeFoundry() {
 
     audio: {
       AudioHelper: {
-        getDefaultSoundName: (path) => `derived:${path}`
+        getDefaultSoundName: (path) => `derived:${path}`,
+        play: vi.fn(() => undefined)
       }
+    }
+  };
+
+  globalThis.CONFIG = {
+    sounds: {
+      dice: "sounds/dice.wav",
+      lock: "sounds/lock.wav",
+      notification: "sounds/notify.wav",
+      combat: "sounds/drums.wav"
     }
   };
 

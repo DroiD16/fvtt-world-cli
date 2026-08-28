@@ -346,6 +346,53 @@ describe("Command approval window", () => {
     expect(app.contexts.at(-1).waiting).toBe(1);
   });
 
+  it("plays the notification sound once when the window opens, not for a request that joins the queue", async () => {
+    const store = createStore();
+    createApprovalWindow({ approvalStore: store });
+
+    admit(store, "actor.update", { actorId: "actor-1", patch: { name: "First" } });
+    await flush();
+
+    expect(globalThis.foundry.audio.AudioHelper.play).toHaveBeenCalledTimes(1);
+    expect(globalThis.foundry.audio.AudioHelper.play).toHaveBeenCalledWith(
+      { src: globalThis.CONFIG.sounds.notification, channel: "interface" },
+      false
+    );
+
+    admit(store, "scene.delete", { sceneId: "scene-1" });
+    await flush();
+
+    expect(globalThis.foundry.audio.AudioHelper.play).toHaveBeenCalledTimes(1);
+    expect(globalThis.ui.notifications.info).toHaveBeenCalledTimes(2);
+  });
+
+  it("stays silent while the sound setting is off", async () => {
+    await globalThis.game.settings.set(MODULE_ID, MODULE_SETTING_KEYS.APPROVAL_SOUND, false);
+    const store = createStore();
+    createApprovalWindow({ approvalStore: store });
+
+    admit(store, "actor.delete", { actorId: "actor-1" });
+    await flush();
+
+    expect(globalThis.foundry.audio.AudioHelper.play).not.toHaveBeenCalled();
+    expect(instances[0].rendered).toBe(true);
+    expect(globalThis.ui.notifications.info).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the window even when playing the sound throws", async () => {
+    globalThis.foundry.audio.AudioHelper.play = vi.fn(() => {
+      throw new Error("no audio context");
+    });
+    const store = createStore();
+    createApprovalWindow({ approvalStore: store });
+
+    admit(store, "actor.delete", { actorId: "actor-1" });
+    await flush();
+
+    expect(instances[0].rendered).toBe(true);
+    expect(globalThis.foundry.audio.AudioHelper.play).toHaveBeenCalledTimes(1);
+  });
+
   it("adds no notification to a decision, a timeout, a cancellation or an emptied queue", async () => {
     const store = createStore({ timeoutMinutesProvider: () => 1 });
     createApprovalWindow({ approvalStore: store });

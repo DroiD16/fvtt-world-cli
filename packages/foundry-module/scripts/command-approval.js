@@ -1,4 +1,5 @@
 import { format, localize } from "./lib/i18n.js";
+import { readApprovalSoundEnabled } from "./lib/policy.js";
 import { utf8ByteLength } from "./lib/setting-values.js";
 
 /** @typedef {import("./lib/approval-store.js").ApprovalStore} ApprovalStore */
@@ -269,6 +270,18 @@ export function createCommandApprovalApplication({ approvalStore }) {
   };
 }
 
+function playApprovalSound() {
+  if (!readApprovalSoundEnabled()) return;
+
+  try {
+    const src = globalThis.CONFIG?.sounds?.notification;
+    if (!src) return;
+    globalThis.foundry?.audio?.AudioHelper?.play?.({ src, channel: "interface" }, false);
+  } catch {
+    return;
+  }
+}
+
 /**
  * @param {{ approvalStore: ApprovalStore }} runtime
  */
@@ -284,6 +297,7 @@ export function createApprovalWindow({ approvalStore }) {
     const arrived = total > held;
     const currentId = view.current?.approvalId ?? null;
     const advanced = currentId !== null && currentId !== shown;
+    const opening = held === 0 && total > 0;
     held = total;
     shown = currentId;
 
@@ -294,6 +308,7 @@ export function createApprovalWindow({ approvalStore }) {
 
     if (arrived) {
       globalThis.ui?.notifications?.info?.(localize("FVTTWORLDCLI.Approval.Arrived"));
+      if (opening) playApprovalSound();
     }
 
     application ??= new (createCommandApprovalApplication({ approvalStore }))();
