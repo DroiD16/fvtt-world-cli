@@ -3405,6 +3405,25 @@ describe("authorization daemon", () => {
     expect(await nextForwarded).toMatchObject({ id: "item-3" });
   });
 
+  it("refuses a different payload under a key whose reservation outlived its request", async () => {
+    const { daemon, bridge, cli } = await startApprovalDaemon();
+    daemon.approvalLinks.reserve({ key: "key-1", fingerprint: "stale-fingerprint", retainMs: 60_000 });
+
+    const nextForwarded = next(bridge);
+    const conflicted = next(cli);
+    cli.send(JSON.stringify(itemCreateRequest("item-1", "key-1")));
+    const conflictResponse = (await conflicted) as { error: { message: string } };
+    expect(conflictResponse).toMatchObject({
+      id: "item-1",
+      ok: false,
+      error: { code: ERROR_CODES.IDEMPOTENCY_KEY_CONFLICT, details: { idempotencyKey: "key-1" } }
+    });
+    expect(conflictResponse.error.message).toContain("is still reserved for");
+
+    cli.send(JSON.stringify(itemCreateRequest("item-2", "key-2")));
+    expect(await nextForwarded).toMatchObject({ id: "item-2" });
+  });
+
   it("refuses a keyed request it has no room left to hold indeterminate", async () => {
     const { daemon, bridge, cli } = await startApprovalDaemon({ approvalLinkOptions: { maxEntries: 1 } });
     const firstForwarded = next(bridge);

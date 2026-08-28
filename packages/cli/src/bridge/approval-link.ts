@@ -26,6 +26,8 @@ export type ApprovalLinkLookup =
   | { status: "indeterminate"; approvalId: string }
   | { status: "lost-in-flight" };
 
+export type ApprovalReservation = { ok: true } | { ok: false; reason: "full" | "conflict" };
+
 export type ApprovalSettlement =
   | { kind: "none" }
   | { kind: "promote"; approvalId: string; response: CommandResponseEnvelope }
@@ -144,16 +146,26 @@ export class ApprovalIdempotencyLinks {
   // The reservation is held for the pending request's whole lifetime, so a tombstone converts an
   // existing entry instead of competing for capacity with newer keys. recordLostInFlight stays
   // unconditional so that the boundary tick, where both expire at once, still retains the key.
-  reserve({ key, fingerprint, retainMs }: { key: string; fingerprint: string; retainMs: number }) {
+  reserve({
+    key,
+    fingerprint,
+    retainMs
+  }: {
+    key: string;
+    fingerprint: string;
+    retainMs: number;
+  }): ApprovalReservation {
     this.prune();
 
     const existing = this.links.get(key);
     if (existing) {
-      return existing.kind === "reserved" && existing.fingerprint === fingerprint;
+      return existing.kind === "reserved" && existing.fingerprint === fingerprint
+        ? { ok: true }
+        : { ok: false, reason: "conflict" };
     }
 
     if (this.links.size >= this.maxEntries) {
-      return false;
+      return { ok: false, reason: "full" };
     }
 
     this.links.set(key, {
@@ -164,7 +176,7 @@ export class ApprovalIdempotencyLinks {
       pendingResponse: null,
       expiresAt: this.now() + retainMs
     });
-    return true;
+    return { ok: true };
   }
 
   release(key: string) {

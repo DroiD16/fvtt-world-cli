@@ -1210,7 +1210,21 @@ export class BridgeDaemon {
           fingerprint,
           retainMs: this.requestTimeoutMs + this.idempotencyCache.ttlMs
         });
-        if (!reserved) {
+        if (!reserved.ok && reserved.reason === "conflict") {
+          sendJson(
+            socket,
+            idempotencyConflict(
+              requestId,
+              String(message.command),
+              idempotencyKey,
+              "resend the byte-identical original request to reuse the reservation it already holds",
+              "is still reserved for"
+            )
+          );
+          return;
+        }
+
+        if (!reserved.ok) {
           sendJson(
             socket,
             createErrorResponse({

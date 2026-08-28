@@ -176,8 +176,8 @@ describe("approval idempotency links", () => {
   it("refuses a reservation once the bound is reached instead of evicting an approval link", () => {
     const links = new ApprovalIdempotencyLinks({ maxEntries: 2, now: () => 0 });
     for (const index of [1, 2]) {
-      expect(links.reserve({ key: `key-${index}`, fingerprint: `fp-${index}`, retainMs: RETAIN_MS })).toBe(
-        true
+      expect(links.reserve({ key: `key-${index}`, fingerprint: `fp-${index}`, retainMs: RETAIN_MS })).toEqual(
+        { ok: true }
       );
       links.record({
         key: `key-${index}`,
@@ -188,7 +188,10 @@ describe("approval idempotency links", () => {
       });
     }
 
-    expect(links.reserve({ key: "key-3", fingerprint: "fp-3", retainMs: RETAIN_MS })).toBe(false);
+    expect(links.reserve({ key: "key-3", fingerprint: "fp-3", retainMs: RETAIN_MS })).toEqual({
+      ok: false,
+      reason: "full"
+    });
     expect(links.size).toBe(2);
     expect(links.lookup("key-1", "fp-1")).toMatchObject({ status: "pending" });
     expect(links.lookup("key-3", "fp-3")).toEqual({ status: "miss" });
@@ -201,7 +204,10 @@ describe("approval idempotency links", () => {
       links.recordLostInFlight({ key: `key-${index}`, fingerprint: `fp-${index}`, retainMs: RETAIN_MS });
     }
 
-    expect(links.reserve({ key: "key-3", fingerprint: "fp-3", retainMs: RETAIN_MS })).toBe(false);
+    expect(links.reserve({ key: "key-3", fingerprint: "fp-3", retainMs: RETAIN_MS })).toEqual({
+      ok: false,
+      reason: "full"
+    });
     expect(links.lookup("key-1", "fp-1")).toEqual({ status: "lost-in-flight" });
     expect(links.lookup("key-2", "fp-2")).toEqual({ status: "lost-in-flight" });
   });
@@ -216,7 +222,7 @@ describe("approval idempotency links", () => {
       expiresAt: EXPIRES_AT,
       pendingResponse: pendingResponse()
     });
-    expect(links.reserve({ key: "key-2", fingerprint: "fp-2", retainMs: RETAIN_MS })).toBe(true);
+    expect(links.reserve({ key: "key-2", fingerprint: "fp-2", retainMs: RETAIN_MS })).toEqual({ ok: true });
 
     expect(links.recordLostInFlight({ key: "key-2", fingerprint: "fp-2", retainMs: RETAIN_MS })).toBe(true);
     expect(links.size).toBe(2);
@@ -228,7 +234,7 @@ describe("approval idempotency links", () => {
     const links = new ApprovalIdempotencyLinks({ maxEntries: 1, now: () => 0 });
     links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS });
 
-    expect(links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS })).toBe(true);
+    expect(links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS })).toEqual({ ok: true });
     expect(links.size).toBe(1);
   });
 
@@ -237,11 +243,14 @@ describe("approval idempotency links", () => {
     links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS });
 
     expect(links.lookup("key-1", "fp-1")).toEqual({ status: "miss" });
-    expect(links.reserve({ key: "key-2", fingerprint: "fp-2", retainMs: RETAIN_MS })).toBe(false);
+    expect(links.reserve({ key: "key-2", fingerprint: "fp-2", retainMs: RETAIN_MS })).toEqual({
+      ok: false,
+      reason: "full"
+    });
 
     links.release("key-1");
     expect(links.size).toBe(0);
-    expect(links.reserve({ key: "key-2", fingerprint: "fp-2", retainMs: RETAIN_MS })).toBe(true);
+    expect(links.reserve({ key: "key-2", fingerprint: "fp-2", retainMs: RETAIN_MS })).toEqual({ ok: true });
   });
 
   it("refuses same-key and different-fingerprint retries of a lost key until the retention expires", () => {
@@ -255,7 +264,18 @@ describe("approval idempotency links", () => {
 
     clock = RETAIN_MS;
     expect(links.lookup("key-1", "fp-1")).toEqual({ status: "miss" });
-    expect(links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS })).toBe(true);
+    expect(links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS })).toEqual({ ok: true });
+  });
+
+  it("answers a same-key different-fingerprint request against a reservation as a conflict", () => {
+    const links = new ApprovalIdempotencyLinks({ maxEntries: 2, now: () => 0 });
+    links.reserve({ key: "key-1", fingerprint: "fp-1", retainMs: RETAIN_MS });
+
+    expect(links.reserve({ key: "key-1", fingerprint: "other-fp", retainMs: RETAIN_MS })).toEqual({
+      ok: false,
+      reason: "conflict"
+    });
+    expect(links.size).toBe(1);
   });
 
   it("ignores responses that carry no approval settlement", () => {
