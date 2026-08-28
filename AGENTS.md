@@ -70,11 +70,10 @@ touching it for another reason.
 9. Commander actions take a named option interface, and a family's shared flags are declared once.
 10. Test names describe behavior. Process history — stages, chunks, review rounds — belongs in no
     durable artifact: test names, commit messages, or release notes.
-11. The command permission surface fixes three names, in code, tests, documentation, and i18n
-    keys: *approval* is the human GM decision loop that can hold a command before it runs,
-    *confirmation* is only the post-write verification that Foundry persisted a mutation, and
-    *authorization* and *pairing* are only client identity and credentials. Pairing has its own
-    approve step; call that one pairing approval, so the two decisions never read as one.
+11. Use four permission terms consistently in code, tests, documentation, and i18n keys.
+    *Approval* is the GM decision that can hold a command before it runs. *Confirmation* is the
+    post-write check that Foundry persisted a mutation. *Authorization* covers client identity and
+    credentials. *Pairing approval* is the human decision that grants a browser credential.
 
 ## Implementation Comments
 

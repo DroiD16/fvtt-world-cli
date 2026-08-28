@@ -81,14 +81,14 @@ fvtt-world-cli system info --json
 
 It reports `bridge.status` as `connected`.
 
-From then on the agent's commands run in that browser session, under the command permissions stored
-in it. `fvtt-world-cli commands` reads those permissions from the bridge, so it belongs after this
-step: against a running daemon that does not recognize the client's credential it fails as any other
-command does, rather than falling back to the static registry. Out of the box the destructive ones — deletions, file removal and moves, and fog reset — do
-not run on their own: they raise a Command Approval window in Foundry, and the waiting command runs
-only after Allow. Configure Settings → Module Settings → World CLI → Command permissions is where
-that is changed, command by command, along with how long a request waits for the decision.
-[Commands](commands.md#command-permissions-and-approval) describes the behavior in full.
+Commands use the permissions stored for that browser profile. Run `fvtt-world-cli commands` after
+the bridge connects to see which commands the client will run. A daemon that rejects the browser
+credential returns an error instead of the static registry.
+
+Destructive commands ask the GM by default. Set each command's behavior under Configure Settings →
+Module Settings → World CLI → Command permissions. Set the waiting time in the `Approval timeout
+(minutes)` field in the main Module Settings form. [Commands](commands.md#command-permissions-and-approval)
+describes the behavior in full.
 
 ## When something deviates
 

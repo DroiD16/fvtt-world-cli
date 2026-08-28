@@ -116,9 +116,8 @@ authority; [Security](docs/security.md) covers the boundaries in full. In short:
   the UI uses, under the GM's permissions.
 - Any change can be previewed before it happens: a global `--dry-run` flag runs the same
   validation and guards as a real call and stops before mutation.
-- Destructive commands ask first: every command carries a permission in your Foundry client — run
-  it, ask me, or refuse it — and deletions wait for your approval in a Foundry window until you
-  change that.
+- Every command has a permission in the active Foundry client: run, ask the GM, or refuse.
+  Destructive commands ask the GM by default.
 - There is no arbitrary-code path: commands are typed and validated on both sides of the transport,
   and executable content such as scripted region behaviors is blocked on every write route.
 - File access is confined to the active world's managed assets and always excludes its manifest,

@@ -29,7 +29,7 @@ inventory in prose; [Agent skill](skill.md) explains why it exists and how it is
 | [Getting started](getting-started.md) | People | First-run daemon, pairing, and bridge walkthrough |
 | [Commands](commands.md) | People | Capabilities, common workflows, shared command behavior, and navigation by task |
 | [Agent skill](skill.md) | Agent operators | Why the packaged skill exists, installing it, how updates and removal work |
-| [Protocol](protocol.md) | Implementers and automation consumers | Transport, session, delivery, approval, and error semantics — the integration contract |
+| [Protocol](protocol.md) | Implementers and automation consumers | Integration contract for transport, sessions, delivery, approval, and errors |
 | [Architecture](architecture.md) | Contributors | Component responsibilities and request flow |
 | [Security](security.md) | Operators and contributors | Trust boundaries, permissions, managed files, and known risks |
 | [Foundry compatibility](compatibility.md) | Operators and contributors | Current differences between supported Foundry major versions |

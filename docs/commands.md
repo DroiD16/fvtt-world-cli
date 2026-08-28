@@ -232,38 +232,25 @@ See [Security](security.md#file-write-boundary) before automating file writes.
 
 ### Command permissions and approval
 
-Every command carries a permission in the GM client that holds the bridge: it runs on its own, it
-waits for the GM's approval in Foundry, or it is refused. The permissions are edited in Foundry, in
-Configure Settings → Module Settings → World CLI → Command permissions, which only a GM can open.
-A user below the Assistant GM role sees neither that window nor any other World CLI entry in
-Configure Settings; the module contributes no visible settings and no category for them.
-They are stored per browser profile rather than per world, so the permissions that govern a call are
-the ones configured in the browser currently holding the bridge; another browser or another machine
-applies its own.
+Every command has one of three behaviors in the GM client that holds the bridge: allow, approve, or
+deny. A GM edits them under Configure Settings → Module Settings → World CLI → Command permissions.
+The settings belong to the browser profile, so another browser or machine can apply a different
+policy.
 
-A command that waits for approval blocks the CLI call instead of failing it. Foundry raises its
-Command Approval window with the command name, the documents or managed paths it would change, and
-its parameters, where an upload's encoded content is shown as its size rather than its bytes and any
-other long text as its length, and
-the CLI writes one status line to stderr:
+An approved command waits for the GM instead of failing. Foundry opens the Command Approval window.
+It shows the command, its targets, and its parameters. The CLI writes one status line to stderr:
 
 ```
 Waiting for GM approval in Foundry (command actor.delete, expires 2026-08-28T18:20:00.000Z). Press Ctrl+C to request cancellation.
 ```
 
-The line goes to stderr in both output modes, so `--json` stdout still carries exactly one envelope.
-When the GM chooses Allow, the command runs at that moment and the CLI reports its own outcome,
-success or handler error, as a direct call would have reported it; the envelope carrying that
-outcome is the approval's answer, which [Protocol](protocol.md#approval-flow) describes. Because
-execution happens at the decision rather than at the request, the world can have moved on in
-between; the command's own guards and not-found errors apply as they would to a call sent then.
+The line uses stderr in both output modes, so `--json` stdout still carries one envelope. Allow runs
+the command at the time of the decision. The module repeats the normal guards first because world
+state and permissions may have changed while the request waited. The CLI then returns the command's
+success or error.
 
-The wait outlives a transient break in the local transport. A daemon that is briefly unreachable, a
-bridge session that reconnects, and a poll the daemon times out before the GM decides are all
-retried, up to a margin past the approval's own deadline, because in each case the decision is still
-open in the GM's window.
-
-The other endings are structured errors, and all but the last guarantee that nothing ran:
+The wait tolerates short daemon outages, bridge reconnects, and poll timeouts while the approval
+remains open. Other outcomes use structured errors:
 
 | Code | Meaning | State |
 |---|---|---|
@@ -271,83 +258,53 @@ The other endings are structured errors, and all but the last guarantee that not
 | `APPROVAL_DENIED` | The GM chose Deny | Not executed |
 | `APPROVAL_TIMEOUT` | No decision was taken before the approval expired | Not executed |
 | `APPROVAL_CANCELLED` | A cancellation the GM client confirmed won the decision | Not executed |
-| `APPROVAL_QUEUE_FULL` | Admission was refused before the request reached the GM | Not executed |
-| `APPROVAL_UNKNOWN` | The waiting decision can no longer be correlated | Indeterminate |
+| `APPROVAL_QUEUE_FULL` | The module refused admission before showing the request | Not executed |
+| `APPROVAL_UNKNOWN` | The module no longer holds the decision | Indeterminate |
 
-`APPROVAL_UNKNOWN` is the one indeterminate outcome of a decision that was reached. It answers a
-decision the GM client no longer holds — after a reload of that client, or after the retained outcome expired — or a keyed retry whose
-approval the daemon could not read an outcome for, and the command may never have started or may
-have finished. Reading the documents
-it would have written is the only way to tell. `APPROVAL_QUEUE_FULL` is a bound, not a verdict: the
-number and the combined size of the decisions waiting for the GM are limited, and retrying once the
-GM has worked through them succeeds.
+`APPROVAL_UNKNOWN` means the client can no longer prove whether the command ran. Read the affected
+world state before trying again. `APPROVAL_QUEUE_FULL` means the module refused the request before
+execution. Retry after the GM clears earlier requests.
 
-Ctrl+C while a call waits asks the GM client to abandon the decision instead of leaving it on the
-GM's screen. Only the confirmed answer, reported as `APPROVAL_CANCELLED`, guarantees that the
-command will not run. A cancellation that arrives after the GM has already decided is answered with
-that decision instead, so a denial a moment before Ctrl+C is still reported as `APPROVAL_DENIED`. It
-is only when the decision was already executing, or the GM client could not be reached, that the CLI
-says the cancellation is unconfirmed and reports the indeterminate outcome.
+Ctrl+C asks the GM client to cancel a waiting decision. Only `APPROVAL_CANCELLED` proves that the
+command will not run. If the command has started or the client cannot confirm cancellation, the CLI
+reports an indeterminate result.
 
-By default the commands that wait for approval are the destructive ones: every `delete` and
-`delete-many` verb, plus `file.delete`, `file.move`, and `scene.fog.reset`, whose fog-exploration
-data cannot be recovered. That is 54 of the 316 commands in the registry; the other 262 run on their
-own. The Command permissions window lists the 311 commands the permissions govern, in 16 top-level
-groups. An installation that updates into
-this behavior therefore starts asking the GM before deletions it used to perform silently, until the
-permissions are edited.
+The default policy asks for approval on commands ending in `delete` or `delete-many`, plus
+`file.move` and `scene.fog.reset`. It allows the remaining commands unless they are exempt from the
+policy. Use the Command permissions window or `fvtt-world-cli commands --json` for the current
+inventory.
 
-`system.ping`, `system.info`, and the plumbing commands the approval wait itself uses are always
-allowed and cannot be denied, so no permission set can lock the bridge out of answering or out of
-resolving a decision already taken. Nothing about them can be changed, so the Command permissions
-window does not list them, and the `system`, `approval`, and `policy` groups they make up are absent
-from it. Pairing and other `auth` operations are answered by the daemon without reaching Foundry, so
-no permission applies to them.
+`system.ping`, `system.info`, and the internal approval-wait commands always run. This keeps the
+bridge able to report its state and finish an existing decision. The permissions window omits those
+commands. Pairing and other `auth` operations run in the daemon, outside the command policy.
 
-When the window opens for a request that arrives into an empty queue, Foundry also plays its
-standard notification sound on the interface channel, so a GM working in another window hears that a
-command is waiting. The `Play a sound on approval requests` checkbox in Module Settings turns that
-sound off; it is on by default, follows the interface volume, and a request that joins the queue
-while the window is already open is silent. Browsers hold audio until the GM has interacted with
-the page at least once after loading it, so the first sound after a reload can be delayed until that
-interaction.
+Foundry plays its standard interface notification when a request enters an empty queue. The `Play a
+sound on approval requests` setting controls it. Browsers may delay the first sound until the GM
+interacts with the page after a reload.
 
-The approval timeout is the `Approval timeout (minutes)` field in the Module Settings form, not in
-the permissions window: 60 minutes by default, at least 1 and at most 35791; a stored value outside
-that range falls back to 60, and a fraction the field accepts is rounded to whole minutes. When it runs out, the waiting command is refused without being
-executed.
+Set the approval deadline with `Approval timeout (minutes)` in the main Module Settings form. The
+form and protocol enforce the supported range. Expiry refuses the command without running it.
 
-Approval state lives only in the GM client's memory. Reloading that client, or ending its bridge
-session, discards the decisions it was holding. A decision no GM had answered is abandoned undecided
-and is never dispatched, but no answer for it leaves the session that held it: the command waiting on
-it ends with `BRIDGE_DISCONNECTED`, like anything else that was in flight, and it is the retry
-against the replacement runtime — which has no state for that decision — that reports
-`APPROVAL_UNKNOWN`. A command that was already executing when the state went, and any later poll for
-a decision the new runtime does not know, report `APPROVAL_UNKNOWN` the same way.
-
-A request whose session ended before the GM client answered it at all is a separate case: the CLI
-never learned whether a decision was even raised for it, so it reports `BRIDGE_DISCONNECTED` and the
-daemon refuses that idempotency key for the length of its ordinary dedupe window rather than sending
-the command a second time. That refusal is also indeterminate — reading world state and, if the
-command still needs to run, sending it under a fresh idempotency key is the way through.
+Approval state lives in the GM client's memory. Reloading that client or ending its bridge session
+can produce `BRIDGE_DISCONNECTED` or `APPROVAL_UNKNOWN`. Both are indeterminate. Read the affected
+world state before another write, then use a fresh idempotency key if the command still needs to run.
+The complete state and retry contract is in [Protocol](protocol.md#approval-flow).
 
 ### Discovery under a policy
 
 With the bridge reachable, `commands` and `commands --json` describe what that GM client will
-actually run: denied commands are left out of the listing entirely, and commands that wait for
-approval are marked — `"approval": true` in JSON, an `approval` tag in the plain listing. The JSON
-envelope records which it is in a top-level `policy` object, `{ "applied": true, "source":
-"bridge" }`.
+actually run. The listing omits denied commands. JSON marks approval waits with `"approval": true`;
+plain output uses an `approval` tag. The JSON envelope also contains
+`policy: { "applied": true, "source": "bridge" }`.
 
 When no bridge answers, the listing falls back to the full static registry and says so:
 `policy: { "applied": false, "source": "static", "reason": … }` in JSON, and a warning on stderr in
-plain output. Only unavailability — no daemon, no bridge, a disconnected bridge — falls back that
-way; an authentication, validation, or protocol failure fails the command instead of being disguised
-as an absent bridge.
+plain output. Only an unavailable daemon or bridge triggers fallback. Authentication, validation,
+and protocol failures return errors.
 
-`schema`, `--help`, and this documentation are static and describe the whole registry whatever the
-permissions say. A denied command found there and called anyway is refused with `COMMAND_DENIED`:
-the listing hides, the GM client enforces.
+`schema`, `--help`, and this documentation describe the whole static registry. If a caller sends a
+denied command found there, the GM client returns `COMMAND_DENIED`. Discovery hides; the client
+enforces.
 
 ### JSON output
 
@@ -428,10 +385,9 @@ The result uses the normal command shape and includes `dryRun: true`. The previe
 dry run executes, what it can report, and its non-reservation of state — is defined in
 [Protocol](protocol.md#dry-run).
 
-A preview is not held for approval: a command whose permission is approve previews without asking
-the GM, and its result carries `approvalRequired: true` so the caller knows the commit step will
-wait for a decision. A denied command is refused in preview exactly as in a real call, so a dry run
-never reports a preview for something the GM client would not run.
+Approval does not hold a preview. A command whose permission is approve previews without asking the
+GM, and its result carries `approvalRequired: true` so the caller knows the commit will wait. The GM
+client returns `COMMAND_DENIED` for a denied preview.
 
 ### Idempotency and retries
 

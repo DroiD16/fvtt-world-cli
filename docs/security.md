@@ -52,11 +52,9 @@ public multi-tenant API.
   any other local process is still refused rather than repaired.
 - Browser pairing and bridge sockets require a syntactically valid HTTP(S) Origin, matched exactly
   after pairing. Credentials never appear in URLs, command lines, environment variables, or output.
-- The bridge starts only for a configured GM client. The module is invisible to everyone else: a
-  player's Configure Settings shows no module setting and no World CLI category at all, because the
-  module registers its settings as hidden for a user below the Assistant GM role and its windows are
-  restricted to gamemasters. The settings remain registered, so a browser that later signs in as a GM
-  still reads the values stored in it.
+- The bridge starts only for a configured GM client. The module hides its settings and category from
+  users below the Assistant GM role, and only gamemasters can open its windows. The settings remain
+  registered in that browser profile for a later GM session.
 - Another pairing cannot displace the active bridge. A same-pairing reconnect may take over after a
   reload; requests already forwarded to the displaced socket fail immediately as indeterminate.
   Abnormal close retains a 30-second lease against other pairings, while intentional goodbye,
@@ -110,53 +108,34 @@ Foundry hooks can veto or partially apply writes. Mutation handlers confirm obse
 where the command contract requires it and return structured partial or failed outcomes instead of
 claiming success.
 
-Every command also carries a permission in the GM client holding the bridge: allow, approve, or
-deny. The permission is resolved and enforced in the Foundry module, after authentication and the
-GM and write-permission checks and before the command is dispatched, so it governs reads, writes,
-bulk envelopes, and previews alike. The defaults send the destructive commands — every `delete` and
-`delete-many` verb, plus `file.delete`, `file.move`, and `scene.fog.reset` — to approval and allow
-the rest, which means an installation that updates into this behavior asks the GM before deletions
-it used to perform silently.
+Every command also carries an allow, approve, or deny permission in the GM client holding the
+bridge. The Foundry module enforces it after authentication, GM authority, and write-permission
+checks but before dispatch. It covers reads, writes, bulk envelopes, and previews. The default policy
+requires approval for commands ending in `delete` or `delete-many`, plus `file.move` and
+`scene.fog.reset`. It allows the other policy-controlled commands.
 
-`system.ping`, `system.info`, and the commands the approval wait itself uses are exempt and stay
-allowed whatever the stored permissions say. The exemption exists so that a permission set cannot
-lock the bridge out of reporting its own state or out of resolving a decision the GM has already
-taken; none of the exempt commands changes world content. They are outside the stored permissions
-entirely — an override naming one is dropped when the permissions are read — and the Command
-permissions window does not show them, because there is nothing about them to change. Pairing and
-the other `auth` operations are answered by the daemon and never reach the module, so no command
-permission applies to them.
+`system.ping`, `system.info`, and the internal approval-wait commands always run. They let the bridge
+report its state and finish decisions already taken without changing world content. Stored policy
+overrides cannot change them, and the permissions window omits them. Pairing and other `auth`
+operations run in the daemon, so the command policy does not apply.
 
-A denied command is also absent from what the CLI's `commands` listing reports while the bridge is
-reachable. That is context hygiene for an agent, not a security boundary: the static registry,
-`schema`, and this documentation still name the command, and the boundary is the module's refusal at
-dispatch. A caller that finds a denied command elsewhere and sends it is answered with
-`COMMAND_DENIED` and nothing runs.
+A denied command is absent from the CLI's `commands` listing while the bridge is reachable. This
+reduces irrelevant choices for automated callers but does not enforce the policy. The Foundry module
+enforces it at dispatch and returns `COMMAND_DENIED` if a caller sends the command anyway.
 
-A command the policy sends to approval is not run by the request that carried it. The module holds it,
-in memory only, until the GM decides, and an allowed command then travels the same guarded path a
-direct call takes: Foundry readiness, current-GM authority, parameter validation, the write-permission
-check, and the family's own guards are all evaluated again at that moment, and so is the stored
-permission of the command itself: a command set to deny while its decision waited is refused with
-`COMMAND_DENIED` even after an allow, because deny is a standing refusal rather than a verdict on one
-invocation. What the GM's allow settles is the approval the command was waiting on, so a permission
-moved between allow and approve while the decision waits does not send it back to the queue. Nothing runs
-unless the request first leaves the waiting state, so a denial, an expiry, or a cancellation the
-module confirmed means the command never ran. The correlating `approvalId` is a 128-bit random token
-revealed only in the answer to the original request, and a caller without it can neither read the
-outcome nor cancel the decision.
+The original request does not execute a command that requires approval. The module holds it in
+memory until the GM decides. After Allow, the module repeats readiness, GM authority, parameter,
+write-permission, policy, and family checks. A command changed to deny while waiting returns
+`COMMAND_DENIED`. Changing it between allow and approve does not create a second approval. A denied,
+expired, or confirmed-cancelled request never runs.
 
-The decision is taken in the GM-only Command Approval window, which shows one waiting request at a
-time: the command name, the remaining time, the names of the documents or managed paths it would
-change, and its parameters. It opens by itself when a request arrives, and again when the queue
-moves on to another waiting request, so a request that reaches the front of the queue while the
-window is closed is still shown rather than expiring unseen. Opening it for a request that arrives
-into an empty queue also plays Foundry's standard notification sound, controlled by the client-scoped
-`Play a sound on approval requests` setting that is on by default, so a waiting command is less
-likely to expire because the GM was looking elsewhere. Binary upload content is summarized as
-its size rather than printed, so a large payload cannot bury the fields that describe what the
-command does. The window names no requester, because the command envelope carries no client
-identity: what the GM approves is the invocation in front of them, not a particular caller.
+The module returns a random 128-bit `approvalId` only to the original caller. Reading or cancelling
+the decision requires that identifier.
+
+The GM-only Command Approval window shows the command, remaining time, target documents or managed
+paths, and parameters. It reports binary upload content by size instead of rendering the payload.
+The command envelope has no caller identity, so the window cannot name the requester. The GM approves
+the displayed invocation, not a person or process.
 
 ## Document ownership
 
@@ -196,18 +175,11 @@ an explicit namespace and key. Values are serialized with bounded depth, node co
 The CLI does not expose setting writes because settings can alter global security and runtime
 behavior and frequently invoke module callbacks.
 
-The command policy lives in two of this module's own client-scoped settings, `commandPolicy` and
-`approvalTimeoutMinutes`. Neither value is redacted: `setting.list` shows their registration and
-`setting.get` returns their value. They hold no secrets, and a caller that can see which commands
-are denied has less reason to keep attempting them. Because no setting-write command exists, the
-policy is beyond the CLI's reach by construction: only a human editing it in Foundry can change it.
-That edit happens in the GM-only Command permissions window, reachable from Configure Settings →
-Module Settings, which is the only writer of the policy itself. The approval timeout is also a plain
-number field in the same Module Settings form. Every read resolves that setting against the
-protocol's bounds, and a value outside them falls back to the default, so an edit there cannot put
-an approval wait outside the supported range.
-Client scope means the policy belongs to the browser profile that holds the bridge, so another
-browser, profile, or machine applies its own policy rather than the one configured here.
+The client-scoped `commandPolicy` and `approvalTimeoutMinutes` settings hold the policy and timeout.
+`setting.list` and `setting.get` expose them because they contain no secrets. The CLI has no setting
+write command, so only a GM using Foundry can change them. The Command permissions window writes the
+policy. The main Module Settings form writes the timeout and enforces its bounds. Another browser
+profile or machine has its own values.
 
 ## Search
 
@@ -255,10 +227,8 @@ The daemon and module bound uploads, WebSocket frames, search work, batch sizes,
 shapes. Oversized operations return structured errors where possible without dropping the shared
 bridge session.
 
-Decisions waiting for the GM are bounded the same way: the module weighs each request frame as it
-arrives and refuses admission, before anything is displayed or executed, once the waiting decisions
-reach either their count or their combined weight. A retained outcome no client has read is never
-dropped to make room for a new request.
+The module limits the number and combined size of approval requests. It refuses an excess request
+before display or execution. It does not discard an unread outcome to admit a new request.
 
 The system remains susceptible to ordinary local denial of service by an authorized caller issuing
 many expensive Foundry operations. It is designed for cooperative local automation, not hostile
@@ -289,20 +259,17 @@ multi-user scheduling.
 - Native Foundry batch operations are not transactional and can partially apply.
 - Search and read commands can expose GM-visible world content to the local caller.
 - Large but permitted content can consume browser memory and processing time.
-- An approved command executes at the decision rather than at the request, so the world may have
-  changed while the decision waited. An approval is a decision about that request, not a lock on the
-  state it was read against.
-- Decisions waiting for a GM live only in that browser session. Reloading the GM client, or ending
-  its bridge session, discards them, and the callers waiting on them are answered indeterminately.
+- An approved command executes when the GM decides, so the world may have changed while it waited.
+  Approval does not lock world state.
+- Decisions waiting for a GM live only in that browser session. Reloading the GM client or ending
+  its bridge session discards them. Waiting callers receive an indeterminate result.
 - A caller that disappears without a confirmed cancellation leaves its request actionable on the
   GM's screen until the GM decides or the timeout expires. The command envelope carries no client
   identity, so the module cannot tell that the caller is gone.
-- The daemon holds indeterminate idempotency keys — reservations for forwarded keyed requests,
-  approval links, and lost-in-flight tombstones — in one bounded store of 1,000 entries shared by
-  every client of that daemon. The store refuses new keyed requests with `IDEMPOTENCY_STORE_FULL`
-  rather than evicting an older key, because evicting one would make a possibly executed command
-  forwardable again. The size is fixed rather than operator-configurable, and exhaustion ends when
-  earlier keys settle, when their windows expire, or on a daemon restart or world or pairing switch.
+- The daemon keeps reservations, approval links, and lost-in-flight idempotency keys in one bounded
+  store shared by its clients. It returns `IDEMPOTENCY_STORE_FULL` instead of evicting an
+  indeterminate key. Capacity returns when earlier keys settle or expire, or when a daemon restart,
+  world switch, or pairing switch clears the store.
 - Command permissions belong to a browser profile. A second paired browser, or the same browser with
   a fresh profile, holds its own permissions, and whichever client holds the bridge is the one whose
   permissions apply.

@@ -15,22 +15,13 @@ size limits are defined by the protocol package and discoverable at runtime:
 
 ## Versioning
 
-The protocol version is the product release version: every release sets it to that release's number,
-even when the wire contract did not change. Every transport message carries it, matching is exact,
-and an unsupported version is rejected at the bridge handshake and during command handling rather
-than degraded silently. Both halves of an installation therefore come from the same release; a
-daemon and a Foundry module from different releases refuse each other instead of negotiating a
-subset. The current version is `1.1.0`.
+The protocol version equals the product release version. Every transport message carries it, and all
+components in one installation must match exactly. The daemon and Foundry module reject a mismatch
+instead of negotiating a subset of the contract.
 
-Recovering from a refusal is an operator action rather than a retry: the older half is brought to
-the current release, the daemon is restarted when the CLI and daemon half changed, and the GM client
-is reloaded when its module load was the refused one, because a refused load does not reconnect on
-its own.
-
-`3.0` is the one protocol version published before the release-lockstep rule, and it is compared as
-release `1.0.0`, so the accepted `3.0` → `1.1.0` step is ordered like any other release step. A
-component built before the mismatch details described under the error model cannot present them when
-it is the side reporting the failure; that gap is specific to the `3.0` transition.
+Recover by updating the older component. Restart the daemon after updating the CLI package, or reload
+the GM client after updating the Foundry module. A refused module load does not reconnect on its own.
+Mismatch errors identify the older component when the two versions can be ordered.
 
 ## Transport model
 
@@ -184,10 +175,9 @@ world can change between preview and commit.
 Commands with duplicate-creation or non-repeatable-action risk accept or require an idempotency
 key identifying one logical request. Reusing a key with a different command or payload is rejected
 as `IDEMPOTENCY_KEY_CONFLICT`. Idempotency memory is runtime state: bounded, and cleared by daemon
-restart, bridge replacement, world switch, expiry, or — for cached successes only —
-eviction. It reduces duplicate effects across
-response loss; it is not a durable transaction, so an indeterminate delivery still ends with a
-world-state read.
+restart, bridge replacement, world switch, or expiry. The daemon may also evict cached successes.
+Idempotency reduces duplicate effects across response loss. It is not a durable transaction, so an
+indeterminate delivery still ends with a world-state read.
 
 ## Batch requests and bulk writes
 
@@ -220,11 +210,10 @@ code set is exported by the protocol package. The classes consumers act on:
 Foundry DataModel validation failures surface as parameter errors and are distinguished in details
 where available. A failed nested lookup identifies the level that failed.
 
-`UNSUPPORTED_PROTOCOL_VERSION` details carry `expectedVersion`, `actualVersion`, the `handshake` that
-refused the message, and `staleComponent` — `module`, `cli-daemon`, or `unknown` — so a consumer can
-name the half that has to be updated. The ordering is the comparison described under versioning;
-`unknown` is reported whenever a version cannot be ordered or the peer is unidentified, in place of a
-guess.
+`UNSUPPORTED_PROTOCOL_VERSION` details carry `expectedVersion`, `actualVersion`, the rejecting
+`handshake`, and `staleComponent`. The component is `module`, `cli-daemon`, or `unknown`. Consumers
+can name the component that needs an update when the comparison identifies it. An unordered version
+or unidentified peer produces `unknown`.
 
 With JSON output, a failed command emits one structured error envelope on stdout and exits
 non-zero. The exit code is a coarse process classification; the structured error code is the
@@ -233,133 +222,64 @@ exit status.
 
 ## Approval flow
 
-A GM client's command policy can require human approval before a command runs. An approval is a
-decision about one invocation, taken by the GM in Foundry: it is unrelated to pairing, and it is not
-the post-write confirmation that a mutation persisted. The policy that governs an invocation belongs
-to the GM client holding the bridge.
+A GM client's command policy can require approval before a command runs. Approval is the GM's
+decision about one invocation. Pairing approval grants a browser credential, while confirmation
+checks a completed write. The active GM client's policy controls the invocation.
 
-The wait is two-phase, because a decision can outlast any request timeout:
+The wait has two phases because the decision can outlast a normal request timeout:
 
-- The ordinary request is answered at once with `APPROVAL_PENDING`, whose details carry `approvalId`,
-  `expiresAt` in epoch milliseconds, and `command`. The request is not held open, so a decision taken
-  an hour later does not depend on one socket surviving. That the phase-one answer is an error
-  envelope is deliberate: a consumer that does not implement the wait loop fails safe instead of
-  reporting success. The CLI is the supported consumer of this flow and converts the pending answer
-  into a blocking wait, so a caller using the CLI never branches on the code itself.
-- `approval.await { approvalId, waitMs? }` polls that id. A poll parks in the Foundry module for at
-  most `APPROVAL_AWAIT_PARK_CAP_MS`; its optional `waitMs` may ask for a shorter park and is bounded
-  by the cap. The number of parks one approval holds at a time is bounded as well, so a client that
-  polls the same undecided id in a loop has its oldest park answered early with the pending state it
-  would have reported anyway. The result echoes the id and is either
-  `{ approvalId, status: "pending", expiresAt? }` or `{ approvalId, status: "resolved", outcome,
-  response? }`. The deadline is reported while the decision is still open; an approved command that is
-  already running can no longer time out, and its answer carries no deadline.
-- The terminal outcomes are `approved`, `denied`, `timeout`, and `cancelled`. `approved` carries the
-  original command's full outcome — success or handler error — as `response`, so the caller learns
-  what a direct call would have returned. That envelope belongs to the approval rather than to the
-  request that was answered with `APPROVAL_PENDING`, so its `id` is the `approvalId`. `denied`,
-  `timeout`, and `cancelled` mean the command was not executed and the same request is safe to send
-  again; they reach the caller as `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, and `APPROVAL_CANCELLED`.
-- A terminal outcome is not consumed by the first waiter. It stays available for
-  `APPROVAL_RESULT_RETENTION_MS`, which covers a lost poll response and several waiters on one id,
-  and then expires. That window is what a bounded store offers rather than a promise it can keep
-  under pressure: an outcome a poll has already read is the first one the store forgets when a later
-  request needs the room, so a repeated poll can answer `APPROVAL_UNKNOWN` before the window is over.
-  Outcomes read long enough ago that their answers have reached their clients go first; an outcome
-  read within the last few seconds is forgotten only when those do not free enough room. An outcome
-  no client has read yet is never traded away at all.
-- `approval.cancel { approvalId }` asks for a still-pending decision to be abandoned and answers
-  `{ approvalId, status }`, where `status` is `cancelled`, `executing`, `resolved`, or `unknown`. Only
-  `cancelled` guarantees that the command will not run: `executing` means the GM's decision already
-  won the race, and a started handler cannot be recalled. `resolved` means the decision was taken
-  before the cancellation arrived, and the outcome it settled on is still retained, so one further
-  `approval.await` reads the real verdict rather than leaving the call indeterminate.
-- `APPROVAL_QUEUE_FULL` is admission control. The bounded store refused the request before anything
-  was displayed or executed, so nothing ran. Its details carry the `command` and the `reason` the
-  admission was refused: `pending-count` and `pending-bytes` for the number and the combined weight
-  of the decisions still awaiting the GM, and `retained-count` when room could only have been made by
-  discarding a retained outcome the store still protects — one no client has read, or one read too
-  recently for its answer to have reached that client. The weight is the size of the received request
-  frame, measured once from the frame as received; a frame whose size could not be established is
-  refused as though it exceeded the budget, because an unweighed request cannot be held to one.
-- `APPROVAL_UNKNOWN` answers an id the module has no approval state for. Approval state is runtime
-  state: it does not survive a GM client reload, and it is released whenever that client's bridge
-  session ends with no reconnect to follow — disconnecting, unpairing, losing the bridge slot to
-  another client, a refused handshake, or a connection rebuilt from the settings window — because the
-  decisions that session held can no longer be reached. A decision still waiting for the GM when that
-  happens is abandoned undecided rather than dispatched, but that verdict reaches nobody: the session
-  that would have carried it to the caller parked on it is already gone, so that poll ends as
-  `BRIDGE_DISCONNECTED` like any other request in flight, and the next poll for the same id, against a
-  runtime that no longer knows it, is the one that answers `APPROVAL_UNKNOWN`. The transport's own
-  reconnect after a dropped socket keeps them. A retained outcome expires as well. The answer is
-  indeterminate — the command may never have started or may have completed — so world state is the
-  only authority, and a read comes before any re-request.
-- A dry run is not gated by an approval: the preview of an approval-listed command runs without a
-  decision and its result carries `approvalRequired: true`, so the caller knows the real call
-  reaches the GM. A command the policy denies is refused in preview too, and that refusal is an
-  error envelope with no result at all.
-- `policy.snapshot` takes no parameters and reports the effective policy as
-  `{ approve: [names], deny: [names] }`, resolved by the same rules the dispatch-time gate applies.
-  It is advisory; the policy can change between the snapshot and the next call, and the gate at
-  dispatch time is the authority.
+- The original request returns `APPROVAL_PENDING`. Its details contain `approvalId`, `expiresAt` in
+  epoch milliseconds, and `command`. A consumer without approval support stops on this error. The CLI
+  converts it into a blocking wait.
+- `approval.await { approvalId, waitMs? }` asks for the current state. `waitMs` cannot exceed
+  `APPROVAL_AWAIT_PARK_CAP_MS`. The result is either
+  `{ approvalId, status: "pending", expiresAt? }` or
+  `{ approvalId, status: "resolved", outcome, response? }`. Once execution starts, the approval can
+  no longer expire.
+- Terminal outcomes are `approved`, `denied`, `timeout`, and `cancelled`. An approved outcome carries
+  the command response, including handler errors, and uses the approval identifier as its envelope
+  `id`. The other outcomes mean the command did not run. The CLI reports them as `APPROVAL_DENIED`,
+  `APPROVAL_TIMEOUT`, or `APPROVAL_CANCELLED`.
+- The module retains terminal outcomes for bounded repeat reads. It may discard an outcome after a
+  client has read it, but it does not discard an unread outcome to admit a new request. A later read
+  of discarded state returns `APPROVAL_UNKNOWN`.
+- `approval.cancel { approvalId }` returns `cancelled`, `executing`, `resolved`, or `unknown`. Only
+  `cancelled` proves that the command will not run. Use `approval.await` after `resolved` to read the
+  decision.
+- `APPROVAL_QUEUE_FULL` means the module refused admission before display or execution. Its `reason`
+  is `pending-count`, `pending-bytes`, or `retained-count`. The request is safe to retry after earlier
+  approvals clear.
+- `APPROVAL_UNKNOWN` means the module no longer holds that approval. Reloading the GM client, ending
+  its bridge session, or expiry can remove the state. The command may not have started, or it may have
+  completed. Read world state before another write.
+- A dry run bypasses approval and reports `approvalRequired: true` when the real command would wait.
+  The policy still refuses denied commands during a dry run.
+- `policy.snapshot` reports `{ approve: [names], deny: [names] }`. The result is advisory because the
+  policy can change before dispatch.
 
-An `approvalId` is an opaque token the pending answer supplies rather than a value a caller
-constructs, and all three request schemas are closed, so an unrecognized parameter is rejected
-before the command is dispatched. `approval.await`, `approval.cancel`, and `policy.snapshot` are CLI
-plumbing rather than world-editing commands, so the discovery surfaces omit them: they are absent
-from the `commands` listing, from the command inventory in `system.info`, and from the session
-command set the daemon echoes in bridge status, while `schema <command>` still returns their request
-schemas. The handshake set is deliberately wider than those surfaces, because it is the daemon's
-forwarding gate rather than a display: a session advertises every command it can execute, including
-the plumbing, and a command missing from that set is unreachable.
+The module supplies each opaque `approvalId`; callers do not construct one. Approval request schemas
+are closed. `approval.await`, `approval.cancel`, and `policy.snapshot` do not appear in `commands`,
+`system.info` command inventory, or bridge status. `schema <command>` still returns their schemas.
+The bridge handshake advertises them because the daemon must forward them.
 
-An idempotency key spans both phases. When a keyed request is answered with `APPROVAL_PENDING`, the
-daemon remembers which approval that key created, in the same scope and with the same in-memory
-lifetime as its ordinary idempotency cache. A byte-identical retry of the same key is answered with
-the same pending answer, so a caller that lost the first one rejoins the decision already waiting
-instead of asking the GM twice; a different payload under that key is the usual
-`IDEMPOTENCY_KEY_CONFLICT`. When the decision settles, the daemon promotes an approved outcome —
-success or handler error alike, because execution started — to the key's cached final response, and
-drops the link after a denial, a timeout, or a confirmed cancellation so that re-sending the same
-key is a fresh request. A cancellation that arrives after the decision was taken settles
-nothing on its own: the link stays whole so that the poll reading the real verdict promotes or drops
-it. An outcome that could not be read leaves the key indeterminate: retrying it
-answers `APPROVAL_UNKNOWN` until the link expires, because the daemon cannot say whether the command
-ran. That is a verify-then-act state, and the way out of it is a world-state read followed by a
-fresh key.
+An idempotency key covers the request and its approval:
 
-A key whose request was forwarded but whose answer never arrived — the bridge session ended, by
-disconnect or by takeover, before the module replied at all — is indeterminate for the same reason
-and is held the same way. The daemon cannot tell whether the command ran, and for an approval-listed
-command the module may already be holding a decision the GM can still allow, so re-forwarding that
-key could execute the operation twice. Instead the key is retained for the idempotency cache's own
-lifetime and answers `BRIDGE_DISCONNECTED` with `reason: "lost-in-flight"`; nothing makes the real
-outcome readable afterwards, because the caller never received an `approvalId` to poll, so the
-retention simply expires and the key becomes forwardable again. Verifying world state and using a
-fresh key is the way through. An unkeyed request retains nothing.
-
-Holding that state is what makes the guarantee, so the room for it is claimed before the request is
-forwarded rather than after it is lost. That reservation is taken when the keyed request is
-forwarded and lasts until the request settles, or, if nothing settles it, for the request timeout
-plus the idempotency dedupe window. One store of 1,000 entries, shared by every keyed caller of the
-daemon, holds those reservations together with the approval links and lost-in-flight tombstones they
-become; the size is deliberately fixed rather than operator-configurable, because a larger bound
-trades memory for a longer duplicate-execution window without removing it. A keyed request that no
-longer fits the bounded store is refused as `IDEMPOTENCY_STORE_FULL` and never reaches Foundry, so
-the world is unchanged and the same request is safe to send again once earlier keys settle or their
-dedupe windows expire. Exhaustion therefore clears on its own, and a daemon restart or a switch to
-another world or pairing empties the store immediately. A repeat forward of a key that is still
-reserved shares the reservation it already holds, while the same key carrying a different payload is
-refused as `IDEMPOTENCY_KEY_CONFLICT` for as long as the reservation lasts. The alternative —
-admitting the request and discarding an older key to make room — would silently turn a
-still-indeterminate key back into a forwardable one, which is the duplicate execution the store
-exists to prevent. Neither an approval link nor a lost-in-flight key is ever traded away for newer
-state.
-
-The link is runtime state: a daemon restart, a switch to another world or pairing, and expiry all
-forget it, and nothing else does — it is never evicted to admit another key. A retry after one of
-those reaches Foundry as a new request, so an indeterminate delivery still ends with a read rather
-than a blind retry.
+- After `APPROVAL_PENDING`, the daemon links the key to that approval. A byte-identical retry returns
+  the same pending response. A different request with that key returns
+  `IDEMPOTENCY_KEY_CONFLICT`.
+- An approved outcome becomes the cached final response. A denial, timeout, or confirmed
+  cancellation removes the link, so the same request can start a new approval.
+- If the daemon cannot read the approval outcome, the key remains indeterminate and returns
+  `APPROVAL_UNKNOWN` until expiry. Read world state before retrying under a fresh key.
+- If a bridge session ends before the daemon receives the first response, the daemon retains the key
+  as lost in flight. Reuse returns `BRIDGE_DISCONNECTED` with `reason: "lost-in-flight"`. Read world
+  state, then use a fresh key if the operation still needs to run.
+- The daemon reserves bounded space before forwarding a keyed request. If no slot is available, it
+  returns `IDEMPOTENCY_STORE_FULL` before Foundry receives the request. Retry after earlier keys
+  settle or expire.
+- Daemon restart, world switch, pairing switch, and expiry clear runtime idempotency state. A later
+  request can reach Foundry as a new operation, so an indeterminate result still requires a state
+  read first.
 
 ## Delivery states and retries
 
@@ -385,9 +305,8 @@ protocol and CLI constants; runtime flags can override the client and daemon req
 
 ## Compatibility rules
 
-- One release ships the CLI, the daemon, and the Foundry module as a compatible set, and the protocol
-  version they share is that release's version. Mixed-release operation is refused rather than
-  supported, so there is no negotiated subset to reason about.
+- One release ships the CLI, daemon, and Foundry module as a compatible set. They share that release's
+  version. The bridge refuses mixed-release operation and does not negotiate a subset.
 - Within a release line, additive result and handshake fields are how the contract evolves without
   changing the meaning of existing fields; request schemas remain explicit and versioned.
 - A bridge advertises the command set it can execute; the daemon forwards only advertised commands.
