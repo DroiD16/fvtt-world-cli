@@ -617,6 +617,12 @@ function noteSkippedTimeoutBranch(summary, reason) {
   );
 }
 
+function noteAbandonedRun(summary, reason, remedy) {
+  summary.notes.push(
+    `WHOLE SUITE NOT RUN (${reason}). It stopped at the command policy preconditions, so the steps it reports are the only ones it took: nothing after them — documents, files, scenes, search, error paths — was verified either way, and the failed step above is not one isolated check. ${remedy}.`
+  );
+}
+
 async function preparePolicyHarness(summary, options) {
   summary.notes.push(
     "Command policy: the allow path is what the rest of this run exercises. With a GM control endpoint the script sets a policy that allows every command for the run and restores the stored one afterwards; without one it first checks that the connected client holds no command for approval, because the shipped defaults hold every delete for a human and the suite deletes what it creates."
@@ -639,6 +645,11 @@ async function preparePolicyHarness(summary, options) {
         reason:
           "The connected GM client holds commands for approval, so the suite would block on a human decision. Set those commands to allow in Module Settings → Command permissions, or supply --gm-control so this script can do it for the run."
       });
+      noteAbandonedRun(
+        summary,
+        "the connected GM client holds commands for approval",
+        `The suite deletes what it creates, and a delete the connected client holds for a human decision would block that cleanup until the approval expires, so the run refuses to start rather than hang: set those commands to allow in Module Settings → Command permissions, or ${POLICY_SEGMENT_ENABLE_HINT}`
+      );
       return { ready: false, restore: null };
     }
 
@@ -671,6 +682,11 @@ async function preparePolicyHarness(summary, options) {
     });
     noteSkippedPolicySegment(summary, "the GM control endpoint did not answer");
     noteSkippedTimeoutBranch(summary, "the segment it belongs to did not run");
+    noteAbandonedRun(
+      summary,
+      "the GM control endpoint did not answer",
+      "The script could not read or write the command policy through the endpoint named by --gm-control, so it could not keep the run from blocking on a human decision: make that endpoint reachable and run the smoke again"
+    );
     return { ready: false, restore: null };
   }
 
