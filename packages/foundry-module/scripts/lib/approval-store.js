@@ -15,6 +15,8 @@ const APPROVAL_ID_LENGTH = 22;
 
 const APPROVAL_RECORD_MAX = 200;
 
+export const APPROVAL_DELIVERY_GRACE_MS = 10_000;
+
 export const APPROVAL_UNKNOWN_REASONS = Object.freeze({
   EXECUTOR_FAILED: "executor-failed",
   RESULT_RETENTION_CAP: "result-retention-cap",
@@ -55,6 +57,7 @@ export const APPROVAL_REFUSAL_REASONS = Object.freeze({
  *   hasResponse: boolean,
  *   responseBytes: number,
  *   delivered: boolean,
+ *   deliveredAt: number | null,
  *   unknownReason: string | null
  * }} ApprovalRecord
  */
@@ -140,6 +143,7 @@ export class ApprovalStore {
    *   pendingMax?: number,
    *   recordMax?: number,
    *   resultRetentionMs?: number,
+   *   deliveryGraceMs?: number,
    *   parkCapMs?: number,
    *   timeoutMinutesProvider?: () => unknown,
    *   pendingByteBudgetProvider?: () => number,
@@ -155,6 +159,7 @@ export class ApprovalStore {
     pendingMax = APPROVAL_PENDING_MAX,
     recordMax = APPROVAL_RECORD_MAX,
     resultRetentionMs = APPROVAL_RESULT_RETENTION_MS,
+    deliveryGraceMs = APPROVAL_DELIVERY_GRACE_MS,
     parkCapMs = APPROVAL_AWAIT_PARK_CAP_MS,
     timeoutMinutesProvider = readApprovalTimeoutMinutes,
     pendingByteBudgetProvider = () => DEFAULT_WS_MAX_PAYLOAD_BYTES,
@@ -168,6 +173,7 @@ export class ApprovalStore {
     this.pendingMax = pendingMax;
     this.recordMax = recordMax;
     this.resultRetentionMs = resultRetentionMs;
+    this.deliveryGraceMs = deliveryGraceMs;
     this.parkCapMs = parkCapMs;
     this.timeoutMinutesProvider = timeoutMinutesProvider;
     this.pendingByteBudgetProvider = pendingByteBudgetProvider;
@@ -223,6 +229,7 @@ export class ApprovalStore {
       hasResponse: false,
       responseBytes: 0,
       delivered: false,
+      deliveredAt: null,
       unknownReason: null
     };
 
@@ -501,7 +508,7 @@ export class ApprovalStore {
     }
 
     const candidates = [...this.#requests.values()].filter(
-      (candidate) => candidate !== record && candidate.hasResponse && candidate.delivered
+      (candidate) => candidate !== record && candidate.hasResponse && this.#isSpent(candidate)
     );
     const reclaimable = candidates.reduce((total, candidate) => total + candidate.responseBytes, 0);
     if (this.#retainedResponseBytes - reclaimable + responseBytes > budget) {
@@ -516,6 +523,20 @@ export class ApprovalStore {
     }
 
     return true;
+  }
+
+  // #report() marks a record delivered when the answer is built, which is before the frame reaches
+  // the client, so a reported outcome is only an eviction candidate once the grace window has passed
+  // and a repoll could no longer be recovering a response whose frame was lost.
+  /**
+   * @param {ApprovalRecord} record
+   * @returns {boolean}
+   */
+  #isSpent(record) {
+    if (!record.delivered) {
+      return false;
+    }
+    return record.deliveredAt === null || this.now() - record.deliveredAt >= this.deliveryGraceMs;
   }
 
   /**
@@ -551,8 +572,8 @@ export class ApprovalStore {
 
     const settled = [...this.#requests.values()].filter((record) => record.terminalAt !== null);
     const reclaimable = [
-      ...settled.filter((record) => record.delivered),
-      ...settled.filter((record) => !record.delivered && record.unknownReason !== null)
+      ...settled.filter((record) => this.#isSpent(record)),
+      ...settled.filter((record) => !this.#isSpent(record) && record.unknownReason !== null)
     ];
 
     for (const candidate of reclaimable) {
@@ -586,6 +607,16 @@ export class ApprovalStore {
 
   /**
    * @param {ApprovalRecord} record
+   */
+  #markDelivered(record) {
+    record.delivered = true;
+    if (record.deliveredAt === null) {
+      record.deliveredAt = this.now();
+    }
+  }
+
+  /**
+   * @param {ApprovalRecord} record
    * @returns {ApprovalReport}
    */
   #report(record) {
@@ -601,7 +632,7 @@ export class ApprovalStore {
       case "executing":
         return { approvalId: record.approvalId, status: "pending" };
       case "resolved":
-        record.delivered = true;
+        this.#markDelivered(record);
         return {
           approvalId: record.approvalId,
           status: "resolved",
@@ -609,7 +640,7 @@ export class ApprovalStore {
           ...(record.hasResponse ? { response: record.response } : {})
         };
       default:
-        record.delivered = true;
+        this.#markDelivered(record);
         return { approvalId: record.approvalId, status: "resolved", outcome: record.state };
     }
   }

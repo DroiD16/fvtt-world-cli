@@ -6,6 +6,7 @@ import {
   APPROVAL_TIMEOUT_DEFAULT_MINUTES
 } from "../scripts/generated/protocol.js";
 import {
+  APPROVAL_DELIVERY_GRACE_MS,
   APPROVAL_REFUSAL_REASONS,
   APPROVAL_UNKNOWN_REASONS,
   ApprovalStore
@@ -243,13 +244,14 @@ describe("approval store admission", () => {
   });
 
   it("forgets a delivered outcome before an undelivered one when the record cap is reached", async () => {
-    const { store } = createHarness({ recordMax: 3 });
+    const { store, clock } = createHarness({ recordMax: 3 });
     const first = admitRequest(store);
     const second = admitRequest(store);
 
     await store.decide(first.approvalId, "deny");
     await store.decide(second.approvalId, "deny");
     await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
+    await clock.advance(APPROVAL_DELIVERY_GRACE_MS);
     admitRequest(store);
     admitRequest(store);
 
@@ -259,6 +261,26 @@ describe("approval store admission", () => {
     });
     await expect(store.awaitOutcome({ approvalId: second.approvalId, waitMs: 0 })).resolves.toEqual({
       approvalId: second.approvalId,
+      status: "resolved",
+      outcome: "denied"
+    });
+  });
+
+  it("refuses a new request rather than forget an outcome whose answer may still be in flight", async () => {
+    const { store } = createHarness({ recordMax: 2 });
+    const first = admitRequest(store);
+    const second = admitRequest(store);
+
+    await store.decide(first.approvalId, "deny");
+    await store.decide(second.approvalId, "deny");
+    await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
+
+    expect(store.admit({ command: "actor.update", params: {}, requestBytes: 1 })).toEqual({
+      admitted: false,
+      reason: APPROVAL_REFUSAL_REASONS.RETAINED_COUNT
+    });
+    await expect(store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: first.approvalId,
       status: "resolved",
       outcome: "denied"
     });
@@ -869,12 +891,13 @@ describe("approval store retention", () => {
   });
 
   it("displaces a response the client already read to retain a newer outcome", async () => {
-    const { store } = createHarness({ ...weighedResponses, resultByteBudgetProvider: () => 100 });
+    const { store, clock } = createHarness({ ...weighedResponses, resultByteBudgetProvider: () => 100 });
     const first = admitWeighed(store, 60);
     const second = admitWeighed(store, 60);
 
     await store.decide(first.approvalId, "allow");
     await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
+    await clock.advance(APPROVAL_DELIVERY_GRACE_MS);
     await store.decide(second.approvalId, "allow");
 
     await expect(store.awaitOutcome({ approvalId: second.approvalId, waitMs: 0 })).resolves.toEqual({
@@ -887,6 +910,23 @@ describe("approval store retention", () => {
       approvalId: first.approvalId,
       status: "unknown",
       reason: APPROVAL_UNKNOWN_REASONS.RESULT_RETENTION_CAP
+    });
+  });
+
+  it("keeps a just-read response until its answer has had time to reach the client", async () => {
+    const { store } = createHarness({ ...weighedResponses, resultByteBudgetProvider: () => 100 });
+    const first = admitWeighed(store, 60);
+    const second = admitWeighed(store, 60);
+
+    await store.decide(first.approvalId, "allow");
+    await store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 });
+    await store.decide(second.approvalId, "allow");
+
+    await expect(store.awaitOutcome({ approvalId: first.approvalId, waitMs: 0 })).resolves.toEqual({
+      approvalId: first.approvalId,
+      status: "resolved",
+      outcome: "approved",
+      response: { ok: true, weight: 60 }
     });
   });
 
