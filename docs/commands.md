@@ -235,6 +235,8 @@ See [Security](security.md#file-write-boundary) before automating file writes.
 Every command carries a permission in the GM client that holds the bridge: it runs on its own, it
 waits for the GM's approval in Foundry, or it is refused. The permissions are edited in Foundry, in
 Configure Settings → Module Settings → World CLI → Command permissions, which only a GM can open.
+A user below the Assistant GM role sees neither that window nor any other World CLI entry in
+Configure Settings; the module contributes no visible settings and no category for them.
 They are stored per browser profile rather than per world, so the permissions that govern a call are
 the ones configured in the browser currently holding the bridge; another browser or another machine
 applies its own.

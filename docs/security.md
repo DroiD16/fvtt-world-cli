@@ -52,7 +52,11 @@ public multi-tenant API.
   any other local process is still refused rather than repaired.
 - Browser pairing and bridge sockets require a syntactically valid HTTP(S) Origin, matched exactly
   after pairing. Credentials never appear in URLs, command lines, environment variables, or output.
-- The bridge starts only for a configured GM client.
+- The bridge starts only for a configured GM client. The module is invisible to everyone else: a
+  player's Configure Settings shows no module setting and no World CLI category at all, because the
+  module registers its settings as hidden for a user below the Assistant GM role and its windows are
+  restricted to gamemasters. The settings remain registered, so a browser that later signs in as a GM
+  still reads the values stored in it.
 - Another pairing cannot displace the active bridge. A same-pairing reconnect may take over after a
   reload; requests already forwarded to the displaced socket fail immediately as indeterminate.
   Abnormal close retains a 30-second lease against other pairings, while intentional goodbye,

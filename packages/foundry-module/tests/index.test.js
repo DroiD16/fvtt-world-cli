@@ -217,6 +217,97 @@ describe("module settings registration", () => {
     });
   });
 
+  describe("settings visibility for the current user", () => {
+    const VISIBLE_KEYS = ["daemonUrl", "autoConnect", "approvalTimeoutMinutes", "approvalSound"];
+    const ALL_KEYS = [
+      "daemonUrl",
+      "autoConnect",
+      "credentials",
+      "clientId",
+      "commandPolicy",
+      "approvalTimeoutMinutes",
+      "approvalSound"
+    ];
+
+    function signInAs(role) {
+      /** @type {any} */ (globalThis).CONST = {
+        USER_ROLES: { PLAYER: 1, TRUSTED: 2, ASSISTANT: 3, GAMEMASTER: 4 }
+      };
+      delete globalThis.game.user;
+      globalThis.game.data = {
+        userId: "user-1",
+        users: [
+          { _id: "user-1", name: "Self", role },
+          { _id: "user-2", name: "Other", role: 4 }
+        ]
+      };
+    }
+
+    afterEach(() => {
+      delete (/** @type {any} */ (globalThis).CONST);
+    });
+
+    async function registerAndCollect() {
+      await import("../scripts/index.js");
+      hookCallbacks.get("init")();
+      return new Map(globalThis.game.settings.register.mock.calls.map(([, key, options]) => [key, options]));
+    }
+
+    it("shows the configurable settings to a gamemaster who is not signed in yet at registration time", async () => {
+      signInAs(4);
+
+      const registrations = await registerAndCollect();
+
+      for (const key of VISIBLE_KEYS) expect(registrations.get(key).config).toBe(true);
+    });
+
+    it("shows the configurable settings to an assistant gamemaster, matching the bridge startup check", async () => {
+      signInAs(3);
+
+      const registrations = await registerAndCollect();
+
+      for (const key of VISIBLE_KEYS) expect(registrations.get(key).config).toBe(true);
+    });
+
+    it("hides every setting from a player so no module category appears in Configure Settings", async () => {
+      signInAs(1);
+
+      const registrations = await registerAndCollect();
+
+      for (const key of ALL_KEYS) expect(registrations.get(key).config).toBe(false);
+    });
+
+    it("still registers every client-scoped setting for a player so stored values remain readable", async () => {
+      signInAs(1);
+
+      const registrations = await registerAndCollect();
+
+      expect([...registrations.keys()]).toEqual(ALL_KEYS);
+      for (const key of ALL_KEYS) expect(registrations.get(key).scope).toBe("client");
+    });
+
+    it("does not start the bridge on ready for a player even when the browser holds a credential", async () => {
+      signInAs(1);
+      storedSettings.autoConnect = true;
+      storedSettings.credentials = { "world-1:user-1": { pairingId: "pair-1", credential: "secret" } };
+
+      await import("../scripts/index.js");
+      await hookCallbacks.get("ready")();
+
+      expect(globalThis.foundryCliBridge).toBeUndefined();
+    });
+
+    it("keeps the settings menus restricted to gamemasters for a player", async () => {
+      signInAs(1);
+
+      await registerAndCollect();
+
+      const menus = globalThis.game.settings.registerMenu.mock.calls;
+      expect(menus.map(([, key]) => key)).toEqual(["authorization", "bridgeStatus", "commandPermissions"]);
+      for (const [, , options] of menus) expect(options.restricted).toBe(true);
+    });
+  });
+
   it("skips bridge startup on ready when auto-connect is disabled", async () => {
     storedSettings.autoConnect = false;
     storedSettings.credentials = { "world-1:gm-1": { pairingId: "pair-1", credential: "secret" } };
