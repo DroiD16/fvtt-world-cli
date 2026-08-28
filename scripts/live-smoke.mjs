@@ -636,6 +636,29 @@ async function waitForEmptyApprovalWindow(gmControlUrl) {
   }
 }
 
+function deniedCommands(run) {
+  const listed = Array.isArray(run.response?.result) ? run.response.result : [];
+  const names = new Set(listed.map((entry) => entry?.command));
+
+  return DISCOVERABLE_COMMAND_NAMES.filter((command) => !names.has(command));
+}
+
+async function approvalWindowCleared(summary, gmControlUrl, handledApprovalIds, step) {
+  const cleared = await waitForEmptyApprovalWindow(gmControlUrl);
+  if (!cleared) {
+    const survivor = await evaluateInGmPage(gmControlUrl, APPROVAL_WINDOW_SCRIPT).catch(() => null);
+    if (survivor) {
+      handledApprovalIds.add(survivor.approvalId);
+    }
+
+    summary.notes.push(
+      `The ${step} branch asked its command to cancel the approval it was waiting on, and the GM's approval window is still not empty. The bridge cannot withdraw a request the GM never answered: Foundry keeps it until a GM answers it or the approval timeout expires, and until then it is the request that window shows, so approval branches reported after it may have failed on that request rather than on their own.`
+    );
+  }
+
+  return cleared;
+}
+
 async function holdForApproval(gmControlUrl, handledApprovalIds, command, args) {
   const call = startFoundryctl(args);
   const view = await waitForApprovalWindow(gmControlUrl, command, handledApprovalIds);
@@ -748,9 +771,27 @@ async function preparePolicyHarness(summary, options, coverage) {
       return { ready: false, restore: null };
     }
 
+    const denied = deniedCommands(discoveryRun);
+
+    if (denied.length > 0) {
+      markAndPush(summary, "policy.preconditions", false, {
+        ...summarizeCommand(discoveryRun),
+        deniedCommands: denied,
+        reason:
+          "The connected GM client denies commands the suite calls, and discovery drops a denied command from its listing instead of marking it, so the suite would fail on calls this listing never showed. Set those commands to allow in Module Settings → Command permissions, or supply --gm-control so this script can do it for the run."
+      });
+      noteAbandonedRun(
+        summary,
+        "the connected GM client denies commands the suite calls",
+        `A denied delete refuses the cleanup of everything the suite creates and leaves it in the world, so the run refuses to start rather than litter it: set those commands to allow in Module Settings → Command permissions, or ${POLICY_SEGMENT_ENABLE_HINT}`
+      );
+      return { ready: false, restore: null };
+    }
+
     markAndPush(summary, "policy.preconditions", true, {
       ...summarizeCommand(discoveryRun),
-      approvalCommands: approvals
+      approvalCommands: approvals,
+      deniedCommands: denied
     });
     return { ready: true, restore: null };
   }
@@ -812,10 +853,9 @@ async function preparePolicyHarness(summary, options, coverage) {
   const confirmRun = runFoundryctl(["commands"]);
   const listed = Array.isArray(confirmRun.response?.result) ? confirmRun.response.result : [];
   const heldForApproval = listed.filter((entry) => entry?.approval === true).map((entry) => entry.command);
+  const denied = confirmRun.response?.policy?.applied === true ? deniedCommands(confirmRun) : [];
   const scratchPolicyHolds =
-    confirmRun.response?.policy?.applied === true &&
-    heldForApproval.length === 0 &&
-    listed.length === DISCOVERABLE_COMMAND_NAMES.length;
+    confirmRun.response?.policy?.applied === true && heldForApproval.length === 0 && denied.length === 0;
 
   if (!scratchPolicyHolds) {
     markAndPush(summary, "policy.preconditions", false, {
@@ -823,8 +863,7 @@ async function preparePolicyHarness(summary, options, coverage) {
       gmControlUrl: options.gmControlUrl,
       policy: confirmRun.response?.policy || null,
       approvalCommands: heldForApproval,
-      listedCount: listed.length,
-      expectedCount: DISCOVERABLE_COMMAND_NAMES.length,
+      deniedCommands: denied,
       reason:
         "The policy this script wrote through the GM control endpoint is not the policy the client holding the bridge reports, so the endpoint drives a different Foundry client than the one that answers commands."
     });
@@ -961,7 +1000,8 @@ async function runPolicySegment(summary, options, { stamp, coverage }) {
       ? await evaluateInGmPage(gmControlUrl, approvalClickScript("allow", allowWindow.approvalId))
       : false;
     if (allowClicked !== true) {
-      allowHold.call.child.kill("SIGKILL");
+      allowHold.call.child.kill("SIGINT");
+      await approvalWindowCleared(summary, gmControlUrl, handledApprovalIds, "policy.approve(allow)");
     }
     const allowRun = await settleFoundryctl(allowHold.call, APPROVAL_DECISION_WAIT_MS);
     const allowGetRun = runFoundryctl(["journal", "get", "--journal-id", journalId]);
@@ -997,7 +1037,8 @@ async function runPolicySegment(summary, options, { stamp, coverage }) {
       ? await evaluateInGmPage(gmControlUrl, approvalClickScript("deny", denyWindow.approvalId))
       : false;
     if (denyClicked !== true) {
-      denyHold.call.child.kill("SIGKILL");
+      denyHold.call.child.kill("SIGINT");
+      await approvalWindowCleared(summary, gmControlUrl, handledApprovalIds, "policy.approve(deny)");
     }
     const denyRun = await settleFoundryctl(denyHold.call, APPROVAL_DECISION_WAIT_MS);
     const denyGetRun = runFoundryctl(["journal", "get", "--journal-id", journalId]);
@@ -1026,13 +1067,14 @@ async function runPolicySegment(summary, options, { stamp, coverage }) {
       `${journalName} cancelled`
     ]);
     const cancelWindow = cancelHold.window;
-    if (cancelWindow) {
-      cancelHold.call.child.kill("SIGINT");
-    } else {
-      cancelHold.call.child.kill("SIGKILL");
-    }
+    cancelHold.call.child.kill("SIGINT");
     const cancelRun = await settleFoundryctl(cancelHold.call, APPROVAL_DECISION_WAIT_MS);
-    const cancelWindowCleared = await waitForEmptyApprovalWindow(gmControlUrl);
+    const cancelWindowCleared = await approvalWindowCleared(
+      summary,
+      gmControlUrl,
+      handledApprovalIds,
+      "policy.approve(cancel)"
+    );
     const cancelGetRun = runFoundryctl(["journal", "get", "--journal-id", journalId]);
     markAndPush(
       summary,
@@ -1090,7 +1132,8 @@ async function runPolicySegment(summary, options, { stamp, coverage }) {
       ]);
       const timeoutWindow = timeoutHold.window;
       if (!timeoutWindow) {
-        timeoutHold.call.child.kill("SIGKILL");
+        timeoutHold.call.child.kill("SIGINT");
+        await approvalWindowCleared(summary, gmControlUrl, handledApprovalIds, POLICY_TIMEOUT_BRANCH_STEP);
       }
       const timeoutRun = await settleFoundryctl(timeoutHold.call, POLICY_TIMEOUT_BRANCH_WAIT_MS);
       const timeoutGetRun = runFoundryctl(["journal", "get", "--journal-id", journalId]);
