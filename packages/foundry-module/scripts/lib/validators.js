@@ -61,6 +61,69 @@ export function validateCommandParams(command, params, commandDefinitions) {
   }
 }
 
+function getUserConstants(name) {
+  const constants = /** @type {any} */ (globalThis).CONST?.[name];
+  if (!constants || typeof constants !== "object") {
+    throw createBridgeError(
+      ERROR_CODES.BRIDGE_NOT_READY,
+      `Foundry constant CONST.${name} is not available; reload the GM client`
+    );
+  }
+
+  return constants;
+}
+
+/**
+ * @returns {Record<string, number>}
+ */
+export function assignableUserRoles() {
+  const roles = getUserConstants("USER_ROLES");
+  return Object.fromEntries(
+    Object.entries(roles).filter(
+      ([name, value]) => name !== "NONE" && typeof value === "number" && Number.isInteger(value)
+    )
+  );
+}
+
+/**
+ * @param {number} role
+ * @returns {string}
+ */
+export function assertAssignableUserRole(role) {
+  const assignable = assignableUserRoles();
+  const match = Object.entries(assignable).find(([, value]) => value === role);
+  if (!match) {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      `Role ${role} is not a role this Foundry version lets a user hold. The bridge never assigns NONE, which is ` +
+        `Foundry's banned state, so use one of the roles in details.assignable. Nothing was written`,
+      { role, assignable }
+    );
+  }
+
+  return match[0];
+}
+
+/**
+ * @param {Record<string, unknown>} permissions
+ * @returns {string[]}
+ */
+export function assertKnownUserPermissions(permissions) {
+  const known = Object.keys(getUserConstants("USER_PERMISSIONS")).sort();
+  const requested = Object.keys(permissions ?? {});
+  const unknown = requested.filter((name) => !known.includes(name));
+  if (unknown.length > 0) {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      `Foundry does not define the user permission(s) ${unknown.join(", ")}. The permission set differs between ` +
+        `Foundry versions, so details.known lists what this client accepts. Nothing was written`,
+      { unknown, known }
+    );
+  }
+
+  return known;
+}
+
 export function getBridgeSettings() {
   const game = getGame();
   return {

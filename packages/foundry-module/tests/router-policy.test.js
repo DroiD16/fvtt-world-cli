@@ -100,11 +100,14 @@ const PREVIEW_PARAM_OVERRIDES = {
   "actor.delete": { force: true },
   "actor.item.delete": { itemId: "actor-item-1" },
   "actor.item.effect.delete": { itemId: "actor-item-1" },
-  "actor.item.effect.delete-many": { itemId: "actor-item-1" }
+  "actor.item.effect.delete-many": { itemId: "actor-item-1" },
+  // The bridge refuses to delete the user account it runs through, so the preview names another user.
+  "user.delete": { userId: "player-2" },
+  "user.create": { data: { name: "Scratch Player" } }
 };
 const PREVIEWS_THE_FAKE_WORLD_REFUSES = ["scene.fog.reset"];
 const PREVIEWS_NO_FOUNDRY_VERSION_SUPPORTS = ["file.delete", "file.move"];
-const PREVIEWS_NO_HANDLER_ROUTES = ["chat.flush", "user.create", "user.delete"];
+const PREVIEWS_NO_HANDLER_ROUTES = ["chat.flush"];
 const PREVIEWS_WITHOUT_A_RESULT = new Set([
   ...PREVIEWS_THE_FAKE_WORLD_REFUSES,
   ...PREVIEWS_NO_FOUNDRY_VERSION_SUPPORTS,
