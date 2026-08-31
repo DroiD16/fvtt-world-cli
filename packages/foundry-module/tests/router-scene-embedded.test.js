@@ -4069,3 +4069,204 @@ describe("command router", () => {
     expect(missing.error.code).toBe("SOUND_NOT_FOUND");
   });
 });
+
+describe("executable region behaviors", () => {
+  let router;
+
+  beforeEach(() => {
+    installFakeFoundry();
+    router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+  });
+
+  const MACRO_UUID = "Macro.macro-1";
+
+  function behaviors() {
+    return globalThis.game.scenes.get("scene-1").regions.get("region-safe").behaviors;
+  }
+
+  it("arms an executeMacro behavior the ordinary create refuses", async () => {
+    const refused = await router.route(
+      createRequest("scene.region.behavior.create", {
+        sceneId: "scene-1",
+        regionId: "region-lava",
+        data: { type: "executeMacro", system: { uuid: MACRO_UUID } }
+      })
+    );
+    expect(refused.ok).toBe(false);
+    expect(refused.error.details).toMatchObject({ behaviorType: "executeMacro" });
+
+    const armed = await router.route(
+      createRequest("scene.region.behavior.executable.create", {
+        sceneId: "scene-1",
+        regionId: "region-lava",
+        data: { type: "executeMacro", name: "Spring Trap", system: { uuid: MACRO_UUID } }
+      })
+    );
+    expect(armed.ok).toBe(true);
+    expect(armed.result.behavior).toMatchObject({ type: "executeMacro", name: "Spring Trap" });
+  });
+
+  it("refuses executeScript on the executable family too", async () => {
+    const response = await router.route(
+      createRequest("scene.region.behavior.executable.create", {
+        sceneId: "scene-1",
+        regionId: "region-lava",
+        data: { type: "executeScript", system: { source: "game.actors.forEach((a) => a.delete())" } }
+      })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe("INVALID_PARAMS");
+  });
+
+  it("requires a macro uuid that names a macro in this world", async () => {
+    const cases = [
+      { system: {}, reason: "missing" },
+      { system: { uuid: "Macro.ghost" }, reason: "unknown" },
+      { system: { uuid: "Actor.actor-1" }, reason: "wrong type" },
+      { system: { uuid: "Compendium.world.packed-macros.Macro.abc" }, reason: "compendium" }
+    ];
+
+    for (const { system, reason } of cases) {
+      const response = await router.route(
+        createRequest("scene.region.behavior.executable.create", {
+          sceneId: "scene-1",
+          regionId: "region-lava",
+          data: { type: "executeMacro", system }
+        })
+      );
+
+      expect(response.ok, reason).toBe(false);
+      expect(response.error.code, reason).toBe("INVALID_PARAMS");
+      expect(response.error.details.field, reason).toBe("system.uuid");
+    }
+  });
+
+  it("previews an armed behavior without writing it", async () => {
+    const before = behaviors().size;
+
+    const response = await router.route(
+      createRequest("scene.region.behavior.executable.create", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        data: { type: "executeMacro", system: { uuid: MACRO_UUID } },
+        dryRun: true
+      })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toMatchObject({ dryRun: true });
+    expect(behaviors().size).toBe(before);
+  });
+
+  it("edits an existing executeMacro behavior the ordinary update refuses in full", async () => {
+    const refused = await router.route(
+      createRequest("scene.region.behavior.update", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-macro",
+        patch: { disabled: true }
+      })
+    );
+    expect(refused.ok).toBe(false);
+    expect(refused.error.details).toMatchObject({ behaviorType: "executeMacro" });
+
+    const response = await router.route(
+      createRequest("scene.region.behavior.executable.update", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-macro",
+        patch: { disabled: true, system: { uuid: MACRO_UUID } }
+      })
+    );
+    expect(response.ok).toBe(true);
+    expect(response.result.behavior).toMatchObject({ disabled: true });
+  });
+
+  it("accepts the executeMacro type on its own update patch, which the ordinary update rejects", async () => {
+    const refused = await router.route(
+      createRequest("scene.region.behavior.update", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-darkness",
+        patch: { type: "adjustDarknessLevel" }
+      })
+    );
+    expect(refused.ok).toBe(false);
+    expect(refused.error.details).toMatchObject({ field: "type" });
+
+    const response = await router.route(
+      createRequest("scene.region.behavior.executable.update", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-darkness",
+        patch: { type: "executeMacro", system: { uuid: MACRO_UUID } },
+        dryRun: true
+      })
+    );
+    expect(response.ok).toBe(true);
+  });
+
+  it("refuses an executeScript target on every verb of the executable family", async () => {
+    const update = await router.route(
+      createRequest("scene.region.behavior.executable.update", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-script",
+        patch: { disabled: true }
+      })
+    );
+    expect(update.ok).toBe(false);
+    expect(update.error.details).toMatchObject({ behaviorType: "executeScript" });
+
+    const clone = await router.route(
+      createRequest("scene.region.behavior.executable.clone", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-script",
+        patch: { name: "Copy" }
+      })
+    );
+    expect(clone.ok).toBe(false);
+    expect(clone.error.details).toMatchObject({ behaviorType: "executeScript" });
+  });
+
+  it("clones an executeMacro behavior with a patch the ordinary clone refuses", async () => {
+    const refused = await router.route(
+      createRequest("scene.region.behavior.clone", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-macro",
+        patch: { name: "Second Trap" }
+      })
+    );
+    expect(refused.ok).toBe(false);
+    expect(refused.error.details).toMatchObject({ behaviorType: "executeMacro" });
+
+    const response = await router.route(
+      createRequest("scene.region.behavior.executable.clone", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-macro",
+        patch: { name: "Second Trap" }
+      })
+    );
+    expect(response.ok).toBe(true);
+    expect(response.result.behavior).toMatchObject({ name: "Second Trap", type: "executeMacro" });
+  });
+
+  it("keeps the nested behaviors array closed to executable types on the executable family's own scene", async () => {
+    for (const type of ["executeMacro", "executeScript"]) {
+      const response = await router.route(
+        createRequest("scene.region.update", {
+          sceneId: "scene-1",
+          regionId: "region-lava",
+          patch: { behaviors: [{ type, system: { uuid: MACRO_UUID } }] }
+        })
+      );
+
+      expect(response.ok, type).toBe(false);
+      expect(response.error.details, type).toMatchObject({ field: "behaviors", behaviorType: type });
+    }
+  });
+});

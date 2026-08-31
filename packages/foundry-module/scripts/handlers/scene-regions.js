@@ -1,6 +1,9 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { getSceneById } from "../lib/game-collections.js";
-import { assertRegionBehaviorWriteAllowed } from "../lib/region-behavior-guards.js";
+import {
+  assertExecutableBehaviorMacroResolves,
+  assertRegionBehaviorWriteAllowed
+} from "../lib/region-behavior-guards.js";
 import {
   REGION_BEHAVIOR_VETO_REMEDY,
   cloneRegionBehavior,
@@ -37,6 +40,18 @@ import { createScenePlaceableHandlers } from "./scene-placeables.js";
 
 const REGION = "Region";
 
+const EXECUTABLE_BEHAVIOR_TYPES = Object.freeze(new Set(["executeMacro"]));
+
+/** @type {{ allowedTypes?: ReadonlySet<string>, allowTypeChange?: boolean, executable?: boolean }} */
+const DECLARATIVE_BEHAVIOR_ROUTE = Object.freeze({});
+
+/** @type {{ allowedTypes: ReadonlySet<string>, allowTypeChange: boolean, executable: boolean }} */
+const EXECUTABLE_BEHAVIOR_ROUTE = Object.freeze({
+  allowedTypes: EXECUTABLE_BEHAVIOR_TYPES,
+  allowTypeChange: true,
+  executable: true
+});
+
 /**
  * @param {any} region
  * @returns {Set<string>}
@@ -51,6 +66,157 @@ function storedRegionBehaviorIds(region) {
     }
   }
   return ids;
+}
+
+/**
+ * @typedef {{ allowedTypes?: ReadonlySet<string>, allowTypeChange?: boolean, executable?: boolean }} RegionBehaviorRoute
+ */
+
+/**
+ * @param {any} params
+ * @param {RegionBehaviorRoute} route
+ */
+async function createBehavior(params, route) {
+  const { document: region } = getSceneEmbeddedById(
+    params.sceneId,
+    REGION,
+    params.regionId,
+    ERROR_CODES.REGION_NOT_FOUND,
+    "regionId"
+  );
+  const details = { sceneId: params.sceneId, regionId: params.regionId };
+
+  assertRegionBehaviorWriteAllowed({
+    verb: "create",
+    payload: params.data,
+    details,
+    allowedTypes: route.allowedTypes
+  });
+
+  if (route.executable) {
+    assertExecutableBehaviorMacroResolves(params.data, details, { required: true });
+  }
+
+  const preview = previewRegionBehaviorCreate(region, cloneValue(params.data));
+  if (isDryRun(params)) {
+    return dryRunResponse({
+      sceneId: params.sceneId,
+      regionId: params.regionId,
+      behavior: serializeRegionBehavior(preview, { knownBehaviorIds: new Set() })
+    });
+  }
+
+  const behavior = await createRegionBehavior(region, params.data);
+  return {
+    sceneId: params.sceneId,
+    regionId: params.regionId,
+    behavior: serializeRegionBehavior(behavior)
+  };
+}
+
+/**
+ * @param {any} params
+ * @param {RegionBehaviorRoute} route
+ */
+async function updateBehavior(params, route) {
+  const { region, behavior } = getSceneRegionBehaviorById(params.sceneId, params.regionId, params.behaviorId);
+  const details = {
+    sceneId: params.sceneId,
+    regionId: params.regionId,
+    behaviorId: params.behaviorId
+  };
+
+  assertRegionBehaviorWriteAllowed({
+    verb: "update",
+    payload: params.patch,
+    behavior,
+    details,
+    allowedTypes: route.allowedTypes,
+    allowTypeChange: route.allowTypeChange
+  });
+
+  if (route.executable) {
+    assertExecutableBehaviorMacroResolves(params.patch, details, { required: false });
+  }
+
+  if (isDryRun(params)) {
+    const preview = await previewRegionBehaviorUpdate(behavior, params.patch);
+    return dryRunResponse({
+      sceneId: params.sceneId,
+      regionId: params.regionId,
+      behavior: serializeRegionBehavior(preview)
+    });
+  }
+
+  const {
+    behavior: updated,
+    committed,
+
+    sent
+  } = await updateRegionBehavior(region, params.behaviorId, params.patch);
+
+  if (!updated) {
+    throw createBridgeError(
+      ERROR_CODES.REGION_BEHAVIOR_NOT_FOUND,
+      `RegionBehavior ${params.behaviorId} is no longer on region ${params.regionId} of scene ${params.sceneId}: the row was REMOVED while this update was in flight (a concurrent scene.region.behavior.delete — this family takes no mutation queue — or a behavior deleted from Foundry's own region sheet), so the update's outcome cannot be confirmed and the behavior no longer exists. This is NOT a module veto: no preUpdateRegionBehavior hook was involved. Re-read the region's behaviors with scene.region.behavior.list before retrying.`,
+      { ...details, removedDuringUpdate: true }
+    );
+  }
+  if (!committed) {
+    await assertTableFamilyUpdateCommitted({
+      document: updated,
+      patch: sent,
+      subject: `Region behavior ${params.behaviorId} of region ${params.regionId}`,
+      hookName: "preUpdateRegionBehavior",
+      details,
+      remedy: REGION_BEHAVIOR_VETO_REMEDY
+    });
+  }
+  return {
+    sceneId: params.sceneId,
+    regionId: params.regionId,
+    behavior: serializeRegionBehavior(updated)
+  };
+}
+
+/**
+ * @param {any} params
+ * @param {RegionBehaviorRoute} route
+ */
+async function cloneBehavior(params, route) {
+  const { behavior } = getSceneRegionBehaviorById(params.sceneId, params.regionId, params.behaviorId);
+
+  const details = {
+    sceneId: params.sceneId,
+    regionId: params.regionId,
+    behaviorId: params.behaviorId
+  };
+
+  assertRegionBehaviorWriteAllowed({
+    verb: "clone",
+    payload: params.patch,
+    behavior,
+    details,
+    allowedTypes: route.allowedTypes
+  });
+
+  if (route.executable) {
+    assertExecutableBehaviorMacroResolves(params.patch, details, { required: false });
+  }
+
+  const clone = await cloneRegionBehavior(behavior, params.patch, { dryRun: isDryRun(params) });
+  if (isDryRun(params)) {
+    return dryRunResponse({
+      sceneId: params.sceneId,
+      regionId: params.regionId,
+      behavior: serializeRegionBehavior(clone, { knownBehaviorIds: new Set() })
+    });
+  }
+  return {
+    sceneId: params.sceneId,
+    regionId: params.regionId,
+    behavior: serializeRegionBehavior(clone)
+  };
 }
 
 export function createSceneRegionHandlers() {
@@ -161,89 +327,19 @@ export function createSceneRegionHandlers() {
     },
 
     async "scene.region.behavior.create"(params) {
-      const { document: region } = getSceneEmbeddedById(
-        params.sceneId,
-        REGION,
-        params.regionId,
-        ERROR_CODES.REGION_NOT_FOUND,
-        "regionId"
-      );
+      return createBehavior(params, DECLARATIVE_BEHAVIOR_ROUTE);
+    },
 
-      assertRegionBehaviorWriteAllowed({
-        verb: "create",
-        payload: params.data,
-        details: { sceneId: params.sceneId, regionId: params.regionId }
-      });
-
-      const preview = previewRegionBehaviorCreate(region, cloneValue(params.data));
-      if (isDryRun(params)) {
-        return dryRunResponse({
-          sceneId: params.sceneId,
-          regionId: params.regionId,
-          behavior: serializeRegionBehavior(preview, { knownBehaviorIds: new Set() })
-        });
-      }
-
-      const behavior = await createRegionBehavior(region, params.data);
-      return {
-        sceneId: params.sceneId,
-        regionId: params.regionId,
-        behavior: serializeRegionBehavior(behavior)
-      };
+    async "scene.region.behavior.executable.create"(params) {
+      return createBehavior(params, EXECUTABLE_BEHAVIOR_ROUTE);
     },
 
     async "scene.region.behavior.update"(params) {
-      const { region, behavior } = getSceneRegionBehaviorById(
-        params.sceneId,
-        params.regionId,
-        params.behaviorId
-      );
-      const details = {
-        sceneId: params.sceneId,
-        regionId: params.regionId,
-        behaviorId: params.behaviorId
-      };
+      return updateBehavior(params, DECLARATIVE_BEHAVIOR_ROUTE);
+    },
 
-      assertRegionBehaviorWriteAllowed({ verb: "update", payload: params.patch, behavior, details });
-
-      if (isDryRun(params)) {
-        const preview = await previewRegionBehaviorUpdate(behavior, params.patch);
-        return dryRunResponse({
-          sceneId: params.sceneId,
-          regionId: params.regionId,
-          behavior: serializeRegionBehavior(preview)
-        });
-      }
-
-      const {
-        behavior: updated,
-        committed,
-
-        sent
-      } = await updateRegionBehavior(region, params.behaviorId, params.patch);
-
-      if (!updated) {
-        throw createBridgeError(
-          ERROR_CODES.REGION_BEHAVIOR_NOT_FOUND,
-          `RegionBehavior ${params.behaviorId} is no longer on region ${params.regionId} of scene ${params.sceneId}: the row was REMOVED while this update was in flight (a concurrent scene.region.behavior.delete — this family takes no mutation queue — or a behavior deleted from Foundry's own region sheet), so the update's outcome cannot be confirmed and the behavior no longer exists. This is NOT a module veto: no preUpdateRegionBehavior hook was involved. Re-read the region's behaviors with scene.region.behavior.list before retrying.`,
-          { ...details, removedDuringUpdate: true }
-        );
-      }
-      if (!committed) {
-        await assertTableFamilyUpdateCommitted({
-          document: updated,
-          patch: sent,
-          subject: `Region behavior ${params.behaviorId} of region ${params.regionId}`,
-          hookName: "preUpdateRegionBehavior",
-          details,
-          remedy: REGION_BEHAVIOR_VETO_REMEDY
-        });
-      }
-      return {
-        sceneId: params.sceneId,
-        regionId: params.regionId,
-        behavior: serializeRegionBehavior(updated)
-      };
+    async "scene.region.behavior.executable.update"(params) {
+      return updateBehavior(params, EXECUTABLE_BEHAVIOR_ROUTE);
     },
 
     async "scene.region.behavior.delete"(params) {
@@ -278,32 +374,11 @@ export function createSceneRegionHandlers() {
     },
 
     async "scene.region.behavior.clone"(params) {
-      const { behavior } = getSceneRegionBehaviorById(params.sceneId, params.regionId, params.behaviorId);
+      return cloneBehavior(params, DECLARATIVE_BEHAVIOR_ROUTE);
+    },
 
-      assertRegionBehaviorWriteAllowed({
-        verb: "clone",
-        payload: params.patch,
-        behavior,
-        details: {
-          sceneId: params.sceneId,
-          regionId: params.regionId,
-          behaviorId: params.behaviorId
-        }
-      });
-
-      const clone = await cloneRegionBehavior(behavior, params.patch, { dryRun: isDryRun(params) });
-      if (isDryRun(params)) {
-        return dryRunResponse({
-          sceneId: params.sceneId,
-          regionId: params.regionId,
-          behavior: serializeRegionBehavior(clone, { knownBehaviorIds: new Set() })
-        });
-      }
-      return {
-        sceneId: params.sceneId,
-        regionId: params.regionId,
-        behavior: serializeRegionBehavior(clone)
-      };
+    async "scene.region.behavior.executable.clone"(params) {
+      return cloneBehavior(params, EXECUTABLE_BEHAVIOR_ROUTE);
     }
   };
 }

@@ -4261,6 +4261,29 @@ export function installFakeFoundry() {
   });
   globalThis.game.users.documentClass = globalThis.User;
 
+  globalThis.fromUuidSync = vi.fn((uuid) => {
+    const text = String(uuid ?? "");
+    if (text.startsWith("Compendium.")) {
+      return {
+        documentName: "Macro",
+        id: text.slice(text.lastIndexOf(".") + 1),
+        name: "Packed Macro",
+        pack: "world.packed-macros"
+      };
+    }
+
+    const [documentName, id] = text.split(".");
+    const collections = {
+      Macro: globalThis.game?.macros,
+      Actor: globalThis.game?.actors,
+      Item: globalThis.game?.items,
+      JournalEntry: globalThis.game?.journal,
+      Scene: globalThis.game?.scenes
+    };
+    const document = collections[documentName]?.get?.(id) ?? null;
+    return document ? { documentName, id: document.id, name: document.name, pack: null } : null;
+  });
+
   globalThis.CONST = {
     USER_ROLES: FAKE_USER_ROLES,
     USER_PERMISSIONS: FAKE_USER_PERMISSIONS

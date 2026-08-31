@@ -5,6 +5,20 @@ import { payloadKeyField } from "./sanitize.js";
 
 const EXECUTABLE_REGION_BEHAVIOR_TYPES = Object.freeze(new Set(["executeScript", "executeMacro"]));
 
+// The dedicated executable family passes the one type a GM may arm through the bridge. Every other
+// route — the ordinary behavior handlers and the nested `behaviors[]` array on a region write — keeps
+// this empty set, so an executable behavior can enter a world only through a command a human enabled.
+const NO_EXECUTABLE_TYPES_ALLOWED = Object.freeze(new Set());
+
+/**
+ * @param {unknown} type
+ * @param {ReadonlySet<string>} allowedTypes
+ * @returns {boolean}
+ */
+function isRefusedExecutableType(type, allowedTypes) {
+  return typeof type === "string" && EXECUTABLE_REGION_BEHAVIOR_TYPES.has(type) && !allowedTypes.has(type);
+}
+
 /**
  * @param {unknown} value
  * @returns {string | null}
@@ -151,13 +165,14 @@ function suppliedNonPlainRegionBehaviorTypeKeys(payload) {
 /**
  * @param {Record<string, any> | null | undefined} payload
  * @param {Record<string, any>} details
+ * @param {ReadonlySet<string>} allowedTypes
  */
-function assertSuppliedRegionBehaviorTypeAllowed(payload, details) {
+function assertSuppliedRegionBehaviorTypeAllowed(payload, details, allowedTypes) {
   for (const key of REGION_BEHAVIOR_NAMED_TYPE_KEYS) {
     const type = executableRegionBehaviorTypeName(
       payload && typeof payload === "object" ? payload[key] : undefined
     );
-    if (type !== null) {
+    if (type !== null && !allowedTypes.has(type)) {
       throw createBridgeError(
         ERROR_CODES.INVALID_PARAMS,
         `Region behavior type "${type}" executes code when the region fires and is not allowed through the bridge (no arbitrary JavaScript execution from the CLI); only declarative RegionBehavior types are accepted`,
@@ -170,11 +185,11 @@ function assertSuppliedRegionBehaviorTypeAllowed(payload, details) {
 /**
  * @param {any} behavior
  * @param {Record<string, any>} details
- * @param {{ verb: string }} context
+ * @param {{ verb: string, allowedTypes: ReadonlySet<string> }} context
  */
-function assertRegionBehaviorTargetWritable(behavior, details, { verb }) {
+function assertRegionBehaviorTargetWritable(behavior, details, { verb, allowedTypes }) {
   const type = storedRegionBehaviorType(behavior);
-  if (type && EXECUTABLE_REGION_BEHAVIOR_TYPES.has(type)) {
+  if (isRefusedExecutableType(type, allowedTypes)) {
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
       `RegionBehavior ${details.behaviorId} is a "${type}" behavior, which executes code when the region fires: scene.region.behavior.${verb} is refused for it in FULL — including a patch that only sets "disabled" — because the bridge does not author or edit self-arming JavaScript triggers (no arbitrary JavaScript execution from the CLI). Use scene.region.behavior.delete to remove it (that is allowed: it supplies no behavior data and removes the execution), edit it in the Foundry UI, or ${
@@ -228,17 +243,110 @@ function assertRegionBehaviorTypeImmutable(patch, details, { verb }) {
  * @param {Record<string, any>} [args.payload]
  * @param {any} [args.behavior]
  * @param {Record<string, any>} args.details
+ * @param {ReadonlySet<string>} [args.allowedTypes]
+ * @param {boolean} [args.allowTypeChange]
  */
-export function assertRegionBehaviorWriteAllowed({ verb, payload, behavior = null, details }) {
-  assertSuppliedRegionBehaviorTypeAllowed(payload, details);
+export function assertRegionBehaviorWriteAllowed({
+  verb,
+  payload,
+  behavior = null,
+  details,
+  allowedTypes = NO_EXECUTABLE_TYPES_ALLOWED,
+  allowTypeChange = false
+}) {
+  assertSuppliedRegionBehaviorTypeAllowed(payload, details, allowedTypes);
 
   if (verb === "update" || (verb === "clone" && payload != null)) {
-    assertRegionBehaviorTargetWritable(behavior, details, { verb });
+    assertRegionBehaviorTargetWritable(behavior, details, { verb, allowedTypes });
   }
 
   assertRegionBehaviorTypeSpellingRejected(payload, details, { verb });
 
-  if (verb === "update" || verb === "clone") {
+  if ((verb === "update" && !allowTypeChange) || verb === "clone") {
     assertRegionBehaviorTypeImmutable(payload ?? {}, details, { verb });
+  }
+}
+
+const EXECUTABLE_MACRO_UUID_KEYS = Object.freeze(["system.uuid", "==system.uuid"]);
+
+/**
+ * @param {Record<string, any> | null | undefined} payload
+ * @returns {{ supplied: boolean, uuid: unknown }}
+ */
+function suppliedExecutableMacroUuid(payload) {
+  if (!payload || typeof payload !== "object") {
+    return { supplied: false, uuid: undefined };
+  }
+
+  for (const key of EXECUTABLE_MACRO_UUID_KEYS) {
+    if (Object.hasOwn(payload, key)) {
+      return { supplied: true, uuid: payload[key] };
+    }
+  }
+
+  const system = payload.system;
+  if (system && typeof system === "object" && Object.hasOwn(system, "uuid")) {
+    return { supplied: true, uuid: /** @type {any} */ (system).uuid };
+  }
+
+  return { supplied: false, uuid: undefined };
+}
+
+/**
+ * @param {Record<string, any> | null | undefined} payload
+ * @param {Record<string, any>} details
+ * @param {{ required: boolean }} context
+ */
+export function assertExecutableBehaviorMacroResolves(payload, details, { required }) {
+  const { supplied, uuid } = suppliedExecutableMacroUuid(payload);
+  if (!supplied) {
+    if (!required) {
+      return;
+    }
+
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      "An executeMacro region behavior runs the macro named by its 'system.uuid', so that uuid is required: " +
+        "without it the behavior would fire and do nothing. Supply system.uuid as the uuid of a macro in this " +
+        "world (Macro.<id>). Nothing was written",
+      { ...details, field: "system.uuid" }
+    );
+  }
+
+  if (typeof uuid !== "string" || uuid.trim() === "") {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      "An executeMacro region behavior's 'system.uuid' must be the uuid of a macro in this world (Macro.<id>). " +
+        "Nothing was written",
+      { ...details, field: "system.uuid", uuid }
+    );
+  }
+
+  const resolve = /** @type {any} */ (globalThis).fromUuidSync;
+  if (typeof resolve !== "function") {
+    throw createBridgeError(
+      ERROR_CODES.BRIDGE_NOT_READY,
+      "Foundry uuid resolution API (fromUuidSync) is not available; reload the GM client"
+    );
+  }
+
+  let resolved = null;
+  try {
+    resolved = resolve(uuid);
+  } catch {
+    resolved = null;
+  }
+
+  const documentName = resolved?.documentName ?? null;
+  const pack = resolved?.pack ?? null;
+  if (documentName !== "Macro" || pack) {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      `The executeMacro region behavior's 'system.uuid' (${uuid}) does not name a macro in this world: it resolves ` +
+        `to ${documentName === null ? "nothing" : pack ? `a compendium ${documentName}` : `a ${documentName}`}. ` +
+        `A behavior pointing at a missing or compendium macro fires and does nothing, and the GM approving it ` +
+        `cannot read what it would run. Create the macro in the world first and use its uuid. Nothing was written`,
+      { ...details, field: "system.uuid", uuid, resolvedType: documentName, pack: pack ?? null }
+    );
   }
 }
