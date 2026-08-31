@@ -159,6 +159,11 @@ function normalizePath(path, { allowEmpty = false } = {}) {
     }
 
     const decoded = decodePathSegment(segment);
+    if (decoded.includes("/") || decoded.includes("\\")) {
+      throw createBridgeError(ERROR_CODES.PATH_NOT_ALLOWED, "Path contains an encoded separator", {
+        path
+      });
+    }
     if (segment === "." || segment === ".." || decoded === "." || decoded === "..") {
       throw createBridgeError(ERROR_CODES.PATH_NOT_ALLOWED, "Path traversal is not allowed", {
         path

@@ -52,6 +52,10 @@ describe("normalizeFilePath rejection branches", () => {
     ["an uppercase percent-encoded parent traversal", "%2E%2E/worlds/w/data/x.png"],
     ["a mid-path percent-encoded parent traversal", "a/%2e%2e/b.png"],
     ["a percent-encoded single-dot segment", "assets/%2e/x.png"],
+    ["a percent-encoded separator hiding a traversal", "..%2f..%2fx.png"],
+    ["a wholly percent-encoded traversal in one segment", "%2e%2e%2f%2e%2e"],
+    ["a percent-encoded separator between names", "a%2fb.png"],
+    ["a backslash-encoded separator", "a%5c..%5cb.png"],
     ["a doubled slash (empty segment)", "a//b"],
     ["a trailing slash (empty segment)", "worlds/world-1/"],
     ["a leading slash (absolute)", "/a/b"]
