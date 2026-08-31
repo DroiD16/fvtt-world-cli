@@ -534,6 +534,79 @@ describe("Command approval window", () => {
     expect(shown(context).details[1].value).toBe("(not set)");
   });
 
+  it("reads the stored behavior when a clone carries no payload of its own", async () => {
+    const store = createStore();
+    admit(store, "scene.region.behavior.executable.clone", {
+      sceneId: "scene-1",
+      regionId: "region-safe",
+      behaviorId: "behavior-macro"
+    });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details.map((/** @type {any} */ row) => row.value)).toEqual([
+      "no macro with UUID Macro.abc in this world",
+      "(not set)",
+      "(not set)"
+    ]);
+  });
+
+  it("resolves a dotted patch key against the stored behavior it edits", async () => {
+    const store = createStore();
+    admit(store, "scene.region.behavior.executable.update", {
+      sceneId: "scene-1",
+      regionId: "region-safe",
+      behaviorId: "behavior-macro",
+      patch: { "system.uuid": "Macro.macro-1", "system.everyone": true }
+    });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details.map((/** @type {any} */ row) => row.value)).toEqual([
+      "Heal Macro [Macro.macro-1]",
+      "(not set)",
+      "true"
+    ]);
+  });
+
+  it("shows the name and role a new user would be created with", async () => {
+    const store = createStore();
+    admit(store, "user.create", { data: { name: "Scribe", role: 4 } });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details.map((/** @type {any} */ row) => [row.key, row.value])).toEqual([
+      ["FVTTWORLDCLI.Approval.DetailUserName", "Scribe"],
+      ["FVTTWORLDCLI.Approval.DetailRole", "GAMEMASTER (4)"]
+    ]);
+  });
+
+  it("names the role Foundry would give a new user the command did not ask a role for", async () => {
+    const store = createStore();
+    admit(store, "user.create", { data: { name: "Scribe" } });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details[1].value).toContain("PLAYER (1)");
+  });
+
+  it("says a macro execution names no macro this world holds", async () => {
+    const store = createStore();
+    admit(store, "macro.execute", { macroId: "ghost" });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details[0].value).toBe(
+      "no macro with id ghost in this world, so this command would fail"
+    );
+    expect(shown(context).body).toBe(shown(context).details[0].value);
+  });
+
   it("adds no detail rows to a command whose parameters already say everything", async () => {
     const store = createStore();
     admit(store, "actor.update", { actorId: "actor-1", patch: { name: "Valeros the Bold" } });

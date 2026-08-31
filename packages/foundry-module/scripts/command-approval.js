@@ -1,6 +1,8 @@
 import { MACRO_EXECUTE_TIMEOUT_DEFAULT_MS, MODULE_ID } from "./generated/protocol.js";
 import { format, localize } from "./lib/i18n.js";
 import { readApprovalSoundEnabled } from "./lib/policy.js";
+import { suppliedExecutableBehaviorField } from "./lib/region-behavior-guards.js";
+import { getSceneRegionBehaviorById } from "./lib/region-behaviors.js";
 import { utf8ByteLength } from "./lib/setting-values.js";
 import { assignableUserRoles } from "./lib/validators.js";
 
@@ -236,6 +238,19 @@ function describeRole(role) {
 }
 
 /**
+ * @param {unknown} role
+ * @returns {string}
+ */
+function describeCreatedUserRole(role) {
+  if (readableCount(role) !== null) return describeRole(role);
+
+  const fallback = /** @type {any} */ (globalThis).CONST?.USER_ROLES?.PLAYER;
+  return readableCount(fallback) === null
+    ? localize("FVTTWORLDCLI.Approval.ValueAbsent")
+    : format("FVTTWORLDCLI.Approval.RoleDefault", { role: describeRole(fallback) });
+}
+
+/**
  * @param {unknown} override
  * @returns {string}
  */
@@ -279,13 +294,18 @@ function macroExecuteDetails(params) {
   const macro = /** @type {any} */ (globalThis).game?.macros?.get?.(params?.macroId) ?? null;
   const timeoutMs = readableCount(params?.timeoutMs) ?? MACRO_EXECUTE_TIMEOUT_DEFAULT_MS;
   const command = readableString(macro?.command);
+  const missing = format("FVTTWORLDCLI.Approval.MacroIdNotFound", {
+    macroId: readableString(params?.macroId) ?? ""
+  });
 
   return {
     rows: [
       detailRow(
         "FVTTWORLDCLI.Approval.DetailMacroType",
         null,
-        readableString(macro?.type) ?? localize("FVTTWORLDCLI.Approval.ValueAbsent")
+        macro === null
+          ? missing
+          : (readableString(macro.type) ?? localize("FVTTWORLDCLI.Approval.ValueAbsent"))
       ),
       detailRow(
         "FVTTWORLDCLI.Approval.DetailTimeout",
@@ -294,7 +314,12 @@ function macroExecuteDetails(params) {
       )
     ],
     omitted: 0,
-    body: command === null ? localize("FVTTWORLDCLI.Approval.MacroBodyEmpty") : boundedText(command)
+    body:
+      macro === null
+        ? missing
+        : command === null
+          ? localize("FVTTWORLDCLI.Approval.MacroBodyEmpty")
+          : boundedText(command)
   };
 }
 
@@ -423,23 +448,74 @@ function systemReloadDetails() {
 
 /**
  * @param {any} params
+ * @returns {Record<string, any> | null}
+ */
+function storedBehaviorSystem(params) {
+  if (typeof params?.behaviorId !== "string") return null;
+
+  try {
+    const { behavior } = getSceneRegionBehaviorById(params.sceneId, params.regionId, params.behaviorId);
+    const source =
+      behavior?._source ?? (typeof behavior?.toObject === "function" ? behavior.toObject() : behavior);
+    const system = source?.system ?? null;
+    return system && typeof system === "object" ? system : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {any} params
+ * @returns {{ uuid: unknown, events: unknown, everyone: unknown }}
+ */
+function executableBehaviorValues(params) {
+  const payload = params?.data ?? params?.patch ?? null;
+  const stored = storedBehaviorSystem(params);
+  const effective = (/** @type {string} */ field) => {
+    const supplied = suppliedExecutableBehaviorField(payload, field);
+    return supplied.supplied ? supplied.value : stored?.[field];
+  };
+
+  return { uuid: effective("uuid"), events: effective("events"), everyone: effective("everyone") };
+}
+
+/**
+ * @param {any} params
  * @returns {ApprovalDetails}
  */
 function executableBehaviorDetails(params) {
-  const system = (params?.data ?? params?.patch ?? {}).system ?? {};
-  const events = Array.isArray(system.events) ? system.events : null;
+  const { uuid, events, everyone } = executableBehaviorValues(params);
 
   return {
     rows: [
-      detailRow("FVTTWORLDCLI.Approval.DetailMacro", null, describeMacroReference(system.uuid)),
+      detailRow("FVTTWORLDCLI.Approval.DetailMacro", null, describeMacroReference(uuid)),
       detailRow(
         "FVTTWORLDCLI.Approval.DetailEvents",
         null,
-        events === null
-          ? localize("FVTTWORLDCLI.Approval.ValueAbsent")
-          : events.join(EVENT_SEPARATOR) || localize("FVTTWORLDCLI.Approval.ValueAbsent")
+        Array.isArray(events) && events.length > 0
+          ? events.join(EVENT_SEPARATOR)
+          : localize("FVTTWORLDCLI.Approval.ValueAbsent")
       ),
-      detailRow("FVTTWORLDCLI.Approval.DetailEveryone", null, describeValue(system.everyone))
+      detailRow("FVTTWORLDCLI.Approval.DetailEveryone", null, describeValue(everyone))
+    ],
+    omitted: 0,
+    body: null
+  };
+}
+
+/**
+ * @param {any} params
+ * @returns {ApprovalDetails}
+ */
+function userCreateDetails(params) {
+  return {
+    rows: [
+      detailRow(
+        "FVTTWORLDCLI.Approval.DetailUserName",
+        null,
+        readableString(params?.data?.name) ?? localize("FVTTWORLDCLI.Approval.ValueAbsent")
+      ),
+      detailRow("FVTTWORLDCLI.Approval.DetailRole", null, describeCreatedUserRole(params?.data?.role))
     ],
     omitted: 0,
     body: null
@@ -450,6 +526,7 @@ const DETAIL_BUILDERS = Object.freeze({
   "macro.execute": macroExecuteDetails,
   "setting.set": settingSetDetails,
   "setting.set-many": settingSetManyDetails,
+  "user.create": userCreateDetails,
   "user.role.set": userRoleDetails,
   "user.permissions.set": userPermissionDetails,
   "chat.flush": chatFlushDetails,

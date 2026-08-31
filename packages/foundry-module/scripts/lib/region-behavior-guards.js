@@ -267,29 +267,39 @@ export function assertRegionBehaviorWriteAllowed({
   }
 }
 
-const EXECUTABLE_MACRO_UUID_KEYS = Object.freeze(["system.uuid", "==system.uuid"]);
+/**
+ * Every spelling of a behavior's `system.<field>` this module accepts. The approval window reads the
+ * same set, so a GM is shown the value the guard and Foundry will act on.
+ * @param {Record<string, any> | null | undefined} payload
+ * @param {string} field
+ * @returns {{ supplied: boolean, value: unknown }}
+ */
+export function suppliedExecutableBehaviorField(payload, field) {
+  if (!payload || typeof payload !== "object") {
+    return { supplied: false, value: undefined };
+  }
+
+  for (const key of [`system.${field}`, `==system.${field}`]) {
+    if (Object.hasOwn(payload, key)) {
+      return { supplied: true, value: payload[key] };
+    }
+  }
+
+  const system = payload.system;
+  if (system && typeof system === "object" && Object.hasOwn(system, field)) {
+    return { supplied: true, value: /** @type {any} */ (system)[field] };
+  }
+
+  return { supplied: false, value: undefined };
+}
 
 /**
  * @param {Record<string, any> | null | undefined} payload
  * @returns {{ supplied: boolean, uuid: unknown }}
  */
 function suppliedExecutableMacroUuid(payload) {
-  if (!payload || typeof payload !== "object") {
-    return { supplied: false, uuid: undefined };
-  }
-
-  for (const key of EXECUTABLE_MACRO_UUID_KEYS) {
-    if (Object.hasOwn(payload, key)) {
-      return { supplied: true, uuid: payload[key] };
-    }
-  }
-
-  const system = payload.system;
-  if (system && typeof system === "object" && Object.hasOwn(system, "uuid")) {
-    return { supplied: true, uuid: /** @type {any} */ (system).uuid };
-  }
-
-  return { supplied: false, uuid: undefined };
+  const { supplied, value } = suppliedExecutableBehaviorField(payload, "uuid");
+  return { supplied, uuid: value };
 }
 
 /**
