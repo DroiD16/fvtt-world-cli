@@ -116,7 +116,7 @@ describe("policy-gated command output", () => {
     expect(result.stdout).toContain("error: SETTING_NOT_FOUND — gone");
   });
 
-  it("prints a macro run with its return value and warns that Foundry swallows script errors", async () => {
+  it("prints a macro run with its return value, its chat capture and what a null return proves", async () => {
     const result = await runCommand(
       ["macro", "execute", "--macro-id", "macro-1"],
       respond({
@@ -131,7 +131,8 @@ describe("policy-gated command output", () => {
     expect(result.stdout).toContain("Executed macro macro-1");
     expect(result.stdout).toContain("returned: 42");
     expect(result.stdout).toContain("chat messages: msg-1");
-    expect(result.stdout).toMatch(/swallows script-macro errors/);
+    expect(result.stdout).toContain("chat capture: captured");
+    expect(result.stdout).toMatch(/catches its own errors still returns null/);
   });
 
   it("reports a macro preview as what it could check without running anything", async () => {

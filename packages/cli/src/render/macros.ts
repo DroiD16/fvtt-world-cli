@@ -1,5 +1,12 @@
 import { renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
 
+const CHAT_CAPTURE_NOTES: Record<string, string> = {
+  captured: "captured (every message the macro created while the bridge waited)",
+  partial: "partial (fewer messages than this macro was expected to create)",
+  "not-created": "not-created (the macro created no chat message while the bridge waited)",
+  unknown: "unknown (the macro may have created messages this call could not observe)"
+};
+
 export function renderMacroExecuteResult(result: any) {
   if (result?.dryRun) {
     return [
@@ -19,10 +26,8 @@ export function renderMacroExecuteResult(result: any) {
   }
   lines.push(
     `chat messages: ${(result?.chatMessageIds ?? []).join(", ") || "(none)"}`,
-    result?.chatCapture === "captured"
-      ? "chat capture: captured (every message the macro created while the bridge waited)"
-      : "chat capture: unknown (the macro may have created messages this call could not observe)",
-    "note: Foundry swallows script-macro errors into the GM's own notifications, so verify the effect with reads"
+    `chat capture: ${CHAT_CAPTURE_NOTES[result?.chatCapture] ?? CHAT_CAPTURE_NOTES.unknown}`,
+    "note: a macro that catches its own errors still returns null, so verify the effect with reads"
   );
   return lines.join("\n");
 }

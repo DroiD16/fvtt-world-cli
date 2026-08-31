@@ -233,11 +233,17 @@ Some commands invoke a typed Foundry action instead of ordinary CRUD:
 `macro execute` runs a world macro the GM can already execute, waits for it to finish up to a
 bounded `--macro-timeout-ms`, and reports the returned value plus the chat messages it observed the
 macro create. A macro that outlives the timeout keeps running in the GM browser and the command
-returns the indeterminate `MACRO_TIMEOUT`, so the effect is verified by reads. Two limitations are
-inherent to Foundry: exceptions inside a script macro surface only as GM-side notifications while
-the command reports a `null` return, and a macro is free to reload the page or navigate away, which
-ends the bridge session the same way any disconnect does. Effects therefore deserve a read-back
-whenever the return value alone does not prove them.
+returns the indeterminate `MACRO_TIMEOUT`, so the effect is verified by reads. A script macro that
+throws fails the command and the error names what the macro raised; the outcome is partial, because
+whatever the macro changed before it threw stays changed. A macro that catches its own errors still
+reports a `null` return, and a macro is free to reload the page or navigate away, which ends the
+bridge session the same way any disconnect does. Effects therefore deserve a read-back whenever the
+return value alone does not prove them.
+
+The result's `chatCapture` field says how much of the chat the run observed: `captured` when every
+message the macro was expected to create was seen, `not-created` when a chat macro created none,
+`partial` when only some were seen, and `unknown` when this client could not watch the chat log at
+all.
 
 Actions can have Foundry, system, or module side effects. Their result describes what the bridge can
 confirm, which may differ from a document post-state, so each action's schema and help are worth

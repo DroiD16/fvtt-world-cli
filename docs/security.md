@@ -162,9 +162,10 @@ through ordinary writes.
   macro's type and complete command body before anything runs. The `macro.create → macro.execute →
   macro.delete` chain is the sanctioned path for ad-hoc code, so a GM who wants only vetted macros
   to run sets `macro.create` and `macro.update` to approve or deny while `macro.execute` stays
-  enabled. Foundry swallows exceptions inside script macros — they surface as GM-side notifications
-  while the command reports a `null` return — so execution results do not prove success and effects
-  deserve a read-back.
+  enabled. A script macro that throws fails the command with a structured error naming what the
+  macro raised, and the failure is partial by nature: whatever the macro changed before it threw
+  stays changed. A macro that catches its own errors still reports a `null` return, so results do
+  not prove success and effects deserve a read-back.
 - Macro bodies and chat content written by ordinary document commands are stored, not executed.
 - Action commands invoke only their fixed typed Foundry methods.
 - Ordinary region-behavior writes reject core script- or macro-executing types through a shared
