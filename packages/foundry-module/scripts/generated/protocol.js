@@ -337,7 +337,7 @@ var compendiumIncludeProperty = {
   include: { type: "array", items: { type: "string", enum: ["effects"] } }
 };
 var userIdsProperty = {
-  userIds: { type: "array", items: { type: "string", minLength: 1 } }
+  userIds: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 }
 };
 var idempotencyKeyProperty = {
   idempotencyKey: { type: "string", minLength: 1 }

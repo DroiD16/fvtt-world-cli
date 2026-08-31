@@ -113,7 +113,7 @@ export const compendiumIncludeProperty = {
 };
 
 export const userIdsProperty = {
-  userIds: { type: "array", items: { type: "string", minLength: 1 } }
+  userIds: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 }
 };
 
 export const idempotencyKeyProperty = {

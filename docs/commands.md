@@ -230,6 +230,11 @@ Some commands invoke a typed Foundry action instead of ordinary CRUD:
   the bridge until the client reconnects;
 - macro execution (`macro execute`), [off by default](#commands-that-are-off-by-default).
 
+`scene pull-users`, `journal show`, and `image show` reach every connected player when no
+`--user-ids` list is given. A supplied list has to name at least one user: an empty one is
+indistinguishable from "everyone" on the Foundry side, while the result would report that nobody was
+addressed.
+
 `macro execute` runs a world macro the GM can already execute, waits for it to finish up to a
 bounded `--macro-timeout-ms`, and reports the returned value plus the chat messages it observed the
 macro create. A macro that outlives the timeout keeps running in the GM browser and the command

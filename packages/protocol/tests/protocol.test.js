@@ -7480,6 +7480,10 @@ describe("protocol contract", () => {
       expectValid("scene.pull-users", { sceneId: "scene-1", userIds: ["user-1", "user-2"] });
       expectRejected("scene.pull-users", { sceneId: "scene-1", userIds: [""] }, "userIds");
 
+      expectRejected("scene.pull-users", { sceneId: "scene-1", userIds: [] }, "userIds");
+      expectRejected("journal.show", { journalId: "j-1", userIds: [] }, "userIds");
+      expectRejected("image.show", { src: "worlds/w/art.webp", userIds: [] }, "userIds");
+
       expectValid("journal.show", { journalId: "j-1", force: true, userIds: ["user-1"] });
       expectRejected("journal.show", { journalId: "j-1", pageId: "p-1" }, "not allowed");
 
