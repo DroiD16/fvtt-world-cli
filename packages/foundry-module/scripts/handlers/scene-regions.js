@@ -94,7 +94,10 @@ async function createBehavior(params, route) {
   });
 
   if (route.executable) {
-    assertExecutableBehaviorMacroResolves(params.data, details, { required: true });
+    assertExecutableBehaviorMacroResolves(params.data, details, {
+      required: true,
+      allowDottedSystem: false
+    });
   }
 
   const preview = previewRegionBehaviorCreate(region, cloneValue(params.data));

@@ -175,13 +175,16 @@ through ordinary writes.
 - Ordinary region-behavior writes reject core script- or macro-executing types through a shared
   guard, including on nested behaviors supplied with a region write. The dedicated
   `scene.region.behavior.executable` commands, denied by default, accept exactly the `executeMacro`
-  type and require the referenced world macro to exist; the approval window names the macro and
-  shows whether the behavior fires for everyone. Those commands accept a behavior's `system` only as
-  a plain object or as dotted `system.<field>` paths, never as both and never through Foundry's
-  forced-replacement or forced-deletion operator keys: Foundry resolves such a key against a plain
-  `system` beside it in key-insertion order, so the stored macro reference could differ from the one
-  the macro check validated and the approval window showed. An `executeMacro` behavior triggers later on
-  player-driven region events, with `everyone: true` running the macro on every connected client.
+  type and require the referenced world macro to exist; the approval window names the macro, the
+  trigger events, and whether the behavior fires for everyone. Those commands accept a behavior's
+  `system` only in a spelling the guard and that window can both read: a create takes only the plain
+  `system` object, an update or clone also accepts single-field `system.<field>` paths, and no route
+  accepts both spellings at once, a path deeper than one field (`system.events.<n>`), a
+  forced-replacement or forced-deletion operator key, or a read field carrying the wrong type (a
+  non-array `events`, a non-boolean `everyone`). Each of those could store a macro reference or a
+  trigger set that differs from the one the macro check validated and the approval window showed. An
+  `executeMacro` behavior triggers later on player-driven region events, with `everyone: true`
+  running the macro on every connected client.
 - `executeScript` behaviors are not supported on any route: Foundry runs their source in every
   connected player's browser with no per-user execution check, which no popup can make reviewable.
 

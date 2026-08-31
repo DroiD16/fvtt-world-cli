@@ -4394,25 +4394,79 @@ describe("executable region behaviors", () => {
     expect(response.error.message).toContain("not both");
   });
 
-  it("reads a dotted plain 'system.uuid' as the macro the behavior would run", async () => {
-    const refused = await router.route(
+  it("refuses a dotted 'system.<field>' on create so the preview cannot disagree with the write", async () => {
+    for (const uuid of ["Macro.ghost", MACRO_UUID]) {
+      const refused = await router.route(
+        createRequest("scene.region.behavior.executable.create", {
+          sceneId: "scene-1",
+          regionId: "region-safe",
+          data: { type: "executeMacro", "system.uuid": uuid }
+        })
+      );
+      expect(refused.ok, uuid).toBe(false);
+      expect(refused.error.details, uuid).toMatchObject({ field: "system", suppliedKeys: ["system.uuid"] });
+    }
+
+    const armed = await router.route(
       createRequest("scene.region.behavior.executable.create", {
         sceneId: "scene-1",
         regionId: "region-safe",
-        data: { type: "executeMacro", "system.uuid": "Macro.ghost" }
+        data: { type: "executeMacro", system: { uuid: MACRO_UUID } }
+      })
+    );
+    expect(armed.ok).toBe(true);
+  });
+
+  it("reads a dotted plain 'system.uuid' as the macro an update would run", async () => {
+    const refused = await router.route(
+      createRequest("scene.region.behavior.executable.update", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-macro",
+        patch: { "system.uuid": "Macro.ghost" }
       })
     );
     expect(refused.ok).toBe(false);
     expect(refused.error.details).toMatchObject({ field: "system.uuid" });
 
     const armed = await router.route(
-      createRequest("scene.region.behavior.executable.create", {
+      createRequest("scene.region.behavior.executable.update", {
         sceneId: "scene-1",
         regionId: "region-safe",
-        data: { type: "executeMacro", "system.uuid": MACRO_UUID }
+        behaviorId: "behavior-macro",
+        patch: { "system.uuid": MACRO_UUID }
       })
     );
     expect(armed.ok).toBe(true);
+  });
+
+  it("refuses a 'system.events.<n>' depth spelling the approval window cannot show", async () => {
+    for (const patch of [
+      { "system.events.0": "tokenMoveIn" },
+      { "system.uuid.0": MACRO_UUID },
+      { system: { events: { 0: "tokenMoveIn" } } }
+    ]) {
+      const refused = await router.route(
+        createRequest("scene.region.behavior.executable.update", {
+          sceneId: "scene-1",
+          regionId: "region-safe",
+          behaviorId: "behavior-macro",
+          patch
+        })
+      );
+      expect(refused.ok, JSON.stringify(patch)).toBe(false);
+      expect(refused.error.code, JSON.stringify(patch)).toBe("INVALID_PARAMS");
+    }
+
+    const wholeArray = await router.route(
+      createRequest("scene.region.behavior.executable.update", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-macro",
+        patch: { "system.events": ["tokenMoveIn"] }
+      })
+    );
+    expect(wholeArray.ok).toBe(true);
   });
 
   it("keeps the nested behaviors array closed to executable types on the executable family's own scene", async () => {

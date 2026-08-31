@@ -276,9 +276,10 @@ export function assertRegionBehaviorWriteAllowed({
 
 /**
  * Every spelling of a behavior's `system.<field>` this module accepts. The approval window reads the
- * same set, so a GM is shown the value the guard and Foundry will act on. Any operator spelling — and
- * any payload that mixes these two — is refused by assertExecutableBehaviorSystemSpelling before this
- * reader is consulted, so no unread spelling can carry a value past the guard or the window.
+ * same set, so a GM is shown the value the guard and Foundry will act on. Any operator spelling, a
+ * `system` path deeper than one field, a payload that mixes the plain object with dotted keys, and a
+ * read field whose value type the window cannot render are all refused before this reader is
+ * consulted, so no unread or under-rendered spelling can carry a value past the guard or the window.
  * @param {Record<string, any> | null | undefined} payload
  * @param {string} field
  * @returns {{ supplied: boolean, value: unknown }}
@@ -329,8 +330,9 @@ function operatorSpelledSystemKeys(payload, supplied) {
 /**
  * @param {Record<string, any> | null | undefined} payload
  * @param {Record<string, any>} details
+ * @param {{ allowDottedSystem?: boolean }} [options]
  */
-function assertExecutableBehaviorSystemSpelling(payload, details) {
+function assertExecutableBehaviorSystemSpelling(payload, details, { allowDottedSystem = true } = {}) {
   if (!payload || typeof payload !== "object") {
     return;
   }
@@ -350,6 +352,31 @@ function assertExecutableBehaviorSystemSpelling(payload, details) {
   }
 
   const dotted = supplied.filter((key) => key !== "system");
+  if (!allowDottedSystem && dotted.length > 0) {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      `A RegionBehavior's 'system' may reach scene.region.behavior.executable.create ONLY as the plain 'system' object, not as a dotted 'system.<field>' path (found ${dotted
+        .map((key) => `"${key}"`)
+        .join(
+          ", "
+        )}): supply a plain 'system' object and resend. Foundry expands a dotted create key only in its client backend, which the preview does not reach, so a dry run would show this create UNARMED while the real create arms it — the two must not disagree on a policy-gated arming command. Nothing was written`,
+      { ...details, field: "system", suppliedKeys: dotted }
+    );
+  }
+
+  const tooDeep = dotted.filter((key) => key.split(".").length > 2);
+  if (tooDeep.length > 0) {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      `A RegionBehavior's 'system' may reach scene.region.behavior.executable.* only as the plain 'system' object or a single-field 'system.<field>' path, never a deeper 'system.<field>.<sub>' path (found ${tooDeep
+        .map((key) => `"${key}"`)
+        .join(
+          ", "
+        )}): drop the trailing segment and set the whole '<field>' value instead. A deeper path can reshape a field the guard and the GM approval window read — a 'system.events.<n>' key changes WHEN the armed macro fires while the window still shows the stored trigger set — so the value written would differ from the one shown. Nothing was written`,
+      { ...details, field: "system", suppliedKeys: tooDeep }
+    );
+  }
+
   if (supplied.includes("system") && dotted.length > 0) {
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
@@ -373,12 +400,44 @@ function suppliedExecutableMacroUuid(payload) {
 }
 
 /**
+ * The GM approval window renders each read field with a type it understands: 'events' as a joined
+ * list, 'everyone' as a yes/no. A supplied value of any other type would be under-rendered while
+ * Foundry still coerced and stored it, so a value the window cannot faithfully show is refused here.
  * @param {Record<string, any> | null | undefined} payload
  * @param {Record<string, any>} details
- * @param {{ required: boolean }} context
  */
-export function assertExecutableBehaviorMacroResolves(payload, details, { required }) {
-  assertExecutableBehaviorSystemSpelling(payload, details);
+function assertExecutableBehaviorReadableValues(payload, details) {
+  const events = suppliedExecutableBehaviorField(payload, "events");
+  if (events.supplied && !Array.isArray(events.value)) {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      "An executeMacro region behavior's 'system.events' is the list of region events that fire the macro, so it " +
+        "must be supplied as an ARRAY of event names. A non-array value would be coerced by Foundry into a trigger " +
+        "set the GM approval window cannot show. Supply system.events as an array. Nothing was written",
+      { ...details, field: "system.events" }
+    );
+  }
+
+  const everyone = suppliedExecutableBehaviorField(payload, "everyone");
+  if (everyone.supplied && typeof everyone.value !== "boolean") {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      "An executeMacro region behavior's 'system.everyone' decides whether the macro runs on every connected " +
+        "client, so it must be supplied as a boolean. A non-boolean value the GM approval window cannot show is " +
+        "refused. Supply system.everyone as true or false. Nothing was written",
+      { ...details, field: "system.everyone" }
+    );
+  }
+}
+
+/**
+ * @param {Record<string, any> | null | undefined} payload
+ * @param {Record<string, any>} details
+ * @param {{ required: boolean, allowDottedSystem?: boolean }} context
+ */
+export function assertExecutableBehaviorMacroResolves(payload, details, { required, allowDottedSystem = true }) {
+  assertExecutableBehaviorSystemSpelling(payload, details, { allowDottedSystem });
+  assertExecutableBehaviorReadableValues(payload, details);
 
   const { supplied, uuid } = suppliedExecutableMacroUuid(payload);
   if (!supplied) {
