@@ -327,7 +327,14 @@ function resolveListedPath(entry, directoryPath) {
 
   const joinedPath = directoryPath && !candidate.includes("/") ? `${directoryPath}/${candidate}` : candidate;
 
-  return normalizePath(joinedPath, { allowEmpty: false });
+  // A browse result is a discovery projection: an entry that cannot be represented as a safe managed
+  // path is dropped from the listing, never allowed to abort the whole directory read. Write routes
+  // call normalizePath directly and still reject.
+  try {
+    return normalizePath(joinedPath, { allowEmpty: false });
+  } catch {
+    return null;
+  }
 }
 
 function normalizeBrowseEntries(result, directoryPath) {
