@@ -52,7 +52,7 @@ export function createImageHandlers() {
         userIds: users.requested,
         activeUserIds: users.active,
         inactiveUserIds: users.inactive,
-        dispatched: true
+        dispatched: users.active.length > 0
       };
     }
   };

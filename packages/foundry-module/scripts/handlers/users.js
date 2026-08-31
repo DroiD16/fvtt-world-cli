@@ -1,4 +1,5 @@
 import { ERROR_CODES } from "../generated/protocol.js";
+import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { createBridgeError, isFoundryValidationError, toFailureSummary } from "../lib/errors.js";
 import { getUserById, getUsersCollection } from "../lib/game-collections.js";
@@ -197,7 +198,7 @@ export function createUserHandlers() {
 
     async "user.create"(params) {
       const command = "user.create";
-      const data = params.data;
+      const data = canonicalizeFilePathFields(params.data, "User");
       if (data.role !== undefined) {
         assertAssignableUserRole(data.role);
       }
@@ -241,7 +242,7 @@ export function createUserHandlers() {
     async "user.update"(params) {
       const command = "user.update";
       const user = getUserById(params.userId);
-      const patch = params.patch;
+      const patch = canonicalizeFilePathFields(params.patch, "User");
       assertFoundryAllowsWrite(user, "update", patch, command);
 
       if (isDryRun(params)) {
@@ -346,6 +347,7 @@ export function createUserHandlers() {
 
     async "user.permissions.set"(params) {
       const command = "user.permissions.set";
+      assertNotOwnUser(params.userId, command);
       const known = assertKnownUserPermissions(params.permissions);
       const user = getUserById(params.userId);
       const patch = buildPermissionsPatch(params.permissions);

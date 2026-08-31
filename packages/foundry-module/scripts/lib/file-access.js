@@ -508,6 +508,7 @@ const FILE_PATH_FIELDS_BY_TYPE = Object.freeze({
   PlaylistSound: ["path"],
   JournalEntryPage: ["src"],
   Macro: ["img"],
+  User: ["avatar"],
 
   RollTable: ["img"],
   TableResult: ["img"],

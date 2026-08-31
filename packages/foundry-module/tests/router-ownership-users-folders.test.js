@@ -1947,6 +1947,39 @@ describe("user write surface", () => {
     expect(response.result.user).not.toHaveProperty("passwordSalt");
   });
 
+  it("serializes profile fields a write accepts and canonicalizes the avatar path", async () => {
+    const response = await router.route(
+      createRequest("user.create", {
+        data: {
+          name: "Profiled",
+          role: 2,
+          pronouns: "they/them",
+          avatar: "worlds/world-1/portraits/hero shot.png",
+          flags: { world: { seat: 3 } }
+        }
+      })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result.user).toMatchObject({
+      name: "Profiled",
+      pronouns: "they/them",
+      avatar: "worlds/world-1/portraits/hero%20shot.png",
+      flags: { world: { seat: 3 } }
+    });
+    expect(users().get(response.result.user.id).avatar).toBe(
+      "worlds/world-1/portraits/hero%20shot.png"
+    );
+
+    const updated = await router.route(
+      createRequest("user.update", {
+        userId: response.result.user.id,
+        patch: { avatar: "worlds/world-1/portraits/new face.png" }
+      })
+    );
+    expect(updated.result.user.avatar).toBe("worlds/world-1/portraits/new%20face.png");
+  });
+
   it("previews a creation without adding a user", async () => {
     const before = users().size;
 
@@ -2014,7 +2047,12 @@ describe("user write surface", () => {
       { command: "user.delete", params: { userId: "user-1" } },
       { command: "user.delete", params: { userId: "user-1", dryRun: true } },
       { command: "user.role.set", params: { userId: "user-1", role: 1 } },
-      { command: "user.role.set", params: { userId: "user-1", role: 1, dryRun: true } }
+      { command: "user.role.set", params: { userId: "user-1", role: 1, dryRun: true } },
+      { command: "user.permissions.set", params: { userId: "user-1", permissions: { BROADCAST_AUDIO: false } } },
+      {
+        command: "user.permissions.set",
+        params: { userId: "user-1", permissions: { BROADCAST_AUDIO: false }, dryRun: true }
+      }
     ]) {
       const response = await router.route(createRequest(params.command, params.params));
 

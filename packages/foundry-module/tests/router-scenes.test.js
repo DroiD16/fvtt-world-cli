@@ -1624,11 +1624,37 @@ describe("broadcast and maintenance commands", () => {
     expect(web.ok).toBe(true);
     expect(web.result.src).toBe("https://example.com/map.png");
 
-    for (const src of ["/etc/passwd", "C:/secrets/map.png", "file:///etc/passwd", "../../etc/passwd"]) {
+    for (const src of [
+      "/etc/passwd",
+      "C:/secrets/map.png",
+      "file:///etc/passwd",
+      "../../etc/passwd",
+      "%2e%2e/%2e%2e/worlds/w/data/x.png",
+      "%2E%2E/worlds/w/data/x.png"
+    ]) {
       const refused = await router.route(createRequest("image.show", { src }));
       expect(refused.ok, src).toBe(false);
       expect(refused.error.code, src).toBe(ERROR_CODES.PATH_NOT_ALLOWED);
     }
+  });
+
+  it("reports image.show as not dispatched when no targeted user is connected", async () => {
+    const offlineTarget = await router.route(
+      createRequest("image.show", { src: "worlds/world-1/maps/dungeon.webp", userIds: ["player-2"] })
+    );
+    expect(offlineTarget.result).toMatchObject({
+      userIds: ["player-2"],
+      activeUserIds: [],
+      dispatched: false
+    });
+
+    for (const user of globalThis.game.users) {
+      user.applyStoredWrite({ active: false });
+    }
+    const nobody = await router.route(
+      createRequest("image.show", { src: "worlds/world-1/maps/dungeon.webp" })
+    );
+    expect(nobody.result).toMatchObject({ activeUserIds: [], dispatched: false });
   });
 
   it("counts the chat log in a preview and empties it for real", async () => {

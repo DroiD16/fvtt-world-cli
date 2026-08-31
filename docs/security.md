@@ -231,10 +231,11 @@ User accounts are managed through explicit per-purpose commands rather than one 
   window names the account and the role — including the player role Foundry gives when the command
   asks for none — and the GM reading it is the review point. A GM who does not want that decision
   in the loop at all sets `user.create` to deny.
-- The bridge GM's own account is self-protected: `user.role.set` and `user.delete` aimed at the
-  user holding the bridge are refused with a structured error, so automation cannot demote or
-  remove the account it runs through. A second GM account carries no such guard — deciding about it
-  is exactly what enabling the command means.
+- The bridge GM's own account is self-protected: `user.role.set`, `user.permissions.set`, and
+  `user.delete` aimed at the user holding the bridge are refused with a structured error, so
+  automation cannot demote, remove, or strip the restricted menus from the account it runs through.
+  A second GM account carries no such guard — deciding about it is exactly what enabling the command
+  means.
 - Foundry's server-side limits stay in force underneath: a role cannot be raised above the caller's
   own, and the last gamemaster account can be neither demoted nor deleted. Those refusals surface
   as permission errors with Foundry's own message.
