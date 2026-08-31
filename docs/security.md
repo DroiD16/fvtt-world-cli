@@ -176,7 +176,11 @@ through ordinary writes.
   guard, including on nested behaviors supplied with a region write. The dedicated
   `scene.region.behavior.executable` commands, denied by default, accept exactly the `executeMacro`
   type and require the referenced world macro to exist; the approval window names the macro and
-  shows whether the behavior fires for everyone. An `executeMacro` behavior triggers later on
+  shows whether the behavior fires for everyone. Those commands accept a behavior's `system` only as
+  a plain object or as dotted `system.<field>` paths, never as both and never through Foundry's
+  forced-replacement or forced-deletion operator keys: Foundry resolves such a key against a plain
+  `system` beside it in key-insertion order, so the stored macro reference could differ from the one
+  the macro check validated and the approval window showed. An `executeMacro` behavior triggers later on
   player-driven region events, with `everyone: true` running the macro on every connected client.
 - `executeScript` behaviors are not supported on any route: Foundry runs their source in every
   connected player's browser with no per-user execution check, which no popup can make reviewable.

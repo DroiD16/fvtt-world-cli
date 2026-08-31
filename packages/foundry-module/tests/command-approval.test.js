@@ -571,6 +571,35 @@ describe("Command approval window", () => {
     ]);
   });
 
+  it("never names a macro an operator-spelled 'system' carries, because that spelling never runs", async () => {
+    const spellings = [
+      { "==system": { uuid: "Macro.macro-1", everyone: true } },
+      { "==system": { uuid: "Macro.macro-1" }, system: { events: ["tokenEnter"] } },
+      { "==system.uuid": "Macro.macro-1" },
+      { "-=system": null },
+      { "-=system.uuid": null }
+    ];
+
+    for (const patch of spellings) {
+      const store = createStore();
+      admit(store, "scene.region.behavior.executable.update", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-macro",
+        patch
+      });
+      const { app } = application(store);
+
+      const context = await app._prepareContext();
+      const values = shown(context)
+        .details.map((/** @type {any} */ row) => row.value)
+        .join(" | ");
+
+      expect(values, JSON.stringify(patch)).not.toContain("Macro.macro-1");
+      expect(values, JSON.stringify(patch)).not.toContain("Heal Macro");
+    }
+  });
+
   it("shows the name and role a new user would be created with", async () => {
     const store = createStore();
     admit(store, "user.create", { data: { name: "Scribe", role: 4 } });

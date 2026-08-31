@@ -4302,6 +4302,99 @@ describe("executable region behaviors", () => {
     expect(response.result.behavior).toMatchObject({ name: "Second Trap", type: "executeMacro" });
   });
 
+  it("refuses every operator spelling of 'system' on all three verbs, so no decoy can hide the macro", async () => {
+    const spellings = [
+      {
+        label: "whole-object replacement",
+        payload: { "==system": { uuid: MACRO_UUID } },
+        keys: ["==system"]
+      },
+      {
+        label: "whole-object replacement beside a decoy plain system",
+        payload: { system: { uuid: MACRO_UUID }, "==system": { uuid: MACRO_UUID } },
+        keys: ["==system"]
+      },
+      { label: "one replaced field", payload: { "==system.uuid": MACRO_UUID }, keys: ["==system.uuid"] },
+      { label: "whole-object deletion", payload: { "-=system": null }, keys: ["-=system"] },
+      { label: "one deleted field", payload: { "-=system.uuid": null }, keys: ["-=system.uuid"] }
+    ];
+
+    const before = behaviors().size;
+    for (const { label, payload, keys } of spellings) {
+      const requests = [
+        createRequest("scene.region.behavior.executable.create", {
+          sceneId: "scene-1",
+          regionId: "region-safe",
+          data: { type: "executeMacro", ...payload }
+        }),
+        createRequest("scene.region.behavior.executable.update", {
+          sceneId: "scene-1",
+          regionId: "region-safe",
+          behaviorId: "behavior-macro",
+          patch: payload
+        }),
+        createRequest("scene.region.behavior.executable.clone", {
+          sceneId: "scene-1",
+          regionId: "region-safe",
+          behaviorId: "behavior-macro",
+          patch: payload
+        })
+      ];
+
+      for (const request of requests) {
+        const reason = `${request.command} with ${label}`;
+        const response = await router.route(request);
+
+        expect(response.ok, reason).toBe(false);
+        expect(response.error.code, reason).toBe("INVALID_PARAMS");
+        expect(response.error.details, reason).toMatchObject({ field: "system", suppliedKeys: keys });
+        expect(response.error.message, reason).toContain("ONLY as the plain 'system' object");
+      }
+    }
+
+    expect(behaviors().size).toBe(before);
+  });
+
+  it("refuses a payload that mixes the plain 'system' object with a dotted 'system.<field>' path", async () => {
+    const response = await router.route(
+      createRequest("scene.region.behavior.executable.update", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-macro",
+        patch: { system: { uuid: MACRO_UUID }, "system.uuid": "Macro.ghost" }
+      })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe("INVALID_PARAMS");
+    expect(response.error.details).toMatchObject({
+      field: "system",
+      suppliedKeys: ["system", "system.uuid"]
+    });
+    expect(response.error.message).toContain("not both");
+  });
+
+  it("reads a dotted plain 'system.uuid' as the macro the behavior would run", async () => {
+    const refused = await router.route(
+      createRequest("scene.region.behavior.executable.create", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        data: { type: "executeMacro", "system.uuid": "Macro.ghost" }
+      })
+    );
+    expect(refused.ok).toBe(false);
+    expect(refused.error.details).toMatchObject({ field: "system.uuid" });
+
+    const armed = await router.route(
+      createRequest("scene.region.behavior.executable.create", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        data: { type: "executeMacro", "system.uuid": MACRO_UUID }
+      })
+    );
+    expect(armed.ok).toBe(true);
+  });
+
   it("keeps the nested behaviors array closed to executable types on the executable family's own scene", async () => {
     for (const type of ["executeMacro", "executeScript"]) {
       const response = await router.route(
