@@ -136,9 +136,13 @@ The module returns a random 128-bit `approvalId` only to the original caller. Re
 the decision requires that identifier.
 
 The GM-only Command Approval window shows the command, remaining time, target documents or managed
-paths, and parameters. It reports binary upload content by size instead of rendering the payload.
-The command envelope has no caller identity, so the window cannot name the requester. The GM approves
-the displayed invocation, not a person or process.
+paths, and parameters. It reports binary upload content by size instead of rendering the payload,
+and any text longer than 16,384 characters — including a macro body — by its character count for the
+same reason. A macro long enough to cross that line is therefore approved on its name and origin
+rather than on its code, and `macro.create` runs by itself under the shipped defaults, so a GM who
+wants every body reviewable moves `macro.create` and `macro.update` to approve as well. The command
+envelope has no caller identity, so the window cannot name the requester. The GM approves the
+displayed invocation, not a person or process.
 
 ## Document ownership
 
@@ -159,7 +163,7 @@ through ordinary writes.
 
 - `macro.execute` is the one way to run code, and it runs only stored world macros. It is denied by
   default; a GM who enables it can keep it on approve, where the Command Approval window shows the
-  macro's type and complete command body before anything runs. The `macro.create → macro.execute →
+  macro's type and its command body — up to the length cap described above — before anything runs. The `macro.create → macro.execute →
   macro.delete` chain is the sanctioned path for ad-hoc code, so a GM who wants only vetted macros
   to run sets `macro.create` and `macro.update` to approve or deny while `macro.execute` stays
   enabled. A script macro that throws fails the command with a structured error naming what the
@@ -218,6 +222,11 @@ User accounts are managed through explicit per-purpose commands rather than one 
   and is allowed by default because none of them grant authority.
 - `user.create` and `user.delete` ask for approval by default. `user.role.set` and
   `user.permissions.set` are denied by default because they change who can do what.
+- A `user.create` carries whatever role it asks for, up to the caller's own, so an approved one can
+  mint a gamemaster. That is why it asks for approval rather than running by itself: the approval
+  window names the account and the role — including the player role Foundry gives when the command
+  asks for none — and the GM reading it is the review point. A GM who does not want that decision
+  in the loop at all sets `user.create` to deny.
 - The bridge GM's own account is self-protected: `user.role.set` and `user.delete` aimed at the
   user holding the bridge are refused with a structured error, so automation cannot demote or
   remove the account it runs through. A second GM account carries no such guard — deciding about it

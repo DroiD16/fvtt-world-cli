@@ -507,6 +507,7 @@ First-run setup is covered in [Getting started](getting-started.md).
 
 The CLI intentionally does not provide arbitrary JavaScript evaluation, direct world-database
 writes, unrestricted filesystem access, generic RPC, compendium editing, or transactional Foundry
-batches. Code runs only through `macro.execute` and `executeMacro` region behaviors — both off by
-default, both showing the GM exactly what would run. [Security](security.md) describes the trust
+batches. Code runs only through `macro.execute` and `executeMacro` region behaviors — both off by default,
+and when a GM keeps them on approve the window shows a macro execution's own body and names the
+macro a region behavior would run. [Security](security.md) describes the trust
 boundary and [Foundry compatibility](compatibility.md) the version-dependent capabilities.
