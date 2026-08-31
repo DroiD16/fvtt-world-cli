@@ -73,16 +73,16 @@ export function createChatHandlers() {
       const messages = getMessagesCollection();
       const count = messages.size ?? Array.from(messages).length;
 
-      if (isDryRun(params)) {
-        return dryRunResponse({ deleted: 0, count, remaining: count });
-      }
-
       const DocumentClass = messages.documentClass ?? globalThis.ChatMessage;
       if (typeof DocumentClass?.deleteDocuments !== "function") {
         throw createBridgeError(
           ERROR_CODES.BRIDGE_NOT_READY,
           "Foundry chat deletion API (ChatMessage.deleteDocuments) is not available; reload the GM client"
         );
+      }
+
+      if (isDryRun(params)) {
+        return dryRunResponse({ deleted: 0, count, remaining: count });
       }
 
       await DocumentClass.deleteDocuments([], { deleteAll: true });

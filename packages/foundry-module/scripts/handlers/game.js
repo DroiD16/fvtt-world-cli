@@ -10,19 +10,19 @@ export function createGameHandlers() {
       const previousPaused = Boolean(game.paused);
       const requested = params.paused;
 
+      if (typeof game.togglePause !== "function") {
+        throw createBridgeError(
+          ERROR_CODES.BRIDGE_NOT_READY,
+          "Foundry pause API (Game#togglePause) is not available; reload the GM client"
+        );
+      }
+
       if (isDryRun(params)) {
         return dryRunResponse({
           paused: requested,
           previousPaused,
           changed: previousPaused !== requested
         });
-      }
-
-      if (typeof game.togglePause !== "function") {
-        throw createBridgeError(
-          ERROR_CODES.BRIDGE_NOT_READY,
-          "Foundry pause API (Game#togglePause) is not available; reload the GM client"
-        );
       }
 
       game.togglePause(requested, { broadcast: true });

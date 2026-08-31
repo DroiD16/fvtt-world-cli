@@ -1704,6 +1704,30 @@ describe("broadcast and maintenance commands", () => {
     expect(response.error.details).toMatchObject({ requested: true, paused: false });
   });
 
+  it("reports a missing capability on BOTH paths for activate, pause and flush (dry-run too)", async () => {
+    scenes().get("scene-2").activate = undefined;
+    for (const dryRun of [false, true]) {
+      const response = await router.route(createRequest("scene.activate", { sceneId: "scene-2", dryRun }));
+      expect(response.ok, `activate dryRun=${dryRun}`).toBe(false);
+      expect(response.error.code, `activate dryRun=${dryRun}`).toBe(ERROR_CODES.BRIDGE_NOT_READY);
+    }
+
+    globalThis.game.togglePause = undefined;
+    for (const dryRun of [false, true]) {
+      const response = await router.route(createRequest("game.pause", { paused: true, dryRun }));
+      expect(response.ok, `pause dryRun=${dryRun}`).toBe(false);
+      expect(response.error.code, `pause dryRun=${dryRun}`).toBe(ERROR_CODES.BRIDGE_NOT_READY);
+    }
+
+    globalThis.game.messages.documentClass = undefined;
+    globalThis.ChatMessage.deleteDocuments = undefined;
+    for (const dryRun of [false, true]) {
+      const response = await router.route(createRequest("chat.flush", { dryRun }));
+      expect(response.ok, `flush dryRun=${dryRun}`).toBe(false);
+      expect(response.error.code, `flush dryRun=${dryRun}`).toBe(ERROR_CODES.BRIDGE_NOT_READY);
+    }
+  });
+
   it("answers before it reloads the page, never the other way round", async () => {
     vi.useFakeTimers();
 

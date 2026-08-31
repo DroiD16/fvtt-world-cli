@@ -122,12 +122,9 @@ export function createSceneHandlers() {
       const wasActive = Boolean(scene.active);
       const sceneId = scene.id ?? params.sceneId;
 
-      if (isDryRun(params)) {
-        return dryRunResponse({ sceneId, active: true, wasActive, changed: !wasActive });
-      }
-
       if (wasActive) {
-        return { sceneId, active: true, wasActive, changed: false };
+        const result = { sceneId, active: true, wasActive, changed: false };
+        return isDryRun(params) ? dryRunResponse(result) : result;
       }
 
       if (typeof scene.activate !== "function") {
@@ -135,6 +132,10 @@ export function createSceneHandlers() {
           ERROR_CODES.BRIDGE_NOT_READY,
           "Foundry scene activation API (Scene#activate) is not available; reload the GM client"
         );
+      }
+
+      if (isDryRun(params)) {
+        return dryRunResponse({ sceneId, active: true, wasActive, changed: true });
       }
 
       await scene.activate();
