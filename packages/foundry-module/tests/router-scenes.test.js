@@ -1651,10 +1651,12 @@ describe("broadcast and maintenance commands", () => {
     for (const user of globalThis.game.users) {
       user.applyStoredWrite({ active: false });
     }
+    const allIds = [...globalThis.game.users].map((user) => user.id).sort();
     const nobody = await router.route(
       createRequest("image.show", { src: "worlds/world-1/maps/dungeon.webp" })
     );
     expect(nobody.result).toMatchObject({ activeUserIds: [], dispatched: false });
+    expect([...nobody.result.inactiveUserIds].sort()).toEqual(allIds);
   });
 
   it("counts the chat log in a preview and empties it for real", async () => {

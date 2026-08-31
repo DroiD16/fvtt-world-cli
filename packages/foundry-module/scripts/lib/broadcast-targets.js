@@ -23,7 +23,7 @@ export function resolveBroadcastUsers(userIds) {
     return {
       requested: null,
       active: everyone.filter((user) => user.active).flatMap((user) => userId(user) ?? []),
-      inactive: []
+      inactive: everyone.filter((user) => !user.active).flatMap((user) => userId(user) ?? [])
     };
   }
 
