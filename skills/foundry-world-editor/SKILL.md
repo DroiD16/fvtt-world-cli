@@ -74,7 +74,9 @@ reads, and treat `MACRO_TIMEOUT` as indeterminate — the macro may still be run
 `setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
 When a setting write returns `requiresReload: true`, the change needs a GM-client reload to take
 effect; `system.reload` performs it, drops the bridge, and requires a reconnect wait before the
-next command.
+next command. The reload commonly races its own result: the page can go away before the confirming
+`reloading: true` is delivered, so a disconnect or `APPROVAL_UNKNOWN` there is the expected success
+signal, not a failure — reconnect and continue rather than retrying the reload.
 
 ## The working loop
 
