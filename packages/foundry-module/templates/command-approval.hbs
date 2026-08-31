@@ -60,6 +60,32 @@
         <span class="fvtt-world-cli-approval-note">{{localize "FVTTWORLDCLI.Approval.TargetsNone"}}</span>
         {{/unless}}
       </div>
+
+      {{#if request.details}}
+      <div class="fvtt-world-cli-approval-section">
+        <span class="fvtt-world-cli-approval-label">{{localize "FVTTWORLDCLI.Approval.Details"}}</span>
+        <ul class="fvtt-world-cli-approval-targets">
+          {{#each request.details}}
+          <li class="fvtt-world-cli-approval-target">
+            <span class="fvtt-world-cli-approval-target-key">{{#if this.key}}{{localize
+              this.key}}{{else}}{{this.name}}{{/if}}</span>
+            <span class="fvtt-world-cli-approval-target-name">{{this.value}}</span>
+          </li>
+          {{/each}}
+        </ul>
+        {{#if request.detailsOmitted}}
+        <span class="fvtt-world-cli-approval-note">{{localize "FVTTWORLDCLI.Approval.TargetsOmitted"
+          count=request.detailsOmitted}}</span>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{#if request.body}}
+      <div class="fvtt-world-cli-approval-section">
+        <span class="fvtt-world-cli-approval-label">{{localize "FVTTWORLDCLI.Approval.DetailMacroBody"}}</span>
+        <pre class="fvtt-world-cli-approval-json"><code>{{request.body}}</code></pre>
+      </div>
+      {{/if}}
     </div>
 
     <div class="fvtt-world-cli-approval-params">
