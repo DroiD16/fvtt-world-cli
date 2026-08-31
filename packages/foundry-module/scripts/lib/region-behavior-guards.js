@@ -435,7 +435,11 @@ function assertExecutableBehaviorReadableValues(payload, details) {
  * @param {Record<string, any>} details
  * @param {{ required: boolean, allowDottedSystem?: boolean }} context
  */
-export function assertExecutableBehaviorMacroResolves(payload, details, { required, allowDottedSystem = true }) {
+export function assertExecutableBehaviorMacroResolves(
+  payload,
+  details,
+  { required, allowDottedSystem = true }
+) {
   assertExecutableBehaviorSystemSpelling(payload, details, { allowDottedSystem });
   assertExecutableBehaviorReadableValues(payload, details);
 

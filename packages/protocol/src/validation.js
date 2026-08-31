@@ -143,7 +143,9 @@ function validateObjectSchema(schema, value, path, errors) {
     const namePattern = compilePattern(schema.propertyNames.pattern);
     for (const key of ownKeys) {
       if (namePattern === null) {
-        errors.push(`${path}.${key} cannot be validated: ${schema.propertyNames.pattern} is not a valid unicode-mode pattern`);
+        errors.push(
+          `${path}.${key} cannot be validated: ${schema.propertyNames.pattern} is not a valid unicode-mode pattern`
+        );
       } else if (!namePattern.test(key)) {
         errors.push(`${path}.${key} is not an allowed property name`);
       }

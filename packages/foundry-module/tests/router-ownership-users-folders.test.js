@@ -1967,9 +1967,7 @@ describe("user write surface", () => {
       avatar: "worlds/world-1/portraits/hero%20shot.png",
       flags: { world: { seat: 3 } }
     });
-    expect(users().get(response.result.user.id).avatar).toBe(
-      "worlds/world-1/portraits/hero%20shot.png"
-    );
+    expect(users().get(response.result.user.id).avatar).toBe("worlds/world-1/portraits/hero%20shot.png");
 
     const updated = await router.route(
       createRequest("user.update", {
@@ -2048,7 +2046,10 @@ describe("user write surface", () => {
       { command: "user.delete", params: { userId: "user-1", dryRun: true } },
       { command: "user.role.set", params: { userId: "user-1", role: 1 } },
       { command: "user.role.set", params: { userId: "user-1", role: 1, dryRun: true } },
-      { command: "user.permissions.set", params: { userId: "user-1", permissions: { BROADCAST_AUDIO: false } } },
+      {
+        command: "user.permissions.set",
+        params: { userId: "user-1", permissions: { BROADCAST_AUDIO: false } }
+      },
       {
         command: "user.permissions.set",
         params: { userId: "user-1", permissions: { BROADCAST_AUDIO: false }, dryRun: true }
