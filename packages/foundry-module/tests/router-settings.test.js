@@ -6,7 +6,7 @@ import { COMMAND_DEFINITIONS, ERROR_CODES, MODULE_ID } from "../scripts/generate
 
 import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 
-import { createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
+import { allowEveryCommandPolicy, createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
 
 describe("settings read surface", () => {
   let router;
@@ -803,6 +803,346 @@ describe("settings read surface", () => {
     );
     expect(rejected.ok).toBe(false);
     expect(rejected.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+  });
+});
+
+describe("settings write surface", () => {
+  let router;
+  let store;
+  let settings;
+
+  const NUMBER_FIELD = "core.time";
+
+  /** @param {{ clean?: (value: any) => any, validate?: (value: any) => any }} [behavior] */
+  function makeField(name, behavior = {}) {
+    const { clean = (value) => value, validate = () => undefined } = behavior;
+    const FieldClass = /** @type {any} */ ({ NumberField: class {} }).NumberField;
+    const field = /** @type {any} */ (new FieldClass());
+    field.name = name;
+    field.clean = vi.fn(clean);
+    field.validate = vi.fn(validate);
+    return field;
+  }
+
+  const MODULE_MODE = {
+    id: "my-module.mode",
+    namespace: "my-module",
+    key: "mode",
+    scope: "world",
+    config: false,
+    requiresReload: true,
+    type: String,
+    default: "allow"
+  };
+
+  const BRIDGE_TOKEN = {
+    id: `${MODULE_ID}.${MODULE_SETTING_KEYS.AUTH_TOKEN}`,
+    namespace: MODULE_ID,
+    key: MODULE_SETTING_KEYS.AUTH_TOKEN,
+    scope: "world",
+    config: false,
+    type: String,
+    default: ""
+  };
+
+  /** @param {{ registrations?: any[], values?: Array<[string, unknown]>, set?: any }} [options] */
+  function setupWorld({ registrations = [MODULE_MODE, BRIDGE_TOKEN], values = [], set } = {}) {
+    const registry = new Map(registrations.map((entry) => [entry.id, entry]));
+    store = new Map(values);
+    settings = {
+      settings: registry,
+      get: vi.fn((namespace, key) => {
+        if (namespace === MODULE_ID && key === MODULE_SETTING_KEYS.COMMAND_POLICY) {
+          return allowEveryCommandPolicy();
+        }
+
+        const id = `${namespace}.${key}`;
+        return store.has(id) ? store.get(id) : registry.get(id)?.default;
+      }),
+      set:
+        set ??
+        vi.fn(async (namespace, key, value) => {
+          store.set(`${namespace}.${key}`, value);
+          return value;
+        })
+    };
+
+    globalThis.game = {
+      ready: true,
+      world: { id: "world-1", title: "Test" },
+      user: { id: "gm", name: "GM", isGM: true },
+      i18n: { localize: (key) => key },
+      settings
+    };
+    router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+  }
+
+  afterEach(() => {
+    delete globalThis.game;
+    vi.restoreAllMocks();
+  });
+
+  it("writes a registered setting and reports the value it read back", async () => {
+    setupWorld({ values: [["my-module.mode", "allow"]] });
+
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "my-module", key: "mode", value: "deny" })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toEqual({
+      namespace: "my-module",
+      key: "mode",
+      id: "my-module.mode",
+      scope: "world",
+      previous: "allow",
+      value: "deny",
+      requiresReload: true,
+      validated: false,
+      changed: true
+    });
+    expect(store.get("my-module.mode")).toBe("deny");
+  });
+
+  it("previews a write without calling Foundry", async () => {
+    setupWorld({ values: [["my-module.mode", "allow"]] });
+
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "my-module", key: "mode", value: "deny", dryRun: true })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toMatchObject({
+      previous: "allow",
+      value: "deny",
+      changed: true,
+      requiresReload: true,
+      dryRun: true
+    });
+    expect(settings.set).not.toHaveBeenCalled();
+    expect(store.get("my-module.mode")).toBe("allow");
+  });
+
+  it("reports a write that asks for the stored value as a no-op and never calls Foundry", async () => {
+    setupWorld({ values: [["my-module.mode", "allow"]] });
+
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "my-module", key: "mode", value: "allow" })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toMatchObject({ previous: "allow", value: "allow", changed: false });
+    expect(settings.set).not.toHaveBeenCalled();
+  });
+
+  it("refuses this module's own namespace in a real call and in a preview", async () => {
+    setupWorld();
+
+    for (const extra of [{}, { dryRun: true }]) {
+      const response = await router.route(
+        createRequest("setting.set", {
+          namespace: MODULE_ID,
+          key: MODULE_SETTING_KEYS.AUTH_TOKEN,
+          value: "stolen",
+          ...extra
+        })
+      );
+
+      expect(response.ok, JSON.stringify(extra)).toBe(false);
+      expect(response.error.code).toBe(ERROR_CODES.SETTING_PROTECTED);
+      expect(response.error.details).toMatchObject({ namespace: MODULE_ID });
+      expect(response.error.message).toContain("command policy");
+    }
+
+    expect(settings.set).not.toHaveBeenCalled();
+  });
+
+  it("refuses a namespace and key no package registered", async () => {
+    setupWorld();
+
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "ghost-module", key: "mode", value: "deny" })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.SETTING_UNREGISTERED);
+    expect(response.error.details).toMatchObject({ namespace: "ghost-module", key: "mode" });
+    expect(settings.set).not.toHaveBeenCalled();
+  });
+
+  it("maps a DataField rejection to a validation failure and writes nothing", async () => {
+    setupWorld({
+      registrations: [
+        {
+          id: NUMBER_FIELD,
+          namespace: "core",
+          key: "time",
+          scope: "world",
+          type: makeField(NUMBER_FIELD, {
+            validate: () => ({ asError: () => new Error("must be a finite number") })
+          }),
+          default: 0
+        }
+      ]
+    });
+
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "core", key: "time", value: "soon" })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(response.error.details).toMatchObject({
+      id: NUMBER_FIELD,
+      reason: "foundry_validation",
+      message: "must be a finite number"
+    });
+    expect(settings.set).not.toHaveBeenCalled();
+  });
+
+  it("previews the cleaned value a DataField produces and marks it validated", async () => {
+    setupWorld({
+      registrations: [
+        {
+          id: NUMBER_FIELD,
+          namespace: "core",
+          key: "time",
+          scope: "world",
+          type: makeField(NUMBER_FIELD, { clean: (value) => Number(value) }),
+          default: 0
+        }
+      ],
+      values: [[NUMBER_FIELD, 0]]
+    });
+
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "core", key: "time", value: "12", dryRun: true })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toMatchObject({ value: 12, previous: 0, validated: true, changed: true });
+  });
+
+  it("refuses to report success when the stored value never moved", async () => {
+    setupWorld({
+      values: [["my-module.mode", "allow"]],
+      set: vi.fn(async () => undefined)
+    });
+
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "my-module", key: "mode", value: "deny" })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.details).toMatchObject({ id: "my-module.mode", previous: "allow" });
+  });
+
+  it("writes a batch and reports one outcome per element in request order", async () => {
+    setupWorld({
+      registrations: [MODULE_MODE, { ...MODULE_MODE, id: "my-module.level", key: "level", type: Number }],
+      values: [
+        ["my-module.mode", "allow"],
+        ["my-module.level", 1]
+      ]
+    });
+
+    const response = await router.route(
+      createRequest("setting.set-many", {
+        items: [
+          { namespace: "my-module", key: "mode", value: "deny" },
+          { namespace: "my-module", key: "level", value: 1 }
+        ]
+      })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result.complete).toBe(true);
+    expect(response.result.outcomes.map((outcome) => [outcome.index, outcome.id, outcome.status])).toEqual([
+      [0, "my-module.mode", "updated"],
+      [1, "my-module.level", "unchanged"]
+    ]);
+    expect(response.result.outcomes[0]).toMatchObject({ previous: "allow", value: "deny", changed: true });
+    expect(store.get("my-module.mode")).toBe("deny");
+  });
+
+  it("refuses a whole batch that names this module's own namespace in any element", async () => {
+    setupWorld({ values: [["my-module.mode", "allow"]] });
+
+    const response = await router.route(
+      createRequest("setting.set-many", {
+        items: [
+          { namespace: "my-module", key: "mode", value: "deny" },
+          { namespace: MODULE_ID, key: MODULE_SETTING_KEYS.AUTH_TOKEN, value: "stolen" }
+        ]
+      })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.SETTING_PROTECTED);
+    expect(response.error.details).toMatchObject({ index: 1, id: `${MODULE_ID}.authToken` });
+    expect(settings.set).not.toHaveBeenCalled();
+    expect(store.get("my-module.mode")).toBe("allow");
+  });
+
+  it("previews a batch without writing", async () => {
+    setupWorld({ values: [["my-module.mode", "allow"]] });
+
+    const response = await router.route(
+      createRequest("setting.set-many", {
+        items: [{ namespace: "my-module", key: "mode", value: "deny" }],
+        dryRun: true
+      })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toMatchObject({ complete: true, dryRun: true });
+    expect(response.result.outcomes[0]).toMatchObject({ status: "updated", value: "deny" });
+    expect(settings.set).not.toHaveBeenCalled();
+  });
+
+  it("refuses a batch that writes one key twice", async () => {
+    setupWorld();
+
+    const response = await router.route(
+      createRequest("setting.set-many", {
+        items: [
+          { namespace: "my-module", key: "mode", value: "deny" },
+          { namespace: "my-module", key: "mode", value: "allow" }
+        ]
+      })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(response.error.details).toMatchObject({ id: "my-module.mode", duplicateOfIndex: 0 });
+    expect(settings.set).not.toHaveBeenCalled();
+  });
+
+  it("reads many settings in request order and reports an unknown id per element", async () => {
+    setupWorld({ values: [["my-module.mode", "deny"]] });
+
+    const response = await router.route(
+      createRequest("setting.get-many", { ids: ["ghost.key", "my-module.mode"] })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result.settings.map((row) => row.id)).toEqual(["ghost.key", "my-module.mode"]);
+    expect(response.result.settings[0].error).toMatchObject({ code: ERROR_CODES.SETTING_NOT_FOUND });
+    expect(response.result.settings[0]).not.toHaveProperty("value");
+    expect(response.result.settings[1]).toMatchObject({ value: "deny", scope: "world" });
+    expect(response.result.settings[1]).not.toHaveProperty("error");
+  });
+
+  it("redacts this module's stored credentials in a batch read", async () => {
+    setupWorld({ values: [[`${MODULE_ID}.${MODULE_SETTING_KEYS.AUTH_TOKEN}`, "secret"]] });
+
+    const response = await router.route(
+      createRequest("setting.get-many", { ids: [`${MODULE_ID}.${MODULE_SETTING_KEYS.AUTH_TOKEN}`] })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result.settings[0]).toMatchObject({ valueRedacted: true, value: null });
   });
 });
 

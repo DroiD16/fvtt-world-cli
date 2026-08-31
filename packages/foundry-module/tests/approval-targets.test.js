@@ -665,6 +665,35 @@ describe("approval target resolution", () => {
     expect([...new Set(marked)].sort()).toEqual([...APPROVAL_TARGET_STATES].sort());
   });
 
+  it("names every setting a batch write would change instead of a bare element count", () => {
+    const summary = resolveApprovalTargets("setting.set-many", {
+      items: [
+        { namespace: "core", key: "chatBubbles", value: false },
+        { namespace: "my-module", key: "mode", value: "deny" }
+      ]
+    });
+
+    expect(summary.kind).toBe("bulk");
+    expect(summary.totalCount).toBe(2);
+    expect(summary.targets.map((target) => [target.role, target.name, target.state])).toEqual([
+      ["items", "core.chatBubbles", "proposed"],
+      ["items", "my-module.mode", "proposed"]
+    ]);
+  });
+
+  it("describes a single setting write by its namespace and key", () => {
+    const summary = resolveApprovalTargets("setting.set", {
+      namespace: "core",
+      key: "chatBubbles",
+      value: false
+    });
+
+    expect(summary.descriptor).toEqual([
+      { key: "namespace", value: "core" },
+      { key: "key", value: "chatBubbles" }
+    ]);
+  });
+
   it("answers without a game rather than raising the readiness error", () => {
     delete globalThis.game;
 
