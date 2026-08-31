@@ -235,10 +235,11 @@ function macroStartFailure(error, macroId) {
 
   return createBridgeError(
     ERROR_CODES.INVALID_PARAMS,
-    `Macro ${macroId} could not be compiled: its body is not valid JavaScript, so Foundry never built the ` +
-      `function it would have run; see details.message for the parser's own words. NOTHING was executed and ` +
-      `nothing changed. Fix the macro's command with \`macro update\` — the scope this call supplied is not ` +
-      `at fault and resending it unchanged will fail the same way`,
+    `Macro ${macroId} could not be compiled, so Foundry never built the function it would have run; see ` +
+      `details.message for the parser's own words. NOTHING was executed and nothing changed. Almost always ` +
+      `the macro's own body is the cause — fix it with \`macro update\`. The rare exception is a body that ` +
+      `opens with a "use strict" directive together with an argument name that is only legal in sloppy mode ` +
+      `(a strict-reserved word such as \`yield\`, \`let\` or \`static\`): rename that argument instead`,
     { macroId, reason: "macro_body_syntax", message: summary }
   );
 }

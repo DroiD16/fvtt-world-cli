@@ -934,7 +934,7 @@ describe("macro execution", () => {
     expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
     expect(response.error.details).toMatchObject({ reason: "macro_body_syntax" });
     expect(response.error.details.message).toContain("Unexpected token");
-    expect(response.error.message).toContain("not valid JavaScript");
+    expect(response.error.message).toContain("could not be compiled");
   });
 
   it("reports a chat macro that created no message rather than claiming a capture", async () => {
