@@ -184,8 +184,11 @@ With a bridge connected, that inventory is also filtered by the GM client's comm
   `setting set` and `setting set-many` write world, client, and user scopes but are
   [off by default](#commands-that-are-off-by-default); they refuse this module's own namespace in
   every mode, and a write to an already-stored value is reported as unchanged without touching
-  Foundry. A result carrying `requiresReload: true` names the follow-up that Foundry expects, which
-  `system reload` performs.
+  Foundry. The result's `value` is the value read back after the write, not the value requested: a
+  setting's registered type or `onChange` handler may normalize or clamp what was asked for, so
+  compare `value` against the requested input when the exact stored form matters. The write is
+  confirmed only in that Foundry no longer holds the `previous` value. A result carrying
+  `requiresReload: true` names the follow-up that Foundry expects, which `system reload` performs.
 - `combat` manages encounters and exposes explicit encounter transitions.
 - `folder` manages document organization.
 - Dedicated `*.ownership.set` commands change supported document ownership.
