@@ -38,6 +38,11 @@ import {
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
   DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
+  APPROVE_EXTRA_COMMANDS,
+  DENIED_BY_DEFAULT_COMMANDS,
+  MACRO_EXECUTE_TIMEOUT_DEFAULT_MS,
+  MACRO_EXECUTE_TIMEOUT_MAX_MS,
+  defaultBehaviorFor,
   SETTING_VALUE_MAX_BYTES,
   SETTING_VALUE_MAX_DEPTH,
   SETTING_VALUE_MAX_NODES,
@@ -2240,6 +2245,67 @@ describe("protocol contract", () => {
       expect(isDestructiveCommand("actor.item.delete-many")).toBe(true);
     });
 
+    it("names the commands the profile denies until a GM enables them, and keeps them governed", () => {
+      expect(Object.isFrozen(DENIED_BY_DEFAULT_COMMANDS)).toBe(true);
+      expect(new Set(DENIED_BY_DEFAULT_COMMANDS).size).toBe(DENIED_BY_DEFAULT_COMMANDS.length);
+      expect(DENIED_BY_DEFAULT_COMMANDS).toEqual([
+        "macro.execute",
+        "setting.set",
+        "setting.set-many",
+        "user.role.set",
+        "user.permissions.set",
+        "scene.region.behavior.executable.create",
+        "scene.region.behavior.executable.update",
+        "scene.region.behavior.executable.clone"
+      ]);
+
+      for (const command of DENIED_BY_DEFAULT_COMMANDS) {
+        expect(POLICY_EXEMPT_COMMANDS, `${command} must stay under the policy gate`).not.toContain(command);
+      }
+    });
+
+    it("names the approve extras the verb rule cannot reach, and keeps the two lists apart", () => {
+      expect(Object.isFrozen(APPROVE_EXTRA_COMMANDS)).toBe(true);
+      expect(APPROVE_EXTRA_COMMANDS).toEqual(["chat.flush", "system.reload"]);
+
+      for (const command of APPROVE_EXTRA_COMMANDS) {
+        expect(isDestructiveCommand(command), `${command} is not caught by the verb rule`).toBe(false);
+        expect(DENIED_BY_DEFAULT_COMMANDS, `${command} must not be denied too`).not.toContain(command);
+        expect(POLICY_EXEMPT_COMMANDS, `${command} must stay under the policy gate`).not.toContain(command);
+      }
+    });
+
+    it("resolves a baseline behavior by deny over approve over allow", () => {
+      expect(defaultBehaviorFor("macro.execute")).toBe("deny");
+      expect(defaultBehaviorFor("setting.set-many")).toBe("deny");
+      expect(defaultBehaviorFor("actor.delete")).toBe("approve");
+      expect(defaultBehaviorFor("scene.fog.reset")).toBe("approve");
+      expect(defaultBehaviorFor("chat.flush")).toBe("approve");
+      expect(defaultBehaviorFor("system.reload")).toBe("approve");
+      expect(defaultBehaviorFor("actor.get")).toBe("allow");
+      expect(defaultBehaviorFor("bogus.command")).toBe("allow");
+
+      for (const name of [...DENIED_BY_DEFAULT_COMMANDS, ...APPROVE_EXTRA_COMMANDS, "actor.delete"]) {
+        expect(POLICY_BEHAVIORS, name).toContain(defaultBehaviorFor(name));
+      }
+    });
+
+    it("bounds how long a macro execution may be awaited", () => {
+      expect(MACRO_EXECUTE_TIMEOUT_DEFAULT_MS).toBe(30_000);
+      expect(MACRO_EXECUTE_TIMEOUT_MAX_MS).toBe(300_000);
+      expect(MACRO_EXECUTE_TIMEOUT_DEFAULT_MS).toBeLessThan(MACRO_EXECUTE_TIMEOUT_MAX_MS);
+    });
+
+    it("carries the risk lists and the baseline rule into the module mirror", () => {
+      expect(moduleProtocol.DENIED_BY_DEFAULT_COMMANDS).toEqual([...DENIED_BY_DEFAULT_COMMANDS]);
+      expect(moduleProtocol.APPROVE_EXTRA_COMMANDS).toEqual([...APPROVE_EXTRA_COMMANDS]);
+      expect(moduleProtocol.defaultBehaviorFor("macro.execute")).toBe("deny");
+      expect(moduleProtocol.defaultBehaviorFor("actor.delete")).toBe("approve");
+      expect(moduleProtocol.defaultBehaviorFor("actor.get")).toBe("allow");
+      expect(moduleProtocol.MACRO_EXECUTE_TIMEOUT_DEFAULT_MS).toBe(MACRO_EXECUTE_TIMEOUT_DEFAULT_MS);
+      expect(moduleProtocol.MACRO_EXECUTE_TIMEOUT_MAX_MS).toBe(MACRO_EXECUTE_TIMEOUT_MAX_MS);
+    });
+
     it("parks an approval poll for the same ceiling the pairing wait uses", () => {
       expect(APPROVAL_AWAIT_PARK_CAP_MS).toBe(25_000);
       expect(APPROVAL_AWAIT_PARK_CAP_MS).toBe(AUTH_AWAIT_PARK_CAP_MS);
@@ -2286,8 +2352,6 @@ describe("protocol contract", () => {
   });
 
   describe("default command profile", () => {
-    const expectedBehavior = (command) => (isDestructiveCommand(command) ? "approve" : "allow");
-
     it("stays byte-identical to what the generator emits", () => {
       expect(
         readFileSync(PROFILE_PATH, "utf8"),
@@ -2299,17 +2363,21 @@ describe("protocol contract", () => {
       expect(Object.keys(DEFAULT_COMMAND_PROFILE)).toEqual([...COMMAND_NAMES]);
     });
 
-    it("assigns every command the behavior the destructive rule dictates", () => {
+    it("assigns every command the behavior the three-bucket rule dictates", () => {
       for (const command of COMMAND_NAMES) {
         expect(POLICY_BEHAVIORS, command).toContain(DEFAULT_COMMAND_PROFILE[command]);
-        expect(DEFAULT_COMMAND_PROFILE[command], command).toBe(expectedBehavior(command));
+        expect(DEFAULT_COMMAND_PROFILE[command], command).toBe(defaultBehaviorFor(command));
       }
     });
 
-    it("puts exactly the destructive commands in the approve bucket", () => {
+    it("puts exactly the destructive commands and the approve extras in the approve bucket", () => {
       const approved = COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === "approve");
 
-      expect(approved).toEqual(COMMAND_NAMES.filter(isDestructiveCommand));
+      expect(approved).toEqual(
+        COMMAND_NAMES.filter(
+          (command) => isDestructiveCommand(command) || APPROVE_EXTRA_COMMANDS.includes(command)
+        )
+      );
       expect(approved.length).toBeGreaterThan(0);
       expect(approved.length).toBeLessThan(COMMAND_NAMES.length);
       for (const command of ["actor.delete", "actor.delete-many", "file.move", "scene.fog.reset"]) {
@@ -2318,17 +2386,19 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 54 approve-listed and 262 self-running commands in a registry of 316", () => {
-      const approved = COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === "approve");
+    it("counts 54 approve-listed, no denied and 262 self-running commands in a registry of 316", () => {
+      const bucket = (behavior) =>
+        COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
       expect(
         {
           commands: COMMAND_NAMES.length,
-          approve: approved.length,
-          allow: COMMAND_NAMES.length - approved.length
+          approve: bucket("approve"),
+          deny: bucket("deny"),
+          allow: bucket("allow")
         },
         'the totals moved: update every count docs/commands.md states ("54 of the 316 commands in the registry; the other 262 run on their own") in the same change'
-      ).toEqual({ commands: 316, approve: 54, allow: 262 });
+      ).toEqual({ commands: 316, approve: 54, deny: 0, allow: 262 });
     });
 
     it("leaves 311 governed commands in 16 top-level groups once the exempt ones are removed", () => {
@@ -2358,7 +2428,7 @@ describe("protocol contract", () => {
 
     it("looks up a command and reports nothing for a name the registry does not carry", () => {
       for (const command of COMMAND_NAMES) {
-        expect(defaultProfile(command), command).toBe(expectedBehavior(command));
+        expect(defaultProfile(command), command).toBe(defaultBehaviorFor(command));
       }
 
       for (const name of ["bogus.command", "", "toString", "constructor", "__proto__"]) {

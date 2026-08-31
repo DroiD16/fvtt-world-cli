@@ -107,6 +107,8 @@ var TABLE_DRAW_MAX_COUNT = 100;
 var SETTING_VALUE_MAX_DEPTH = 32;
 var SETTING_VALUE_MAX_NODES = 2e4;
 var SETTING_VALUE_MAX_BYTES = 256 * 1024;
+var MACRO_EXECUTE_TIMEOUT_DEFAULT_MS = 3e4;
+var MACRO_EXECUTE_TIMEOUT_MAX_MS = 3e5;
 var SEARCH_MODES = Object.freeze(["name", "full"]);
 var SEARCH_SOURCES = Object.freeze(["world", "pack"]);
 var SEARCH_SNIPPET_FIELDS = Object.freeze(["text", "systemText", "name"]);
@@ -223,7 +225,11 @@ var ERROR_CODES = Object.freeze({
   SETTING_NOT_FOUND: "SETTING_NOT_FOUND",
   SETTING_READ_FAILED: "SETTING_READ_FAILED",
   SETTING_VALUE_NOT_SERIALIZABLE: "SETTING_VALUE_NOT_SERIALIZABLE",
+  SETTING_PROTECTED: "SETTING_PROTECTED",
+  SETTING_UNREGISTERED: "SETTING_UNREGISTERED",
+  MACRO_TIMEOUT: "MACRO_TIMEOUT",
   USER_NOT_FOUND: "USER_NOT_FOUND",
+  USER_SELF_PROTECTED: "USER_SELF_PROTECTED",
   SEARCH_INDEX_OVERFLOW: "SEARCH_INDEX_OVERFLOW",
   QUERY_TOO_BROAD: "QUERY_TOO_BROAD",
   UNSUPPORTED_OPERATION: "UNSUPPORTED_OPERATION",
@@ -5208,13 +5214,29 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "policy.snapshot": "allow"
 });
 
-// packages/protocol/src/destructive-commands.js
+// packages/protocol/src/command-risk.js
 var DESTRUCTIVE_VERBS = Object.freeze(["delete", "delete-many"]);
 var DESTRUCTIVE_COMMANDS = Object.freeze(["file.delete", "file.move", "scene.fog.reset"]);
+var APPROVE_EXTRA_COMMANDS = Object.freeze(["chat.flush", "system.reload"]);
+var DENIED_BY_DEFAULT_COMMANDS = Object.freeze([
+  "macro.execute",
+  "setting.set",
+  "setting.set-many",
+  "user.role.set",
+  "user.permissions.set",
+  "scene.region.behavior.executable.create",
+  "scene.region.behavior.executable.update",
+  "scene.region.behavior.executable.clone"
+]);
 function isDestructiveCommand(name) {
   const separator = name.lastIndexOf(".");
   const verb = separator === -1 ? "" : name.slice(separator + 1);
   return DESTRUCTIVE_VERBS.includes(verb) || DESTRUCTIVE_COMMANDS.includes(name);
+}
+function defaultBehaviorFor(name) {
+  if (DENIED_BY_DEFAULT_COMMANDS.includes(name)) return "deny";
+  if (isDestructiveCommand(name) || APPROVE_EXTRA_COMMANDS.includes(name)) return "approve";
+  return "allow";
 }
 
 // packages/protocol/src/policy.js
@@ -5669,6 +5691,7 @@ export {
   APPROVAL_TIMEOUT_DEFAULT_MINUTES,
   APPROVAL_TIMEOUT_MAX_MINUTES,
   APPROVAL_TIMEOUT_MIN_MINUTES,
+  APPROVE_EXTRA_COMMANDS,
   AUDIT_FILES_MAX_DIRS,
   AUDIT_FILE_SCOPES,
   AUTH_AWAIT_PARK_CAP_MS,
@@ -5722,11 +5745,14 @@ export {
   DEFAULT_DAEMON_URL,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
+  DENIED_BY_DEFAULT_COMMANDS,
   DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
   FOG_RESET_CONFIRM_TIMEOUT_MS,
   HELLO_SCHEMA,
+  MACRO_EXECUTE_TIMEOUT_DEFAULT_MS,
+  MACRO_EXECUTE_TIMEOUT_MAX_MS,
   MESSAGE_TYPES,
   MODULE_ID,
   MODULE_TITLE,
@@ -5788,6 +5814,7 @@ export {
   createCommandResponse,
   createErrorResponse,
   createProtocolError,
+  defaultBehaviorFor,
   defaultProfile,
   estimateSearchIndexBytes,
   getCommandDefinition,

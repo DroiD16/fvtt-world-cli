@@ -1,5 +1,6 @@
 // Generated from the command registry by scripts/generate-protocol.mjs. Do not edit.
-// Every registry command maps to the baseline behavior: approve when destructive, otherwise allow.
+// Every registry command maps to the baseline behavior: deny when denied by default, approve when
+// destructive or an approve extra, otherwise allow.
 
 import { deepFreeze } from "../schemas/shared.js";
 

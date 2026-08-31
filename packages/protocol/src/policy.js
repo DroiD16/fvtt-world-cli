@@ -1,6 +1,11 @@
 import { DEFAULT_COMMAND_PROFILE } from "./generated/default-command-profile.js";
 
-export { isDestructiveCommand } from "./destructive-commands.js";
+export {
+  APPROVE_EXTRA_COMMANDS,
+  DENIED_BY_DEFAULT_COMMANDS,
+  defaultBehaviorFor,
+  isDestructiveCommand
+} from "./command-risk.js";
 export { DEFAULT_COMMAND_PROFILE } from "./generated/default-command-profile.js";
 
 export const POLICY_BEHAVIORS = Object.freeze(["allow", "approve", "deny"]);

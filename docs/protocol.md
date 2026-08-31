@@ -198,13 +198,14 @@ code set is exported by the protocol package. The classes consumers act on:
 | Request/schema | `INVALID_PARAMS`, `UNKNOWN_COMMAND` | Correct the request or resolve version skew |
 | Authentication/permission | `UNAUTHORIZED`, `PERMISSION_DENIED` | Restore credentials or authority |
 | Pairing | `PAIRING_REQUIRED`, `PAIRING_EXPIRED`, `BRIDGE_BUSY` | Pair, retry revocation, or release the active owner as indicated |
-| Lookup | `*_NOT_FOUND` | Refresh ids and world state |
-| Safety/policy | `DELETE_FORBIDDEN`, `PATH_NOT_ALLOWED` | Change the requested operation |
+| Lookup | `*_NOT_FOUND`, `SETTING_UNREGISTERED` | Refresh ids and world state |
+| Safety/policy | `DELETE_FORBIDDEN`, `PATH_NOT_ALLOWED`, `SETTING_PROTECTED`, `USER_SELF_PROTECTED` | Change the requested operation |
 | Capability | `UNSUPPORTED_OPERATION` | Choose a supported workflow or runtime |
 | Size/resource | `PAYLOAD_TOO_LARGE`, `QUERY_TOO_BROAD`, `IDEMPOTENCY_STORE_FULL` | Reduce, page, or resend the request later |
 | Command policy | `COMMAND_DENIED` | Treat the command as unavailable on that GM client |
 | Approval | `APPROVAL_PENDING`, `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED`, `APPROVAL_QUEUE_FULL`, `APPROVAL_UNKNOWN` | Apply the approval rules below |
 | Bridge state | `BRIDGE_NOT_READY`, `BRIDGE_TIMEOUT`, `BRIDGE_DISCONNECTED` | Apply the delivery rules below |
+| Indeterminate outcome | `MACRO_TIMEOUT` | Verify the effect by reads before retrying |
 | Unexpected | `INTERNAL_ERROR` | Preserve details and investigate |
 
 Foundry DataModel validation failures surface as parameter errors and are distinguished in details
