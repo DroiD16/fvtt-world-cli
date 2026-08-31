@@ -69,6 +69,38 @@ export function createChatHandlers() {
       return { message: serializeChatMessage(message) };
     },
 
+    async "chat.flush"(params) {
+      const messages = getMessagesCollection();
+      const count = messages.size ?? Array.from(messages).length;
+
+      if (isDryRun(params)) {
+        return dryRunResponse({ deleted: 0, count, remaining: count });
+      }
+
+      const DocumentClass = messages.documentClass ?? globalThis.ChatMessage;
+      if (typeof DocumentClass?.deleteDocuments !== "function") {
+        throw createBridgeError(
+          ERROR_CODES.BRIDGE_NOT_READY,
+          "Foundry chat deletion API (ChatMessage.deleteDocuments) is not available; reload the GM client"
+        );
+      }
+
+      await DocumentClass.deleteDocuments([], { deleteAll: true });
+
+      const remaining = getMessagesCollection().size ?? Array.from(getMessagesCollection()).length;
+      if (remaining > 0) {
+        throw createBridgeError(
+          ERROR_CODES.INTERNAL_ERROR,
+          `Foundry accepted the chat flush and the log still holds ${remaining} of ${count} message(s), so the ` +
+            `deletion is unconfirmed and may have landed in part. Re-read the log with \`chat list\` before ` +
+            `retrying`,
+          { count, remaining }
+        );
+      }
+
+      return { deleted: count, count, remaining: 0 };
+    },
+
     async "chat.delete"(params) {
       const message = getChatMessageById(params.messageId);
       const id = message.id ?? params.messageId;

@@ -3037,6 +3037,14 @@ function createSceneDocument(id, data) {
     })
   );
 
+  scene.activate = vi.fn(async () => {
+    for (const other of globalThis.game?.scenes ?? []) {
+      if (other.id !== scene.id && other.active) other.applyStoredWrite({ active: false });
+    }
+    scene.applyStoredWrite({ active: true });
+    return scene;
+  });
+  scene.pullUsers = vi.fn();
   return scene;
 }
 
@@ -3893,6 +3901,11 @@ export function installFakeFoundry() {
       })
     },
     users,
+    paused: false,
+    togglePause: vi.fn(function togglePause(paused) {
+      globalThis.game.paused = paused ?? !globalThis.game.paused;
+      return globalThis.game.paused;
+    }),
     scenes: createCollection([scene, inactiveScene]),
     items: createCollection([item]),
     journal: journals,
@@ -4131,6 +4144,11 @@ export function installFakeFoundry() {
   });
 
   globalThis.ChatMessage.getSpeaker = vi.fn(() => ({ alias: "GM" }));
+  globalThis.ChatMessage.deleteDocuments = vi.fn(async (ids = [], options = {}) => {
+    const doomed = options?.deleteAll ? [...messages].map((message) => message.id) : ids;
+    for (const id of doomed) messages.delete(id);
+    return doomed;
+  });
 
   const rollConstructSpy = vi.fn();
   const rollEvaluateSpy = vi.fn();
@@ -4260,6 +4278,20 @@ export function installFakeFoundry() {
     })
   });
   globalThis.game.users.documentClass = globalThis.User;
+
+  globalThis.Journal = {
+    show: vi.fn(async (document) => document),
+    showImage: vi.fn()
+  };
+  globalThis.foundry.documents = {
+    ...(globalThis.foundry.documents ?? {}),
+    collections: {
+      ...(globalThis.foundry.documents?.collections ?? {}),
+      Journal: globalThis.Journal
+    }
+  };
+
+  globalThis.location = /** @type {any} */ ({ href: "https://localhost:30000/game", reload: vi.fn() });
 
   globalThis.fromUuidSync = vi.fn((uuid) => {
     const text = String(uuid ?? "");

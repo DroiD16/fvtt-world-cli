@@ -1487,3 +1487,216 @@ describe("command router", () => {
     }
   });
 });
+
+describe("broadcast and maintenance commands", () => {
+  let router;
+
+  beforeEach(() => {
+    installFakeFoundry();
+    router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function scenes() {
+    return globalThis.game.scenes;
+  }
+
+  it("activates an inactive scene and confirms it by re-reading", async () => {
+    const preview = await router.route(createRequest("scene.activate", { sceneId: "scene-2", dryRun: true }));
+    expect(preview.result).toEqual({
+      sceneId: "scene-2",
+      active: true,
+      wasActive: false,
+      changed: true,
+      dryRun: true
+    });
+    expect(scenes().get("scene-2").active).toBe(false);
+
+    const response = await router.route(createRequest("scene.activate", { sceneId: "scene-2" }));
+    expect(response.result).toEqual({ sceneId: "scene-2", active: true, wasActive: false, changed: true });
+    expect(scenes().get("scene-2").active).toBe(true);
+    expect(scenes().get("scene-1").active).toBe(false);
+  });
+
+  it("reports activating the already active scene as the no-op it is", async () => {
+    const response = await router.route(createRequest("scene.activate", { sceneId: "scene-1" }));
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toEqual({ sceneId: "scene-1", active: true, wasActive: true, changed: false });
+    expect(scenes().get("scene-1").activate).not.toHaveBeenCalled();
+  });
+
+  it("refuses to report an activation Foundry did not apply", async () => {
+    scenes().get("scene-2").activate = vi.fn(async () => scenes().get("scene-2"));
+
+    const response = await router.route(createRequest("scene.activate", { sceneId: "scene-2" }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.details).toMatchObject({ sceneId: "scene-2" });
+  });
+
+  it("pulls only the users that are connected and names the ones it skipped", async () => {
+    const response = await router.route(
+      createRequest("scene.pull-users", { sceneId: "scene-1", userIds: ["player-1", "player-2"] })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toEqual({
+      sceneId: "scene-1",
+      userIds: ["player-1"],
+      skippedUserIds: ["player-2"],
+      dispatched: true
+    });
+    expect(scenes().get("scene-1").pullUsers).toHaveBeenCalledWith(["player-1"]);
+  });
+
+  it("pulls every connected user when none is named, and keeps quiet when nobody is", async () => {
+    const all = await router.route(createRequest("scene.pull-users", { sceneId: "scene-1" }));
+    expect(all.result.userIds).toEqual(["user-1", "player-1"]);
+
+    for (const user of globalThis.game.users) {
+      user.applyStoredWrite({ active: false });
+    }
+    const nobody = await router.route(createRequest("scene.pull-users", { sceneId: "scene-1" }));
+    expect(nobody.result).toMatchObject({ userIds: [], dispatched: false });
+    expect(scenes().get("scene-1").pullUsers).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports an unknown user rather than pulling the rest", async () => {
+    const response = await router.route(
+      createRequest("scene.pull-users", { sceneId: "scene-1", userIds: ["player-1", "ghost"] })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.USER_NOT_FOUND);
+    expect(scenes().get("scene-1").pullUsers).not.toHaveBeenCalled();
+  });
+
+  it("shows a journal entry to the users it names", async () => {
+    const response = await router.route(
+      createRequest("journal.show", { journalId: "journal-1", force: true, userIds: ["player-1"] })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toMatchObject({
+      journalId: "journal-1",
+      force: true,
+      userIds: ["player-1"],
+      dispatched: true
+    });
+    expect(globalThis.Journal.show).toHaveBeenCalledWith(globalThis.game.journal.get("journal-1"), {
+      force: true,
+      users: ["player-1"]
+    });
+  });
+
+  it("refuses to show a journal entry this GM does not own", async () => {
+    globalThis.game.journal.get("journal-1").isOwner = false;
+
+    const response = await router.route(createRequest("journal.show", { journalId: "journal-1" }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.PERMISSION_DENIED);
+    expect(globalThis.Journal.show).not.toHaveBeenCalled();
+  });
+
+  it("shares a managed image path and an http url, and refuses any other source", async () => {
+    const managed = await router.route(
+      createRequest("image.show", { src: "worlds/world-1/maps/dungeon.webp", title: "The Vault" })
+    );
+    expect(managed.ok).toBe(true);
+    expect(managed.result).toMatchObject({
+      src: "worlds/world-1/maps/dungeon.webp",
+      title: "The Vault",
+      userIds: null,
+      dispatched: true
+    });
+    expect(globalThis.Journal.showImage).toHaveBeenCalledWith("worlds/world-1/maps/dungeon.webp", {
+      users: [],
+      title: "The Vault"
+    });
+
+    const web = await router.route(createRequest("image.show", { src: "https://example.com/map.png" }));
+    expect(web.ok).toBe(true);
+    expect(web.result.src).toBe("https://example.com/map.png");
+
+    for (const src of ["/etc/passwd", "C:/secrets/map.png", "file:///etc/passwd", "../../etc/passwd"]) {
+      const refused = await router.route(createRequest("image.show", { src }));
+      expect(refused.ok, src).toBe(false);
+      expect(refused.error.code, src).toBe(ERROR_CODES.PATH_NOT_ALLOWED);
+    }
+  });
+
+  it("counts the chat log in a preview and empties it for real", async () => {
+    const count = globalThis.game.messages.size;
+    expect(count).toBeGreaterThan(0);
+
+    const preview = await router.route(createRequest("chat.flush", { dryRun: true }));
+    expect(preview.result).toEqual({ deleted: 0, count, remaining: count, dryRun: true });
+    expect(globalThis.game.messages.size).toBe(count);
+
+    const response = await router.route(createRequest("chat.flush"));
+    expect(response.result).toEqual({ deleted: count, count, remaining: 0 });
+    expect(globalThis.game.messages.size).toBe(0);
+    expect(globalThis.ChatMessage.deleteDocuments).toHaveBeenCalledWith([], { deleteAll: true });
+  });
+
+  it("refuses to report a chat flush that left messages behind", async () => {
+    globalThis.ChatMessage.deleteDocuments = vi.fn(async () => []);
+
+    const response = await router.route(createRequest("chat.flush"));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.details.remaining).toBe(globalThis.game.messages.size);
+  });
+
+  it("pauses and resumes the game for every client and reads the flag back", async () => {
+    const preview = await router.route(createRequest("game.pause", { paused: true, dryRun: true }));
+    expect(preview.result).toEqual({ paused: true, previousPaused: false, changed: true, dryRun: true });
+    expect(globalThis.game.paused).toBe(false);
+
+    const paused = await router.route(createRequest("game.pause", { paused: true }));
+    expect(paused.result).toEqual({ paused: true, previousPaused: false, changed: true });
+    expect(globalThis.game.togglePause).toHaveBeenCalledWith(true, { broadcast: true });
+
+    const again = await router.route(createRequest("game.pause", { paused: true }));
+    expect(again.result).toEqual({ paused: true, previousPaused: true, changed: false });
+  });
+
+  it("reports a pause Foundry did not apply", async () => {
+    globalThis.game.togglePause = vi.fn(() => false);
+
+    const response = await router.route(createRequest("game.pause", { paused: true }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.details).toMatchObject({ requested: true, paused: false });
+  });
+
+  it("answers before it reloads the page, never the other way round", async () => {
+    vi.useFakeTimers();
+
+    const response = await router.route(createRequest("system.reload"));
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toEqual({ reloading: true });
+    expect(globalThis.location.reload).not.toHaveBeenCalled();
+
+    await vi.runAllTimersAsync();
+    expect(globalThis.location.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a client that cannot reload itself", async () => {
+    globalThis.location = /** @type {any} */ ({ href: "https://localhost:30000/game" });
+
+    const response = await router.route(createRequest("system.reload"));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.UNSUPPORTED_OPERATION);
+  });
+});
