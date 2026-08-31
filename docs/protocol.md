@@ -156,6 +156,12 @@ exclusive: success carries a result, failure carries a structured error.
 
 Document results live under a type-named key inside the result. Collection, action, and bulk
 results use their documented keys, which vary between commands but are stable for each one.
+Broadcast commands that change no document — pulling users to a scene, showing a journal entry or
+image — report `dispatched` rather than a confirmed post-state, because a socket broadcast offers
+nothing to read back; the result names the users it targeted and the active/inactive split where
+that is knowable. `macro.execute` reports the macro's returned value and observed chat messages,
+and a timeout there is indeterminate: the macro keeps running in the GM client, so `MACRO_TIMEOUT`
+callers verify effects by reads instead of retrying blindly.
 Serialized projections expose `id` as the public identifier; a source `_id` mirror may accompany
 it. A previewed new document has no persistent identity, and an id observed during a preview must
 not be reused. List-like responses that paginate return their collection with a total and a

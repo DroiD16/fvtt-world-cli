@@ -69,6 +69,13 @@ permission. It checks them immediately before handler lookup. Direct commands an
 by GM approval therefore use the same guards. The approved route skips only the permission gate for
 that invocation.
 
+The default permission profile is generated from one three-bucket rule in the protocol package,
+with deny taking precedence over approve over allow: an explicit list denies commands that can
+execute code, change who can do what, or persist outside the world's own data; destructive
+commands and listed exceptions require approval; everything else is allowed. Keeping the rule in
+the protocol package, next to the registry, means a new command cannot ship without a default
+behavior, and the generated profile is byte-pinned so the rule and its output cannot drift apart.
+
 The module ships plain browser-compatible JavaScript. Its generated protocol mirror is produced from
 the canonical protocol package.
 

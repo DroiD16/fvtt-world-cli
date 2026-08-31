@@ -21,6 +21,8 @@ result honestly.
 | Scene placeable fields | Older document models | Some families add fields | Open-family writes pass through sanitized data; reads expose the documented projection |
 | Region behaviors | Core v13 type set | Additional core types | Executable core behavior types remain guarded; other types are Foundry-validated |
 | Combat and action APIs | Version-specific signatures | Version-specific signatures | The bridge adapts known signatures and refuses unsupported behavior |
+| Scene activation | `Scene#activate` runs for any caller | `Scene#activate` throws for non-GM users | The bridge requires GM authority on both versions |
+| User permission names | `TEMPLATE_CREATE` | Renamed to `REGION_CREATE` | `user.permissions.set` validates keys against the connected version's live permission set rather than a fixed list |
 
 This table describes current operator-visible differences, not implementation evidence. Exact
 capabilities remain defined by the connected bridge and exercised by live smoke tests.

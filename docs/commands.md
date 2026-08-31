@@ -173,7 +173,19 @@ With a bridge connected, that inventory is also filtered by the GM client's comm
 
 - `actor`, `item`, `journal`, `scene`, `macro`, `playlist`, `table`, and `cards` manage world
   documents.
-- `chat` reads, creates, and deletes chat messages.
+- `chat` reads, creates, and deletes chat messages. `chat flush` erases the entire log at once and
+  asks for GM approval by default because nothing brings the messages back.
+- `user` manages Foundry user accounts. `user update` edits harmless profile fields, `user create`
+  and `user delete` ask for approval by default, and `user role set` plus `user permissions set` are
+  [off by default](#commands-that-are-off-by-default). No command reads or writes a password, and
+  the account holding the bridge cannot demote or delete itself; see
+  [Security](security.md#users).
+- `setting` lists registrations and reads values, including `setting get-many` for batch reads.
+  `setting set` and `setting set-many` write world, client, and user scopes but are
+  [off by default](#commands-that-are-off-by-default); they refuse this module's own namespace in
+  every mode, and a write to an already-stored value is reported as unchanged without touching
+  Foundry. A result carrying `requiresReload: true` names the follow-up that Foundry expects, which
+  `system reload` performs.
 - `combat` manages encounters and exposes explicit encounter transitions.
 - `folder` manages document organization.
 - Dedicated `*.ownership.set` commands change supported document ownership.
@@ -193,7 +205,11 @@ Common world-document operations include `list`, `get`, `get-many`, `create`, `u
 - `scene.token`, `tile`, `sound`, `wall`, `note`, `drawing`, `light`, `template`, and `region` manage
   scene placeables.
 - `scene.region.behavior` manages region behaviors; writes that supply executable core behavior
-  types are rejected (see [Security](security.md#executable-content)).
+  types are rejected (see [Security](security.md#executable-content)). The separate
+  `scene.region.behavior.executable` family, [off by default](#commands-that-are-off-by-default),
+  authors `executeMacro` behaviors that reference an existing world macro; `executeScript` has no
+  command surface at all. Deleting an executable behavior uses the ordinary
+  `scene region behavior delete`.
 
 Embedded commands require the complete parent ID chain; a read of the parent supplies those IDs when
 they are not already known.
@@ -206,7 +222,22 @@ Some commands invoke a typed Foundry action instead of ordinary CRUD:
 - roll-table draw and reset;
 - card shuffle, reset, deal, draw, and pass;
 - combat start, activation, advancement, and initiative;
-- scene thumbnail generation and fog reset.
+- scene thumbnail generation and fog reset;
+- scene activation (`scene activate`) and pulling active users to a scene (`scene pull-users`);
+- showing a journal entry (`journal show`) or an image (`image show`) to players;
+- pausing or resuming the game clock for everyone (`game pause`);
+- reloading the GM client (`system reload`), which asks for approval by default because it drops
+  the bridge until the client reconnects;
+- macro execution (`macro execute`), [off by default](#commands-that-are-off-by-default).
+
+`macro execute` runs a world macro the GM can already execute, waits for it to finish up to a
+bounded `--macro-timeout-ms`, and reports the returned value plus the chat messages it observed the
+macro create. A macro that outlives the timeout keeps running in the GM browser and the command
+returns the indeterminate `MACRO_TIMEOUT`, so the effect is verified by reads. Two limitations are
+inherent to Foundry: exceptions inside a script macro surface only as GM-side notifications while
+the command reports a `null` return, and a macro is free to reload the page or navigate away, which
+ends the bridge session the same way any disconnect does. Effects therefore deserve a read-back
+whenever the return value alone does not prove them.
 
 Actions can have Foundry, system, or module side effects. Their result describes what the bridge can
 confirm, which may differ from a document post-state, so each action's schema and help are worth
@@ -218,7 +249,8 @@ reading before automating it.
 - `world.audit-files` finds document references to missing managed assets.
 - `compendium.list`, `compendium.index`, and `compendium.get` read pack content.
 - Supported `*.import-from-compendium` commands create world documents from pack sources.
-- `user` and `setting` provide read-only discovery surfaces.
+- `user list`/`user get` and `setting list`/`setting get`/`setting get-many` are the discovery
+  side of the [user and setting families](#world-content).
 
 ### Managed files
 
@@ -269,10 +301,34 @@ Ctrl+C asks the GM client to cancel a waiting decision. Only `APPROVAL_CANCELLED
 command will not run. If the command has started or the client cannot confirm cancellation, the CLI
 reports an indeterminate result.
 
-The default policy asks for approval on commands ending in `delete` or `delete-many`, plus
-`file.move` and `scene.fog.reset`. It allows the remaining commands unless they are exempt from the
-policy. Use the Command permissions window or `fvtt-world-cli commands --json` for the current
-inventory.
+The default policy sorts commands into the three behaviors by what a mistake would cost. Commands
+that can execute code, change who can do what, or persist outside the world's own data are denied
+until a human enables them; the next section lists them. Commands that destroy world data — the
+`delete` and `delete-many` verbs, plus `file.move`, `scene.fog.reset`, and `chat.flush` — ask for
+approval, as do `system.reload` and `user.create`. The remaining commands run on their own unless
+they are exempt from the policy. The Command permissions window and
+`fvtt-world-cli commands --json` show the current inventory.
+
+#### Commands that are off by default
+
+The following commands ship with the deny behavior. They stay invisible to
+[discovery](#discovery-under-a-policy) and refuse to run — even as dry runs — until a GM enables
+them in the Command permissions window of the browser profile holding the bridge:
+
+- `macro.execute`
+- `setting.set`
+- `setting.set-many`
+- `user.role.set`
+- `user.permissions.set`
+- `scene.region.behavior.executable.create`
+- `scene.region.behavior.executable.update`
+- `scene.region.behavior.executable.clone`
+
+They are denied by default because each one executes code, changes who can do what, or persists
+outside the world's own data. Enabling one is a per-browser-profile decision, and the approval
+behavior remains available as a middle ground: a GM who wants to see every macro body before it
+runs sets `macro.execute` to approve rather than allow. [Security](security.md) describes what each
+of these surfaces can and cannot do.
 
 `system.ping`, `system.info`, and the internal approval-wait commands always run. This keeps the
 bridge able to report its state and finish an existing decision. The permissions window omits those
@@ -443,7 +499,8 @@ First-run setup is covered in [Getting started](getting-started.md).
 
 ## Unsupported boundaries
 
-The CLI intentionally does not provide arbitrary JavaScript execution, direct world-database writes,
-unrestricted filesystem access, generic RPC, compendium editing, setting writes, or transactional
-Foundry batches. Consult [Security](security.md) for the trust boundary and
-[Foundry compatibility](compatibility.md) for version-dependent capabilities.
+The CLI intentionally does not provide arbitrary JavaScript evaluation, direct world-database
+writes, unrestricted filesystem access, generic RPC, compendium editing, or transactional Foundry
+batches. Code runs only through `macro.execute` and `executeMacro` region behaviors — both off by
+default, both showing the GM exactly what would run. [Security](security.md) describes the trust
+boundary and [Foundry compatibility](compatibility.md) the version-dependent capabilities.

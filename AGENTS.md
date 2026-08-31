@@ -17,7 +17,8 @@ files.
 
 ## Non-Goals
 
-- No arbitrary JavaScript execution from the CLI.
+- No JavaScript execution that the GM has not explicitly enabled and cannot see before it runs.
+- No setting writes to this module's own namespace.
 - No direct writes into live Foundry world data.
 - No arbitrary reads or writes outside Foundry's managed `data` file source.
 - No browser UI automation as the primary control path.
