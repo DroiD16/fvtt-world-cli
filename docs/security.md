@@ -260,8 +260,9 @@ Reads address normalized managed-data paths. Writes are restricted to the active
 - `packs/` and all descendants.
 
 Containment and exclusions are segment-aware and are checked before payload decoding or capability
-dispatch. Absolute host paths, traversal, sibling-prefix tricks, and encoded attempts to cross the
-boundary are rejected.
+dispatch. Path normalization rejects a segment whose literal or percent-decoded form is `.` or `..`,
+so absolute host paths, traversal, sibling-prefix tricks, and percent-encoded traversal (`%2e%2e`)
+cannot cross the boundary; this applies to every managed-path caller, including `image show`.
 
 The module accepts upload content over the authenticated local transport and a managed data-relative
 destination. It does not read arbitrary files from the operator machine. The CLI may read an explicit

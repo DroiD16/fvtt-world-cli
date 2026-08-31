@@ -48,6 +48,10 @@ describe("normalizeFilePath rejection branches", () => {
     ["a single-dot segment", "worlds/./file.txt"],
     ["a bare single-dot path", "."],
     ["a bare double-dot path", ".."],
+    ["a percent-encoded parent traversal", "%2e%2e/%2e%2e/worlds/w/data/x.png"],
+    ["an uppercase percent-encoded parent traversal", "%2E%2E/worlds/w/data/x.png"],
+    ["a mid-path percent-encoded parent traversal", "a/%2e%2e/b.png"],
+    ["a percent-encoded single-dot segment", "assets/%2e/x.png"],
     ["a doubled slash (empty segment)", "a//b"],
     ["a trailing slash (empty segment)", "worlds/world-1/"],
     ["a leading slash (absolute)", "/a/b"]
@@ -80,6 +84,25 @@ describe("normalizeFilePath rejection branches", () => {
       "worlds/world-1/fvtt-world-cli/x.txt"
     );
     expect(normalizeFilePath("worlds\\world-1\\file.txt")).toBe("worlds/world-1/file.txt");
+  });
+
+  it("accepts a doubly-encoded dot segment as a literal name, not a traversal", () => {
+    expect(normalizeFilePath("%252e%252e/x.png")).toBe("%252e%252e/x.png");
+  });
+
+  it("never yields a `.` or `..` segment out of canonicalizeDataPath for an accepted path", () => {
+    for (const path of ["%2e%2e/x.png", "a/%2E%2E/b.png", "assets/%2e/c.png", "worlds/../x"]) {
+      let canonical = null;
+      try {
+        canonical = canonicalizeDataPath(normalizeFilePath(path));
+      } catch {
+        canonical = null;
+      }
+      if (canonical !== null) {
+        expect(canonical.split("/")).not.toContain("..");
+        expect(canonical.split("/")).not.toContain(".");
+      }
+    }
   });
 });
 
