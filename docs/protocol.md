@@ -193,6 +193,12 @@ commands over bounded arrays: elements are prevalidated, but Foundry persistence
 transactional, so the result reports overall completeness plus a per-element outcome, and every
 outcome carries its own meaning.
 
+Batch reads (`get-many`) fail the whole request when any requested id cannot be read, with one
+exception: `setting.get-many` reports an unregistered key on its own result row (`SETTING_NOT_FOUND`)
+rather than failing the request, because a world routinely registers settings only for the systems
+and modules it has active, so a partially resolvable set of keys is the normal case rather than an
+error.
+
 ## Error model
 
 Errors have a stable code, a human-readable message, and optional structured details. The code and
