@@ -577,7 +577,11 @@ describe("Command approval window", () => {
       { "==system": { uuid: "Macro.macro-1" }, system: { events: ["tokenEnter"] } },
       { "==system.uuid": "Macro.macro-1" },
       { "-=system": null },
-      { "-=system.uuid": null }
+      { "-=system.uuid": null },
+      { "system.==uuid": "Macro.macro-1" },
+      { "system.-=uuid": null },
+      { system: { "==uuid": "Macro.macro-1" } },
+      { system: { "-=uuid": null } }
     ];
 
     for (const patch of spellings) {

@@ -4316,7 +4316,27 @@ describe("executable region behaviors", () => {
       },
       { label: "one replaced field", payload: { "==system.uuid": MACRO_UUID }, keys: ["==system.uuid"] },
       { label: "whole-object deletion", payload: { "-=system": null }, keys: ["-=system"] },
-      { label: "one deleted field", payload: { "-=system.uuid": null }, keys: ["-=system.uuid"] }
+      { label: "one deleted field", payload: { "-=system.uuid": null }, keys: ["-=system.uuid"] },
+      {
+        label: "an operator on the dotted field itself",
+        payload: { "system.==uuid": MACRO_UUID },
+        keys: ["system.==uuid"]
+      },
+      {
+        label: "a deletion of the dotted field itself",
+        payload: { "system.-=uuid": null },
+        keys: ["system.-=uuid"]
+      },
+      {
+        label: "an operator inside the plain system object",
+        payload: { system: { "==uuid": MACRO_UUID } },
+        keys: ["system.==uuid"]
+      },
+      {
+        label: "a deletion inside the plain system object",
+        payload: { system: { "-=uuid": null } },
+        keys: ["system.-=uuid"]
+      }
     ];
 
     const before = behaviors().size;

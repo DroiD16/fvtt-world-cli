@@ -276,8 +276,8 @@ export function assertRegionBehaviorWriteAllowed({
 
 /**
  * Every spelling of a behavior's `system.<field>` this module accepts. The approval window reads the
- * same set, so a GM is shown the value the guard and Foundry will act on. Any other spelling — and any
- * payload that mixes these two — is refused by assertExecutableBehaviorSystemSpelling before this
+ * same set, so a GM is shown the value the guard and Foundry will act on. Any operator spelling — and
+ * any payload that mixes these two — is refused by assertExecutableBehaviorSystemSpelling before this
  * reader is consulted, so no unread spelling can carry a value past the guard or the window.
  * @param {Record<string, any> | null | undefined} payload
  * @param {string} field
@@ -301,24 +301,50 @@ export function suppliedExecutableBehaviorField(payload, field) {
 }
 
 /**
+ * @param {string} segment
+ * @returns {boolean}
+ */
+function isOperatorSegment(segment) {
+  return segment.startsWith("==") || segment.startsWith("-=");
+}
+
+/**
+ * @param {Record<string, any>} payload
+ * @param {string[]} supplied
+ * @returns {string[]}
+ */
+function operatorSpelledSystemKeys(payload, supplied) {
+  const offending = supplied.filter((key) => key.split(".").some(isOperatorSegment));
+  const system = payload.system;
+  if (system && typeof system === "object") {
+    offending.push(
+      ...Object.keys(system)
+        .filter(isOperatorSegment)
+        .map((key) => `system.${key}`)
+    );
+  }
+  return offending;
+}
+
+/**
  * @param {Record<string, any> | null | undefined} payload
  * @param {Record<string, any>} details
  */
-export function assertExecutableBehaviorSystemSpelling(payload, details) {
+function assertExecutableBehaviorSystemSpelling(payload, details) {
   if (!payload || typeof payload !== "object") {
     return;
   }
 
   const supplied = Object.keys(payload).filter((key) => payloadKeyField(key) === "system");
-  const operators = supplied.filter((key) => key !== "system" && !key.startsWith("system."));
+  const operators = operatorSpelledSystemKeys(payload, supplied);
   if (operators.length > 0) {
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
-      `A RegionBehavior's 'system' may reach scene.region.behavior.executable.* ONLY as the plain 'system' object or a dotted 'system.<field>' path (found ${operators
+      `A RegionBehavior's 'system' may reach scene.region.behavior.executable.* ONLY as the plain 'system' object or a dotted 'system.<field>' path, with no forced-replacement ('==') or forced-deletion ('-=') operator anywhere in the path or among the object's own keys (found ${operators
         .map((key) => `"${key}"`)
         .join(
           ", "
-        )}): drop the offending key and resend a plain spelling. Foundry's forced-replacement '==system' and forced-deletion '-=system' keys are not equivalent to it — Foundry resolves them against any plain 'system' beside them in key-insertion order, so the value that ends up stored depends on the order of the payload's keys. This family reads 'system.uuid' to check that an executeMacro behavior names a macro in THIS world, and the GM approval window shows that same read, so an unresolvable spelling could arm a macro that neither the check nor the approving GM ever saw — or blank the uuid of an already armed behavior. Nothing was written`,
+        )}): drop the offending key and resend a plain spelling. An operator key is not equivalent to the plain one — Foundry resolves it against whatever plain spelling sits beside it in key-insertion order, so the value that ends up stored depends on the order of the payload's keys. This family reads 'system.uuid' to check that an executeMacro behavior names a macro in THIS world, and the GM approval window shows that same read, so an unresolvable spelling could arm a macro that neither the check nor the approving GM ever saw — or blank the uuid of an already armed behavior. Nothing was written`,
       { ...details, field: "system", suppliedKeys: operators }
     );
   }
