@@ -4469,6 +4469,36 @@ describe("executable region behaviors", () => {
     expect(wholeArray.ok).toBe(true);
   });
 
+  it("refuses a dotted own key inside the plain 'system' object that Foundry would expand over the shown field", async () => {
+    for (const patch of [
+      { system: { uuid: MACRO_UUID, events: ["tokenEnter"], "events.0": "tokenExit" } },
+      { system: { uuid: MACRO_UUID, "uuid.x": "Macro.evil" } }
+    ]) {
+      const refused = await router.route(
+        createRequest("scene.region.behavior.executable.update", {
+          sceneId: "scene-1",
+          regionId: "region-safe",
+          behaviorId: "behavior-macro",
+          patch
+        })
+      );
+      expect(refused.ok, JSON.stringify(patch)).toBe(false);
+      expect(refused.error.code, JSON.stringify(patch)).toBe("INVALID_PARAMS");
+      expect(refused.error.details, JSON.stringify(patch)).toMatchObject({ field: "system" });
+    }
+
+    const created = await router.route(
+      createRequest("scene.region.behavior.executable.create", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        data: { type: "executeMacro", system: { uuid: MACRO_UUID, "events.0": "tokenExit" } }
+      })
+    );
+    expect(created.ok).toBe(false);
+    expect(created.error.code).toBe("INVALID_PARAMS");
+    expect(created.error.details).toMatchObject({ field: "system" });
+  });
+
   it("keeps the nested behaviors array closed to executable types on the executable family's own scene", async () => {
     for (const type of ["executeMacro", "executeScript"]) {
       const response = await router.route(

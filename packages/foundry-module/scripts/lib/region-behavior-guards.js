@@ -328,6 +328,20 @@ function operatorSpelledSystemKeys(payload, supplied) {
 }
 
 /**
+ * @param {Record<string, any>} payload
+ * @returns {string[]}
+ */
+function dottedPlainSystemObjectKeys(payload) {
+  const system = payload.system;
+  if (!system || typeof system !== "object") {
+    return [];
+  }
+  return Object.keys(system)
+    .filter((key) => key.includes(".") && !isOperatorSegment(key))
+    .map((key) => `system.${key}`);
+}
+
+/**
  * @param {Record<string, any> | null | undefined} payload
  * @param {Record<string, any>} details
  * @param {{ allowDottedSystem?: boolean }} [options]
@@ -348,6 +362,19 @@ function assertExecutableBehaviorSystemSpelling(payload, details, { allowDottedS
           ", "
         )}): drop the offending key and resend a plain spelling. An operator key is not equivalent to the plain one — Foundry resolves it against whatever plain spelling sits beside it in key-insertion order, so the value that ends up stored depends on the order of the payload's keys. This family reads 'system.uuid' to check that an executeMacro behavior names a macro in THIS world, and the GM approval window shows that same read, so an unresolvable spelling could arm a macro that neither the check nor the approving GM ever saw — or blank the uuid of an already armed behavior. Nothing was written`,
       { ...details, field: "system", suppliedKeys: operators }
+    );
+  }
+
+  const dottedInObject = dottedPlainSystemObjectKeys(payload);
+  if (dottedInObject.length > 0) {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      `A RegionBehavior's plain 'system' object supplied to scene.region.behavior.executable.* may not carry a dotted own key (found ${dottedInObject
+        .map((key) => `"${key}"`)
+        .join(
+          ", "
+        )}): Foundry expands a dotted key inside the object and OVERRIDES the plain field beside it, so 'system.events.0' hidden this way changes WHEN the armed macro fires while this family's macro check and the GM approval window still read the plain field's value — the value stored would differ from the one shown. Set the whole '<field>' value with a plain object key instead. Nothing was written`,
+      { ...details, field: "system", suppliedKeys: dottedInObject }
     );
   }
 
