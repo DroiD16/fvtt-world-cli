@@ -1,5 +1,8 @@
-import { BATCH_GET_MAX_IDS, ERROR_CODES } from "../generated/protocol.js";
-import { getMacroById, getMacrosCollection } from "../lib/game-collections.js";
+import { BATCH_GET_MAX_IDS, ERROR_CODES, MACRO_EXECUTE_TIMEOUT_DEFAULT_MS } from "../generated/protocol.js";
+import { startAuthoredChatCapture } from "../lib/chat-capture.js";
+import { getActorById, getMacroById, getMacrosCollection } from "../lib/game-collections.js";
+import { getSceneEmbeddedById } from "../lib/scene-embedded.js";
+import { serializeSettingValue } from "../lib/setting-values.js";
 import {
   cloneDocument,
   createMacro,
@@ -7,10 +10,147 @@ import {
   previewDocumentUpdate,
   previewMacroCreate
 } from "../lib/world-docs.js";
-import { createBridgeError } from "../lib/errors.js";
+import { createBridgeError, toFailureSummary } from "../lib/errors.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import { filterByName, paginate, serializeMacro, serializeMacroSummary } from "../lib/serializers.js";
+
+const RESERVED_MACRO_ARGUMENT_NAMES = Object.freeze(["speaker", "actor", "token", "character", "event"]);
+
+/**
+ * @param {Record<string, unknown> | undefined} args
+ */
+function assertMacroArgumentNames(args) {
+  for (const name of Object.keys(args ?? {})) {
+    if (RESERVED_MACRO_ARGUMENT_NAMES.includes(name)) {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `Macro argument ${name} is one of the names Foundry itself binds in a script macro's scope ` +
+          `(${RESERVED_MACRO_ARGUMENT_NAMES.join(", ")}); rename the argument. Nothing was executed`,
+        { argument: name, reserved: RESERVED_MACRO_ARGUMENT_NAMES }
+      );
+    }
+
+    if (/^\d+$/.test(name) || Number.isFinite(Number(name))) {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `Macro argument ${name} is numeric, and Foundry refuses a numeric name in a macro execution scope; ` +
+          `rename the argument. Nothing was executed`,
+        { argument: name }
+      );
+    }
+  }
+}
+
+/**
+ * @param {{ actorId?: string, sceneId?: string, tokenId?: string, args?: Record<string, unknown> }} scope
+ */
+function resolveMacroScope(scope) {
+  const requested = scope ?? {};
+  if (requested.tokenId && !requested.sceneId) {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      "scope.tokenId identifies a token inside one scene, so scope.sceneId is required with it. Nothing was executed",
+      { tokenId: requested.tokenId }
+    );
+  }
+
+  assertMacroArgumentNames(requested.args);
+
+  const token = requested.tokenId
+    ? getSceneEmbeddedById(
+        /** @type {string} */ (requested.sceneId),
+        "Token",
+        requested.tokenId,
+        ERROR_CODES.TOKEN_NOT_FOUND,
+        "tokenId"
+      ).document
+    : null;
+
+  const actor = requested.actorId ? getActorById(requested.actorId) : (token?.actor ?? null);
+  const speaker = resolveMacroSpeaker(actor, token);
+
+  return { actor, token, speaker, args: requested.args ?? {} };
+}
+
+/**
+ * @param {any} actor
+ * @param {any} token
+ */
+function resolveMacroSpeaker(actor, token) {
+  const getSpeaker = /** @type {any} */ (globalThis).ChatMessage?.getSpeaker;
+  if (typeof getSpeaker !== "function") {
+    return null;
+  }
+
+  return getSpeaker.call(globalThis.ChatMessage, {
+    ...(actor ? { actor } : null),
+    ...(token ? { token } : null)
+  });
+}
+
+/**
+ * @param {{ actor: any, token: any, speaker: any, args: Record<string, unknown> }} scope
+ */
+function buildMacroExecutionScope(scope) {
+  return {
+    ...scope.args,
+    ...(scope.speaker ? { speaker: scope.speaker } : null),
+    ...(scope.actor ? { actor: scope.actor } : null),
+    // Foundry binds `token` to a placeable in a script macro's scope, so a macro may read canvas-only
+    // properties; the TokenDocument is the fallback when the token's scene is not the viewed one.
+    ...(scope.token ? { token: scope.token.object ?? scope.token } : null)
+  };
+}
+
+/**
+ * @param {unknown} value
+ */
+function serializeMacroReturn(value) {
+  if (value === undefined) {
+    return { returned: null };
+  }
+
+  try {
+    return { returned: serializeSettingValue(value) };
+  } catch (error) {
+    return { returned: null, returnedOmitted: toFailureSummary(error) };
+  }
+}
+
+/**
+ * @param {Promise<unknown>} running
+ * @param {number} timeoutMs
+ * @param {string} macroId
+ */
+async function awaitMacro(running, timeoutMs, macroId) {
+  /** @type {any} */
+  let timer = null;
+  const expiry = new Promise((_resolve, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          createBridgeError(
+            ERROR_CODES.MACRO_TIMEOUT,
+            `Macro ${macroId} did not finish within ${timeoutMs} ms. The outcome is INDETERMINATE: the macro was ` +
+              `not cancelled and keeps running in the GM client, so it may still complete, and anything it has ` +
+              `already changed stays changed. Do not retry blindly — read the documents it touches to find out ` +
+              `what landed, and raise timeoutMs only if the macro is legitimately slow`,
+            { macroId, timeoutMs, indeterminate: true }
+          )
+        ),
+      timeoutMs
+    );
+  });
+
+  try {
+    return await Promise.race([running, expiry]);
+  } finally {
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
+  }
+}
 
 export function createMacroHandlers() {
   return {
@@ -92,6 +232,75 @@ export function createMacroHandlers() {
         id,
         deleted: true
       };
+    },
+
+    async "macro.execute"(params) {
+      const macro = getMacroById(params.macroId);
+      const scope = resolveMacroScope(params.scope);
+      const type = macro.type ?? null;
+      const command = typeof macro.command === "string" ? macro.command : "";
+      const canExecute = macro.canExecute !== false;
+
+      if (isDryRun(params)) {
+        return dryRunResponse({
+          macroId: macro.id ?? params.macroId,
+          type,
+          canExecute,
+          commandLength: command.length
+        });
+      }
+
+      if (!canExecute) {
+        throw createBridgeError(
+          ERROR_CODES.PERMISSION_DENIED,
+          `Macro ${params.macroId} cannot be executed by this GM user: Foundry requires at least LIMITED ownership ` +
+            `of the macro, which is ownership and not a role, so holding the GM role is not enough. Grant ownership ` +
+            `with \`macro ownership set\`. Nothing was executed`,
+          { macroId: params.macroId }
+        );
+      }
+
+      if (typeof macro.execute !== "function") {
+        throw createBridgeError(
+          ERROR_CODES.BRIDGE_NOT_READY,
+          "Foundry macro execution API (Macro#execute) is not available; reload the GM client"
+        );
+      }
+
+      const timeoutMs = params.timeoutMs ?? MACRO_EXECUTE_TIMEOUT_DEFAULT_MS;
+      const capture = startAuthoredChatCapture();
+      try {
+        let running;
+        try {
+          running = Promise.resolve(macro.execute(buildMacroExecutionScope(scope)));
+        } catch (error) {
+          throw createBridgeError(
+            ERROR_CODES.INVALID_PARAMS,
+            `Foundry refused the execution scope for macro ${params.macroId}; see details.message. ` +
+              `Nothing was executed`,
+            {
+              macroId: params.macroId,
+              reason: "foundry_validation",
+              message: toFailureSummary(error).message
+            }
+          );
+        }
+
+        // A timeout answers before the macro settles, so the losing promise needs a reader of its own
+        // or its later rejection becomes an unhandled one.
+        running.catch(() => {});
+        const returnedValue = await awaitMacro(running, timeoutMs, params.macroId);
+
+        return {
+          macroId: macro.id ?? params.macroId,
+          type,
+          ...serializeMacroReturn(returnedValue),
+          chatMessageIds: capture.stop(),
+          chatCapture: capture.available ? "captured" : "unknown"
+        };
+      } finally {
+        capture.stop();
+      }
     }
   };
 }

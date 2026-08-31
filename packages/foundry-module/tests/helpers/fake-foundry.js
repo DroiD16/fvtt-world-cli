@@ -3408,6 +3408,8 @@ export function installFakeFoundry() {
       "midi-qol": { onUseMacroName: "heal" }
     }
   });
+  macro.canExecute = true;
+  macro.execute = vi.fn(async () => undefined);
   const playlist = createPlaylistDocument("playlist-1", {
     name: "Tavern",
     mode: 0,

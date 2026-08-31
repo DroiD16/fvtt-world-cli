@@ -1,6 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createCommandRouter } from "../scripts/command-router.js";
+
+import { ERROR_CODES } from "../scripts/generated/protocol.js";
 
 import { createPlaylistDocument, createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
 
@@ -683,5 +685,172 @@ describe("command router", () => {
     const deleteResponse = await router.route(createRequest("chat.delete", { messageId: "msg-1" }));
     expect(deleteResponse.ok).toBe(true);
     expect(deleteResponse.result).toMatchObject({ id: "msg-1", deleted: true });
+  });
+});
+
+describe("macro execution", () => {
+  let router;
+
+  beforeEach(() => {
+    installFakeFoundry();
+    router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+  });
+
+  function macroDoc() {
+    return globalThis.game.macros.get("macro-1");
+  }
+
+  function chatListenerCount() {
+    return (globalThis.Hooks._listeners.get("createChatMessage") ?? []).length;
+  }
+
+  it("runs the macro, reports its return value and the messages it created", async () => {
+    macroDoc().execute = vi.fn(async () => {
+      globalThis.Hooks.callAll("createChatMessage", { id: "msg-from-macro" }, {}, "user-1");
+      return { healed: 4 };
+    });
+
+    const response = await router.route(createRequest("macro.execute", { macroId: "macro-1" }));
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toEqual({
+      macroId: "macro-1",
+      type: "script",
+      returned: { healed: 4 },
+      chatMessageIds: ["msg-from-macro"],
+      chatCapture: "captured"
+    });
+    expect(chatListenerCount()).toBe(0);
+  });
+
+  it("ignores a message another user created while the macro ran", async () => {
+    macroDoc().execute = vi.fn(async () => {
+      globalThis.Hooks.callAll("createChatMessage", { id: "msg-elsewhere" }, {}, "player-9");
+      return null;
+    });
+
+    const response = await router.route(createRequest("macro.execute", { macroId: "macro-1" }));
+
+    expect(response.result.chatMessageIds).toEqual([]);
+  });
+
+  it("hands Foundry the resolved actor, token and speaker plus the caller's arguments", async () => {
+    const execute = vi.fn(async () => undefined);
+    macroDoc().execute = execute;
+
+    const response = await router.route(
+      createRequest("macro.execute", {
+        macroId: "macro-1",
+        scope: { sceneId: "scene-1", tokenId: "token-a", args: { rounds: 2 } }
+      })
+    );
+
+    expect(response.ok).toBe(true);
+    const scope = /** @type {any} */ (execute.mock.calls[0])[0];
+    expect(scope.rounds).toBe(2);
+    expect(scope.speaker).toEqual({ alias: "GM" });
+    expect(scope.token.id).toBe("token-a");
+    expect(scope.actor.id).toBe(globalThis.game.scenes.get("scene-1").tokens.get("token-a").actor.id);
+  });
+
+  it("requires a scene for a token and reports an unknown token", async () => {
+    const withoutScene = await router.route(
+      createRequest("macro.execute", { macroId: "macro-1", scope: { tokenId: "token-a" } })
+    );
+    expect(withoutScene.ok).toBe(false);
+    expect(withoutScene.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(withoutScene.error.message).toContain("scope.sceneId");
+
+    const unknownToken = await router.route(
+      createRequest("macro.execute", { macroId: "macro-1", scope: { sceneId: "scene-1", tokenId: "ghost" } })
+    );
+    expect(unknownToken.ok).toBe(false);
+    expect(unknownToken.error.code).toBe(ERROR_CODES.TOKEN_NOT_FOUND);
+    expect(macroDoc().execute).not.toHaveBeenCalled();
+  });
+
+  it("refuses an argument name Foundry binds itself", async () => {
+    const response = await router.route(
+      createRequest("macro.execute", { macroId: "macro-1", scope: { args: { actor: "actor-1" } } })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(response.error.details).toMatchObject({ argument: "actor" });
+    expect(macroDoc().execute).not.toHaveBeenCalled();
+  });
+
+  it("previews without running the macro", async () => {
+    const response = await router.route(createRequest("macro.execute", { macroId: "macro-1", dryRun: true }));
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toEqual({
+      macroId: "macro-1",
+      type: "script",
+      canExecute: true,
+      commandLength: "console.log('heal');".length,
+      dryRun: true
+    });
+    expect(macroDoc().execute).not.toHaveBeenCalled();
+  });
+
+  it("reports a macro this user may not execute and previews it as unexecutable", async () => {
+    macroDoc().canExecute = false;
+
+    const response = await router.route(createRequest("macro.execute", { macroId: "macro-1" }));
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.PERMISSION_DENIED);
+    expect(response.error.message).toContain("ownership");
+    expect(macroDoc().execute).not.toHaveBeenCalled();
+
+    const preview = await router.route(createRequest("macro.execute", { macroId: "macro-1", dryRun: true }));
+    expect(preview.result).toMatchObject({ canExecute: false });
+  });
+
+  it("stops waiting for a macro that never finishes and calls the outcome indeterminate", async () => {
+    macroDoc().execute = vi.fn(() => new Promise(() => {}));
+
+    const response = await router.route(createRequest("macro.execute", { macroId: "macro-1", timeoutMs: 5 }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.MACRO_TIMEOUT);
+    expect(response.error.details).toMatchObject({
+      macroId: "macro-1",
+      timeoutMs: 5,
+      indeterminate: true
+    });
+    expect(response.error.message).toContain("keeps running");
+    expect(chatListenerCount()).toBe(0);
+  });
+
+  it("maps a scope Foundry itself refuses to a validation failure", async () => {
+    macroDoc().execute = vi.fn(() => {
+      throw new Error("Invalid scope parameter passed to Macro#execute which must be an object");
+    });
+
+    const response = await router.route(createRequest("macro.execute", { macroId: "macro-1" }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(response.error.details).toMatchObject({ reason: "foundry_validation" });
+    expect(response.error.details.message).toContain("Invalid scope parameter");
+    expect(chatListenerCount()).toBe(0);
+  });
+
+  it("omits a return value it cannot serialize within the bridge's bounds", async () => {
+    macroDoc().execute = vi.fn(async () => ({ run: () => true }));
+
+    const response = await router.route(createRequest("macro.execute", { macroId: "macro-1" }));
+
+    expect(response.ok).toBe(true);
+    expect(response.result.returned).toBeNull();
+    expect(response.result.returnedOmitted.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+  });
+
+  it("reports an unknown macro", async () => {
+    const response = await router.route(createRequest("macro.execute", { macroId: "ghost" }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.MACRO_NOT_FOUND);
   });
 });
