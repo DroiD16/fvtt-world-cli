@@ -55,11 +55,25 @@ daemon for `cli-daemon`. Compare the reported versions for `unknown`.
   with their complete parent chain (actor → item → effect, scene → token → item).
 - Ownership changes go through dedicated `*.ownership.set` commands; raw `ownership` is rejected
   in ordinary payloads.
-- The CLI cannot execute JavaScript, write settings, edit compendium packs in place, or reach
-  outside the managed file boundary, and executable region-behavior types are rejected on write.
-  Do not look for workarounds; report the limitation instead.
+- The CLI cannot evaluate arbitrary JavaScript, edit compendium packs in place, or reach outside
+  the managed file boundary, and ordinary region-behavior writes reject executable types. Do not
+  look for workarounds; report the limitation instead.
 - Check stderr before diagnosing a hung command. An approval-listed command prints a waiting line
   while the GM decides in Foundry. Deletions require approval by default.
+
+## Off-by-default commands
+
+Some commands ship denied and appear in `commands --json` only after the GM enables them in the
+Command permissions window: `macro.execute`, `setting.set`/`set-many`, `user.role.set`,
+`user.permissions.set`, and the `scene.region.behavior.executable.*` family. Their absence from
+discovery means the GM has not opted in — report that instead of hunting for an equivalent.
+`macro.execute` is the only way to run code and is not a workaround for a missing command; a script
+macro's exceptions are swallowed by Foundry (a `null` return proves nothing), so verify its effects
+with reads, and treat `MACRO_TIMEOUT` as indeterminate — the macro may still be running.
+`setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
+When a setting write returns `requiresReload: true`, the change needs a GM-client reload to take
+effect; `system.reload` performs it, drops the bridge, and requires a reconnect wait before the
+next command.
 
 ## The working loop
 
