@@ -337,6 +337,29 @@ const regionBehaviorPatchSchema = {
   minProperties: 1
 };
 
+const executableBehaviorTypeSchema = { type: "string", enum: ["executeMacro"] };
+
+const executableBehaviorCreateSchema = {
+  type: "object",
+  required: ["type"],
+  properties: {
+    type: executableBehaviorTypeSchema,
+    ...regionBehaviorWriteProperties
+  },
+  additionalProperties: true
+};
+
+const executableBehaviorPatchSchema = {
+  type: "object",
+  required: [],
+  properties: {
+    type: executableBehaviorTypeSchema,
+    ...regionBehaviorWriteProperties
+  },
+  additionalProperties: true,
+  minProperties: 1
+};
+
 export const sceneEmbeddedCommands = {
   "scene.token.list": cmd({
     type: "object",
@@ -1405,6 +1428,52 @@ export const sceneEmbeddedCommands = {
         behaviorId: { type: "string", minLength: 1 },
 
         patch: regionBehaviorPatchSchema,
+        ...dryRunProperty,
+        ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "scene.region.behavior.executable.create": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "regionId", "data"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        regionId: { type: "string", minLength: 1 },
+        data: executableBehaviorCreateSchema,
+        ...dryRunProperty,
+        ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "scene.region.behavior.executable.update": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "regionId", "behaviorId", "patch"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        regionId: { type: "string", minLength: 1 },
+        behaviorId: { type: "string", minLength: 1 },
+        patch: executableBehaviorPatchSchema,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "scene.region.behavior.executable.clone": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "regionId", "behaviorId"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        regionId: { type: "string", minLength: 1 },
+        behaviorId: { type: "string", minLength: 1 },
+        patch: executableBehaviorPatchSchema,
         ...dryRunProperty,
         ...idempotencyKeyProperty
       },

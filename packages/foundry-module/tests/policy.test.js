@@ -290,9 +290,10 @@ describe("resolveApprovalTimeoutMinutes", () => {
 
 describe("buildPolicySnapshot", () => {
   const APPROVE_BY_PROFILE = commandsWithProfile("approve");
+  const DENY_BY_PROFILE = commandsWithProfile("deny");
 
-  it("lists the commands the profile marks approve and nothing as deny for an empty policy", () => {
-    expect(buildPolicySnapshot(null)).toEqual({ approve: APPROVE_BY_PROFILE, deny: [] });
+  it("lists the commands the profile marks approve and the ones it denies for an empty policy", () => {
+    expect(buildPolicySnapshot(null)).toEqual({ approve: APPROVE_BY_PROFILE, deny: DENY_BY_PROFILE });
   });
 
   it("reflects overrides in both lists and keeps registry order", () => {
@@ -311,7 +312,11 @@ describe("buildPolicySnapshot", () => {
     );
 
     expect(snapshot.approve).toEqual(expectedApprove);
-    expect(snapshot.deny).toEqual([SECOND_ALLOW_BY_DEFAULT]);
+    expect(snapshot.deny).toEqual(
+      GOVERNED_COMMANDS.filter(
+        (command) => command === SECOND_ALLOW_BY_DEFAULT || DEFAULT_COMMAND_PROFILE[command] === "deny"
+      )
+    );
   });
 
   it("never lists an exempt command, even with an explicit override stored for it", () => {

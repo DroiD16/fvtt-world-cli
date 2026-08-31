@@ -77,5 +77,14 @@ export const chatCommands = {
       additionalProperties: false
     },
     { mutation: true }
+  ),
+  "chat.flush": cmd(
+    {
+      type: "object",
+      required: [],
+      properties: { ...dryRunProperty },
+      additionalProperties: false
+    },
+    { mutation: true }
   )
 };

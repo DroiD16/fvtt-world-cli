@@ -3,9 +3,34 @@ import { describe, expect, it } from "vitest";
 
 import { humanizeCommandResult, RENDERERS, registerRenderers } from "../src/render/registry.js";
 
-const INTENTIONAL_FALLBACK_JSON: readonly string[] = COMMAND_NAMES.filter(
-  (name) => !DISCOVERABLE_COMMAND_NAMES.includes(name)
-);
+// Commands the protocol declares that the CLI does not surface as a subcommand, so no renderer
+// describes their result and the caller sees pretty JSON.
+const WITHOUT_A_CLI_SURFACE: readonly string[] = [
+  "macro.execute",
+  "setting.get-many",
+  "setting.set",
+  "setting.set-many",
+  "user.create",
+  "user.update",
+  "user.delete",
+  "user.role.set",
+  "user.permissions.set",
+  "scene.activate",
+  "scene.pull-users",
+  "scene.region.behavior.executable.create",
+  "scene.region.behavior.executable.update",
+  "scene.region.behavior.executable.clone",
+  "journal.show",
+  "image.show",
+  "chat.flush",
+  "game.pause",
+  "system.reload"
+];
+
+const INTENTIONAL_FALLBACK_JSON: readonly string[] = [
+  ...COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name)),
+  ...WITHOUT_A_CLI_SURFACE
+];
 
 describe("human-output renderer registry", () => {
   it("registers a renderer for every discoverable command and none for internal plumbing", () => {
@@ -13,6 +38,12 @@ describe("human-output renderer registry", () => {
     expect(expected.length).toBeGreaterThan(0);
     expect(INTENTIONAL_FALLBACK_JSON.length).toBeGreaterThan(0);
     expect(Object.keys(RENDERERS).sort()).toEqual(expected);
+  });
+
+  it("claims a JSON fallback only for names the protocol declares", () => {
+    for (const command of WITHOUT_A_CLI_SURFACE) {
+      expect(COMMAND_NAMES, `${command} is not a protocol command`).toContain(command);
+    }
   });
 
   it("registers no name outside the protocol command set", () => {

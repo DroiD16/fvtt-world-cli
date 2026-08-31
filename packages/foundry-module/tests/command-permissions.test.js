@@ -661,9 +661,13 @@ describe("Command permissions application", () => {
       expect(pressedBehavior(view.rowButtons)).toBe("allow");
       expect(view.row.classes.get("fvtt-world-cli-policy-row--changed")).toBe(false);
       const group = findNode((await view.app._prepareContext()).nodes, ALLOWED_BY_PROFILE.split(".")[0]);
-      expect(badgeOf(view.badges, "allow").textContent).toBe(String(group.counts.allow));
-      expect(badgeOf(view.badges, "deny").textContent).toBe(String(group.counts.deny));
-      expect(badgeOf(view.badges, "deny").classes.get("fvtt-world-cli-policy-count--empty")).toBe(true);
+      for (const behavior of ["allow", "approve", "deny"]) {
+        const badge = badgeOf(view.badges, behavior);
+        expect(badge.textContent, behavior).toBe(String(group.counts[behavior]));
+        expect(badge.classes.get("fvtt-world-cli-policy-count--empty"), behavior).toBe(
+          group.counts[behavior] === 0
+        );
+      }
       expect(view.dirtyMarker.classes.get("fvtt-world-cli-policy-dirty--active")).toBe(false);
       expect(view.saveError.hidden).toBe(true);
       expect(view.fillLabel.textContent).toBe(localizeEnglish("FVTTWORLDCLI.Permissions.MasterFill"));
@@ -672,6 +676,7 @@ describe("Command permissions application", () => {
     it("repaints one row and its node when a behavior changes", async () => {
       const view = render();
       await view.app._onRender({}, {});
+      const group = findNode((await view.app._prepareContext()).nodes, ALLOWED_BY_PROFILE.split(".")[0]);
 
       await view.dispatch("setBehavior", { command: ALLOWED_BY_PROFILE, behavior: "deny" });
 
@@ -679,7 +684,7 @@ describe("Command permissions application", () => {
       expect(pressedBehavior(view.rowButtons)).toBe("deny");
       expect(view.row.classes.get("fvtt-world-cli-policy-row--changed")).toBe(true);
       expect(view.node.classes.get("fvtt-world-cli-policy-node--changed")).toBe(true);
-      expect(badgeOf(view.badges, "deny").textContent).toBe("1");
+      expect(badgeOf(view.badges, "deny").textContent).toBe(String(group.counts.deny + 1));
       expect(view.dirtyMarker.classes.get("fvtt-world-cli-policy-dirty--active")).toBe(true);
     });
 

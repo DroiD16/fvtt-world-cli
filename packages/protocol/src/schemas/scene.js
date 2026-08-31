@@ -9,7 +9,8 @@ import {
   idempotencyKeyProperty,
   nameFilteredListSchema,
   nullableStringSchema,
-  patchFrom
+  patchFrom,
+  userIdsProperty
 } from "./shared.js";
 
 const sceneIdSchema = {
@@ -200,6 +201,27 @@ export const sceneCommands = {
     },
     { mutation: true }
   ),
+  "scene.activate": cmd(
+    {
+      type: "object",
+      required: ["sceneId"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "scene.pull-users": cmd({
+    type: "object",
+    required: ["sceneId"],
+    properties: {
+      sceneId: { type: "string", minLength: 1 },
+      ...userIdsProperty
+    },
+    additionalProperties: false
+  }),
   "scene.ownership.set": cmd(ownershipSetSchema("sceneId", { levelSchema: ownershipLevelSchema }), {
     mutation: true
   })

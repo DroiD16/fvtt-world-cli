@@ -201,6 +201,7 @@ const OPEN_PAYLOAD_FAMILIES = Object.freeze([
   "scene.note",
   "scene.region",
   "scene.region.behavior",
+  "scene.region.behavior.executable",
   "scene.sound",
   "scene.template",
   "scene.tile",
@@ -273,7 +274,9 @@ const EXPECTED_CLOSED_PAYLOADS = Object.freeze([
   "table.result.clone.patch",
   "table.result.create.data",
   "table.result.update.patch",
-  "table.update.patch"
+  "table.update.patch",
+  "user.create.data",
+  "user.update.patch"
 ]);
 
 const EXPECTED_FAMILY_FIELDS = Object.freeze({
@@ -544,8 +547,14 @@ const EXPECTED_FAMILY_FIELDS = Object.freeze({
     "name",
     "replacement",
     "sort"
-  ]
+  ],
+  "user.create.data": ["avatar", "character", "color", "flags", "name", "pronouns", "role"],
+  "user.update.patch": ["avatar", "character", "color", "flags", "name", "pronouns"]
 });
+
+// A bulk write whose elements address a store rather than a document collection, so it carries no
+// scope id and no document family declares its verb.
+const NON_DOCUMENT_BULK_WRITES = Object.freeze(["setting.set-many"]);
 
 function collectPayloadSchemas() {
   const payloads = [];
@@ -608,6 +617,7 @@ const MUTATION_BASES = Object.freeze({
   "scene.clone": { sceneId: "scene-1" },
   "scene.thumbnail.generate": { sceneId: "scene-1" },
   "scene.fog.reset": { sceneId: "scene-1" },
+  "scene.activate": { sceneId: "scene-1" },
   "scene.token.create": { sceneId: "scene-1", data: { name: "X" } },
   "scene.token.update": { sceneId: "scene-1", tokenId: "tok-1", patch: { name: "X" } },
   "scene.token.delete": { sceneId: "scene-1", tokenId: "tok-1" },
@@ -779,6 +789,7 @@ const MUTATION_BASES = Object.freeze({
   "macro.update": { macroId: "macro-1", patch: { name: "X" } },
   "macro.delete": { macroId: "macro-1" },
   "macro.clone": { macroId: "macro-1" },
+  "macro.execute": { macroId: "macro-1" },
   "actor.create": { data: { name: "X", type: "npc" } },
   "actor.update": { actorId: "actor-1", patch: { name: "X" } },
   "actor.delete": { actorId: "actor-1" },
@@ -829,6 +840,8 @@ const MUTATION_BASES = Object.freeze({
   "playlist.sound.stop": { playlistId: "pl-1", soundId: "s-1" },
   "chat.create": { data: { content: "hi" } },
   "chat.delete": { messageId: "msg-1" },
+  "chat.flush": {},
+  "game.pause": { paused: true },
   "folder.create": { data: { name: "X", type: "Item" } },
   "folder.update": { folderId: "folder-1", patch: { name: "Y" } },
   "folder.delete": { folderId: "folder-1" },
@@ -842,6 +855,13 @@ const MUTATION_BASES = Object.freeze({
   "macro.ownership.set": { macroId: "macro-1", default: 1 },
   "playlist.ownership.set": { playlistId: "pl-1", default: 2 },
   "journal.ownership.set": { journalId: "j-1", pageId: "page-1", default: -1 },
+  "setting.set": { namespace: "core", key: "chatBubbles", value: true },
+  "setting.set-many": { items: [{ namespace: "core", key: "chatBubbles", value: true }] },
+  "user.create": { data: { name: "Scribe" } },
+  "user.update": { userId: "user-1", patch: { name: "Scribe" } },
+  "user.delete": { userId: "user-1" },
+  "user.role.set": { userId: "user-1", role: 2 },
+  "user.permissions.set": { userId: "user-1", permissions: { BROADCAST_AUDIO: true } },
 
   "journal.category.create": { journalId: "j-1", data: { name: "Chapter One" } },
   "journal.category.update": { journalId: "j-1", categoryId: "cat-1", patch: { name: "X" } },
@@ -860,6 +880,22 @@ const MUTATION_BASES = Object.freeze({
   },
   "scene.region.behavior.delete": { sceneId: "scene-1", regionId: "region-1", behaviorId: "beh-1" },
   "scene.region.behavior.clone": { sceneId: "scene-1", regionId: "region-1", behaviorId: "beh-1" },
+  "scene.region.behavior.executable.create": {
+    sceneId: "scene-1",
+    regionId: "region-1",
+    data: { type: "executeMacro" }
+  },
+  "scene.region.behavior.executable.update": {
+    sceneId: "scene-1",
+    regionId: "region-1",
+    behaviorId: "beh-1",
+    patch: { disabled: true }
+  },
+  "scene.region.behavior.executable.clone": {
+    sceneId: "scene-1",
+    regionId: "region-1",
+    behaviorId: "beh-1"
+  },
   "table.create": { data: { name: "X" } },
   "table.update": { tableId: "tbl-1", patch: { name: "X" } },
   "table.delete": { tableId: "tbl-1" },
@@ -2172,7 +2208,7 @@ describe("protocol contract", () => {
   });
 
   describe("command policy primitives", () => {
-    const DESTRUCTIVE_EXTRAS = ["file.move", "scene.fog.reset"];
+    const DESTRUCTIVE_EXTRAS = ["chat.flush", "file.move", "scene.fog.reset"];
     const finalSegment = (name) => name.slice(name.lastIndexOf(".") + 1);
 
     it("exposes a code for the deny verdict and for every approval outcome", () => {
@@ -2266,7 +2302,7 @@ describe("protocol contract", () => {
 
     it("names the approve extras the verb rule cannot reach, and keeps the two lists apart", () => {
       expect(Object.isFrozen(APPROVE_EXTRA_COMMANDS)).toBe(true);
-      expect(APPROVE_EXTRA_COMMANDS).toEqual(["chat.flush", "system.reload"]);
+      expect(APPROVE_EXTRA_COMMANDS).toEqual(["system.reload"]);
 
       for (const command of APPROVE_EXTRA_COMMANDS) {
         expect(isDestructiveCommand(command), `${command} is not caught by the verb rule`).toBe(false);
@@ -2386,7 +2422,7 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 54 approve-listed, no denied and 262 self-running commands in a registry of 316", () => {
+    it("counts 57 approve-listed, 8 denied and 270 self-running commands in a registry of 335", () => {
       const bucket = (behavior) =>
         COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
@@ -2398,10 +2434,10 @@ describe("protocol contract", () => {
           allow: bucket("allow")
         },
         'the totals moved: update every count docs/commands.md states ("54 of the 316 commands in the registry; the other 262 run on their own") in the same change'
-      ).toEqual({ commands: 316, approve: 54, deny: 0, allow: 262 });
+      ).toEqual({ commands: 335, approve: 57, deny: 8, allow: 270 });
     });
 
-    it("leaves 311 governed commands in 16 top-level groups once the exempt ones are removed", () => {
+    it("leaves 330 governed commands in 19 top-level groups once the exempt ones are removed", () => {
       const exempt = new Set(POLICY_EXEMPT_COMMANDS);
       const governed = COMMAND_NAMES.filter((command) => !exempt.has(command));
 
@@ -2411,7 +2447,7 @@ describe("protocol contract", () => {
           groups: new Set(governed.map((command) => command.split(".")[0])).size
         },
         'the window totals moved: update the counts docs/commands.md states ("the 311 commands the permissions govern, in 16 top-level groups") in the same change'
-      ).toEqual({ governed: 311, groups: 16 });
+      ).toEqual({ governed: 330, groups: 19 });
     });
 
     it("cannot be mutated in place", () => {
@@ -3064,7 +3100,11 @@ describe("protocol contract", () => {
     });
 
     it("declares exactly the SIX verbs — no get-many", () => {
-      expect(COMMAND_NAMES.filter((name) => name.startsWith("scene.region.behavior.")).sort()).toEqual([
+      expect(
+        COMMAND_NAMES.filter(
+          (name) => name.startsWith("scene.region.behavior.") && !name.includes(".executable.")
+        ).sort()
+      ).toEqual([
         "scene.region.behavior.clone",
         "scene.region.behavior.create",
         "scene.region.behavior.delete",
@@ -5149,10 +5189,17 @@ describe("protocol contract", () => {
         }
       }
 
-      const attributed = new Set(ALL_BATCHED_FAMILIES.flatMap((family) => manyVerbsOf(family)));
+      const attributed = new Set([
+        ...ALL_BATCHED_FAMILIES.flatMap((family) => manyVerbsOf(family)),
+        ...NON_DOCUMENT_BULK_WRITES
+      ]);
       const strays = COMMAND_NAMES.filter(
         (name) => name.endsWith("-many") && COMMAND_DEFINITIONS[name].mutation && !attributed.has(name)
       );
+      for (const command of NON_DOCUMENT_BULK_WRITES) {
+        expect(COMMAND_NAMES, `${command} must be a registry command`).toContain(command);
+        expect(COMMAND_DEFINITIONS[command].mutation, `${command} must be a mutation`).toBe(true);
+      }
       expect(strays, "a mutating *-many verb exists outside the pinned batched-family sets").toEqual([]);
     });
 
@@ -5891,6 +5938,17 @@ describe("protocol contract", () => {
         data: { type: "pauseGame" }
       },
       "scene.region.behavior.clone": { sceneId: "scene-1", regionId: "region-1", behaviorId: "beh-1" },
+      "scene.region.behavior.executable.create": {
+        sceneId: "scene-1",
+        regionId: "region-1",
+        data: { type: "executeMacro" }
+      },
+      "scene.region.behavior.executable.clone": {
+        sceneId: "scene-1",
+        regionId: "region-1",
+        behaviorId: "beh-1"
+      },
+      "user.create": { data: { name: "Scribe" } },
       "scene.import-from-compendium": { pack: "world.x", entryId: "e-1" },
       "macro.import-from-compendium": { pack: "world.x", entryId: "e-1" },
       "playlist.import-from-compendium": { pack: "world.x", entryId: "e-1" },
@@ -6693,7 +6751,22 @@ describe("protocol contract", () => {
       "combat.previous-round",
       "combat.reset-initiative",
       "combat.roll-initiative",
-      "combat.set-initiative"
+      "combat.set-initiative",
+
+      "scene.activate",
+      "scene.region.behavior.executable.create",
+      "scene.region.behavior.executable.update",
+      "scene.region.behavior.executable.clone",
+      "macro.execute",
+      "chat.flush",
+      "game.pause",
+      "setting.set",
+      "setting.set-many",
+      "user.create",
+      "user.update",
+      "user.delete",
+      "user.role.set",
+      "user.permissions.set"
     ];
 
     expect([...WRITE_COMMANDS].sort()).toEqual([...EXPECTED_WRITE_COMMANDS].sort());
@@ -6739,6 +6812,8 @@ describe("protocol contract", () => {
       "table.get-many.paramsSchema.properties.ids",
       "cards.get-many.paramsSchema.properties.ids",
       "cards.pass.paramsSchema.properties.cardIds",
+      "setting.get-many.paramsSchema.properties.ids",
+      "setting.set-many.paramsSchema.properties.items",
 
       "table.create.paramsSchema.properties.data.properties.results.items.properties.range",
 
@@ -7141,15 +7216,22 @@ describe("protocol contract", () => {
   });
 
   describe("settings read surface", () => {
-    it("declares exactly two setting commands, both mutation:false", () => {
+    it("declares three setting reads and two setting writes", () => {
       expect(COMMAND_NAMES.filter((command) => command.startsWith("setting."))).toEqual([
         "setting.list",
-        "setting.get"
+        "setting.get",
+        "setting.get-many",
+        "setting.set",
+        "setting.set-many"
       ]);
-      expect(COMMAND_DEFINITIONS["setting.list"].mutation).toBe(false);
-      expect(COMMAND_DEFINITIONS["setting.get"].mutation).toBe(false);
-      expect(isWriteCommand("setting.list")).toBe(false);
-      expect(isWriteCommand("setting.get")).toBe(false);
+      for (const command of ["setting.list", "setting.get", "setting.get-many"]) {
+        expect(COMMAND_DEFINITIONS[command].mutation, command).toBe(false);
+        expect(isWriteCommand(command), command).toBe(false);
+      }
+      for (const command of ["setting.set", "setting.set-many"]) {
+        expect(COMMAND_DEFINITIONS[command].mutation, command).toBe(true);
+        expect(isWriteCommand(command), command).toBe(true);
+      }
     });
 
     it("pins setting.list's key set: the name filter + pagination, nothing else", () => {
@@ -7208,6 +7290,184 @@ describe("protocol contract", () => {
       expect(SETTING_VALUE_MAX_BYTES).toBeLessThan(DEFAULT_WS_MAX_PAYLOAD_BYTES);
     });
   });
+  describe("policy-gated command surface", () => {
+    it("marks the whole-log chat deletion destructive, so the permissions window warns about it", () => {
+      expect(isDestructiveCommand("chat.flush")).toBe(true);
+      expect(APPROVE_EXTRA_COMMANDS).not.toContain("chat.flush");
+      expect(defaultBehaviorFor("chat.flush")).toBe("approve");
+    });
+
+    it("names real registry commands in the denied-by-default list", () => {
+      for (const command of DENIED_BY_DEFAULT_COMMANDS) {
+        expect(COMMAND_NAMES, `${command} must be a registry command`).toContain(command);
+        expect(DEFAULT_COMMAND_PROFILE[command], command).toBe("deny");
+        expect(COMMAND_DEFINITIONS[command].mutation, `${command} must be a mutation`).toBe(true);
+      }
+
+      for (const command of APPROVE_EXTRA_COMMANDS) {
+        expect(COMMAND_NAMES, `${command} must be a registry command`).toContain(command);
+        expect(DEFAULT_COMMAND_PROFILE[command], command).toBe("approve");
+      }
+    });
+
+    it("accepts a macro execution with an optional scope and a bounded wait", () => {
+      expectValid("macro.execute", { macroId: "macro-1" });
+      expectValid("macro.execute", {
+        macroId: "macro-1",
+        scope: { actorId: "actor-1", sceneId: "scene-1", tokenId: "tok-1", args: { n: 1 } },
+        timeoutMs: MACRO_EXECUTE_TIMEOUT_MAX_MS,
+        dryRun: true
+      });
+
+      expectRejected("macro.execute", { macroId: "macro-1", scope: {} }, "at least 1 properties");
+      expectRejected("macro.execute", { macroId: "macro-1", scope: { userId: "u1" } }, "not allowed");
+      expectRejected(
+        "macro.execute",
+        { macroId: "macro-1", timeoutMs: MACRO_EXECUTE_TIMEOUT_MAX_MS + 1 },
+        "timeoutMs"
+      );
+      expectRejected("macro.execute", { macroId: "macro-1", command: "x" }, "not allowed");
+    });
+
+    it("accepts a setting write by namespace and key, and any JSON value", () => {
+      for (const value of [true, false, null, 0, "", [], { nested: { deep: true } }]) {
+        expectValid("setting.set", { namespace: "core", key: "chatBubbles", value });
+      }
+
+      expectRejected("setting.set", { namespace: "core", key: "chatBubbles" }, "value");
+      expectRejected("setting.set", { namespace: "", key: "k", value: 1 }, "namespace");
+      expectRejected("setting.set", { namespace: "core", key: "k", value: 1, scope: "world" }, "not allowed");
+
+      expectValid("setting.set-many", { items: [{ namespace: "core", key: "k", value: 1 }], dryRun: true });
+      expectRejected("setting.set-many", { items: [] }, "at least 1 items");
+      expectRejected("setting.set-many", { items: [{ namespace: "core", key: "k" }] }, "value");
+      expectValid("setting.get-many", { ids: ["core.chatBubbles"] });
+    });
+
+    it("keeps password fields and the role out of the user write payloads", () => {
+      expectValid("user.create", { data: { name: "Scribe" } });
+      expectValid("user.create", {
+        data: {
+          name: "Scribe",
+          role: 4,
+          color: "#ff0000",
+          pronouns: "they/them",
+          avatar: null,
+          character: null,
+          flags: { mine: true }
+        },
+        dryRun: true,
+        idempotencyKey: "k"
+      });
+
+      for (const field of ["password", "passwordSalt", "hotbar", "_id"]) {
+        expectRejected("user.create", { data: { name: "S", [field]: "x" } }, `${field} is not allowed`);
+        expectRejected(
+          "user.update",
+          { userId: "user-1", patch: { [field]: "x" } },
+          `${field} is not allowed`
+        );
+      }
+
+      expectRejected("user.update", { userId: "user-1", patch: { role: 4 } }, "role is not allowed");
+      expectRejected("user.update", { userId: "user-1", patch: {} }, "at least 1 properties");
+      expectValid("user.delete", { userId: "user-1", dryRun: true });
+    });
+
+    it("accepts a role of 1..4 and a tri-state permission override", () => {
+      for (const role of [1, 2, 3, 4]) {
+        expectValid("user.role.set", { userId: "user-1", role });
+      }
+      for (const role of [0, 5, "4", null]) {
+        expectRejected("user.role.set", { userId: "user-1", role }, "role");
+      }
+
+      for (const value of [true, false, null]) {
+        expectValid("user.permissions.set", { userId: "user-1", permissions: { BROADCAST_AUDIO: value } });
+      }
+      expectRejected("user.permissions.set", { userId: "user-1", permissions: {} }, "at least 1 properties");
+      expectRejected(
+        "user.permissions.set",
+        { userId: "user-1", permissions: { BROADCAST_AUDIO: 1 } },
+        "BROADCAST_AUDIO"
+      );
+    });
+
+    it("restricts the executable behavior family to the executeMacro type and keeps it passthrough", () => {
+      expect(
+        COMMAND_NAMES.filter((name) => name.includes("scene.region.behavior.executable.")).sort()
+      ).toEqual([
+        "scene.region.behavior.executable.clone",
+        "scene.region.behavior.executable.create",
+        "scene.region.behavior.executable.update"
+      ]);
+
+      const dataSchema =
+        COMMAND_DEFINITIONS["scene.region.behavior.executable.create"].paramsSchema.properties.data;
+      const patchSchema =
+        COMMAND_DEFINITIONS["scene.region.behavior.executable.update"].paramsSchema.properties.patch;
+      expect(dataSchema.additionalProperties).toBe(true);
+      expect(patchSchema.additionalProperties).toBe(true);
+      expect(dataSchema.required).toEqual(["type"]);
+
+      const scope = { sceneId: "scene-1", regionId: "region-1" };
+      expectValid("scene.region.behavior.executable.create", {
+        ...scope,
+        data: { type: "executeMacro", system: { uuid: "Macro.abc", everyone: false } }
+      });
+      expectRejected(
+        "scene.region.behavior.executable.create",
+        { ...scope, data: { type: "executeScript" } },
+        "type"
+      );
+      expectRejected("scene.region.behavior.executable.create", { ...scope, data: {} }, "type");
+
+      expectValid("scene.region.behavior.executable.update", {
+        ...scope,
+        behaviorId: "beh-1",
+        patch: { type: "executeMacro" }
+      });
+      expectValid("scene.region.behavior.executable.update", {
+        ...scope,
+        behaviorId: "beh-1",
+        patch: { disabled: true }
+      });
+      expectRejected(
+        "scene.region.behavior.executable.update",
+        { ...scope, behaviorId: "beh-1", patch: { type: "executeScript" } },
+        "type"
+      );
+      expectValid("scene.region.behavior.executable.clone", { ...scope, behaviorId: "beh-1" });
+    });
+
+    it("separates the broadcasts from the writes among the new scene, journal and image commands", () => {
+      for (const command of ["scene.pull-users", "journal.show", "image.show", "system.reload"]) {
+        expect(COMMAND_DEFINITIONS[command].mutation, command).toBe(false);
+      }
+      for (const command of ["scene.activate", "chat.flush", "game.pause"]) {
+        expect(COMMAND_DEFINITIONS[command].mutation, command).toBe(true);
+      }
+
+      expectValid("scene.activate", { sceneId: "scene-1", dryRun: true });
+      expectValid("scene.pull-users", { sceneId: "scene-1" });
+      expectValid("scene.pull-users", { sceneId: "scene-1", userIds: ["user-1", "user-2"] });
+      expectRejected("scene.pull-users", { sceneId: "scene-1", userIds: [""] }, "userIds");
+
+      expectValid("journal.show", { journalId: "j-1", force: true, userIds: ["user-1"] });
+      expectRejected("journal.show", { journalId: "j-1", pageId: "p-1" }, "not allowed");
+
+      expectValid("image.show", { src: "worlds/w/art.webp" });
+      expectValid("image.show", { src: "https://example.com/art.webp", title: "Art", userIds: ["u1"] });
+      expectRejected("image.show", {}, "src");
+
+      expectValid("chat.flush", {});
+      expectValid("game.pause", { paused: false, dryRun: true });
+      expectRejected("game.pause", {}, "paused");
+      expectValid("system.reload", {});
+      expectRejected("system.reload", { dryRun: true }, "not allowed");
+    });
+  });
+
   describe("world.search", () => {
     const expectSearchValid = (params) => expectValid("world.search", params);
 

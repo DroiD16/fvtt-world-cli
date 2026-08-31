@@ -51,6 +51,8 @@ const APPROVE_BY_PROFILE = GOVERNED_COMMANDS.filter(
   (command) => DEFAULT_COMMAND_PROFILE[command] === "approve"
 );
 
+const DENY_BY_PROFILE = GOVERNED_COMMANDS.filter((command) => DEFAULT_COMMAND_PROFILE[command] === "deny");
+
 const PREVIEWABLE_APPROVE_COMMANDS = APPROVE_BY_PROFILE.filter(
   (command) => COMMAND_DEFINITIONS[command].paramsSchema.properties?.dryRun
 );
@@ -69,6 +71,7 @@ const PREVIEW_FIXTURES = {
   cardsId: "cards-deck",
   cardId: "card-ace",
   messageId: "msg-1",
+  userId: "user-1",
   tileId: "tile-a",
   wallId: "wall-plain",
   noteId: "note-quest",
@@ -101,9 +104,11 @@ const PREVIEW_PARAM_OVERRIDES = {
 };
 const PREVIEWS_THE_FAKE_WORLD_REFUSES = ["scene.fog.reset"];
 const PREVIEWS_NO_FOUNDRY_VERSION_SUPPORTS = ["file.delete", "file.move"];
+const PREVIEWS_NO_HANDLER_ROUTES = ["chat.flush", "user.create", "user.delete"];
 const PREVIEWS_WITHOUT_A_RESULT = new Set([
   ...PREVIEWS_THE_FAKE_WORLD_REFUSES,
-  ...PREVIEWS_NO_FOUNDRY_VERSION_SUPPORTS
+  ...PREVIEWS_NO_FOUNDRY_VERSION_SUPPORTS,
+  ...PREVIEWS_NO_HANDLER_ROUTES
 ]);
 
 const APPROVAL_ID = "aaaaaaaaaaaaaaaaaaaaaa";
@@ -213,12 +218,13 @@ describe("command policy gate", () => {
       expect(globalThis.game.actors.get(actorId).deleted).toBeUndefined();
     });
 
-    it("resolves the destructive commands the default profile marks approve", async () => {
+    it("resolves the destructive commands to approve and the denied-by-default ones to deny", async () => {
       const response = await router().route(createRequest("policy.snapshot"));
 
       expect(response.ok).toBe(true);
-      expect(response.result).toEqual({ approve: APPROVE_BY_PROFILE, deny: [] });
+      expect(response.result).toEqual({ approve: APPROVE_BY_PROFILE, deny: DENY_BY_PROFILE });
       expect(response.result.approve).toContain("actor.delete");
+      expect(response.result.deny).toContain("macro.execute");
     });
   });
 
@@ -463,7 +469,10 @@ describe("command policy gate", () => {
         const snapshot = await router().route(createRequest("policy.snapshot"));
 
         expect(read.ok, JSON.stringify(value)).toBe(true);
-        expect(snapshot.result, JSON.stringify(value)).toEqual({ approve: APPROVE_BY_PROFILE, deny: [] });
+        expect(snapshot.result, JSON.stringify(value)).toEqual({
+          approve: APPROVE_BY_PROFILE,
+          deny: DENY_BY_PROFILE
+        });
       }
     });
   });
@@ -479,7 +488,12 @@ describe("command policy gate", () => {
           command === "actor.update" ||
           (DEFAULT_COMMAND_PROFILE[command] === "approve" && command !== "actor.delete")
       );
-      expect(response.result).toEqual({ approve: expectedApprove, deny: ["actor.get"] });
+      expect(response.result).toEqual({
+        approve: expectedApprove,
+        deny: GOVERNED_COMMANDS.filter(
+          (command) => command === "actor.get" || DEFAULT_COMMAND_PROFILE[command] === "deny"
+        )
+      });
     });
   });
 

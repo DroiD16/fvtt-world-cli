@@ -12,7 +12,8 @@ import {
   nameFilteredListSchema,
   nullableStringSchema,
   paginationProperties,
-  patchFrom
+  patchFrom,
+  userIdsProperty
 } from "./shared.js";
 
 const journalIdSchema = {
@@ -254,6 +255,16 @@ export const journalCommands = {
   ),
   "journal.import-from-compendium": cmd(compendiumImportSchema(journalDocumentPatchSchema), {
     mutation: true
+  }),
+  "journal.show": cmd({
+    type: "object",
+    required: ["journalId"],
+    properties: {
+      journalId: { type: "string", minLength: 1 },
+      force: { type: "boolean" },
+      ...userIdsProperty
+    },
+    additionalProperties: false
   }),
   "journal.ownership.set": cmd(
     ownershipSetSchema("journalId", {
