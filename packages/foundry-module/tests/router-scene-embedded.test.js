@@ -4207,6 +4207,29 @@ describe("executable region behaviors", () => {
     expect(response.ok).toBe(true);
   });
 
+  it("requires a macro when an update is what arms the behavior", async () => {
+    const unarmed = await router.route(
+      createRequest("scene.region.behavior.executable.update", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-darkness",
+        patch: { type: "executeMacro" }
+      })
+    );
+    expect(unarmed.ok).toBe(false);
+    expect(unarmed.error.details).toMatchObject({ field: "system.uuid" });
+
+    const alreadyArmed = await router.route(
+      createRequest("scene.region.behavior.executable.update", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-macro",
+        patch: { disabled: true }
+      })
+    );
+    expect(alreadyArmed.ok).toBe(true);
+  });
+
   it("refuses an executeScript target on every verb of the executable family", async () => {
     const update = await router.route(
       createRequest("scene.region.behavior.executable.update", {

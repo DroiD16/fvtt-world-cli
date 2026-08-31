@@ -115,6 +115,17 @@ async function createBehavior(params, route) {
 }
 
 /**
+ * @param {any} behavior
+ * @returns {string | null}
+ */
+function storedBehaviorType(behavior) {
+  const source =
+    behavior?._source ?? (typeof behavior?.toObject === "function" ? behavior.toObject() : behavior);
+  const type = source?.type ?? behavior?.type ?? null;
+  return typeof type === "string" ? type : null;
+}
+
+/**
  * @param {any} params
  * @param {RegionBehaviorRoute} route
  */
@@ -136,7 +147,11 @@ async function updateBehavior(params, route) {
   });
 
   if (route.executable) {
-    assertExecutableBehaviorMacroResolves(params.patch, details, { required: false });
+    // A patch that turns a declarative behavior into an executeMacro one carries the only uuid the
+    // behavior will have, so it must name a macro just as a create does.
+    const armsBehavior =
+      params.patch?.type === "executeMacro" && storedBehaviorType(behavior) !== "executeMacro";
+    assertExecutableBehaviorMacroResolves(params.patch, details, { required: armsBehavior });
   }
 
   if (isDryRun(params)) {
