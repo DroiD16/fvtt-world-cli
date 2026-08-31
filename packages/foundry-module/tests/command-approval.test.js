@@ -522,7 +522,7 @@ describe("Command approval window", () => {
     const store = createStore();
     admit(store, "scene.region.behavior.executable.update", {
       sceneId: "scene-1",
-      regionId: "region-lava",
+      regionId: "region-safe",
       behaviorId: "behavior-macro",
       patch: { system: { uuid: "Macro.ghost" } }
     });
