@@ -26,7 +26,17 @@ function resolveUserClass() {
  */
 function assertNotOwnUser(userId, command) {
   const own = getGame().user?.id ?? null;
-  if (own === null || userId !== own) {
+  if (own === null) {
+    throw createBridgeError(
+      ERROR_CODES.BRIDGE_NOT_READY,
+      `${command} may not touch the user account this bridge runs through, and this client cannot say which ` +
+        `account that is, so the guard refuses rather than guess. Nothing was written. Reload the GM client and ` +
+        `retry`,
+      { userId, command }
+    );
+  }
+
+  if (userId !== own) {
     return;
   }
 

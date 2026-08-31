@@ -2027,6 +2027,17 @@ describe("user write surface", () => {
     expect(users().get("user-1").delete).not.toHaveBeenCalled();
   });
 
+  it("refuses a user write when the client cannot say which account the bridge runs through", async () => {
+    globalThis.game.user.id = null;
+
+    const response = await router.route(createRequest("user.delete", { userId: "player-2" }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.BRIDGE_NOT_READY);
+    expect(response.error.details).toMatchObject({ userId: "player-2", command: "user.delete" });
+    expect(users().get("player-2")).not.toBeNull();
+  });
+
   it("changes another user's role, names it, and reports a request for the stored role as a no-op", async () => {
     const response = await router.route(createRequest("user.role.set", { userId: "player-1", role: 3 }));
 

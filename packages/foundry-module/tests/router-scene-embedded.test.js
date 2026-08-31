@@ -4252,6 +4252,30 @@ describe("executable region behaviors", () => {
     );
     expect(clone.ok).toBe(false);
     expect(clone.error.details).toMatchObject({ behaviorType: "executeScript" });
+
+    const unpatchedClone = await router.route(
+      createRequest("scene.region.behavior.executable.clone", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-script"
+      })
+    );
+    expect(unpatchedClone.ok).toBe(false);
+    expect(unpatchedClone.error.details).toMatchObject({ behaviorType: "executeScript" });
+    expect(unpatchedClone.error.message).not.toContain("clone it with NO --patch");
+  });
+
+  it("still duplicates an unpatched executeScript behavior on the ordinary clone route", async () => {
+    const response = await router.route(
+      createRequest("scene.region.behavior.clone", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-script"
+      })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result.behavior).toMatchObject({ type: "executeScript" });
   });
 
   it("clones an executeMacro behavior with a patch the ordinary clone refuses", async () => {

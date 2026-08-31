@@ -185,15 +185,15 @@ function assertSuppliedRegionBehaviorTypeAllowed(payload, details, allowedTypes)
 /**
  * @param {any} behavior
  * @param {Record<string, any>} details
- * @param {{ verb: string, allowedTypes: ReadonlySet<string> }} context
+ * @param {{ verb: string, allowedTypes: ReadonlySet<string>, family: string }} context
  */
-function assertRegionBehaviorTargetWritable(behavior, details, { verb, allowedTypes }) {
+function assertRegionBehaviorTargetWritable(behavior, details, { verb, allowedTypes, family }) {
   const type = storedRegionBehaviorType(behavior);
   if (isRefusedExecutableType(type, allowedTypes)) {
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
-      `RegionBehavior ${details.behaviorId} is a "${type}" behavior, which executes code when the region fires: scene.region.behavior.${verb} is refused for it in FULL — including a patch that only sets "disabled" — because the bridge does not author or edit self-arming JavaScript triggers (no arbitrary JavaScript execution from the CLI). Use scene.region.behavior.delete to remove it (that is allowed: it supplies no behavior data and removes the execution), edit it in the Foundry UI, or ${
-        verb === "clone"
+      `RegionBehavior ${details.behaviorId} is a "${type}" behavior, which executes code when the region fires: ${family}.${verb} is refused for it in FULL — including a patch that only sets "disabled" — because the bridge does not author or edit self-arming JavaScript triggers (no arbitrary JavaScript execution from the CLI). Use scene.region.behavior.delete to remove it (that is allowed: it supplies no behavior data and removes the execution), edit it in the Foundry UI, or ${
+        verb === "clone" && family === "scene.region.behavior"
           ? "clone it with NO --patch (an unpatched duplicate of a GM-authored behavior is allowed)"
           : "delete it and create a declarative replacement"
       }`,
@@ -256,8 +256,15 @@ export function assertRegionBehaviorWriteAllowed({
 }) {
   assertSuppliedRegionBehaviorTypeAllowed(payload, details, allowedTypes);
 
-  if (verb === "update" || (verb === "clone" && payload != null)) {
-    assertRegionBehaviorTargetWritable(behavior, details, { verb, allowedTypes });
+  // The executable family may edit the one executable type it allows, so it must always look at what it
+  // is aimed at: an unpatched clone there would otherwise duplicate a stored executeScript behavior.
+  const executableFamily = allowedTypes.size > 0;
+  if (verb === "update" || (verb === "clone" && (payload != null || executableFamily))) {
+    assertRegionBehaviorTargetWritable(behavior, details, {
+      verb,
+      allowedTypes,
+      family: executableFamily ? "scene.region.behavior.executable" : "scene.region.behavior"
+    });
   }
 
   assertRegionBehaviorTypeSpellingRejected(payload, details, { verb });

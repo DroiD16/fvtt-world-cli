@@ -837,6 +837,49 @@ describe("macro execution", () => {
     expect(chatListenerCount()).toBe(0);
   });
 
+  it("fails the command when the macro body throws while it runs, and says what stays changed", async () => {
+    macroDoc().execute = vi.fn(async () => {
+      throw new Error("actor.update is not a function");
+    });
+
+    const response = await router.route(createRequest("macro.execute", { macroId: "macro-1" }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.details).toMatchObject({
+      macroId: "macro-1",
+      reason: "macro_threw",
+      indeterminate: true
+    });
+    expect(response.error.details.message).toContain("actor.update is not a function");
+    expect(response.error.message).toContain("PARTIAL");
+    expect(chatListenerCount()).toBe(0);
+  });
+
+  it("blames the macro body, not the scope, when the body does not parse", async () => {
+    macroDoc().execute = vi.fn(() => {
+      throw new SyntaxError("Unexpected token '}'");
+    });
+
+    const response = await router.route(createRequest("macro.execute", { macroId: "macro-1" }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(response.error.details).toMatchObject({ reason: "macro_body_syntax" });
+    expect(response.error.details.message).toContain("Unexpected token");
+    expect(response.error.message).toContain("not valid JavaScript");
+  });
+
+  it("reports a chat macro that created no message rather than claiming a capture", async () => {
+    macroDoc().type = "chat";
+    macroDoc().execute = vi.fn(async () => undefined);
+
+    const response = await router.route(createRequest("macro.execute", { macroId: "macro-1" }));
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toMatchObject({ chatMessageIds: [], chatCapture: "not-created" });
+  });
+
   it("omits a return value it cannot serialize within the bridge's bounds", async () => {
     macroDoc().execute = vi.fn(async () => ({ run: () => true }));
 

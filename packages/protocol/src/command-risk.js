@@ -1,6 +1,6 @@
 const DESTRUCTIVE_VERBS = Object.freeze(["delete", "delete-many"]);
 
-const DESTRUCTIVE_COMMANDS = Object.freeze(["chat.flush", "file.delete", "file.move", "scene.fog.reset"]);
+const DESTRUCTIVE_COMMANDS = Object.freeze(["chat.flush", "file.move", "scene.fog.reset"]);
 
 export const APPROVE_EXTRA_COMMANDS = Object.freeze(["system.reload", "user.create"]);
 

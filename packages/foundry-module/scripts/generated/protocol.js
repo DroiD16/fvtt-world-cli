@@ -5535,7 +5535,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
 
 // packages/protocol/src/command-risk.js
 var DESTRUCTIVE_VERBS = Object.freeze(["delete", "delete-many"]);
-var DESTRUCTIVE_COMMANDS = Object.freeze(["chat.flush", "file.delete", "file.move", "scene.fog.reset"]);
+var DESTRUCTIVE_COMMANDS = Object.freeze(["chat.flush", "file.move", "scene.fog.reset"]);
 var APPROVE_EXTRA_COMMANDS = Object.freeze(["system.reload", "user.create"]);
 var DENIED_BY_DEFAULT_COMMANDS = Object.freeze([
   "macro.execute",

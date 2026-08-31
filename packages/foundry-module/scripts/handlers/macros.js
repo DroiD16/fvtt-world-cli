@@ -1,5 +1,5 @@
 import { BATCH_GET_MAX_IDS, ERROR_CODES, MACRO_EXECUTE_TIMEOUT_DEFAULT_MS } from "../generated/protocol.js";
-import { startAuthoredChatCapture } from "../lib/chat-capture.js";
+import { deriveChatCaptureStatus, startAuthoredChatCapture } from "../lib/chat-capture.js";
 import { getActorById, getMacroById, getMacrosCollection } from "../lib/game-collections.js";
 import { getSceneEmbeddedById } from "../lib/scene-embedded.js";
 import { serializeSettingValue } from "../lib/setting-values.js";
@@ -10,7 +10,7 @@ import {
   previewDocumentUpdate,
   previewMacroCreate
 } from "../lib/world-docs.js";
-import { createBridgeError, toFailureSummary } from "../lib/errors.js";
+import { BridgeError, createBridgeError, toFailureSummary } from "../lib/errors.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import { filterByName, paginate, serializeMacro, serializeMacroSummary } from "../lib/serializers.js";
@@ -152,6 +152,51 @@ async function awaitMacro(running, timeoutMs, macroId) {
   }
 }
 
+/**
+ * Foundry compiles a script macro's body OUTSIDE its own try block, so a body that does not parse
+ * throws a SyntaxError out of Macro#execute alongside the errors it raises for a bad scope.
+ * @param {unknown} error
+ * @param {string} macroId
+ */
+function macroStartFailure(error, macroId) {
+  const summary = toFailureSummary(error).message;
+  if (/** @type {any} */ (error)?.name !== "SyntaxError") {
+    return createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      `Foundry refused the execution scope for macro ${macroId}; see details.message. Nothing was executed`,
+      { macroId, reason: "foundry_validation", message: summary }
+    );
+  }
+
+  return createBridgeError(
+    ERROR_CODES.INVALID_PARAMS,
+    `Macro ${macroId} could not be compiled: its body is not valid JavaScript, so Foundry never built the ` +
+      `function it would have run; see details.message for the parser's own words. NOTHING was executed and ` +
+      `nothing changed. Fix the macro's command with \`macro update\` — the scope this call supplied is not ` +
+      `at fault and resending it unchanged will fail the same way`,
+    { macroId, reason: "macro_body_syntax", message: summary }
+  );
+}
+
+/**
+ * @param {unknown} error
+ * @param {string} macroId
+ */
+function macroRunFailure(error, macroId) {
+  if (error instanceof BridgeError) {
+    return error;
+  }
+
+  return createBridgeError(
+    ERROR_CODES.INTERNAL_ERROR,
+    `Macro ${macroId} threw while it ran; see details.message for the error the macro itself raised. Foundry ` +
+      `does not swallow this — the macro simply stopped where it threw, so the outcome is PARTIAL: whatever it ` +
+      `changed before that point stays changed and whatever came after never happened. Do not retry blindly — ` +
+      `read the documents the macro touches to find out what landed, and fix the macro before running it again`,
+    { macroId, reason: "macro_threw", indeterminate: true, message: toFailureSummary(error).message }
+  );
+}
+
 export function createMacroHandlers() {
   return {
     async "macro.list"(params) {
@@ -274,29 +319,31 @@ export function createMacroHandlers() {
         try {
           running = Promise.resolve(macro.execute(buildMacroExecutionScope(scope)));
         } catch (error) {
-          throw createBridgeError(
-            ERROR_CODES.INVALID_PARAMS,
-            `Foundry refused the execution scope for macro ${params.macroId}; see details.message. ` +
-              `Nothing was executed`,
-            {
-              macroId: params.macroId,
-              reason: "foundry_validation",
-              message: toFailureSummary(error).message
-            }
-          );
+          throw macroStartFailure(error, params.macroId);
         }
 
         // A timeout answers before the macro settles, so the losing promise needs a reader of its own
         // or its later rejection becomes an unhandled one.
         running.catch(() => {});
-        const returnedValue = await awaitMacro(running, timeoutMs, params.macroId);
+        let returnedValue;
+        try {
+          returnedValue = await awaitMacro(running, timeoutMs, params.macroId);
+        } catch (error) {
+          throw macroRunFailure(error, params.macroId);
+        }
 
+        const chatMessageIds = capture.stop();
         return {
           macroId: macro.id ?? params.macroId,
           type,
           ...serializeMacroReturn(returnedValue),
-          chatMessageIds: capture.stop(),
-          chatCapture: capture.available ? "captured" : "unknown"
+          chatMessageIds,
+          chatCapture: deriveChatCaptureStatus({
+            requested: true,
+            available: capture.available,
+            expectedCount: type === "chat" ? 1 : 0,
+            ids: chatMessageIds
+          })
         };
       } finally {
         capture.stop();

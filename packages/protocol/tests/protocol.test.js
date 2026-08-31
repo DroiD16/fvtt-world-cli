@@ -2399,6 +2399,25 @@ describe("protocol contract", () => {
   });
 
   describe("default command profile", () => {
+    const DENIED = [
+      "macro.execute",
+      "setting.set",
+      "setting.set-many",
+      "user.role.set",
+      "user.permissions.set",
+      "scene.region.behavior.executable.create",
+      "scene.region.behavior.executable.update",
+      "scene.region.behavior.executable.clone"
+    ];
+    const APPROVED_EXTRAS = ["chat.flush", "file.move", "scene.fog.reset", "system.reload", "user.create"];
+    const DESTRUCTIVE_SUFFIXES = [".delete", ".delete-many"];
+
+    const expectedBehavior = (command) => {
+      if (DENIED.includes(command)) return "deny";
+      const destructive = DESTRUCTIVE_SUFFIXES.some((suffix) => command.endsWith(suffix));
+      return destructive || APPROVED_EXTRAS.includes(command) ? "approve" : "allow";
+    };
+
     it("stays byte-identical to what the generator emits", () => {
       expect(
         readFileSync(PROFILE_PATH, "utf8"),
@@ -2413,18 +2432,15 @@ describe("protocol contract", () => {
     it("assigns every command the behavior the three-bucket rule dictates", () => {
       for (const command of COMMAND_NAMES) {
         expect(POLICY_BEHAVIORS, command).toContain(DEFAULT_COMMAND_PROFILE[command]);
-        expect(DEFAULT_COMMAND_PROFILE[command], command).toBe(defaultBehaviorFor(command));
+        expect(DEFAULT_COMMAND_PROFILE[command], command).toBe(expectedBehavior(command));
+        expect(defaultBehaviorFor(command), command).toBe(expectedBehavior(command));
       }
     });
 
     it("puts exactly the destructive commands and the approve extras in the approve bucket", () => {
       const approved = COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === "approve");
 
-      expect(approved).toEqual(
-        COMMAND_NAMES.filter(
-          (command) => isDestructiveCommand(command) || APPROVE_EXTRA_COMMANDS.includes(command)
-        )
-      );
+      expect(approved).toEqual(COMMAND_NAMES.filter((command) => expectedBehavior(command) === "approve"));
       expect(approved.length).toBeGreaterThan(0);
       expect(approved.length).toBeLessThan(COMMAND_NAMES.length);
       for (const command of ["actor.delete", "actor.delete-many", "file.move", "scene.fog.reset"]) {
@@ -2475,7 +2491,7 @@ describe("protocol contract", () => {
 
     it("looks up a command and reports nothing for a name the registry does not carry", () => {
       for (const command of COMMAND_NAMES) {
-        expect(defaultProfile(command), command).toBe(defaultBehaviorFor(command));
+        expect(defaultProfile(command), command).toBe(expectedBehavior(command));
       }
 
       for (const name of ["bogus.command", "", "toString", "constructor", "__proto__"]) {

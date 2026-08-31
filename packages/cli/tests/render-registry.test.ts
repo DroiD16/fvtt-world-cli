@@ -3,14 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import { humanizeCommandResult, RENDERERS, registerRenderers } from "../src/render/registry.js";
 
-// Commands the protocol declares that the CLI does not surface as a subcommand, so no renderer
-// describes their result and the caller sees pretty JSON. Every declared command now has one.
-const WITHOUT_A_CLI_SURFACE: readonly string[] = [];
-
-const INTENTIONAL_FALLBACK_JSON: readonly string[] = [
-  ...COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name)),
-  ...WITHOUT_A_CLI_SURFACE
-];
+// Only the protocol's internal plumbing falls back to pretty JSON: every discoverable command has a
+// renderer that describes its result.
+const INTENTIONAL_FALLBACK_JSON: readonly string[] = COMMAND_NAMES.filter(
+  (name) => !DISCOVERABLE_COMMAND_NAMES.includes(name)
+);
 
 describe("human-output renderer registry", () => {
   it("registers a renderer for every discoverable command and none for internal plumbing", () => {
@@ -20,10 +17,14 @@ describe("human-output renderer registry", () => {
     expect(Object.keys(RENDERERS).sort()).toEqual(expected);
   });
 
-  it("claims a JSON fallback only for names the protocol declares", () => {
-    for (const command of WITHOUT_A_CLI_SURFACE) {
-      expect(COMMAND_NAMES, `${command} is not a protocol command`).toContain(command);
-    }
+  it("describes the result of every command a caller can discover", () => {
+    const undescribed = DISCOVERABLE_COMMAND_NAMES.filter((command) => !(command in RENDERERS));
+
+    expect(DISCOVERABLE_COMMAND_NAMES.length).toBeGreaterThan(0);
+    expect(
+      undescribed,
+      "a discoverable command with no renderer prints raw JSON to a human: register one in src/render/"
+    ).toEqual([]);
   });
 
   it("registers no name outside the protocol command set", () => {
