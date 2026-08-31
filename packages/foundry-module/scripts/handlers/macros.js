@@ -23,6 +23,52 @@ const RESERVED_MACRO_ARGUMENT_NAMES = Object.freeze(["speaker", "actor", "token"
 // propertyNames pattern is only defense-in-depth.
 const MACRO_ARGUMENT_NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
+// A bare-identifier name can still be a reserved word Foundry cannot use as a function parameter, so
+// the AsyncFunction constructor throws a SyntaxError before the body runs. Refusing them here blames
+// the argument instead of misreporting the macro body as invalid. Sloppy-mode reserved words
+// (`yield`, `let`, `static`, ...) are legal parameters and are deliberately absent.
+const RESERVED_JS_KEYWORD_ARGUMENT_NAMES = Object.freeze(
+  new Set([
+    "await",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "continue",
+    "debugger",
+    "default",
+    "delete",
+    "do",
+    "else",
+    "enum",
+    "export",
+    "extends",
+    "false",
+    "finally",
+    "for",
+    "function",
+    "if",
+    "import",
+    "in",
+    "instanceof",
+    "new",
+    "null",
+    "return",
+    "super",
+    "switch",
+    "this",
+    "throw",
+    "true",
+    "try",
+    "typeof",
+    "var",
+    "void",
+    "while",
+    "with"
+  ])
+);
+
 /**
  * @param {Record<string, unknown> | undefined} args
  */
@@ -34,6 +80,17 @@ function assertMacroArgumentNames(args) {
         `Macro argument ${name} is one of the names Foundry itself binds in a script macro's scope ` +
           `(${RESERVED_MACRO_ARGUMENT_NAMES.join(", ")}); rename the argument. Nothing was executed`,
         { argument: name, reserved: RESERVED_MACRO_ARGUMENT_NAMES }
+      );
+    }
+
+    if (RESERVED_JS_KEYWORD_ARGUMENT_NAMES.has(name)) {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `Macro argument ${name} is a reserved JavaScript keyword and cannot be a function parameter name: ` +
+          `Foundry compiles a script macro by splicing each argument NAME into the parameter list of the ` +
+          `function it builds, and a keyword there makes that function fail to compile. Rename the argument ` +
+          `to an ordinary identifier. Nothing was executed`,
+        { argument: name }
       );
     }
 

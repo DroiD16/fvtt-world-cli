@@ -801,6 +801,29 @@ describe("macro execution", () => {
     }
   });
 
+  it("refuses a reserved-keyword argument name that would fail to compile", async () => {
+    for (const argument of ["await", "return", "class"]) {
+      const response = await router.route(
+        createRequest("macro.execute", { macroId: "macro-1", scope: { args: { [argument]: 1 } } })
+      );
+
+      expect(response.ok, argument).toBe(false);
+      expect(response.error.code, argument).toBe(ERROR_CODES.INVALID_PARAMS);
+      expect(response.error.message, argument).toContain("reserved JavaScript keyword");
+      expect(response.error.details, argument).toMatchObject({ argument });
+      expect(macroDoc().execute).not.toHaveBeenCalled();
+    }
+  });
+
+  it("runs a macro whose argument name is a sloppy-mode reserved word", async () => {
+    const response = await router.route(
+      createRequest("macro.execute", { macroId: "macro-1", scope: { args: { yield: 1, letValue: 2 } } })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(macroDoc().execute).toHaveBeenCalled();
+  });
+
   it("keeps the module guard load-bearing when the schema is bypassed", async () => {
     const handlers = createMacroHandlers();
     for (const argument of ["a, b = (globalThis.__pwned = 99)", "1", "scope"]) {
