@@ -10,7 +10,7 @@ import {
   renderCardsMovementLines,
   renderCardsRecallLines
 } from "./cards.js";
-import { renderChatDetails } from "./chat.js";
+import { renderChatDetails, renderChatFlushResult } from "./chat.js";
 import {
   renderCombatDetails,
   renderCombatParentLines,
@@ -23,6 +23,7 @@ import {
 import {
   batchOwnershipLines,
   humanCell,
+  renderBroadcastLines,
   listFooterLines,
   renderBatchWriteResult,
   renderOwnershipLines,
@@ -43,8 +44,8 @@ import {
 } from "./files.js";
 import { renderFolderDetails } from "./folders.js";
 import { renderItemDetails, renderItemSummaryLine } from "./items.js";
-import { renderJournalCategoryDetails, renderJournalDetails } from "./journals.js";
-import { renderMacroDetails } from "./macros.js";
+import { renderJournalCategoryDetails, renderJournalDetails, renderJournalShowResult } from "./journals.js";
+import { renderMacroDetails, renderMacroExecuteResult } from "./macros.js";
 import { renderPlaylistDetails, renderPlaylistSoundDetails } from "./playlists.js";
 import {
   renderDrawingDetails,
@@ -52,7 +53,9 @@ import {
   renderNoteDetails,
   renderRegionBehaviorDetails,
   renderRegionDetails,
+  renderSceneActivateResult,
   renderSceneDetails,
+  renderScenePullUsersResult,
   renderSoundDetails,
   renderTemplateDetails,
   renderTileDetails,
@@ -61,14 +64,25 @@ import {
   tokenItemEffectPrefix,
   tokenItemPrefix
 } from "./scenes.js";
-import { renderSettingDetails, renderSettingSummaryLine } from "./settings.js";
+import {
+  renderSettingBatchRows,
+  renderSettingDetails,
+  renderSettingSummaryLine,
+  renderSettingWriteOutcomes,
+  renderSettingWriteResult
+} from "./settings.js";
 import {
   renderTableDetails,
   renderTableDrawResult,
   renderTableResultDetails,
   renderTableResultLine
 } from "./tables.js";
-import { renderUserDetails, renderUserSummaryLine } from "./users.js";
+import {
+  renderUserDetails,
+  renderUserPermissionsSetResult,
+  renderUserRoleSetResult,
+  renderUserSummaryLine
+} from "./users.js";
 
 type ResultRenderer = (result: any, offset: number) => string;
 type RendererEntry = [string, ResultRenderer];
@@ -194,6 +208,25 @@ export const RENDERERS = registerRenderers([
       `commands: ${(result.commands ?? []).join(", ")}`
     ].join("\n")
   ),
+  detailRenderer("game.pause", (result) =>
+    [
+      `${result.dryRun ? "[dry-run] would set" : "Set"} the game to ${result.paused ? "PAUSED" : "RUNNING"} for every client`,
+      `previous: ${result.previousPaused ? "paused" : "running"}`,
+      `changed: ${Boolean(result.changed)}`
+    ].join("\n")
+  ),
+  detailRenderer("image.show", (result) =>
+    [
+      `Showed image ${result.src}${result.title ? ` as "${result.title}"` : ""} to other users`,
+      ...renderBroadcastLines(result)
+    ].join("\n")
+  ),
+  detailRenderer("system.reload", () =>
+    [
+      "Reload requested: the GM browser page reloads as soon as this response is flushed.",
+      "The bridge connection drops and reconnects on its own; retry the next command after a moment."
+    ].join("\n")
+  ),
   customRenderer("world.search", (result, offset) => {
     const results = result.results ?? [];
     const lines = results.length
@@ -284,6 +317,8 @@ export const RENDERERS = registerRenderers([
     heading: "Scenes",
     rows: (scene) => [`${scene.id}\t${scene.name}`, ...batchOwnershipLines(scene)]
   }),
+  detailRenderer("scene.activate", (result) => renderSceneActivateResult(result)),
+  detailRenderer("scene.pull-users", (result) => renderScenePullUsersResult(result)),
   deleteRenderer("scene.delete", "scene", {
     suffix: (result) => (result.wasActive ? " (was active)" : "")
   }),
@@ -360,7 +395,10 @@ export const RENDERERS = registerRenderers([
     heading: "Users",
     row: (user) => renderUserSummaryLine(user)
   }),
-  detailRenderer("user.get", (result) => renderUserDetails(result.user)),
+  detailRenderer(["user.get", "user.create", "user.update"], (result) => renderUserDetails(result.user)),
+  deleteRenderer("user.delete", "user"),
+  detailRenderer("user.role.set", (result) => renderUserRoleSetResult(result)),
+  detailRenderer("user.permissions.set", (result) => renderUserPermissionsSetResult(result)),
 
   listRenderer("setting.list", {
     key: "settings",
@@ -369,6 +407,13 @@ export const RENDERERS = registerRenderers([
     row: (setting) => renderSettingSummaryLine(setting)
   }),
   detailRenderer("setting.get", (result) => renderSettingDetails(result.setting)),
+  getManyRenderer("setting.get-many", {
+    key: "settings",
+    heading: "Settings",
+    rows: (setting) => renderSettingBatchRows(setting)
+  }),
+  detailRenderer("setting.set", (result) => renderSettingWriteResult(result)),
+  detailRenderer("setting.set-many", (result) => renderSettingWriteOutcomes(result)),
 
   detailRenderer("actor.ownership.set", (result) => renderOwnershipSetResult("actor", result.actor)),
   detailRenderer("item.ownership.set", (result) => renderOwnershipSetResult("item", result.item)),
@@ -717,6 +762,7 @@ export const RENDERERS = registerRenderers([
     }
   }),
   deleteRenderer("journal.delete", "journal"),
+  detailRenderer("journal.show", (result) => renderJournalShowResult(result)),
   listRenderer("journal.category.list", {
     key: "categories",
     empty: "No categories found.",
@@ -765,6 +811,7 @@ export const RENDERERS = registerRenderers([
     rows: (m) => [`${m.id}\t${m.name}\t${m.type ?? ""}\t${m.scope ?? ""}`, ...batchOwnershipLines(m)]
   }),
   deleteRenderer("macro.delete", "macro"),
+  detailRenderer("macro.execute", (result) => renderMacroExecuteResult(result)),
 
   listRenderer("playlist.list", {
     key: "playlists",
@@ -826,6 +873,7 @@ export const RENDERERS = registerRenderers([
   }),
   detailRenderer(["chat.get", "chat.create"], (result) => renderChatDetails(result.message)),
   deleteRenderer("chat.delete", "chat message"),
+  detailRenderer("chat.flush", (result) => renderChatFlushResult(result)),
 
   listRenderer("actor.list", {
     key: "actors",
@@ -1172,6 +1220,18 @@ export const RENDERERS = registerRenderers([
       "scene.region.behavior.clone"
     ],
     (result) => renderRegionBehaviorDetails(result.sceneId, result.regionId, result.behavior)
+  ),
+  detailRenderer(
+    [
+      "scene.region.behavior.executable.create",
+      "scene.region.behavior.executable.update",
+      "scene.region.behavior.executable.clone"
+    ],
+    (result) =>
+      [
+        renderRegionBehaviorDetails(result.sceneId, result.regionId, result.behavior),
+        "note: this behavior RUNS A MACRO when the region fires; system.everyone true runs it in every connected client"
+      ].join("\n")
   ),
   detailRenderer("scene.region.behavior.delete", (result) =>
     result.deleted

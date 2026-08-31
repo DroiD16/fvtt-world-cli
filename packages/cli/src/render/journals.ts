@@ -1,4 +1,12 @@
-import { renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
+import { renderBroadcastLines, renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
+
+export function renderJournalShowResult(result: any) {
+  return [
+    `Showed journal entry ${result?.journalId} to other users`,
+    `force: ${Boolean(result?.force)}`,
+    ...renderBroadcastLines(result)
+  ].join("\n");
+}
 
 export function renderJournalDetails(journal: any) {
   const pages = Array.isArray(journal?.pages) ? journal.pages : [];

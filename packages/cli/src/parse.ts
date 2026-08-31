@@ -166,6 +166,56 @@ export function parseOwnershipUsers(value: string) {
   return object;
 }
 
+export function parseJsonValue(value: string, label: string) {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch (error) {
+    throw new InvalidArgumentError(
+      error instanceof Error
+        ? `${label} must be a JSON literal — true, 42, "text", [..] or {..}, so a quoted string stays distinct from a boolean or a number: ${error.message}`
+        : `${label} must be a JSON literal — true, 42, "text", [..] or {..}`
+    );
+  }
+}
+
+const USER_ROLES = [1, 2, 3, 4];
+
+export function parseUserRole(value: string) {
+  const trimmed = value.trim();
+  const parsed = INTEGER_PATTERN.test(trimmed) ? Number(trimmed) : NaN;
+  if (!Number.isInteger(parsed) || !USER_ROLES.includes(parsed)) {
+    throw new InvalidArgumentError(
+      `Expected a user role (1=player, 2=trusted player, 3=assistant GM, 4=gamemaster), received ${value}`
+    );
+  }
+  return parsed;
+}
+
+export function parseUserPermissions(value: string) {
+  const object = parseJsonObject(value, "--permissions-json");
+  const names = Object.keys(object);
+  if (names.length === 0) {
+    throw new InvalidArgumentError("--permissions-json must name at least one permission");
+  }
+  for (const name of names) {
+    const entry = (object as Record<string, unknown>)[name];
+    if (typeof entry !== "boolean" && entry !== null) {
+      throw new InvalidArgumentError(
+        `--permissions-json values must be true (grant), false (revoke) or null (drop the override so the role default applies); ${name} = ${JSON.stringify(entry)}`
+      );
+    }
+  }
+  return object;
+}
+
+export function parseSettingItems(value: string, label: string) {
+  const items = parseJsonObjectArray(value, label);
+  if (items.length === 0) {
+    throw new InvalidArgumentError(`${label} must contain at least one setting item`);
+  }
+  return items;
+}
+
 export function parseIdList(value: string) {
   const ids = value
     .split(",")

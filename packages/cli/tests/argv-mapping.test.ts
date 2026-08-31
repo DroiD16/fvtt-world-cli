@@ -3006,9 +3006,248 @@ describe("fvtt-world-cli commands", () => {
       { namespace: "my-module", key: "apiKey" }
     ],
 
+    [
+      ["setting", "get-many", "--ids", "core.chatBubbles, my-module.apiKey"],
+      "setting.get-many",
+      { ids: ["core.chatBubbles", "my-module.apiKey"] }
+    ],
+    [
+      ["setting", "set", "--namespace", "core", "--key", "chatBubbles", "--value-json", "false"],
+      "setting.set",
+      { namespace: "core", key: "chatBubbles", value: false }
+    ],
+    [
+      ["setting", "set", "--namespace", "my-module", "--key", "profile", "--value-json", '{"tier":2}'],
+      "setting.set",
+      { namespace: "my-module", key: "profile", value: { tier: 2 } }
+    ],
+    [
+      [
+        "setting",
+        "set-many",
+        "--items-json",
+        '[{"namespace":"core","key":"chatBubbles","value":true},{"namespace":"my-module","key":"n","value":3}]'
+      ],
+      "setting.set-many",
+      {
+        items: [
+          { namespace: "core", key: "chatBubbles", value: true },
+          { namespace: "my-module", key: "n", value: 3 }
+        ]
+      }
+    ],
+
     [["user", "list"], "user.list", {}],
     [["user", "list", "--name", "hrel"], "user.list", { name: "hrel" }],
     [["user", "get", "--user-id", "user-1"], "user.get", { userId: "user-1" }],
+    [["user", "create", "--name", "Hrel"], "user.create", { data: { name: "Hrel" } }],
+    [
+      [
+        "user",
+        "create",
+        "--name",
+        "Hrel",
+        "--role",
+        "2",
+        "--color",
+        "#ff0000",
+        "--pronouns",
+        "they/them",
+        "--avatar",
+        "icons/svg/mystery-man.svg",
+        "--character",
+        "actor-1",
+        "--data-json",
+        '{"flags":{"mine":{"seat":3}}}'
+      ],
+      "user.create",
+      {
+        data: {
+          name: "Hrel",
+          role: 2,
+          color: "#ff0000",
+          pronouns: "they/them",
+          avatar: "icons/svg/mystery-man.svg",
+          character: "actor-1",
+          flags: { mine: { seat: 3 } }
+        }
+      }
+    ],
+    [
+      ["user", "update", "--user-id", "user-1", "--name", "Hrel the Bold", "--clear-character"],
+      "user.update",
+      { userId: "user-1", patch: { name: "Hrel the Bold", character: null } }
+    ],
+    [
+      ["user", "update", "--user-id", "user-1", "--clear-avatar"],
+      "user.update",
+      { userId: "user-1", patch: { avatar: null } }
+    ],
+    [["user", "delete", "--user-id", "user-1"], "user.delete", { userId: "user-1" }],
+    [
+      ["user", "role", "set", "--user-id", "user-1", "--role", "3"],
+      "user.role.set",
+      { userId: "user-1", role: 3 }
+    ],
+    [
+      [
+        "user",
+        "permissions",
+        "set",
+        "--user-id",
+        "user-1",
+        "--permissions-json",
+        '{"FILES_UPLOAD":true,"MACRO_SCRIPT":false,"BROADCAST_AUDIO":null}'
+      ],
+      "user.permissions.set",
+      {
+        userId: "user-1",
+        permissions: { FILES_UPLOAD: true, MACRO_SCRIPT: false, BROADCAST_AUDIO: null }
+      }
+    ],
+
+    [["macro", "execute", "--macro-id", "macro-1"], "macro.execute", { macroId: "macro-1" }],
+    [
+      [
+        "macro",
+        "execute",
+        "--macro-id",
+        "macro-1",
+        "--actor-id",
+        "actor-1",
+        "--scene-id",
+        "scene-1",
+        "--token-id",
+        "token-1",
+        "--args-json",
+        '{"dc":15}',
+        "--macro-timeout-ms",
+        "120000"
+      ],
+      "macro.execute",
+      {
+        macroId: "macro-1",
+        scope: { actorId: "actor-1", sceneId: "scene-1", tokenId: "token-1", args: { dc: 15 } },
+        timeoutMs: 120000
+      }
+    ],
+    [
+      ["macro", "execute", "--macro-id", "macro-1", "--macro-timeout-ms", "5000"],
+      "macro.execute",
+      { macroId: "macro-1", timeoutMs: 5000 }
+    ],
+
+    [["scene", "activate", "--scene-id", "scene-1"], "scene.activate", { sceneId: "scene-1" }],
+    [["scene", "pull-users", "--scene-id", "scene-1"], "scene.pull-users", { sceneId: "scene-1" }],
+    [
+      ["scene", "pull-users", "--scene-id", "scene-1", "--user-ids", "user-1,user-2"],
+      "scene.pull-users",
+      { sceneId: "scene-1", userIds: ["user-1", "user-2"] }
+    ],
+    [
+      [
+        "scene",
+        "region",
+        "behavior",
+        "executable",
+        "create",
+        "--scene-id",
+        "scene-1",
+        "--region-id",
+        "region-1",
+        "--macro-uuid",
+        "Macro.abc123",
+        "--events",
+        "tokenEnter,tokenExit",
+        "--everyone",
+        "false",
+        "--name",
+        "Spring Trap"
+      ],
+      "scene.region.behavior.executable.create",
+      {
+        sceneId: "scene-1",
+        regionId: "region-1",
+        data: {
+          type: "executeMacro",
+          name: "Spring Trap",
+          system: { uuid: "Macro.abc123", events: ["tokenEnter", "tokenExit"], everyone: false }
+        }
+      }
+    ],
+    [
+      [
+        "scene",
+        "region",
+        "behavior",
+        "executable",
+        "update",
+        "--scene-id",
+        "scene-1",
+        "--region-id",
+        "region-1",
+        "--behavior-id",
+        "behavior-1",
+        "--disabled",
+        "true"
+      ],
+      "scene.region.behavior.executable.update",
+      {
+        sceneId: "scene-1",
+        regionId: "region-1",
+        behaviorId: "behavior-1",
+        patch: { disabled: true }
+      }
+    ],
+    [
+      [
+        "scene",
+        "region",
+        "behavior",
+        "executable",
+        "clone",
+        "--scene-id",
+        "scene-1",
+        "--region-id",
+        "region-1",
+        "--behavior-id",
+        "behavior-1"
+      ],
+      "scene.region.behavior.executable.clone",
+      { sceneId: "scene-1", regionId: "region-1", behaviorId: "behavior-1" }
+    ],
+
+    [["journal", "show", "--journal-id", "journal-1"], "journal.show", { journalId: "journal-1" }],
+    [
+      ["journal", "show", "--journal-id", "journal-1", "--force", "true", "--user-ids", "user-1"],
+      "journal.show",
+      { journalId: "journal-1", force: true, userIds: ["user-1"] }
+    ],
+    [
+      ["image", "show", "--src", "worlds/world-1/art/map.webp"],
+      "image.show",
+      {
+        src: "worlds/world-1/art/map.webp"
+      }
+    ],
+    [
+      [
+        "image",
+        "show",
+        "--src",
+        "https://example.invalid/map.webp",
+        "--title",
+        "The Vault",
+        "--user-ids",
+        "user-1,user-2"
+      ],
+      "image.show",
+      { src: "https://example.invalid/map.webp", title: "The Vault", userIds: ["user-1", "user-2"] }
+    ],
+    [["chat", "flush"], "chat.flush", {}],
+    [["game", "pause", "--paused", "true"], "game.pause", { paused: true }],
+    [["game", "pause", "--paused", "false"], "game.pause", { paused: false }],
+    [["system", "reload"], "system.reload", {}],
 
     [
       ["item", "ownership", "set", "--item-id", "item-1", "--default", "0"],

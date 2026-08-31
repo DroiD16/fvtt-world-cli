@@ -4,28 +4,8 @@ import { describe, expect, it } from "vitest";
 import { humanizeCommandResult, RENDERERS, registerRenderers } from "../src/render/registry.js";
 
 // Commands the protocol declares that the CLI does not surface as a subcommand, so no renderer
-// describes their result and the caller sees pretty JSON.
-const WITHOUT_A_CLI_SURFACE: readonly string[] = [
-  "macro.execute",
-  "setting.get-many",
-  "setting.set",
-  "setting.set-many",
-  "user.create",
-  "user.update",
-  "user.delete",
-  "user.role.set",
-  "user.permissions.set",
-  "scene.activate",
-  "scene.pull-users",
-  "scene.region.behavior.executable.create",
-  "scene.region.behavior.executable.update",
-  "scene.region.behavior.executable.clone",
-  "journal.show",
-  "image.show",
-  "chat.flush",
-  "game.pause",
-  "system.reload"
-];
+// describes their result and the caller sees pretty JSON. Every declared command now has one.
+const WITHOUT_A_CLI_SURFACE: readonly string[] = [];
 
 const INTENTIONAL_FALLBACK_JSON: readonly string[] = [
   ...COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name)),

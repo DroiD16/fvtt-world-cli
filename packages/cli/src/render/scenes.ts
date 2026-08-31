@@ -1,5 +1,22 @@
 import { renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
 
+export function renderSceneActivateResult(result: any) {
+  return [
+    `${result?.dryRun ? "[dry-run] would activate scene" : "Activated scene"} ${result?.sceneId}`,
+    `was active: ${Boolean(result?.wasActive)}`,
+    `changed: ${Boolean(result?.changed)}`
+  ].join("\n");
+}
+
+export function renderScenePullUsersResult(result: any) {
+  return [
+    `Pulled users to scene ${result?.sceneId}`,
+    `pulled: ${(result?.userIds ?? []).join(", ") || "(nobody online)"}`,
+    `skipped (offline): ${(result?.skippedUserIds ?? []).join(", ") || "(none)"}`,
+    `dispatched: ${Boolean(result?.dispatched)} — a pull writes nothing, so there is no state to confirm afterwards`
+  ].join("\n");
+}
+
 export function renderSceneDetails(scene: any) {
   const lines = [
     `id: ${scene?.id}`,
