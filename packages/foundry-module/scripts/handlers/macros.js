@@ -15,7 +15,13 @@ import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import { filterByName, paginate, serializeMacro, serializeMacroSummary } from "../lib/serializers.js";
 
-const RESERVED_MACRO_ARGUMENT_NAMES = Object.freeze(["speaker", "actor", "token", "character", "event"]);
+const RESERVED_MACRO_ARGUMENT_NAMES = Object.freeze(["speaker", "actor", "token", "character", "scope"]);
+
+// Foundry splices each argument NAME as source text into `new AsyncFunction(... , ...argNames, body)`
+// (client/documents/macro.mjs), so a name that is not a bare identifier becomes executable code. The
+// allowlist is load-bearing security, not validation: the daemon accepts raw JSON, so the schema's
+// propertyNames pattern is only defense-in-depth.
+const MACRO_ARGUMENT_NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 /**
  * @param {Record<string, unknown> | undefined} args
@@ -31,11 +37,13 @@ function assertMacroArgumentNames(args) {
       );
     }
 
-    if (/^\d+$/.test(name) || Number.isFinite(Number(name))) {
+    if (!MACRO_ARGUMENT_NAME_PATTERN.test(name)) {
       throw createBridgeError(
         ERROR_CODES.INVALID_PARAMS,
-        `Macro argument ${name} is numeric, and Foundry refuses a numeric name in a macro execution scope; ` +
-          `rename the argument. Nothing was executed`,
+        `Macro argument ${name} is not a plain JavaScript identifier. Foundry builds a script macro by splicing ` +
+          `each argument NAME straight into the source of the function it compiles, so a name carrying anything ` +
+          `but letters, digits, "_" or "$" (and not starting with a digit) would become executable code — a ` +
+          `numeric name is refused for the same reason. Rename the argument to a bare identifier. Nothing was executed`,
         { argument: name }
       );
     }

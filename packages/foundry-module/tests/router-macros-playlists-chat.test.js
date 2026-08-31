@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createCommandRouter } from "../scripts/command-router.js";
+import { createMacroHandlers } from "../scripts/handlers/macros.js";
 
 import { ERROR_CODES } from "../scripts/generated/protocol.js";
 
@@ -770,14 +771,48 @@ describe("macro execution", () => {
   });
 
   it("refuses an argument name Foundry binds itself", async () => {
-    const response = await router.route(
-      createRequest("macro.execute", { macroId: "macro-1", scope: { args: { actor: "actor-1" } } })
-    );
+    for (const argument of ["actor", "scope"]) {
+      const response = await router.route(
+        createRequest("macro.execute", { macroId: "macro-1", scope: { args: { [argument]: "x" } } })
+      );
 
-    expect(response.ok).toBe(false);
-    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(response.error.details).toMatchObject({ argument: "actor" });
-    expect(macroDoc().execute).not.toHaveBeenCalled();
+      expect(response.ok, argument).toBe(false);
+      expect(response.error.code, argument).toBe(ERROR_CODES.INVALID_PARAMS);
+      expect(response.error.details, argument).toMatchObject({ argument });
+      expect(macroDoc().execute).not.toHaveBeenCalled();
+    }
+  });
+
+  it("refuses an argument name that is not a plain identifier before executing", async () => {
+    const injections = [
+      "{[(globalThis.__pwned = 42, 'k')]: _inj}",
+      "a, b = (globalThis.__pwned = 99)",
+      "1",
+      "with space"
+    ];
+    for (const argument of injections) {
+      const response = await router.route(
+        createRequest("macro.execute", { macroId: "macro-1", scope: { args: { [argument]: 1 } } })
+      );
+
+      expect(response.ok, argument).toBe(false);
+      expect(response.error.code, argument).toBe(ERROR_CODES.INVALID_PARAMS);
+      expect(macroDoc().execute).not.toHaveBeenCalled();
+    }
+  });
+
+  it("keeps the module guard load-bearing when the schema is bypassed", async () => {
+    const handlers = createMacroHandlers();
+    for (const argument of ["a, b = (globalThis.__pwned = 99)", "1", "scope"]) {
+      await expect(
+        handlers["macro.execute"]({ macroId: "macro-1", scope: { args: { [argument]: 1 } } })
+      ).rejects.toMatchObject({ code: ERROR_CODES.INVALID_PARAMS });
+      expect(macroDoc().execute).not.toHaveBeenCalled();
+    }
+
+    await expect(
+      handlers["macro.execute"]({ macroId: "macro-1", scope: { args: { validName: 1 } }, dryRun: true })
+    ).resolves.toMatchObject({ dryRun: true });
   });
 
   it("previews without running the macro", async () => {

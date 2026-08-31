@@ -33,6 +33,11 @@ const macroDataSchema = {
 
 const macroPatchSchema = patchFrom(macroDataSchema);
 
+const macroExecuteArgsSchema = {
+  ...freeformObjectSchema,
+  propertyNames: { pattern: "^[A-Za-z_$][A-Za-z0-9_$]*$" }
+};
+
 const macroExecuteScopeSchema = {
   type: "object",
   required: [],
@@ -40,7 +45,7 @@ const macroExecuteScopeSchema = {
     actorId: { type: "string", minLength: 1 },
     sceneId: { type: "string", minLength: 1 },
     tokenId: { type: "string", minLength: 1 },
-    args: freeformObjectSchema
+    args: macroExecuteArgsSchema
   },
   additionalProperties: false,
   minProperties: 1

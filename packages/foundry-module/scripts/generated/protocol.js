@@ -2498,6 +2498,10 @@ var macroDataSchema = {
   additionalProperties: false
 };
 var macroPatchSchema = patchFrom(macroDataSchema);
+var macroExecuteArgsSchema = {
+  ...freeformObjectSchema,
+  propertyNames: { pattern: "^[A-Za-z_$][A-Za-z0-9_$]*$" }
+};
 var macroExecuteScopeSchema = {
   type: "object",
   required: [],
@@ -2505,7 +2509,7 @@ var macroExecuteScopeSchema = {
     actorId: { type: "string", minLength: 1 },
     sceneId: { type: "string", minLength: 1 },
     tokenId: { type: "string", minLength: 1 },
-    args: freeformObjectSchema
+    args: macroExecuteArgsSchema
   },
   additionalProperties: false,
   minProperties: 1
@@ -5668,6 +5672,16 @@ function validateObjectSchema(schema, value, path, errors) {
   const ownKeys = Object.keys(value);
   if (typeof schema.minProperties === "number" && ownKeys.length < schema.minProperties) {
     errors.push(`${path} must contain at least ${schema.minProperties} properties`);
+  }
+  if (isPlainObject(schema.propertyNames) && typeof schema.propertyNames.pattern === "string") {
+    const namePattern = compilePattern(schema.propertyNames.pattern);
+    for (const key of ownKeys) {
+      if (namePattern === null) {
+        errors.push(`${path}.${key} cannot be validated: ${schema.propertyNames.pattern} is not a valid unicode-mode pattern`);
+      } else if (!namePattern.test(key)) {
+        errors.push(`${path}.${key} is not an allowed property name`);
+      }
+    }
   }
   for (const [key, propertyValue] of Object.entries(value)) {
     const propertySchema = properties[key];

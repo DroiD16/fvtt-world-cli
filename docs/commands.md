@@ -245,6 +245,11 @@ reports a `null` return, and a macro is free to reload the page or navigate away
 bridge session the same way any disconnect does. Effects therefore deserve a read-back whenever the
 return value alone does not prove them.
 
+Each key of `--args-json` becomes a named variable Foundry splices into the compiled macro, so an
+argument name must be a plain JavaScript identifier (letters, digits, `_` or `$`, not starting with
+a digit) and cannot reuse a name Foundry already binds (`speaker`, `actor`, `token`, `character`,
+`scope`). Any other name is refused before the macro runs.
+
 The result's `chatCapture` field says how much of the chat the run observed: `captured` when every
 message the macro was expected to create was seen, `not-created` when a chat macro created none,
 `partial` when only some were seen, and `unknown` when this client could not watch the chat log at

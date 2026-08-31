@@ -139,6 +139,17 @@ function validateObjectSchema(schema, value, path, errors) {
     errors.push(`${path} must contain at least ${schema.minProperties} properties`);
   }
 
+  if (isPlainObject(schema.propertyNames) && typeof schema.propertyNames.pattern === "string") {
+    const namePattern = compilePattern(schema.propertyNames.pattern);
+    for (const key of ownKeys) {
+      if (namePattern === null) {
+        errors.push(`${path}.${key} cannot be validated: ${schema.propertyNames.pattern} is not a valid unicode-mode pattern`);
+      } else if (!namePattern.test(key)) {
+        errors.push(`${path}.${key} is not an allowed property name`);
+      }
+    }
+  }
+
   for (const [key, propertyValue] of Object.entries(value)) {
     const propertySchema = properties[key];
 

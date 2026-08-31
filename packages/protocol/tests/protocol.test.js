@@ -998,6 +998,19 @@ describe("schema validator `pattern` keyword", () => {
     expect(validateSchema(single, `${die}${die}`, "$.label")).toEqual(["$.label must match ^.$"]);
   });
 
+  it("constrains object keys through `propertyNames.pattern` and fails a bad pattern closed", () => {
+    const schema = { type: "object", propertyNames: { pattern: "^[a-z]+$" } };
+    expect(validateSchema(schema, { ok: 1, also: 2 }, "$.args")).toEqual([]);
+    expect(validateSchema(schema, { "bad key": 1 }, "$.args")).toEqual([
+      "$.args.bad key is not an allowed property name"
+    ]);
+
+    const broken = { type: "object", propertyNames: { pattern: "^[a-" } };
+    expect(validateSchema(broken, { k: 1 }, "$.args")).toEqual([
+      "$.args.k cannot be validated: ^[a- is not a valid unicode-mode pattern"
+    ]);
+  });
+
   it("leaves non-string values unconstrained, deferring to `type` alone", () => {
     expect(validateSchema({ pattern: "^[a-z]+$" }, 42, "$.value")).toEqual([]);
     expect(validateSchema({ pattern: "^[a-z]+$" }, null, "$.value")).toEqual([]);
@@ -6820,6 +6833,7 @@ describe("protocol contract", () => {
       "required",
       "additionalProperties",
       "minProperties",
+      "propertyNames",
       "minItems",
       "items",
       "properties"
@@ -7354,6 +7368,17 @@ describe("protocol contract", () => {
         "timeoutMs"
       );
       expectRejected("macro.execute", { macroId: "macro-1", command: "x" }, "not allowed");
+    });
+
+    it("rejects a macro argument name that is not a plain identifier", () => {
+      expectValid("macro.execute", { macroId: "macro-1", scope: { args: { $ok_1: 1 } } });
+      for (const name of ["a, b = (x=1)", "1", "with space", "{[k]: v}"]) {
+        expectRejected(
+          "macro.execute",
+          { macroId: "macro-1", scope: { args: { [name]: 1 } } },
+          "allowed property name"
+        );
+      }
     });
 
     it("accepts a setting write by namespace and key, and any JSON value", () => {
