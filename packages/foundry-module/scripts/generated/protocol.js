@@ -5515,7 +5515,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "image.show": "allow",
   "user.list": "allow",
   "user.get": "allow",
-  "user.create": "allow",
+  "user.create": "approve",
   "user.update": "allow",
   "user.delete": "approve",
   "user.role.set": "deny",
@@ -5536,7 +5536,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
 // packages/protocol/src/command-risk.js
 var DESTRUCTIVE_VERBS = Object.freeze(["delete", "delete-many"]);
 var DESTRUCTIVE_COMMANDS = Object.freeze(["chat.flush", "file.delete", "file.move", "scene.fog.reset"]);
-var APPROVE_EXTRA_COMMANDS = Object.freeze(["system.reload"]);
+var APPROVE_EXTRA_COMMANDS = Object.freeze(["system.reload", "user.create"]);
 var DENIED_BY_DEFAULT_COMMANDS = Object.freeze([
   "macro.execute",
   "setting.set",

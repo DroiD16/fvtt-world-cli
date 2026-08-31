@@ -2,7 +2,7 @@ const DESTRUCTIVE_VERBS = Object.freeze(["delete", "delete-many"]);
 
 const DESTRUCTIVE_COMMANDS = Object.freeze(["chat.flush", "file.delete", "file.move", "scene.fog.reset"]);
 
-export const APPROVE_EXTRA_COMMANDS = Object.freeze(["system.reload"]);
+export const APPROVE_EXTRA_COMMANDS = Object.freeze(["system.reload", "user.create"]);
 
 export const DENIED_BY_DEFAULT_COMMANDS = Object.freeze([
   "macro.execute",

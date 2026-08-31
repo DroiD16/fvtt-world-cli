@@ -2302,7 +2302,7 @@ describe("protocol contract", () => {
 
     it("names the approve extras the verb rule cannot reach, and keeps the two lists apart", () => {
       expect(Object.isFrozen(APPROVE_EXTRA_COMMANDS)).toBe(true);
-      expect(APPROVE_EXTRA_COMMANDS).toEqual(["system.reload"]);
+      expect(APPROVE_EXTRA_COMMANDS).toEqual(["system.reload", "user.create"]);
 
       for (const command of APPROVE_EXTRA_COMMANDS) {
         expect(isDestructiveCommand(command), `${command} is not caught by the verb rule`).toBe(false);
@@ -2422,7 +2422,7 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 57 approve-listed, 8 denied and 270 self-running commands in a registry of 335", () => {
+    it("counts 58 approve-listed, 8 denied and 269 self-running commands in a registry of 335", () => {
       const bucket = (behavior) =>
         COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
@@ -2434,7 +2434,7 @@ describe("protocol contract", () => {
           allow: bucket("allow")
         },
         'the totals moved: update every count docs/commands.md states ("54 of the 316 commands in the registry; the other 262 run on their own") in the same change'
-      ).toEqual({ commands: 335, approve: 57, deny: 8, allow: 270 });
+      ).toEqual({ commands: 335, approve: 58, deny: 8, allow: 269 });
     });
 
     it("leaves 330 governed commands in 19 top-level groups once the exempt ones are removed", () => {

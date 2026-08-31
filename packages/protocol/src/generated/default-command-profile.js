@@ -325,7 +325,7 @@ export const DEFAULT_COMMAND_PROFILE = deepFreeze({
   "image.show": "allow",
   "user.list": "allow",
   "user.get": "allow",
-  "user.create": "allow",
+  "user.create": "approve",
   "user.update": "allow",
   "user.delete": "approve",
   "user.role.set": "deny",
