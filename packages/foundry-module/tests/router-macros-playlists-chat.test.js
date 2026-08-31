@@ -842,6 +842,15 @@ describe("macro execution", () => {
     expect(preview.result).toMatchObject({ canExecute: false });
   });
 
+  it("reports the missing execution API on BOTH paths (dry-run too)", async () => {
+    macroDoc().execute = undefined;
+    for (const dryRun of [false, true]) {
+      const response = await router.route(createRequest("macro.execute", { macroId: "macro-1", dryRun }));
+      expect(response.ok, `dryRun=${dryRun}`).toBe(false);
+      expect(response.error.code, `dryRun=${dryRun}`).toBe(ERROR_CODES.BRIDGE_NOT_READY);
+    }
+  });
+
   it("stops waiting for a macro that never finishes and calls the outcome indeterminate", async () => {
     macroDoc().execute = vi.fn(() => new Promise(() => {}));
 

@@ -294,6 +294,13 @@ export function createMacroHandlers() {
       const command = typeof macro.command === "string" ? macro.command : "";
       const canExecute = macro.canExecute !== false;
 
+      if (typeof macro.execute !== "function") {
+        throw createBridgeError(
+          ERROR_CODES.BRIDGE_NOT_READY,
+          "Foundry macro execution API (Macro#execute) is not available; reload the GM client"
+        );
+      }
+
       if (isDryRun(params)) {
         return dryRunResponse({
           macroId: macro.id ?? params.macroId,
@@ -310,13 +317,6 @@ export function createMacroHandlers() {
             `of the macro, which is ownership and not a role, so holding the GM role is not enough. Grant ownership ` +
             `with \`macro ownership set\`. Nothing was executed`,
           { macroId: params.macroId }
-        );
-      }
-
-      if (typeof macro.execute !== "function") {
-        throw createBridgeError(
-          ERROR_CODES.BRIDGE_NOT_READY,
-          "Foundry macro execution API (Macro#execute) is not available; reload the GM client"
         );
       }
 
