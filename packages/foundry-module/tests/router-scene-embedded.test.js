@@ -4183,7 +4183,7 @@ describe("executable region behaviors", () => {
     expect(response.result.behavior).toMatchObject({ disabled: true });
   });
 
-  it("accepts the executeMacro type on its own update patch, which the ordinary update rejects", async () => {
+  it("lets the executable guard pass an executeMacro arming patch the ordinary update rejects (the guard only; a live write still needs a force-replaced system)", async () => {
     const refused = await router.route(
       createRequest("scene.region.behavior.update", {
         sceneId: "scene-1",

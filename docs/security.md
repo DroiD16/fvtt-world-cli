@@ -337,6 +337,10 @@ multi-user scheduling.
   a fresh profile, holds its own permissions, and whichever client holds the bridge is the one whose
   permissions apply.
 - Declarative content can reference existing executable or module-interpreted content.
+- `image show` accepts an arbitrary off-host `http(s)` URL as its source and pushes it to the
+  targeted players' clients unchanged, so an enabled caller can make those browsers fetch and display
+  a remote image the operator did not host. Only local sources are confined to the managed data
+  boundary; a URL source is a display of external content, not a file read.
 - An enabled `macro.execute` or executable-behavior command makes the GM's enablement and approval
   discipline the effective code-review boundary; an enabled `setting.set` can change core settings
   that alter the GM client's own capabilities or take it down until a reload.
