@@ -125,8 +125,10 @@ function printHelp() {
       "The denied-by-default command segment also requires --gm-control, because those commands run",
       "only under a policy that enables them. Its chat.flush branch erases the world's entire chat",
       "log and therefore runs only with --allow-chat-flush (or FVTT_WORLD_CLI_TEST_ALLOW_CHAT_FLUSH=1);",
-      "without the flag it is skipped and reported in the summary notes. The segment ends with",
-      "system.reload, which reloads the GM client and waits for the bridge to reconnect."
+      "without the flag it is skipped and reported in the summary notes. The run ends with",
+      "system.reload, issued after every cleanup step and after the stored command policy is back,",
+      "because the reload destroys the page the GM control endpoint drives; it then waits for the",
+      "bridge to reconnect."
     ].join("\n") + "\n"
   );
 }
@@ -511,7 +513,6 @@ const DANGEROUS_SEGMENT_ENABLE_HINT =
   "pass --gm-control <url>, or set FVTT_WORLD_CLI_TEST_GM_CONTROL, and run the smoke again";
 
 const RELOAD_RECONNECT_WAIT_MS = 120_000;
-const RELOAD_GM_CONTROL_WAIT_MS = 60_000;
 const RELOAD_POLL_INTERVAL_MS = 2_000;
 
 const POLICY_SEGMENT_ENABLE_HINT =
@@ -997,7 +998,15 @@ async function preparePolicyHarness(summary, options, coverage) {
   let previousPolicy = null;
   let previousTimeoutMinutes = null;
 
+  // The stored policy may be restored early (before system.reload destroys the GM page) and is then
+  // reported again from the run's own cleanup, so a completed restore must not be written twice.
+  let restored = false;
+
   const restoreStoredSettings = async () => {
+    if (restored) {
+      return [];
+    }
+
     const failures = [];
     const restoreSetting = async (key, value) => {
       try {
@@ -1012,6 +1021,7 @@ async function preparePolicyHarness(summary, options, coverage) {
       await restoreSetting(APPROVAL_TIMEOUT_SETTING_KEY, previousTimeoutMinutes);
     }
 
+    restored = failures.length === 0;
     return failures;
   };
 
@@ -1375,17 +1385,19 @@ async function runPolicySegment(summary, options, { stamp, coverage }) {
   }
 }
 
+/** @returns {Promise<boolean>} whether the run may still issue the system.reload branch */
 async function runDangerousSegment(summary, options, { stamp, coverage }) {
   const gmControlUrl = options.gmControlUrl;
   if (!gmControlUrl) {
-    return;
+    return false;
   }
 
   let scriptMacroId = null;
   let chatMacroId = null;
   let sceneId = null;
   let userId = null;
-  let chatFlushed = false;
+  let chatFlushAttempted = false;
+  let chatFlushConfirmed = false;
   let capturedChatMessageIds = [];
 
   try {
@@ -1428,7 +1440,7 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
         "the scratch macros or the GM user id the segment needs could not be resolved",
         POLICY_SEGMENT_EARLY_EXIT_HINT
       );
-      return;
+      return false;
     }
 
     const scriptExecuteRun = runFoundryctl(["macro", "execute", "--macro-id", scriptMacroId]);
@@ -1476,45 +1488,44 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
 
     const settingGetRun = runFoundryctl(["setting", "get", "--namespace", "core", "--key", "chatBubbles"]);
     const previousBubbles = settingGetRun.response?.result?.setting?.value;
-    const settingSetRun = runFoundryctl([
-      "setting",
-      "set",
-      "--namespace",
-      "core",
-      "--key",
-      "chatBubbles",
-      "--value-json",
-      JSON.stringify(!previousBubbles)
-    ]);
-    const settingRestoreRun = runFoundryctl([
-      "setting",
-      "set",
-      "--namespace",
-      "core",
-      "--key",
-      "chatBubbles",
-      "--value-json",
-      JSON.stringify(previousBubbles ?? true)
-    ]);
+    const bubblesReadable = typeof previousBubbles === "boolean";
+    const writeBubbles = (value) =>
+      runFoundryctl([
+        "setting",
+        "set",
+        "--namespace",
+        "core",
+        "--key",
+        "chatBubbles",
+        "--value-json",
+        JSON.stringify(value)
+      ]);
+    const settingSetRun = bubblesReadable ? writeBubbles(!previousBubbles) : null;
+    const settingRestoreRun = settingSetRun?.response?.ok === true ? writeBubbles(previousBubbles) : null;
     markAndPush(
       summary,
       "dangerous.setting.set(roundtrip)",
       Boolean(
         settingGetRun.response?.ok &&
-        typeof previousBubbles === "boolean" &&
-        settingSetRun.response?.ok &&
+        bubblesReadable &&
+        settingSetRun?.response?.ok &&
         settingSetRun.response?.result?.changed === true &&
         settingSetRun.response?.result?.value === !previousBubbles &&
-        settingRestoreRun.response?.ok &&
+        settingRestoreRun?.response?.ok &&
         settingRestoreRun.response?.result?.value === previousBubbles
       ),
       {
         read: summarizeCommand(settingGetRun),
-        write: summarizeCommand(settingSetRun),
-        restore: summarizeCommand(settingRestoreRun),
-        previous: previousBubbles ?? null
+        write: settingSetRun ? summarizeCommand(settingSetRun) : null,
+        restore: settingRestoreRun ? summarizeCommand(settingRestoreRun) : null,
+        previous: bubblesReadable ? previousBubbles : null
       }
     );
+    if (!bubblesReadable) {
+      summary.notes.push(
+        "The dangerous.setting.set(roundtrip) branch could not read core.chatBubbles, so it wrote nothing: neither the toggle nor a guessed restore. Nothing about setting.set was verified on this run."
+      );
+    }
 
     const userCreateRun = runFoundryctl(["user", "create", "--name", `CLI Smoke User ${stamp}`]);
     userId = userCreateRun.response?.result?.user?.id || null;
@@ -1611,8 +1622,8 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
           sceneId,
           "--region-id",
           regionId,
-          "--data-json",
-          '{"type":"executeMacro"}'
+          "--type",
+          "executeMacro"
         ])
       : null;
     markAndPush(
@@ -1664,38 +1675,43 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
     );
     if (!previousActiveSceneId) {
       summary.notes.push(
-        "The dangerous.scene.activate branch found no previously active scene, so the scratch scene stayed active until its deletion; the world is left with no active scene, as it started."
+        "The dangerous.scene.activate branch found no previously active scene to restore, so the scratch scene stayed active and its cleanup deletes it with --force; the world is left with no active scene, as it started."
       );
     }
 
     const pauseRun = runFoundryctl(["game", "pause", "--paused", "true"]);
     const previousPaused = pauseRun.response?.result?.previousPaused;
-    const pauseRestoreRun = runFoundryctl([
-      "game",
-      "pause",
-      "--paused",
-      JSON.stringify(previousPaused === true)
-    ]);
+    const pausedReadable = typeof previousPaused === "boolean";
+    const pauseRestoreRun = pausedReadable
+      ? runFoundryctl(["game", "pause", "--paused", JSON.stringify(previousPaused)])
+      : null;
     markAndPush(
       summary,
       "dangerous.game.pause",
       Boolean(
         pauseRun.response?.ok &&
         pauseRun.response?.result?.paused === true &&
-        pauseRestoreRun.response?.ok &&
-        pauseRestoreRun.response?.result?.paused === (previousPaused === true)
+        pausedReadable &&
+        pauseRestoreRun?.response?.ok &&
+        pauseRestoreRun.response?.result?.paused === previousPaused
       ),
       {
         pause: summarizeCommand(pauseRun),
-        restore: summarizeCommand(pauseRestoreRun),
-        previousPaused: previousPaused ?? null
+        restore: pauseRestoreRun ? summarizeCommand(pauseRestoreRun) : null,
+        previousPaused: pausedReadable ? previousPaused : null
       }
     );
+    if (!pausedReadable) {
+      summary.notes.push(
+        "The dangerous.game.pause branch did not learn the pause state the world held before it paused the game, so it did NOT guess one back: the world may be left PAUSED. Unpause it in Foundry."
+      );
+    }
 
     if (options.allowChatFlush) {
       const flushPreviewRun = runFoundryctl(["--dry-run", "chat", "flush"]);
+      chatFlushAttempted = true;
       const flushRun = runFoundryctl(["chat", "flush"]);
-      chatFlushed = Boolean(flushRun.response?.ok);
+      chatFlushConfirmed = flushRun.response?.result?.remaining === 0;
       markAndPush(
         summary,
         DANGEROUS_CHAT_FLUSH_STEP,
@@ -1723,14 +1739,21 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
       `the segment stopped on an error: ${error.message}`,
       POLICY_SEGMENT_ENDPOINT_HINT
     );
-    return;
+    return false;
   } finally {
-    if (!chatFlushed) {
+    if (!chatFlushConfirmed) {
       for (const messageId of capturedChatMessageIds) {
-        expectOk(
+        const deleteRun = runFoundryctl(["chat", "delete", "--message-id", messageId]);
+        // A flush that did not confirm may still have deleted some of these, so a message that is
+        // already gone is a clean cleanup and not a failure.
+        markAndPush(
           summary,
           "chat.delete(dangerous cleanup)",
-          runFoundryctl(["chat", "delete", "--message-id", messageId])
+          Boolean(
+            deleteRun.response?.ok ||
+            (chatFlushAttempted && isExpectedError(deleteRun, ERROR_CODES.CHAT_MESSAGE_NOT_FOUND))
+          ),
+          summarizeCommand(deleteRun)
         );
       }
     }
@@ -1738,7 +1761,9 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
       expectOk(
         summary,
         "scene.delete(dangerous cleanup)",
-        runFoundryctl(["scene", "delete", "--scene-id", sceneId])
+        // The scratch scene is still the active one whenever the world had no active scene to restore,
+        // and Foundry refuses to delete the active scene without --force.
+        runFoundryctl(["scene", "delete", "--scene-id", sceneId, "--force"])
       );
     }
     if (userId) {
@@ -1759,6 +1784,12 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
     }
   }
 
+  return true;
+}
+
+// system.reload destroys the page the GM control endpoint drives, so this branch runs only after the
+// whole run's cleanup and after the stored command policy is back: nothing may need that endpoint again.
+async function runSystemReloadBranch(summary) {
   const reloadRun = runFoundryctl(["system", "reload"]);
   let reconnected = false;
   const reconnectDeadline = Date.now() + RELOAD_RECONNECT_WAIT_MS;
@@ -1776,23 +1807,6 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
     Boolean(reloadRun.response?.ok && reloadRun.response?.result?.reloading === true && reconnected),
     { ...summarizeCommand(reloadRun), reconnected }
   );
-
-  const gmControlDeadline = Date.now() + RELOAD_GM_CONTROL_WAIT_MS;
-  let gmControlBack = false;
-  while (Date.now() < gmControlDeadline) {
-    gmControlBack = await evaluateInGmPage(gmControlUrl, "return true;")
-      .then((value) => value === true)
-      .catch(() => false);
-    if (gmControlBack) {
-      break;
-    }
-    await delayMs(RELOAD_POLL_INTERVAL_MS);
-  }
-  if (!gmControlBack) {
-    summary.notes.push(
-      "The GM control endpoint stopped answering after system.reload, so the stored command policy and approval timeout may not be restored by this run; restore them in Module Settings if the policy.restore step below reports failures."
-    );
-  }
 }
 
 function runExtendedCoverage(
@@ -13005,6 +13019,7 @@ async function main() {
   const policyCoverage = createPolicyCoverage();
   let tempDir = null;
   let policyHarness = null;
+  let reloadPending = false;
 
   try {
     const systemInfoRun = runFoundryctl(["system", "info"]);
@@ -14111,7 +14126,7 @@ async function main() {
 
     await runPolicySegment(summary, options, { stamp, coverage: policyCoverage });
 
-    await runDangerousSegment(summary, options, { stamp, coverage: policyCoverage });
+    reloadPending = await runDangerousSegment(summary, options, { stamp, coverage: policyCoverage });
 
     return { options, summary };
   } finally {
@@ -14144,6 +14159,7 @@ async function main() {
         runFoundryctl(["journal", "delete", "--journal-id", summary.artifacts.journalId])
       );
     }
+    let policyRestored = false;
     if (policyHarness?.restore) {
       let failures = [];
       try {
@@ -14151,7 +14167,21 @@ async function main() {
       } catch (error) {
         failures = [{ setting: null, reason: error.message }];
       }
-      markAndPush(summary, "policy.restore", failures.length === 0, { failures });
+      policyRestored = failures.length === 0;
+      markAndPush(summary, "policy.restore", policyRestored, { failures });
+    }
+
+    if (reloadPending && policyRestored) {
+      await runSystemReloadBranch(summary);
+    } else if (reloadPending) {
+      recordSkippedDangerousSegment(
+        policyCoverage,
+        "the stored command policy could not be restored, and the reload destroys the page the GM control endpoint drives, so this run did not issue it",
+        "restore Module Settings → Command permissions by hand, make the endpoint named by --gm-control reachable, and run the smoke again"
+      );
+      summary.notes.push(
+        "The stored command policy was NOT restored: this world is left with the run's scratch policy, which ALLOWS every command including the denied-by-default ones. Restore Module Settings → Command permissions before anyone else uses this world."
+      );
     }
 
     flushPolicyCoverageNotes(summary, policyCoverage);
