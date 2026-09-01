@@ -32,12 +32,16 @@ fvtt-world-cli skill install --to <skills-directory>
 copy participates in updates later. `--link` symlinks instead of copying, which keeps the installed
 skill permanently identical to the CLI it came from.
 
+A bridge daemon started while no copy is installed anywhere prints a reminder with the
+installation command, so a missing skill does not go unnoticed.
+
 ## Staying up to date
 
 The skill is versioned together with the CLI, and the CLI keeps installed copies current on its
-own: updating the npm package refreshes them, and the daemon performs the same check at startup for
-installations updated by other means, such as a git checkout. For updates, a copy is one
-of two kinds:
+own: the bridge daemon checks every known copy at startup and refreshes outdated ones, so a package
+update takes effect the next time the daemon starts. The check runs inside the CLI itself; nothing
+about installation or updates relies on npm lifecycle scripts, which npm blocks by default. For
+updates, a copy is one of two kinds:
 
 - An **unmodified** copy, exactly what some version of the CLI shipped, is replaced silently with
   the current version.

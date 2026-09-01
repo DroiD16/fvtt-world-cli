@@ -100,8 +100,9 @@ The package ships `foundry-world-editor`, an installable [Agent Skill](docs/skil
 an agent to drive the CLI safely. It follows the open Agent Skills standard, so the same skill
 works in Claude Code, Codex, and other agents that read `SKILL.md` files.
 
-An installed skill stays current on its own: updating the package refreshes it. A copy you have
-edited locally is never replaced automatically, so your own instructions survive updates.
+An installed skill stays current on its own: after a package update, the bridge daemon refreshes
+it at startup. A copy you have edited locally is never replaced automatically, so your own
+instructions survive updates.
 
 ## Built to be trusted with a live world
 

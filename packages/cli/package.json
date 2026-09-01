@@ -34,8 +34,7 @@
     "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --external:commander --external:pino --external:tsx --external:ws --external:zod --outfile=dist/index.js",
     "typecheck": "tsc --project ../../tsconfig.json",
     "prepack": "npm run build && node ./bin/prepare-package-assets.mjs",
-    "postpack": "node ./bin/prepare-package-assets.mjs --clean",
-    "postinstall": "node ./bin/sync-installed-skill.mjs"
+    "postpack": "node ./bin/prepare-package-assets.mjs --clean"
   },
   "dependencies": {
     "commander": "^13.1.0",

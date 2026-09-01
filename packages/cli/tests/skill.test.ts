@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   appendFileSync,
@@ -340,43 +339,18 @@ describe("fvtt-world-cli commands", () => {
       }
     });
 
-    it("the postinstall sync script checks the canonical location plus the recorded manifest roots", () => {
+    it("syncInstalledSkillCopies suggests installing the skill when no copy exists in any known root", () => {
       const home = mkdtempSync(join(tmpdir(), "fvtt-home-"));
-      const recordedRoot = mkdtempSync(join(tmpdir(), "fvtt-skill-"));
       try {
-        const stale = (destination: string) => {
-          mkdirSync(destination, { recursive: true });
-          writeFileSync(join(destination, "SKILL.md"), "old pristine\n");
-          writeFileSync(
-            join(destination, "SKILL.md.sha256"),
-            `${createHash("sha256").update("old pristine\n").digest("hex")}\n`
-          );
-        };
-        const canonicalCopy = join(home, ".agents", "skills", "foundry-world-editor");
-        const recordedCopy = join(recordedRoot, "foundry-world-editor");
-        stale(canonicalCopy);
-        stale(recordedCopy);
-        mkdirSync(join(home, ".config", "fvtt-world-cli"), { recursive: true });
-        writeFileSync(
-          join(home, ".config", "fvtt-world-cli", "config.json"),
-          JSON.stringify({ skillInstalls: [recordedRoot] })
-        );
-        const script = fileURLToPath(new URL("../bin/sync-installed-skill.mjs", import.meta.url));
-        const environment = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config") };
-
-        const first = spawnSync(process.execPath, [script], { env: environment, encoding: "utf8" });
-        expect(first.status).toBe(0);
-        expect(readFileSync(join(canonicalCopy, "SKILL.md"), "utf8")).toContain("name: foundry-world-editor");
-        expect(readFileSync(join(recordedCopy, "SKILL.md"), "utf8")).toContain("name: foundry-world-editor");
-
-        appendFileSync(join(recordedCopy, "SKILL.md"), "user edit\n");
-        const second = spawnSync(process.execPath, [script], { env: environment, encoding: "utf8" });
-        expect(second.status).toBe(0);
-        expect(second.stderr).toContain("NOT updated");
-        expect(readFileSync(join(recordedCopy, "SKILL.md"), "utf8")).toContain("user edit");
+        const stderr = createWritableBuffer();
+        syncInstalledSkillCopies({
+          stderr,
+          env: { HOME: home } as NodeJS.ProcessEnv,
+          configStore: createInMemoryConfigStore()
+        });
+        expect(stderr.read()).toContain("skill install");
       } finally {
         rmSync(home, { recursive: true, force: true });
-        rmSync(recordedRoot, { recursive: true, force: true });
       }
     });
 
@@ -407,6 +381,7 @@ describe("fvtt-world-cli commands", () => {
         expect(readFileSync(join(canonicalCopy, "SKILL.md"), "utf8")).toContain("name: foundry-world-editor");
         expect(readFileSync(join(recordedCopy, "SKILL.md"), "utf8")).toContain("name: foundry-world-editor");
         expect(updatedStderr.read()).toContain(recordedCopy);
+        expect(updatedStderr.read()).not.toContain("skill install");
 
         appendFileSync(join(recordedCopy, "SKILL.md"), "user edit\n");
         const warnedStderr = createWritableBuffer();
