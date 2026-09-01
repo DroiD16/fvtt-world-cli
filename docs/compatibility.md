@@ -9,7 +9,7 @@ result honestly.
 - `fvtt-world-cli system info --json` reports the connected Foundry, system, module, limits, and
   discoverable command inventory.
 - `UNSUPPORTED_OPERATION` is a capability result, not a transient transport failure.
-- A dry run validates a proposed mutation, but values that require execution are not a forecast.
+- A dry run validates a proposed mutation; it does not forecast values that require execution.
 
 ## Known differences
 

@@ -1,6 +1,6 @@
 # Agent skill
 
-fvtt-world-cli ships with `foundry-world-editor`, an installable Agent Skill — a short operating
+fvtt-world-cli ships with `foundry-world-editor`, an installable Agent Skill, a short operating
 manual that teaches an AI agent to drive this CLI safely: how to bring the stack up and check its
 health, the read → preview → commit → verify loop, how to classify failures before retrying, and
 where the hard safety boundaries are. Skills follow the open Agent Skills standard, so the same
@@ -18,8 +18,8 @@ fvtt-world-cli skill install
 ```
 
 The default installation delegates to the ecosystem's skills CLI (`npx skills add`), which detects
-the agents present on the machine. It keeps one canonical copy under `~/.agents/skills` — the
-vendor-neutral location of the Agent Skills standard — and points each agent's own skill directory
+the agents present on the machine. It keeps one canonical copy under `~/.agents/skills`, the
+vendor-neutral location of the Agent Skills standard, and points each agent's own skill directory
 at it, so every agent reads the same single copy.
 
 An explicit destination works without the skills CLI or network access:
@@ -36,12 +36,12 @@ skill permanently identical to the CLI it came from.
 
 The skill is versioned together with the CLI, and the CLI keeps installed copies current on its
 own: updating the npm package refreshes them, and the daemon performs the same check at startup for
-installations updated by other means, such as a git checkout. For updating purposes a copy is one
+installations updated by other means, such as a git checkout. For updates, a copy is one
 of two kinds:
 
-- An **unmodified** copy — exactly what some version of the CLI shipped — is replaced silently with
+- An **unmodified** copy, exactly what some version of the CLI shipped, is replaced silently with
   the current version.
-- A **modified** copy — one with local edits — is never replaced automatically. It produces a
+- A **modified** copy, one with local edits, is never replaced automatically. It produces a
   warning instead, and keeps producing it until the difference is resolved.
 
 The explicit update command follows the same rule and can override it:

@@ -182,11 +182,11 @@ re-pairing rotates only the re-pairing browser's credential. Making the browser 
 also makes the human label meaningful, so the label travels with the pairing request instead of being
 editable daemon-side metadata: it is fixed between pairing approvals, and an approval that reuses an
 existing record adopts the label that request carried. The design keeps slot ownership
-unambiguous: a socket receives its role only after completed authentication rather
-than from a claimed message type; only a same-pairing socket can take over the slot, as the
-tab-reload recovery path; intentional goodbye, release, and revocation clear ownership before close
-handling, while only an abnormal close creates a short reclaim lease; and daemon-initiated release is
-terminal for the released client so reconnection remains an explicit operator action. Every way a
+unambiguous. A socket receives its role only after completed authentication rather than from a
+claimed message type, and only a same-pairing socket can take over the slot, as the tab-reload
+recovery path. Intentional goodbye, release, and revocation clear ownership before close handling,
+while only an abnormal close creates a short reclaim lease. Daemon-initiated release is terminal
+for the released client, so reconnection remains an explicit operator action. Every way a
 pairing attempt can end shares one idempotent cleanup path, so the authorization UI cannot retain a
 stale pending state.
 
@@ -199,7 +199,7 @@ One of those operations parks instead of answering at once: the wait for a pairi
 response until a request arrives or the daemon's own park cap elapses. That cap is what keeps a parked
 answer inside the caller's request timeout, so an unanswered wait ends in an empty result the CLI
 re-issues rather than in a transport failure; a cap at or above the client's wait would turn every
-wait into one.
+unanswered wait into a transport failure.
 
 Approval waits use the same bounded polling pattern inside the Foundry module. The module answers the
 original request with a pending approval. Later polls wait within the transport timeout and ask again

@@ -2,24 +2,24 @@
 
 [![Foundry VTT v13–v14](https://img.shields.io/badge/Foundry%20VTT-v13%E2%80%93v14-ff6400)](https://foundryvtt.com)
 
-Tell your AI agent what should change in your Foundry VTT world, and it happens — in the live
+Tell your AI agent what should change in your Foundry VTT world, and it happens in the live
 world, validated by Foundry, visible to your players immediately.
 
 ```text
-You → agent:  “The scimitar in Valeros's inventory should burn targets on hit —
-               add a Flaming effect to it.”
+You → agent:  "The scimitar in Valeros's inventory should burn targets on hit.
+               Add a Flaming effect to it."
 
 agent → fvtt-world-cli:
               actor list --name Valeros            find the character
               actor item list --name scimitar      find the sword in their inventory
               actor item effect create …           add the effect to it
 
-agent → you:  “Done — Flaming effect added, already live in the world.”
+agent → you:  "Done. Flaming effect added, already live in the world."
 ```
 
 Modern agents already understand requests like that. What they have lacked is a safe way into
 Foundry: driving the browser UI is brittle and token consuming, and editing world files on disk
-bypasses everything Foundry does to keep a world consistent. fvtt-world-cli is the missing bridge —
+bypasses everything Foundry does to keep a world consistent. fvtt-world-cli is the missing bridge,
 a command line wired into your open GM session that performs every change through Foundry's own
 APIs, exactly as if a GM had made it in the UI.
 
@@ -34,18 +34,18 @@ scenes down to individual tokens, walls, and lights, and pull content in from co
 
 A few asks it handles end to end:
 
-- “Sort the journals into folders by location.”
-- “Dim every light in the tavern scene down to torchlight.”
-- “Find every NPC that still has no portrait and list them.”
-- “Turn the bestiary goblin into a flying one that throws dynamite for 2d6 damage, and add it to
-  the scene.”
+- "Sort the journals into folders by location."
+- "Dim every light in the tavern scene down to torchlight."
+- "Find every NPC that still has no portrait and list them."
+- "Turn the bestiary goblin into a flying one that throws dynamite for 2d6 damage, and add it to
+  the scene."
 
 [Commands](docs/commands.md) maps the full surface.
 
 ## Setting up
 
 The simplest setup is one step: point your AI agent at this repository and ask it to set
-fvtt-world-cli up. Then follow its lead — it will most likely ask you to install the module in
+fvtt-world-cli up. Then follow its lead. It will most likely ask you to install the module in
 Foundry and click *Pair* there, and it handles the rest itself.
 
 ### Manual setup
@@ -75,14 +75,14 @@ agent works with the world.
 
 4. Pair the browser: choose *Pair* in the module's Authorization window, reachable from the
    *World CLI* group in the scene controls or from the module's settings. Then approve the request
-   from the terminal — it shows the requesting origin, world, GM, and browser, and asks for a yes
+   from the terminal. It shows the requesting origin, world, GM, and browser, and asks for a yes
    or no:
 
    ```bash
    fvtt-world-cli auth
    ```
 
-5. Optionally, install the packaged skill into your AI agent — the next section explains what it
+5. Optionally, install the packaged skill into your AI agent; the next section explains what it
    does:
 
    ```bash

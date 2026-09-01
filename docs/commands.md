@@ -65,21 +65,23 @@ the active slot can be cleared with `bridge release`. The daemon never prints a 
   drops, which is reported as `DAEMON_UNAVAILABLE` rather than a silent stop and is safe to re-run once
   the daemon is back. `y` or `yes` approves the displayed code and exits 0, any other answer denies that
   code and exits 1 with `PAIRING_DECLINED`.
-  Ctrl+C, or an ended stdin, at the confirmation instead leaves the request untouched, and it stays
-  pending until it expires or another run answers for it. An ended stdin, and Ctrl+C while output goes
-  to the terminal too, report `PAIRING_PROMPT_ABORTED` and exit 1; with output redirected the prompt
-  does not read keystrokes itself, so Ctrl+C ends the run as an ordinary interrupt instead.
+  Interrupting the confirmation instead leaves the request untouched: after Ctrl+C or an ended
+  stdin it stays pending until it expires or another run answers for it. An ended stdin reports
+  `PAIRING_PROMPT_ABORTED` and exits 1, and Ctrl+C does the same while output goes to the terminal;
+  with output redirected the prompt does not read keystrokes itself, so Ctrl+C ends the run as an
+  ordinary interrupt instead.
   Delivery is a long-poll control call the CLI re-issues on its own, and the daemon answers each call
   inside its own park cap, so an ordinary wait does not end in a timeout; a daemon that stops answering
   altogether still trips the client's request timeout and is reported as `DAEMON_UNAVAILABLE`. The
   command is interactive-only: `--json`, and a stdin that is not a terminal, each fail
   immediately and name `auth pending` plus `auth approve --yes` as the path for scripts.
-  `--timeout-ms` cannot cut the wait short either — a value below the daemon's park cap plus five
-  seconds is raised to it for the long-poll call, because a smaller client wait would abandon a parked
-  response the daemon is still holding. That long poll is the only call the flag cannot shorten: the
-  approval or denial that follows the answer, and the listing an interactive `auth approve` or
-  `auth prune` reads before its prompt, take `--timeout-ms` as given for their client wait, as the
-  other `auth` verbs and `bridge release` do; without the flag that wait is 60 seconds.
+  `--timeout-ms` cannot cut the wait short either. For the long-poll call, a value below the
+  daemon's park cap plus five seconds is raised to it, because a smaller client wait would abandon
+  a parked response the daemon is still holding. That long poll is the only call the flag cannot
+  shorten. The approval or denial that follows the answer takes `--timeout-ms` as given for its
+  client wait, and so does the listing an interactive `auth approve` or `auth prune` reads before
+  its prompt, as the other `auth` verbs and `bridge release` do. Without the flag that wait is
+  60 seconds.
 - `auth status` shows bridge state and public profile metadata.
 - `auth pending` lists approval candidates with code, expiry, exact Origin, world, GM, browser client
   id, browser label, and module version.
@@ -87,13 +89,13 @@ the active slot can be cleared with `bridge release`. The daemon never prints a 
   request is pending. Interactive use confirms the displayed identity, including the browser label and
   client id, and then approves that exact request: one that expired or disappeared while the prompt
   waited fails rather than approving whatever else is pending. When no single pending request can be
-  shown — nothing pending, an unknown code, or several candidates — it names the live pending codes and
-  stops instead of asking. Answering anything but `y` or `yes` cancels the approval, reports
-  `PAIRING_DECLINED` and exits 1 — the same code and exit the bare `auth` wait reports for a declined
-  request, which the wait also denies outright while this verb leaves it pending. Interrupting the
-  prompt also leaves the request pending, and reports `PAIRING_PROMPT_ABORTED` with exit 1 on the same
-  terms as the wait. Scripts must pass `--yes`. The stored label is the one the browser sent — approval
-  does not rename it.
+  shown, because nothing is pending, the code is unknown, or several candidates exist, it names the
+  live pending codes and stops instead of asking. Answering anything but `y` or `yes` cancels the
+  approval, reports `PAIRING_DECLINED` and exits 1, the same code and exit the bare `auth` wait
+  reports for a declined request; the wait also denies the request outright, while this verb leaves
+  it pending. Interrupting the prompt also leaves the request pending, and reports
+  `PAIRING_PROMPT_ABORTED` with exit 1 on the same terms as the wait. Scripts must pass `--yes`.
+  The stored label is the one the browser sent; approval does not rename it.
 - `auth deny <code>` rejects a pending request.
 - `auth list` shows non-secret profile metadata, including each profile's `clientId` and `label`.
   A label is set in the browser at pairing time and no control operation renames a stored record, so
@@ -107,11 +109,11 @@ the active slot can be cleared with `bridge release`. The daemon never prints a 
 - `auth prune [--older-than <days>] [--yes]` deletes the profiles that have gone unused. A profile is
   a candidate when its `lastSeenAt` is older than the cutoff, which defaults to 30 days; the active
   bridge profile and the holder of an abnormal-disconnect lease are never deleted, however idle their
-  stored timestamp looks. Interactive use lists the candidates it found — label, client id, world, GM,
-  last-seen timestamp, and pairing id — and asks once for the whole set. The listing skips the profile
-  `auth list` reports as active, so a browser that has stayed connected past the cutoff is neither shown
-  nor counted in the prompt, matching what the daemon will do. Answering anything but `y` or
-  `yes` removes nothing, reports `PAIRING_DECLINED` and exits 1; interrupting the prompt reports
+  stored timestamp looks. Interactive use lists the candidates it found, with label, client id,
+  world, GM, last-seen timestamp, and pairing id, and asks once for the whole set. The listing
+  skips the profile `auth list` reports as active, so a browser that has stayed connected past the
+  cutoff is neither shown nor counted in the prompt, matching what the daemon will do. Answering
+  anything but `y` or `yes` removes nothing, reports `PAIRING_DECLINED` and exits 1; interrupting the prompt reports
   `PAIRING_PROMPT_ABORTED` and exits 1 on the same terms as `auth approve`. A listing that found no
   candidate asks nothing and still runs the operation, so the command's output is the daemon's own empty
   result rather than a local verdict. The listing is a preview only: the daemon recomputes the set,
@@ -120,7 +122,7 @@ the active slot can be cleared with `bridge release`. The daemon never prints a 
   crossed the cutoff while the prompt waited is removed although it was never listed; it can equally be
   smaller, because a profile that became active or was already removed between the two steps is
   reported as the daemon left it. There is no dry-run mode, and `--older-than 0` treats every profile
-  as idle, which is the one case where a preview can name a lease holder the daemon then keeps —
+  as idle, which is the one case where a preview can name a lease holder the daemon then keeps.
   `auth list` does not expose the lease, and a lease holder's last-seen timestamp is fresh by
   definition, so no realistic threshold selects it. Scripts pass `--yes`, which skips both the preview
   and the prompt; `--json` requires `--yes` as well, because the confirmation is never mixed into JSON
@@ -132,8 +134,8 @@ the active slot can be cleared with `bridge release`. The daemon never prints a 
   An active browser stopped by release stays stopped until its operator chooses Connect.
 
 Every command in this section is answered by the daemon alone, with no Foundry browser involved, so
-a daemon that is not running or not reachable ends any of them — the `auth` verbs and
-`bridge release` alike — with `DAEMON_UNAVAILABLE` and exit 3 rather than a command-level failure.
+a daemon that is not running or not reachable ends any of them, the `auth` verbs and
+`bridge release` alike, with `DAEMON_UNAVAILABLE` and exit 3 rather than a command-level failure.
 
 In Foundry, Connect reuses the stored browser credential and Disconnect releases the slot without
 touching it. Unpair waits for confirmed daemon revocation
@@ -322,16 +324,16 @@ reports an indeterminate result.
 
 The default policy sorts commands into the three behaviors by what a mistake would cost. Commands
 that can execute code, change who can do what, or persist outside the world's own data are denied
-until a human enables them; the next section lists them. Commands that destroy world data — the
-`delete` and `delete-many` verbs, plus `file.move`, `scene.fog.reset`, and `chat.flush` — ask for
-approval, as do `system.reload` and `user.create`. The remaining commands run on their own unless
-they are exempt from the policy. The Command permissions window and
+until a human enables them; the next section lists them. Commands that destroy world data ask for
+approval, as do `system.reload` and `user.create`; the destructive set is the `delete` and
+`delete-many` verbs, plus `file.move`, `scene.fog.reset`, and `chat.flush`. The remaining commands
+run on their own unless they are exempt from the policy. The Command permissions window and
 `fvtt-world-cli commands --json` show the current inventory.
 
 #### Commands that are off by default
 
 The following commands ship with the deny behavior. They stay invisible to
-[discovery](#discovery-under-a-policy) and refuse to run — even as dry runs — until a GM enables
+[discovery](#discovery-under-a-policy) and refuse to run, even as dry runs, until a GM enables
 them in the Command permissions window of the browser profile holding the bridge:
 
 - `macro.execute`
@@ -456,9 +458,9 @@ All mutation commands accept the global `--dry-run` flag:
 fvtt-world-cli --dry-run actor update --actor-id <id> --name "New name" --json
 ```
 
-The result uses the normal command shape and includes `dryRun: true`. The preview contract — what a
-dry run executes, what it can report, and its non-reservation of state — is defined in
-[Protocol](protocol.md#dry-run).
+The result uses the normal command shape and includes `dryRun: true`. The preview contract is
+defined in [Protocol](protocol.md#dry-run): what a dry run executes, what it can report, and its
+non-reservation of state.
 
 Approval does not hold a preview. A command whose permission is approve previews without asking the
 GM, and its result carries `approvalRequired: true` so the caller knows the commit will wait. The GM
@@ -520,7 +522,7 @@ First-run setup is covered in [Getting started](getting-started.md).
 
 The CLI intentionally does not provide arbitrary JavaScript evaluation, direct world-database
 writes, unrestricted filesystem access, generic RPC, compendium editing, or transactional Foundry
-batches. Code runs only through `macro.execute` and `executeMacro` region behaviors — both off by default,
-and when a GM keeps them on approve the window shows a macro execution's own body and names the
-macro a region behavior would run. [Security](security.md) describes the trust
+batches. Code runs only through `macro.execute` and `executeMacro` region behaviors, both off by
+default; when a GM keeps them on approve, the window shows a macro execution's own body and names
+the macro a region behavior would run. [Security](security.md) describes the trust
 boundary and [Foundry compatibility](compatibility.md) the version-dependent capabilities.

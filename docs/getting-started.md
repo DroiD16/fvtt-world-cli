@@ -16,7 +16,7 @@ tool is in use.
 
 The daemon should be running before the Foundry GM client loads the world: the module tries to
 connect once when the world loads, and if the daemon is down at that moment it gives up with a
-warning. Connecting after that is a manual retry — Connect in the scene controls, or a client
+warning. Connecting after that is a manual retry: Connect in the scene controls, or a client
 reload.
 
 ## 2. Pair the Foundry GM client
@@ -27,10 +27,10 @@ browser.
 It starts in the module's Authorization window. The quickest way there is the `World CLI` group at
 the bottom of the left scene controls; its icon doubles as a status light:
 
-- muted grey — not paired yet
-- amber — connecting
-- green — the bridge is up
-- red — stopped or failed
+- muted grey: not paired yet
+- amber: connecting
+- green: the bridge is up
+- red: stopped or failed
 
 The same windows are also reachable through Configure Settings → Module Settings:
 
@@ -48,15 +48,15 @@ record.
 
 ![The Authorization window before pairing](images/authorization-window.png)
 
-Choose Pair, then approve the request from a terminal on the daemon's machine — the approval is
+Choose Pair, then approve the request from a terminal on the daemon's machine. The approval is
 what turns the request into a stored permission:
 
 ```bash
 fvtt-world-cli auth
 ```
 
-The command waits for the pairing request (starting it before or after clicking Pair both work),
-shows who is asking — origin, world, GM, browser label, client id — and asks
+The command waits for the pairing request; starting it before or after clicking Pair works either
+way. It shows who is asking, with the origin, world, GM, browser label, and client id, and asks
 `Approve pairing request <code>? [y/N]`. Typing `y` and pressing Enter approves it; any other
 answer denies it. To read a request over before deciding, or to approve from a script, the same
 approval exists as two steps:
@@ -68,7 +68,7 @@ fvtt-world-cli auth approve <code>   # add --yes in a script to skip the confirm
 
 ## 3. Confirm the bridge
 
-On approval the browser stores its pairing credential and starts the bridge immediately — no
+On approval the browser stores its pairing credential and starts the bridge immediately. No
 reload is needed, and the scene-controls icon turns green. From now on the bridge connects on its
 own as soon as the world loads: that is the client-scoped `Connect automatically` setting, enabled
 by default; with it disabled the bridge stays offline until Connect is chosen.
@@ -105,7 +105,7 @@ abnormal-disconnect lease.
 
 One bridge is active at a time, so a second paired browser's connection attempt stops on
 `BRIDGE_BUSY` and stays stopped. Switching browsers is a Disconnect on the active one followed by
-Connect on the other — pairing plays no part in it.
+Connect on the other; pairing plays no part in it.
 
 Authorization holds the two exits. Unpair revokes this browser's access and removes its credential
 once the daemon confirms the revocation. Forget local is the recovery for a daemon that cannot be
