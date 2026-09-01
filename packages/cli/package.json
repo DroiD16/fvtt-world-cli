@@ -20,8 +20,8 @@
   },
   "type": "module",
   "bin": {
-    "fvtt-world-cli": "./bin/fvtt-world-cli.js",
-    "worldctl": "./bin/fvtt-world-cli.js"
+    "fvtt-world-cli": "bin/fvtt-world-cli.js",
+    "worldctl": "bin/fvtt-world-cli.js"
   },
   "files": [
     "bin/",
