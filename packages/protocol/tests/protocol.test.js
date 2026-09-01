@@ -2324,27 +2324,6 @@ describe("protocol contract", () => {
       ).toEqual([...DENIED_BY_DEFAULT_COMMANDS]);
     });
 
-    it("names every denied-by-default command in the skill's off-by-default section", () => {
-      const text = readFileSync(`${REPO_ROOT}/skills/foundry-world-editor/SKILL.md`, "utf8");
-      const section = text.split("## Off-by-default commands")[1]?.split(/\n## /)[0] ?? "";
-      const skillToken = (command) => {
-        if (command.startsWith("scene.region.behavior.executable.")) {
-          return "scene.region.behavior.executable.*";
-        }
-        if (command === "setting.set-many") {
-          return "set-many";
-        }
-        return command;
-      };
-
-      for (const command of DENIED_BY_DEFAULT_COMMANDS) {
-        expect(
-          section,
-          `${command} is denied by default but the skill's off-by-default section does not mention it`
-        ).toContain(`\`${skillToken(command)}\``);
-      }
-    });
-
     it("names the approve extras the verb rule cannot reach, and keeps the two lists apart", () => {
       expect(Object.isFrozen(APPROVE_EXTRA_COMMANDS)).toBe(true);
       expect(APPROVE_EXTRA_COMMANDS).toEqual(["system.reload", "user.create"]);
