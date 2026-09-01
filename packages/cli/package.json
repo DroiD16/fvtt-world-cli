@@ -1,6 +1,6 @@
 {
   "name": "fvtt-world-cli",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Safe local CLI and authenticated bridge for automating live Foundry VTT worlds.",
   "license": "MIT",
   "author": "DroiD16",
@@ -45,6 +45,6 @@
     "zod": "^3.24.3"
   },
   "devDependencies": {
-    "@fvtt-world-cli/protocol": "1.0.0"
+    "@fvtt-world-cli/protocol": "1.1.0"
   }
 }
