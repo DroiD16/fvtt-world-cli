@@ -162,9 +162,7 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
 
   macro
     .command("execute")
-    .description(
-      "Run a macro in the GM client and wait for it to finish (OFF by default — a GM must enable macro.execute)"
-    )
+    .description("Run a macro in the GM client and wait for it to finish")
     .requiredOption("--macro-id <macroId>", "Macro id")
     .option("--actor-id <actorId>", "Actor the macro receives as its `actor`/speaker")
     .option("--scene-id <sceneId>", "Scene the token belongs to (required with --token-id)")

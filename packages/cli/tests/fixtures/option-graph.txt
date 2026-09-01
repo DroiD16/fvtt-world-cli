@@ -145,7 +145,7 @@ command system info
 
 command system reload
   aliases=[]
-  summary=Reload the GM browser page (needs GM approval). The bridge drops and reconnects on its own; pair it with a setting whose row reports requiresReload
+  summary=Reload the GM browser page. The bridge drops and reconnects on its own; pair it with a setting whose row reports requiresReload
 
 command world
   aliases=[]
@@ -1329,7 +1329,7 @@ command scene region behavior delete
 
 command scene region behavior executable
   aliases=[]
-  summary=Region behaviors that RUN A MACRO when the region fires (off by default)
+  summary=Region behaviors that RUN A MACRO when the region fires
 
 command scene region behavior executable create
   aliases=[]
@@ -1796,7 +1796,7 @@ command macro delete
 
 command macro execute
   aliases=[]
-  summary=Run a macro in the GM client and wait for it to finish (OFF by default — a GM must enable macro.execute)
+  summary=Run a macro in the GM client and wait for it to finish
   opt --macro-id <macroId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Macro id
   opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Actor the macro receives as its `actor`/speaker
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene the token belongs to (required with --token-id)
@@ -2720,7 +2720,7 @@ command chat create
 
 command chat flush
   aliases=[]
-  summary=Delete the ENTIRE chat log (irreversible; needs GM approval). --dry-run reports the message count without deleting anything
+  summary=Delete the ENTIRE chat log (irreversible). --dry-run reports the message count without deleting anything
 
 command chat delete
   aliases=[]
@@ -3101,7 +3101,7 @@ command user get
 
 command user create
   aliases=[]
-  summary=Create a player account (needs GM approval; no password is set)
+  summary=Create a player account (no password is set)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --name <name> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=User name
   opt --role <role> | parser=parseUserRole | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Role for the new user (1=player, 2=trusted player, 3=assistant GM, 4=gamemaster; default player)
@@ -3128,7 +3128,7 @@ command user update
 
 command user delete
   aliases=[]
-  summary=Delete a user account (needs GM approval; refuses the bridge's own GM user)
+  summary=Delete a user account (refuses the bridge's own GM user)
   opt --user-id <userId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=User id
 
 command user role
@@ -3137,7 +3137,7 @@ command user role
 
 command user role set
   aliases=[]
-  summary=Set a user's role (OFF by default; refuses the bridge's own GM user)
+  summary=Set a user's role (refuses the bridge's own GM user)
   opt --user-id <userId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=User id
   opt --role <role> | parser=parseUserRole | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=New role (1=player, 2=trusted player, 3=assistant GM, 4=gamemaster)
 
@@ -3147,7 +3147,7 @@ command user permissions
 
 command user permissions set
   aliases=[]
-  summary=Grant, revoke or drop per-user permission overrides (OFF by default)
+  summary=Grant, revoke or drop per-user permission overrides
   opt --user-id <userId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=User id
   opt --permissions-json <json> | parser=parseUserPermissions | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Overrides as a JSON object, e.g. {"FILES_UPLOAD":true,"MACRO_SCRIPT":false,"BROADCAST_AUDIO":null} — true grants, false revokes, null drops the override so the role default applies again. Names are validated against the installed Foundry version.
 
@@ -3175,14 +3175,14 @@ command setting get-many
 
 command setting set
   aliases=[]
-  summary=Write one registered setting (OFF by default — a GM must enable setting.set)
+  summary=Write one registered setting
   opt --namespace <namespace> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Setting namespace (e.g. "core" or a module id)
   opt --key <key> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Setting key within the namespace
   opt --value-json <json> | parser=<anonymous> | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=New value as a JSON literal — true, 42, "text", [..] or {..}; a quoted string stays distinct from a boolean or a number
 
 command setting set-many
   aliases=[]
-  summary=Write several settings in ONE call (OFF by default; stops at the first element Foundry refuses)
+  summary=Write several settings in ONE call (stops at the first element Foundry refuses)
   opt --items-json <json> | parser=<anonymous> | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Setting writes as a JSON ARRAY of {"namespace","key","value"} objects
   opt --items-stdin | parser=- | conflicts=["itemsJson"] | choices=- | required=false | hidden=false | default=- | help=Read that JSON array from stdin instead
 

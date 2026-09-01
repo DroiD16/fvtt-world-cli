@@ -1382,7 +1382,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     "\nResult key (--json): .result.behavior (single/write) / .result.behaviors[] (list), with .result.sceneId and .result.regionId alongside." +
       '\nA behavior name may legitimately be BLANK (Foundry then displays the localized type label): pass --name "" to author one; the CLI prints it as (blank).' +
       "\n--type is CREATE-ONLY, so update/clone have no --type. If a --patch-json carries a `type` key it is refused even when it restates the current type: drop the key and resend (an unchanged type is a no-op for Foundry). On this family changing a behavior's type is impossible — for that, create the new behavior and delete the old one." +
-      "\nThe code-executing types executeScript and executeMacro are REFUSED on THIS family whenever you supply them, and every patch on an existing one is refused too (even --disabled). executeScript is refused everywhere — it runs its source in every connected player's browser. For executeMacro use `scene region behavior executable`, which is off by default until a GM enables it; delete removes either type." +
+      "\nThe code-executing types executeScript and executeMacro are REFUSED on THIS family whenever you supply them, and every patch on an existing one is refused too (even --disabled). executeScript is refused everywhere — it runs its source in every connected player's browser. For executeMacro use `scene region behavior executable`; delete removes either type." +
       "\nclone with NO patch flags IS allowed on any behavior — note that cloning a code-executing one mints a NEW self-arming auto-trigger, so audit the region afterwards."
   );
   addNameFilterOption(
@@ -1524,11 +1524,11 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
 
   const executableBehavior = sceneRegionBehavior
     .command("executable")
-    .description("Region behaviors that RUN A MACRO when the region fires (off by default)");
+    .description("Region behaviors that RUN A MACRO when the region fires");
   executableBehavior.addHelpText(
     "after",
     "\nResult key (--json): .result.behavior, with .result.sceneId and .result.regionId alongside — the same shape the ordinary behavior verbs return." +
-      "\nThese three verbs are the only route to an executeMacro behavior, and a GM must enable each of them in the Command permissions window first. The type is fixed: there is no --type, and the behavior cannot be turned into another type later." +
+      "\nThese three verbs are the only route to an executeMacro behavior. The type is fixed: there is no --type, and the behavior cannot be turned into another type later." +
       "\n--macro-uuid must name a macro in THIS world (e.g. Macro.abc123); a compendium macro or a missing uuid is refused, so the behavior never arms a trigger that points at nothing." +
       "\n--events decides WHEN the macro runs (e.g. tokenEnter), and --everyone true runs it in EVERY connected client instead of one elected executor — read it as: every player's browser executes that macro." +
       "\nclone with no patch flags mints a second armed trigger on the same region; audit the region afterwards."

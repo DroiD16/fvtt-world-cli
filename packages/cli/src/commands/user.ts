@@ -23,10 +23,9 @@ export function registerUser({ program, dependencies }: RegistrationContext) {
       "`role set` and `permissions set` return their fields directly on .result.",
       "",
       "No user command accepts a password: Foundry sends passwords in the clear and hashes them",
-      "server-side, so account credentials stay outside the bridge. `role set` and `permissions set`",
-      "are OFF by default (a GM enables them); `create` and `delete` ask the GM for approval. Neither",
-      "`role set` nor `delete` accepts the GM user the bridge itself runs through — the agent cannot",
-      "demote or remove its own account.",
+      "server-side, so account credentials stay outside the bridge. Neither `role set` nor `delete`",
+      "accepts the GM user the bridge itself runs through — the agent cannot demote or remove its",
+      "own account.",
       "Roles are integers: 1=player, 2=trusted player, 3=assistant GM, 4=gamemaster."
     ].join("\n")
   );
@@ -55,7 +54,7 @@ export function registerUser({ program, dependencies }: RegistrationContext) {
     });
   addUserFieldOptions(
     addIdempotencyKeyOption(user.command("create"))
-      .description("Create a player account (needs GM approval; no password is set)")
+      .description("Create a player account (no password is set)")
       .requiredOption("--name <name>", "User name")
       .addOption(
         new Option(
@@ -93,7 +92,7 @@ export function registerUser({ program, dependencies }: RegistrationContext) {
     });
   user
     .command("delete")
-    .description("Delete a user account (needs GM approval; refuses the bridge's own GM user)")
+    .description("Delete a user account (refuses the bridge's own GM user)")
     .requiredOption("--user-id <userId>", "User id")
     .action(async function deleteUser(options: { userId: string }) {
       await executeRemoteCommand({
@@ -106,7 +105,7 @@ export function registerUser({ program, dependencies }: RegistrationContext) {
   const userRole = user.command("role").description("User role (which capabilities the role grants)");
   userRole
     .command("set")
-    .description("Set a user's role (OFF by default; refuses the bridge's own GM user)")
+    .description("Set a user's role (refuses the bridge's own GM user)")
     .requiredOption("--user-id <userId>", "User id")
     .requiredOption(
       "--role <role>",
@@ -126,7 +125,7 @@ export function registerUser({ program, dependencies }: RegistrationContext) {
     .description("Per-user permission overrides on top of the role defaults");
   userPermissions
     .command("set")
-    .description("Grant, revoke or drop per-user permission overrides (OFF by default)")
+    .description("Grant, revoke or drop per-user permission overrides")
     .requiredOption("--user-id <userId>", "User id")
     .requiredOption(
       "--permissions-json <json>",

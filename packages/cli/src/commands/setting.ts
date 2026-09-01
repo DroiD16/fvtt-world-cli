@@ -27,9 +27,9 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
       "Scope caveats: a `client`-scope value is this GM CLIENT's localStorage value, and a `user`-scope",
       "value is resolved for the CURRENT GM USER — neither is ever another player's value.",
       "",
-      "`set`/`set-many` are OFF by default: a GM enables them in the Command permissions window. They",
-      "always refuse the `fvtt-world-cli` namespace, so the bridge's own authorization settings stay",
-      "beyond the CLI's reach. A write whose row reports requiresReload:true needs `system reload`",
+      "`set`/`set-many` always refuse the `fvtt-world-cli` namespace, so the bridge's own",
+      "authorization settings stay beyond the CLI's reach. A write whose row reports",
+      "requiresReload:true needs `system reload`",
       "(or a manual browser reload) before Foundry acts on it."
     ].join("\n")
   );
@@ -75,7 +75,7 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
     });
   setting
     .command("set")
-    .description("Write one registered setting (OFF by default — a GM must enable setting.set)")
+    .description("Write one registered setting")
     .requiredOption("--namespace <namespace>", 'Setting namespace (e.g. "core" or a module id)')
     .requiredOption("--key <key>", "Setting key within the namespace")
     .requiredOption(
@@ -93,9 +93,7 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
     });
   setting
     .command("set-many")
-    .description(
-      "Write several settings in ONE call (OFF by default; stops at the first element Foundry refuses)"
-    )
+    .description("Write several settings in ONE call (stops at the first element Foundry refuses)")
     .addOption(
       new Option(
         "--items-json <json>",

@@ -75,7 +75,7 @@ export function registerChat({ program, dependencies }: RegistrationContext) {
   chat
     .command("flush")
     .description(
-      "Delete the ENTIRE chat log (irreversible; needs GM approval). --dry-run reports the message count without deleting anything"
+      "Delete the ENTIRE chat log (irreversible). --dry-run reports the message count without deleting anything"
     )
     .action(async function flushChat() {
       await executeRemoteCommand({

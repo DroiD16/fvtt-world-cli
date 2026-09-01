@@ -26,7 +26,7 @@ export function registerSystem({ program, dependencies }: RegistrationContext) {
   system
     .command("reload")
     .description(
-      "Reload the GM browser page (needs GM approval). The bridge drops and reconnects on its own; pair it with a setting whose row reports requiresReload"
+      "Reload the GM browser page. The bridge drops and reconnects on its own; pair it with a setting whose row reports requiresReload"
     )
     .action(async function reload() {
       await executeRemoteCommand({
