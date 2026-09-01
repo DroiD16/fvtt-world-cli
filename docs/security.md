@@ -33,15 +33,16 @@ public multi-tenant API.
   storage is shared by every tab of one browser, so a first-use identifier can be generated twice when
   two tabs start pairing at once; the browser discards an approved credential whose identifier no longer
   matches the stored one instead of keeping a pairing the hello gate would refuse.
-- The browser label attached to a pairing is constrained by the protocol schema — 1 to 64 characters,
-  with whitespace-only values rejected along with control, zero-width, bidirectional-override, and
-  Unicode tag characters — and a violating request is refused rather than repaired. Rejecting a
-  whitespace-only label removes the simplest way to send a label that reads as nothing; it is not a
-  guarantee that a label renders visibly, because blank-rendering filler characters pass the pattern.
+- The browser label attached to a pairing is constrained by the protocol schema to 1 to 64
+  characters, with whitespace-only values rejected along with control, zero-width,
+  bidirectional-override, and Unicode tag characters; a violating request is refused rather than
+  repaired. Rejecting a whitespace-only label removes the simplest way to send a label that reads
+  as nothing; it is not a guarantee that a label renders visibly, because blank-rendering filler
+  characters pass the pattern.
   The client identifier printed beside the label is what reliably distinguishes two browsers, including
   two that share one label. The pairing socket is unauthenticated, so any local process can send a
   pairing request, and an unfiltered label would reach a terminal as an escape-sequence injection or as
-  hidden text in agent output: both approval prompts, the one `auth approve` shows and the one the
+  hidden text in agent output. Both approval prompts, the one `auth approve` shows and the one the
   `auth` pairing wait shows, print it as raw text, and JSON output escapes C0 control characters but
   not C1, zero-width, bidirectional-override, or tag ones. The constraint covers the label field only;
   the identity fields printed beside it are described under Known risks.
@@ -81,7 +82,7 @@ runtime address does not broaden that authority or invalidate an explicitly conf
 
 The bridge accepts only explicit commands registered in the protocol and advertised during the
 handshake. Each command has a schema and a known handler. There is no generic method invocation or
-universal “edit anything” endpoint.
+universal "edit anything" endpoint.
 
 Mutations use Foundry Document APIs or a reviewed typed Foundry action. Raw live world databases are
 outside the command surface.
@@ -110,9 +111,13 @@ claiming success.
 
 Every command also carries an allow, approve, or deny permission in the GM client holding the
 bridge. The Foundry module enforces it after authentication, GM authority, and write-permission
-checks but before dispatch. It covers reads, writes, bulk envelopes, and previews. The default policy
-requires approval for commands ending in `delete` or `delete-many`, plus `file.move` and
-`scene.fog.reset`. It allows the other policy-controlled commands.
+checks but before dispatch. It covers reads, writes, bulk envelopes, and previews. The default
+policy denies commands that can execute code, change who can do what, or persist outside the
+world's own data; requires approval for destructive commands plus `system.reload` and
+`user.create`, where the destructive set is the `delete` and `delete-many` verbs, `file.move`,
+`scene.fog.reset`, and `chat.flush`; and allows the other policy-controlled commands. A
+denied-by-default command is a deliberate opt-in: it exists so a GM can enable it knowingly, not
+so it can run out of the box.
 
 `system.ping`, `system.info`, and the internal approval-wait commands always run. They let the bridge
 report its state and finish decisions already taken without changing world content. Stored policy
@@ -133,9 +138,13 @@ The module returns a random 128-bit `approvalId` only to the original caller. Re
 the decision requires that identifier.
 
 The GM-only Command Approval window shows the command, remaining time, target documents or managed
-paths, and parameters. It reports binary upload content by size instead of rendering the payload.
-The command envelope has no caller identity, so the window cannot name the requester. The GM approves
-the displayed invocation, not a person or process.
+paths, and parameters. It reports binary upload content by size instead of rendering the payload,
+and any text longer than 16,384 characters, including a macro body, by its character count for the
+same reason. A macro long enough to cross that line is therefore approved on its name and origin
+rather than on its code, and `macro.create` runs by itself under the shipped defaults, so a GM who
+wants every body reviewable moves `macro.create` and `macro.update` to approve as well. The command
+envelope has no caller identity, so the window cannot name the requester. The GM approves the
+displayed invocation, not a person or process.
 
 ## Document ownership
 
@@ -150,13 +159,36 @@ family's behavior.
 
 ## Executable content
 
-CLI-supplied data cannot create an arbitrary JavaScript execution path through the bridge.
+The bridge executes no JavaScript that the GM has not explicitly enabled and cannot see before it
+runs. There is no `eval`-style command, and CLI-supplied data cannot create a hidden execution path
+through ordinary writes.
 
-- Macro bodies and chat content can be stored but are not executed or routed through command
-  processors.
+- `macro.execute` is the one way to run code, and it runs only stored world macros. It is denied by
+  default; a GM who enables it can keep it on approve, where the Command Approval window shows the
+  macro's type and its command body, up to the length cap described above, before anything runs.
+  The `macro.create → macro.execute → macro.delete` chain is the sanctioned path for ad-hoc code,
+  so a GM who wants only vetted macros to run sets `macro.create` and `macro.update` to approve or
+  deny while `macro.execute` stays enabled. A script macro that throws fails the command with a
+  structured error naming what the macro raised, and the failure is partial by nature: whatever
+  the macro changed before it threw stays changed. A macro that catches its own errors still
+  reports a `null` return, so results do not prove success and effects deserve a read-back.
+- Macro bodies and chat content written by ordinary document commands are stored, not executed.
 - Action commands invoke only their fixed typed Foundry methods.
-- Writes that supply core script- or macro-executing RegionBehavior types are rejected through a
-  shared guard.
+- Ordinary region-behavior writes reject core script- or macro-executing types through a shared
+  guard, including on nested behaviors supplied with a region write. The dedicated
+  `scene.region.behavior.executable` commands, denied by default, accept exactly the `executeMacro`
+  type and require the referenced world macro to exist; the approval window names the macro, the
+  trigger events, and whether the behavior fires for everyone. Those commands accept a behavior's
+  `system` only in a spelling the guard and that window can both read: a create takes only the plain
+  `system` object, an update or clone also accepts single-field `system.<field>` paths, and no route
+  accepts both spellings at once, a path deeper than one field (`system.events.<n>`), a
+  forced-replacement or forced-deletion operator key, or a read field carrying the wrong type (a
+  non-array `events`, a non-boolean `everyone`). Each of those could store a macro reference or a
+  trigger set that differs from the one the macro check validated and the approval window showed. An
+  `executeMacro` behavior triggers later on player-driven region events, with `everyone: true`
+  running the macro on every connected client.
+- `executeScript` behaviors are not supported on any route: Foundry runs their source in every
+  connected player's browser with no per-user execution check, which no popup can make reviewable.
 
 Installed systems and modules remain trusted Foundry code. They can register behavior types, hooks,
 ActiveEffect interpretations, or other data-driven features whose effects the bridge cannot classify
@@ -169,17 +201,49 @@ or chat output after the direct command.
 
 ## Settings
 
-Setting discovery is read-only. Listing returns registration metadata, while reading a value requires
-an explicit namespace and key. Values are serialized with bounded depth, node count, and byte size.
+Listing returns registration metadata, while reading a value requires an explicit namespace and key,
+singly or in a batch. Values are serialized with bounded depth, node count, and byte size, and this
+module's own secret-bearing settings are redacted from every read.
 
-The CLI does not expose setting writes because settings can alter global security and runtime
-behavior and frequently invoke module callbacks.
+`setting.set` and `setting.set-many` exist because module configuration is a legitimate
+administration task, and they are denied by default because settings can alter global security and
+runtime behavior and frequently invoke module callbacks: a write to `core.permissions` or
+`core.moduleConfiguration` changes what the GM client itself can do or load. Writes go through
+Foundry's own registration and DataField validation, and only registered settings are writable. The
+approval behavior shows the stored value next to the proposed one before a write runs.
 
-The client-scoped `commandPolicy` and `approvalTimeoutMinutes` settings hold the policy and timeout.
-`setting.list` and `setting.get` expose them because they contain no secrets. The CLI has no setting
-write command, so only a GM using Foundry can change them. The Command permissions window writes the
-policy. The main Module Settings form writes the timeout and enforces its bounds. Another browser
-profile or machine has its own values.
+The command policy stays beyond the CLI's reach by construction: the write commands refuse this
+module's namespace with a structured error in every mode, real, dry-run, and per bulk element
+alike, so no policy setting, credential, or approval timeout can be changed from the surface the
+policy governs. The client-scoped `commandPolicy` and `approvalTimeoutMinutes` settings remain readable
+because they contain no secrets, and only a GM using Foundry changes them: the Command permissions
+window writes the policy, and the main Module Settings form writes the timeout and enforces its
+bounds. Another browser profile or machine has its own values.
+
+## Users
+
+User accounts are managed through explicit per-purpose commands rather than one open patch surface.
+
+- No command reads or writes `password` or `passwordSalt`. Foundry transmits a set password in
+  clear text and hashes it server-side, so a password path through the bridge would expose secrets
+  in transcripts and logs; password changes stay in Foundry's own UI.
+- `user.update` edits profile fields and is allowed by default because none of them grant
+  authority; the fields are name, color, pronouns, avatar, assigned character, and flags.
+- `user.create` and `user.delete` ask for approval by default. `user.role.set` and
+  `user.permissions.set` are denied by default because they change who can do what.
+- A `user.create` carries whatever role it asks for, up to the caller's own, so an approved one can
+  mint a gamemaster. That is why it asks for approval rather than running by itself: the approval
+  window names the account and the role, including the player role Foundry gives when the command
+  asks for none, and the GM reading it is the review point. A GM who does not want that decision
+  in the loop at all sets `user.create` to deny.
+- The bridge GM's own account is self-protected: `user.role.set`, `user.permissions.set`, and
+  `user.delete` aimed at the user holding the bridge are refused with a structured error, so
+  automation cannot demote, remove, or strip the restricted menus from the account it runs through.
+  A second GM account carries no such guard; deciding about it is exactly what enabling the command
+  means.
+- Foundry's server-side limits stay in force underneath: a role cannot be raised above the caller's
+  own, and the last gamemaster account can be neither demoted nor deleted. Those refusals surface
+  as permission errors with Foundry's own message.
 
 ## Search
 
@@ -202,8 +266,11 @@ Reads address normalized managed-data paths. Writes are restricted to the active
 - `packs/` and all descendants.
 
 Containment and exclusions are segment-aware and are checked before payload decoding or capability
-dispatch. Absolute host paths, traversal, sibling-prefix tricks, and encoded attempts to cross the
-boundary are rejected.
+dispatch. Path normalization rejects a segment whose literal or percent-decoded form is `.` or `..`,
+and a segment whose decoded form contains a path separator (so a percent-encoded `/` or `\` cannot
+smuggle traversal inside one segment). Absolute host paths, traversal, sibling-prefix tricks, and
+percent-encoded traversal (`%2e%2e`, `..%2f..`) therefore cannot cross the boundary; this applies to
+every managed-path caller, including `image show`.
 
 The module accepts upload content over the authenticated local transport and a managed data-relative
 destination. It does not read arbitrary files from the operator machine. The CLI may read an explicit
@@ -244,7 +311,7 @@ multi-user scheduling.
 - The label and the client identifier are the only pairing identity fields constrained against terminal
   escape sequences. World title and GM name arrive on the same unauthenticated pairing request without
   that constraint, and the CLI prints them as raw text wherever it renders a pending request or a
-  stored profile — both approval prompts and the `auth prune` candidate listing, which precedes an
+  stored profile: both approval prompts and the `auth prune` candidate listing, which precedes an
   irreversible deletion. A local process can therefore redraw the identity lines an operator reads
   before answering, and a title that survived one approval is re-rendered from the stored record every
   time a later command lists it.
@@ -274,6 +341,13 @@ multi-user scheduling.
   a fresh profile, holds its own permissions, and whichever client holds the bridge is the one whose
   permissions apply.
 - Declarative content can reference existing executable or module-interpreted content.
+- `image show` accepts an arbitrary off-host `http(s)` URL as its source and pushes it to the
+  targeted players' clients unchanged, so an enabled caller can make those browsers fetch and display
+  a remote image the operator did not host. Only local sources are confined to the managed data
+  boundary; a URL source is a display of external content, not a file read.
+- An enabled `macro.execute` or executable-behavior command makes the GM's enablement and approval
+  discipline the effective code-review boundary; an enabled `setting.set` can change core settings
+  that alter the GM client's own capabilities or take it down until a reload.
 
 ## Operator guidance
 

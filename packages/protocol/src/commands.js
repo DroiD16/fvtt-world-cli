@@ -18,6 +18,8 @@ import { combatCommands } from "./schemas/combat.js";
 import { compendiumCommands } from "./schemas/compendium.js";
 import { fileCommands, worldAuditCommands } from "./schemas/file.js";
 import { folderCommands } from "./schemas/folder.js";
+import { gameCommands } from "./schemas/game.js";
+import { imageCommands } from "./schemas/image.js";
 import { itemCommands } from "./schemas/item.js";
 import { journalCommands } from "./schemas/journal.js";
 import { macroCommands } from "./schemas/macro.js";
@@ -73,6 +75,8 @@ export const COMMAND_DEFINITIONS = deepFreeze(
     fileCommands,
     compendiumCommands,
     folderCommands,
+    gameCommands,
+    imageCommands,
     userCommands,
     settingCommands,
     actorCompendiumImportCommands,

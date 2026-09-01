@@ -1590,7 +1590,10 @@ export function serializeUser(user) {
     isGM: Boolean(user.isGM ?? data.isGM ?? false),
     active: Boolean(user.active ?? data.active ?? false),
     character: user.character?.id ?? data.character ?? user.character ?? null,
-    color: color == null ? null : String(color)
+    color: color == null ? null : String(color),
+    pronouns: data.pronouns ?? null,
+    avatar: data.avatar ?? null,
+    flags: data.flags ?? user.flags ?? {}
   };
 }
 

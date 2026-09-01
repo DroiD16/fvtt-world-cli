@@ -32,13 +32,33 @@ describe("setting.* CLI surface", () => {
     requiresReload: false
   };
 
-  it("exposes exactly `list` and `get` — there is NO `setting set` subcommand", async () => {
+  it("takes a write value as a JSON literal, so a quoted string stays distinct from a boolean", async () => {
+    const sendCommand = respond({});
+    await runCommand(
+      ["setting", "set", "--namespace", "core", "--key", "chatBubbles", "--value-json", '"true"'],
+      sendCommand
+    );
+    expect(sendCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "setting.set",
+        params: { namespace: "core", key: "chatBubbles", value: "true" }
+      })
+    );
+  });
+
+  it("refuses a write value that is not JSON instead of sending it as a bare string", async () => {
     const result = await runCommand(
-      ["setting", "set", "--namespace", "core", "--key", "time", "--value", "1"],
+      ["setting", "set", "--namespace", "core", "--key", "chatBubbles", "--value-json", "yes"],
       failIfCalledSendCommand()
     );
     expect(result.error).toBeInstanceOf(CommanderError);
-    expect(String((result.error as CommanderError).message)).toMatch(/unknown command/i);
+    expect(String((result.error as CommanderError).message)).toMatch(/--value-json must be a JSON literal/);
+  });
+
+  it("needs either --items-json or --items-stdin for a batch write", async () => {
+    const result = await runCommand(["setting", "set-many"], failIfCalledSendCommand());
+    expect(result.error).toBeInstanceOf(CommanderError);
+    expect(String((result.error as CommanderError).message)).toMatch(/--items-json|--items-stdin/);
   });
 
   it("prints list rows as METADATA ONLY, with both the localized label and the raw key", async () => {

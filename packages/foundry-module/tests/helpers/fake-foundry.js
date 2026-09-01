@@ -3037,6 +3037,14 @@ function createSceneDocument(id, data) {
     })
   );
 
+  scene.activate = vi.fn(async () => {
+    for (const other of globalThis.game?.scenes ?? []) {
+      if (other.id !== scene.id && other.active) other.applyStoredWrite({ active: false });
+    }
+    scene.applyStoredWrite({ active: true });
+    return scene;
+  });
+  scene.pullUsers = vi.fn();
   return scene;
 }
 
@@ -3070,6 +3078,62 @@ export function createPermissiveSettings() {
       namespace === MODULE_ID && key === MODULE_SETTING_KEYS.COMMAND_POLICY ? allowEveryCommandPolicy() : ""
     )
   };
+}
+
+export const FAKE_USER_PERMISSIONS = Object.freeze({
+  ACTOR_CREATE: { defaultRole: 3 },
+  FILES_UPLOAD: { defaultRole: 3 },
+  MACRO_SCRIPT: { defaultRole: 1 },
+  MESSAGE_WHISPER: { defaultRole: 1 },
+  REGION_CREATE: { defaultRole: 2 },
+  SETTINGS_MODIFY: { defaultRole: 3 },
+  TOKEN_CREATE: { defaultRole: 3 }
+});
+
+export const FAKE_USER_ROLES = Object.freeze({
+  NONE: 0,
+  PLAYER: 1,
+  TRUSTED: 2,
+  ASSISTANT: 3,
+  GAMEMASTER: 4
+});
+
+export function createUserDocument(id, data = {}) {
+  const user = createDocument(id, {
+    name: "Player",
+    role: FAKE_USER_ROLES.PLAYER,
+    color: "#111111",
+    pronouns: "",
+    avatar: null,
+    character: null,
+    active: false,
+    permissions: {},
+    flags: {},
+    ...data
+  });
+
+  user.update = vi.fn(async (patch) => user.applyStoredWrite(patch));
+  user.delete = vi.fn(async () => {
+    globalThis.game.users?.delete?.(user.id);
+    user.deleted = true;
+    return user;
+  });
+  user.canUserModify = vi.fn((caller, _action, changes = {}) => {
+    if ((caller?.role ?? 0) === FAKE_USER_ROLES.GAMEMASTER) return true;
+    return !("permissions" in (changes ?? {}));
+  });
+  user.hasRole = (role) => (user.role ?? 0) >= role;
+  user.hasPermission = (permission) =>
+    Object.hasOwn(user.permissions ?? {}, permission)
+      ? Boolean(user.permissions[permission])
+      : (user.role ?? 0) >= (FAKE_USER_PERMISSIONS[permission]?.defaultRole ?? FAKE_USER_ROLES.GAMEMASTER);
+  Object.defineProperty(user, "isGM", {
+    get: () => (user.role ?? 0) >= FAKE_USER_ROLES.ASSISTANT,
+    enumerable: false,
+    configurable: true
+  });
+
+  return user;
 }
 
 export function installFakeFoundry() {
@@ -3408,6 +3472,8 @@ export function installFakeFoundry() {
       "midi-qol": { onUseMacroName: "heal" }
     }
   });
+  macro.canExecute = true;
+  macro.execute = vi.fn(async () => undefined);
   const playlist = createPlaylistDocument("playlist-1", {
     name: "Tavern",
     mode: 0,
@@ -3764,6 +3830,16 @@ export function installFakeFoundry() {
     createDocument("folder-items-test", { name: "Test", type: "Item", folder: null })
   ]);
 
+  const users = createCollection([
+    createUserDocument("user-1", { name: "GM", role: FAKE_USER_ROLES.GAMEMASTER, active: true }),
+    createUserDocument("player-1", {
+      name: "Hrelga",
+      active: true,
+      permissions: { FILES_UPLOAD: true }
+    }),
+    createUserDocument("player-2", { name: "Kelric" })
+  ]);
+
   const deltaActor = createActorDocument("token-a-delta", {
     name: "Valeros Token",
     items: [{ id: "delta-item-1", name: "Dagger", type: "weapon", system: { damage: "1d4" } }]
@@ -3782,7 +3858,8 @@ export function installFakeFoundry() {
     user: {
       id: "user-1",
       name: "GM",
-      isGM: true
+      isGM: true,
+      role: FAKE_USER_ROLES.GAMEMASTER
     },
 
     modules: createCollection([
@@ -3823,6 +3900,12 @@ export function installFakeFoundry() {
         return copySettingValue(stored);
       })
     },
+    users,
+    paused: false,
+    togglePause: vi.fn(function togglePause(paused) {
+      globalThis.game.paused = paused ?? !globalThis.game.paused;
+      return globalThis.game.paused;
+    }),
     scenes: createCollection([scene, inactiveScene]),
     items: createCollection([item]),
     journal: journals,
@@ -4061,6 +4144,11 @@ export function installFakeFoundry() {
   });
 
   globalThis.ChatMessage.getSpeaker = vi.fn(() => ({ alias: "GM" }));
+  globalThis.ChatMessage.deleteDocuments = vi.fn(async (ids = [], options = {}) => {
+    const doomed = options?.deleteAll ? [...messages].map((message) => message.id) : ids;
+    for (const id of doomed) messages.delete(id);
+    return doomed;
+  });
 
   const rollConstructSpy = vi.fn();
   const rollEvaluateSpy = vi.fn();
@@ -4180,6 +4268,57 @@ export function installFakeFoundry() {
         play: vi.fn(() => undefined)
       }
     }
+  };
+
+  globalThis.User = makeDocumentClass({
+    create: vi.fn(async (data) => {
+      const userDoc = createUserDocument("user-created", data);
+      users.set(userDoc);
+      return userDoc;
+    })
+  });
+  globalThis.game.users.documentClass = globalThis.User;
+
+  globalThis.Journal = {
+    show: vi.fn(async (document) => document),
+    showImage: vi.fn()
+  };
+  globalThis.foundry.documents = {
+    ...(globalThis.foundry.documents ?? {}),
+    collections: {
+      ...(globalThis.foundry.documents?.collections ?? {}),
+      Journal: globalThis.Journal
+    }
+  };
+
+  globalThis.location = /** @type {any} */ ({ href: "https://localhost:30000/game", reload: vi.fn() });
+
+  globalThis.fromUuidSync = vi.fn((uuid) => {
+    const text = String(uuid ?? "");
+    if (text.startsWith("Compendium.")) {
+      return {
+        documentName: "Macro",
+        id: text.slice(text.lastIndexOf(".") + 1),
+        name: "Packed Macro",
+        pack: "world.packed-macros"
+      };
+    }
+
+    const [documentName, id] = text.split(".");
+    const collections = {
+      Macro: globalThis.game?.macros,
+      Actor: globalThis.game?.actors,
+      Item: globalThis.game?.items,
+      JournalEntry: globalThis.game?.journal,
+      Scene: globalThis.game?.scenes
+    };
+    const document = collections[documentName]?.get?.(id) ?? null;
+    return document ? { documentName, id: document.id, name: document.name, pack: null } : null;
+  });
+
+  globalThis.CONST = {
+    USER_ROLES: FAKE_USER_ROLES,
+    USER_PERMISSIONS: FAKE_USER_PERMISSIONS
   };
 
   globalThis.CONFIG = {

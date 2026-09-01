@@ -107,6 +107,8 @@ var TABLE_DRAW_MAX_COUNT = 100;
 var SETTING_VALUE_MAX_DEPTH = 32;
 var SETTING_VALUE_MAX_NODES = 2e4;
 var SETTING_VALUE_MAX_BYTES = 256 * 1024;
+var MACRO_EXECUTE_TIMEOUT_DEFAULT_MS = 3e4;
+var MACRO_EXECUTE_TIMEOUT_MAX_MS = 3e5;
 var SEARCH_MODES = Object.freeze(["name", "full"]);
 var SEARCH_SOURCES = Object.freeze(["world", "pack"]);
 var SEARCH_SNIPPET_FIELDS = Object.freeze(["text", "systemText", "name"]);
@@ -223,7 +225,11 @@ var ERROR_CODES = Object.freeze({
   SETTING_NOT_FOUND: "SETTING_NOT_FOUND",
   SETTING_READ_FAILED: "SETTING_READ_FAILED",
   SETTING_VALUE_NOT_SERIALIZABLE: "SETTING_VALUE_NOT_SERIALIZABLE",
+  SETTING_PROTECTED: "SETTING_PROTECTED",
+  SETTING_UNREGISTERED: "SETTING_UNREGISTERED",
+  MACRO_TIMEOUT: "MACRO_TIMEOUT",
   USER_NOT_FOUND: "USER_NOT_FOUND",
+  USER_SELF_PROTECTED: "USER_SELF_PROTECTED",
   SEARCH_INDEX_OVERFLOW: "SEARCH_INDEX_OVERFLOW",
   QUERY_TOO_BROAD: "QUERY_TOO_BROAD",
   UNSUPPORTED_OPERATION: "UNSUPPORTED_OPERATION",
@@ -329,6 +335,9 @@ var tokenIncludeProperty = {
 };
 var compendiumIncludeProperty = {
   include: { type: "array", items: { type: "string", enum: ["effects"] } }
+};
+var userIdsProperty = {
+  userIds: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 }
 };
 var idempotencyKeyProperty = {
   idempotencyKey: { type: "string", minLength: 1 }
@@ -542,9 +551,96 @@ var userIdSchema = {
   properties: { userId: { type: "string", minLength: 1 } },
   additionalProperties: false
 };
+var userRoleSchema = { type: "integer", enum: [1, 2, 3, 4] };
+var userDataSchema = {
+  type: "object",
+  required: ["name"],
+  properties: {
+    name: { type: "string", minLength: 1 },
+    role: userRoleSchema,
+    color: { type: "string", minLength: 1 },
+    pronouns: { type: "string" },
+    avatar: nullableStringSchema,
+    character: nullableStringSchema,
+    flags: freeformObjectSchema
+  },
+  additionalProperties: false
+};
+var userPatchSchema = patchFrom(userDataSchema, { omit: ["role"] });
+var userPermissionsSchema = {
+  type: "object",
+  required: [],
+  properties: {},
+  additionalProperties: { type: ["boolean", "null"] },
+  minProperties: 1
+};
 var userCommands = {
   "user.list": cmd(nameFilteredListSchema),
-  "user.get": cmd(userIdSchema)
+  "user.get": cmd(userIdSchema),
+  "user.create": cmd(
+    {
+      type: "object",
+      required: ["data"],
+      properties: {
+        data: userDataSchema,
+        ...dryRunProperty,
+        ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "user.update": cmd(
+    {
+      type: "object",
+      required: ["userId", "patch"],
+      properties: {
+        userId: { type: "string", minLength: 1 },
+        patch: userPatchSchema,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "user.delete": cmd(
+    {
+      type: "object",
+      required: ["userId"],
+      properties: {
+        userId: { type: "string", minLength: 1 },
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "user.role.set": cmd(
+    {
+      type: "object",
+      required: ["userId", "role"],
+      properties: {
+        userId: { type: "string", minLength: 1 },
+        role: userRoleSchema,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "user.permissions.set": cmd(
+    {
+      type: "object",
+      required: ["userId", "permissions"],
+      properties: {
+        userId: { type: "string", minLength: 1 },
+        permissions: userPermissionsSchema,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  )
 };
 
 // packages/protocol/src/schemas/actor.js
@@ -1342,6 +1438,15 @@ var chatCommands = {
       additionalProperties: false
     },
     { mutation: true }
+  ),
+  "chat.flush": cmd(
+    {
+      type: "object",
+      required: [],
+      properties: { ...dryRunProperty },
+      additionalProperties: false
+    },
+    { mutation: true }
   )
 };
 
@@ -1886,6 +1991,36 @@ var folderCommands = {
   "folder.delete": cmd(folderDeleteSchema, { mutation: true })
 };
 
+// packages/protocol/src/schemas/game.js
+var gameCommands = {
+  "game.pause": cmd(
+    {
+      type: "object",
+      required: ["paused"],
+      properties: {
+        paused: { type: "boolean" },
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  )
+};
+
+// packages/protocol/src/schemas/image.js
+var imageCommands = {
+  "image.show": cmd({
+    type: "object",
+    required: ["src"],
+    properties: {
+      src: { type: "string", minLength: 1 },
+      title: { type: "string", minLength: 1 },
+      ...userIdsProperty
+    },
+    additionalProperties: false
+  })
+};
+
 // packages/protocol/src/schemas/item.js
 var itemCommands = {
   "item.list": cmd(nameFilteredListSchema),
@@ -2269,6 +2404,16 @@ var journalCommands = {
   "journal.import-from-compendium": cmd(compendiumImportSchema(journalDocumentPatchSchema), {
     mutation: true
   }),
+  "journal.show": cmd({
+    type: "object",
+    required: ["journalId"],
+    properties: {
+      journalId: { type: "string", minLength: 1 },
+      force: { type: "boolean" },
+      ...userIdsProperty
+    },
+    additionalProperties: false
+  }),
   "journal.ownership.set": cmd(
     ownershipSetSchema("journalId", {
       levelSchema: journalOwnershipLevelSchema,
@@ -2353,6 +2498,22 @@ var macroDataSchema = {
   additionalProperties: false
 };
 var macroPatchSchema = patchFrom(macroDataSchema);
+var macroExecuteArgsSchema = {
+  ...freeformObjectSchema,
+  propertyNames: { pattern: "^[A-Za-z_$][A-Za-z0-9_$]*$" }
+};
+var macroExecuteScopeSchema = {
+  type: "object",
+  required: [],
+  properties: {
+    actorId: { type: "string", minLength: 1 },
+    sceneId: { type: "string", minLength: 1 },
+    tokenId: { type: "string", minLength: 1 },
+    args: macroExecuteArgsSchema
+  },
+  additionalProperties: false,
+  minProperties: 1
+};
 var macroIdSchema = {
   type: "object",
   required: ["macroId"],
@@ -2417,6 +2578,20 @@ var macroCommands = {
         patch: macroPatchSchema,
         ...dryRunProperty,
         ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "macro.execute": cmd(
+    {
+      type: "object",
+      required: ["macroId"],
+      properties: {
+        macroId: { type: "string", minLength: 1 },
+        scope: macroExecuteScopeSchema,
+        timeoutMs: { type: "integer", minimum: 1, maximum: MACRO_EXECUTE_TIMEOUT_MAX_MS },
+        ...dryRunProperty
       },
       additionalProperties: false
     },
@@ -2975,6 +3150,26 @@ var regionBehaviorPatchSchema = {
   type: "object",
   required: [],
   properties: regionBehaviorWriteProperties,
+  additionalProperties: true,
+  minProperties: 1
+};
+var executableBehaviorTypeSchema = { type: "string", enum: ["executeMacro"] };
+var executableBehaviorCreateSchema = {
+  type: "object",
+  required: ["type"],
+  properties: {
+    type: executableBehaviorTypeSchema,
+    ...regionBehaviorWriteProperties
+  },
+  additionalProperties: true
+};
+var executableBehaviorPatchSchema = {
+  type: "object",
+  required: [],
+  properties: {
+    type: executableBehaviorTypeSchema,
+    ...regionBehaviorWriteProperties
+  },
   additionalProperties: true,
   minProperties: 1
 };
@@ -4045,6 +4240,52 @@ var sceneEmbeddedCommands = {
       additionalProperties: false
     },
     { mutation: true }
+  ),
+  "scene.region.behavior.executable.create": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "regionId", "data"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        regionId: { type: "string", minLength: 1 },
+        data: executableBehaviorCreateSchema,
+        ...dryRunProperty,
+        ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "scene.region.behavior.executable.update": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "regionId", "behaviorId", "patch"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        regionId: { type: "string", minLength: 1 },
+        behaviorId: { type: "string", minLength: 1 },
+        patch: executableBehaviorPatchSchema,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "scene.region.behavior.executable.clone": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "regionId", "behaviorId"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        regionId: { type: "string", minLength: 1 },
+        behaviorId: { type: "string", minLength: 1 },
+        patch: executableBehaviorPatchSchema,
+        ...dryRunProperty,
+        ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
   )
 };
 
@@ -4226,6 +4467,27 @@ var sceneCommands = {
     },
     { mutation: true }
   ),
+  "scene.activate": cmd(
+    {
+      type: "object",
+      required: ["sceneId"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "scene.pull-users": cmd({
+    type: "object",
+    required: ["sceneId"],
+    properties: {
+      sceneId: { type: "string", minLength: 1 },
+      ...userIdsProperty
+    },
+    additionalProperties: false
+  }),
   "scene.ownership.set": cmd(ownershipSetSchema("sceneId", { levelSchema: ownershipLevelSchema }), {
     mutation: true
   })
@@ -4257,24 +4519,70 @@ var settingListSchema = {
   properties: { ...nameFilterProperty, ...paginationProperties },
   additionalProperties: false
 };
+var settingKeyProperties = {
+  namespace: { type: "string", minLength: 1 },
+  key: { type: "string", minLength: 1 }
+};
 var settingGetSchema = {
   type: "object",
   required: ["namespace", "key"],
+  properties: { ...settingKeyProperties },
+  additionalProperties: false
+};
+var settingWriteItemSchema = {
+  type: "object",
+  required: ["namespace", "key", "value"],
   properties: {
-    namespace: { type: "string", minLength: 1 },
-    key: { type: "string", minLength: 1 }
+    ...settingKeyProperties,
+    value: {}
   },
   additionalProperties: false
 };
 var settingCommands = {
   "setting.list": cmd(settingListSchema),
-  "setting.get": cmd(settingGetSchema)
+  "setting.get": cmd(settingGetSchema),
+  "setting.get-many": cmd({
+    type: "object",
+    required: ["ids"],
+    properties: { ...batchIdsProperty },
+    additionalProperties: false
+  }),
+  "setting.set": cmd(
+    {
+      type: "object",
+      required: ["namespace", "key", "value"],
+      properties: {
+        ...settingWriteItemSchema.properties,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "setting.set-many": cmd(
+    {
+      type: "object",
+      required: ["items"],
+      properties: {
+        items: {
+          type: "array",
+          minItems: 1,
+          maxItems: BATCH_WRITE_MAX_ITEMS,
+          items: settingWriteItemSchema
+        },
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  )
 };
 
 // packages/protocol/src/schemas/system.js
 var systemCommands = {
   "system.ping": cmd(emptyObjectSchema),
-  "system.info": cmd(emptyObjectSchema)
+  "system.info": cmd(emptyObjectSchema),
+  "system.reload": cmd(emptyObjectSchema)
 };
 
 // packages/protocol/src/schemas/table.js
@@ -4526,6 +4834,8 @@ var COMMAND_DEFINITIONS = deepFreeze(
     fileCommands,
     compendiumCommands,
     folderCommands,
+    gameCommands,
+    imageCommands,
     userCommands,
     settingCommands,
     actorCompendiumImportCommands,
@@ -4892,6 +5202,7 @@ function getInvalidCommandError(command) {
 var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "system.ping": "allow",
   "system.info": "allow",
+  "system.reload": "approve",
   "scene.list": "allow",
   "scene.get": "allow",
   "scene.get-many": "allow",
@@ -4902,6 +5213,8 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "scene.import-from-compendium": "allow",
   "scene.thumbnail.generate": "allow",
   "scene.fog.reset": "approve",
+  "scene.activate": "allow",
+  "scene.pull-users": "allow",
   "scene.ownership.set": "allow",
   "scene.token.list": "allow",
   "scene.token.get": "allow",
@@ -5015,6 +5328,9 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "scene.region.behavior.update": "allow",
   "scene.region.behavior.delete": "approve",
   "scene.region.behavior.clone": "allow",
+  "scene.region.behavior.executable.create": "deny",
+  "scene.region.behavior.executable.update": "deny",
+  "scene.region.behavior.executable.clone": "deny",
   "item.list": "allow",
   "item.get": "allow",
   "item.get-many": "allow",
@@ -5043,6 +5359,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "journal.delete": "approve",
   "journal.clone": "allow",
   "journal.import-from-compendium": "allow",
+  "journal.show": "allow",
   "journal.ownership.set": "allow",
   "journal.update-many": "allow",
   "journal.delete-many": "approve",
@@ -5058,6 +5375,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "macro.update": "allow",
   "macro.delete": "approve",
   "macro.clone": "allow",
+  "macro.execute": "deny",
   "macro.import-from-compendium": "allow",
   "macro.ownership.set": "allow",
   "playlist.list": "allow",
@@ -5145,6 +5463,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "chat.get": "allow",
   "chat.create": "allow",
   "chat.delete": "approve",
+  "chat.flush": "approve",
   "actor.list": "allow",
   "actor.get": "allow",
   "actor.get-many": "allow",
@@ -5196,10 +5515,20 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "folder.create": "allow",
   "folder.update": "allow",
   "folder.delete": "approve",
+  "game.pause": "allow",
+  "image.show": "allow",
   "user.list": "allow",
   "user.get": "allow",
+  "user.create": "approve",
+  "user.update": "allow",
+  "user.delete": "approve",
+  "user.role.set": "deny",
+  "user.permissions.set": "deny",
   "setting.list": "allow",
   "setting.get": "allow",
+  "setting.get-many": "allow",
+  "setting.set": "deny",
+  "setting.set-many": "deny",
   "actor.import-from-compendium": "allow",
   "world.audit-files": "allow",
   "world.search": "allow",
@@ -5208,13 +5537,29 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "policy.snapshot": "allow"
 });
 
-// packages/protocol/src/destructive-commands.js
+// packages/protocol/src/command-risk.js
 var DESTRUCTIVE_VERBS = Object.freeze(["delete", "delete-many"]);
-var DESTRUCTIVE_COMMANDS = Object.freeze(["file.delete", "file.move", "scene.fog.reset"]);
+var DESTRUCTIVE_COMMANDS = Object.freeze(["chat.flush", "file.move", "scene.fog.reset"]);
+var APPROVE_EXTRA_COMMANDS = Object.freeze(["system.reload", "user.create"]);
+var DENIED_BY_DEFAULT_COMMANDS = Object.freeze([
+  "macro.execute",
+  "setting.set",
+  "setting.set-many",
+  "user.role.set",
+  "user.permissions.set",
+  "scene.region.behavior.executable.create",
+  "scene.region.behavior.executable.update",
+  "scene.region.behavior.executable.clone"
+]);
 function isDestructiveCommand(name) {
   const separator = name.lastIndexOf(".");
   const verb = separator === -1 ? "" : name.slice(separator + 1);
   return DESTRUCTIVE_VERBS.includes(verb) || DESTRUCTIVE_COMMANDS.includes(name);
+}
+function defaultBehaviorFor(name) {
+  if (DENIED_BY_DEFAULT_COMMANDS.includes(name)) return "deny";
+  if (isDestructiveCommand(name) || APPROVE_EXTRA_COMMANDS.includes(name)) return "approve";
+  return "allow";
 }
 
 // packages/protocol/src/policy.js
@@ -5327,6 +5672,18 @@ function validateObjectSchema(schema, value, path, errors) {
   const ownKeys = Object.keys(value);
   if (typeof schema.minProperties === "number" && ownKeys.length < schema.minProperties) {
     errors.push(`${path} must contain at least ${schema.minProperties} properties`);
+  }
+  if (isPlainObject(schema.propertyNames) && typeof schema.propertyNames.pattern === "string") {
+    const namePattern = compilePattern(schema.propertyNames.pattern);
+    for (const key of ownKeys) {
+      if (namePattern === null) {
+        errors.push(
+          `${path}.${key} cannot be validated: ${schema.propertyNames.pattern} is not a valid unicode-mode pattern`
+        );
+      } else if (!namePattern.test(key)) {
+        errors.push(`${path}.${key} is not an allowed property name`);
+      }
+    }
   }
   for (const [key, propertyValue] of Object.entries(value)) {
     const propertySchema = properties[key];
@@ -5669,6 +6026,7 @@ export {
   APPROVAL_TIMEOUT_DEFAULT_MINUTES,
   APPROVAL_TIMEOUT_MAX_MINUTES,
   APPROVAL_TIMEOUT_MIN_MINUTES,
+  APPROVE_EXTRA_COMMANDS,
   AUDIT_FILES_MAX_DIRS,
   AUDIT_FILE_SCOPES,
   AUTH_AWAIT_PARK_CAP_MS,
@@ -5722,11 +6080,14 @@ export {
   DEFAULT_DAEMON_URL,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
+  DENIED_BY_DEFAULT_COMMANDS,
   DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
   FOG_RESET_CONFIRM_TIMEOUT_MS,
   HELLO_SCHEMA,
+  MACRO_EXECUTE_TIMEOUT_DEFAULT_MS,
+  MACRO_EXECUTE_TIMEOUT_MAX_MS,
   MESSAGE_TYPES,
   MODULE_ID,
   MODULE_TITLE,
@@ -5788,6 +6149,7 @@ export {
   createCommandResponse,
   createErrorResponse,
   createProtocolError,
+  defaultBehaviorFor,
   defaultProfile,
   estimateSearchIndexBytes,
   getCommandDefinition,

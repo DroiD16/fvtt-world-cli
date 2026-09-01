@@ -1,3 +1,5 @@
+import { createBridgeError } from "../lib/errors.js";
+import { ERROR_CODES } from "../generated/protocol.js";
 import {
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
@@ -61,6 +63,24 @@ export function createSystemHandlers({ bridgeClient }) {
         },
         commands: DISCOVERABLE_COMMAND_NAMES
       };
+    },
+
+    async "system.reload"() {
+      const target = /** @type {any} */ (globalThis).location;
+      if (typeof target?.reload !== "function") {
+        throw createBridgeError(
+          ERROR_CODES.UNSUPPORTED_OPERATION,
+          "This client exposes no page-reload API (window.location.reload); nothing was reloaded"
+        );
+      }
+
+      // The reload destroys this bridge connection, so it is deferred to a macrotask: everything the
+      // router and the socket still have to do with this response runs before the page goes away.
+      setTimeout(() => {
+        target.reload();
+      }, 0);
+
+      return { reloading: true };
     }
   };
 }

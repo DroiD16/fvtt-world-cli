@@ -299,7 +299,7 @@ function buildStrategy(command) {
   const chainFields = new Set(chain.map((link) => link.node.idField));
 
   const elementProperty = verb.endsWith("-many")
-    ? (["patches", "data", "ids"].find((property) => declares(property)) ?? null)
+    ? (["patches", "data", "ids", "items"].find((property) => declares(property)) ?? null)
     : null;
 
   const payloadProperty = CREATE_VERBS.has(verb)
@@ -443,6 +443,24 @@ function collectChainIds(chain, params) {
   return ids;
 }
 
+// A settings batch addresses no document, so its elements name themselves: without this the GM would
+// see a bare element count instead of the keys the batch writes.
+const PROPOSED_ELEMENT_PROPERTIES = new Set(["data", "items"]);
+
+/**
+ * @param {unknown} element
+ * @returns {string | null}
+ */
+function readSettingLabel(element) {
+  if (!isRecord(element)) {
+    return null;
+  }
+
+  const namespace = readId(element.namespace);
+  const key = readId(element.key);
+  return namespace === null || key === null ? null : `${namespace}.${key}`;
+}
+
 /**
  * @param {unknown[]} elements
  * @param {string} elementProperty
@@ -456,6 +474,10 @@ function readElements(elements, elementProperty) {
 
     if (elementProperty === "data") {
       return { id: null, name: readDisplayName(element) };
+    }
+
+    if (elementProperty === "items") {
+      return { id: null, name: readSettingLabel(element) };
     }
 
     return { id: readId(element), name: null };
@@ -483,7 +505,9 @@ function resolveBulkTargets(strategy, params, parents) {
         type: node?.type ?? null,
         id: null,
         name,
-        state: /** @type {ApprovalTargetState} */ (elementProperty === "data" ? "proposed" : "unspecified"),
+        state: /** @type {ApprovalTargetState} */ (
+          PROPOSED_ELEMENT_PROPERTIES.has(elementProperty) ? "proposed" : "unspecified"
+        ),
         parents
       };
     }

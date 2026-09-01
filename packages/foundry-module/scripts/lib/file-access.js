@@ -158,7 +158,13 @@ function normalizePath(path, { allowEmpty = false } = {}) {
       });
     }
 
-    if (segment === "." || segment === "..") {
+    const decoded = decodePathSegment(segment);
+    if (decoded.includes("/") || decoded.includes("\\")) {
+      throw createBridgeError(ERROR_CODES.PATH_NOT_ALLOWED, "Path contains an encoded separator", {
+        path
+      });
+    }
+    if (segment === "." || segment === ".." || decoded === "." || decoded === "..") {
       throw createBridgeError(ERROR_CODES.PATH_NOT_ALLOWED, "Path traversal is not allowed", {
         path
       });
@@ -321,7 +327,14 @@ function resolveListedPath(entry, directoryPath) {
 
   const joinedPath = directoryPath && !candidate.includes("/") ? `${directoryPath}/${candidate}` : candidate;
 
-  return normalizePath(joinedPath, { allowEmpty: false });
+  // A browse result is a discovery projection: an entry that cannot be represented as a safe managed
+  // path is dropped from the listing, never allowed to abort the whole directory read. Write routes
+  // call normalizePath directly and still reject.
+  try {
+    return normalizePath(joinedPath, { allowEmpty: false });
+  } catch {
+    return null;
+  }
 }
 
 function normalizeBrowseEntries(result, directoryPath) {
@@ -507,6 +520,7 @@ const FILE_PATH_FIELDS_BY_TYPE = Object.freeze({
   PlaylistSound: ["path"],
   JournalEntryPage: ["src"],
   Macro: ["img"],
+  User: ["avatar"],
 
   RollTable: ["img"],
   TableResult: ["img"],

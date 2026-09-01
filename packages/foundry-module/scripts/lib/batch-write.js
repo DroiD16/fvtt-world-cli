@@ -128,7 +128,7 @@ function stampBatchRefusalMessage(message, { command, index, id }) {
  * @param {unknown} error
  * @param {{ command: string, index: number, id?: string }} coordinates
  */
-function annotateBatchElementFailure(error, { command, index, id }) {
+export function annotateBatchElementFailure(error, { command, index, id }) {
   const coordinates = typeof id === "string" ? { index, id } : { index };
   if (error instanceof BridgeError) {
     return createBridgeError(error.code, stampBatchRefusalMessage(error.message, { command, index, id }), {
@@ -523,7 +523,8 @@ function describeBatchFailure(error) {
   return { error, ...toFailureSummary(error) };
 }
 
-function finishThrownBatch({ outcomes, failure, error }) {
+/** @param {{ outcomes: Array<{index:number,id:string|null,status:string}>, failure: {code:string,message:string}, error: unknown }} args */
+export function finishThrownBatch({ outcomes, failure, error }) {
   if (persistedCount(outcomes) > 0) {
     return buildBatchResult({ outcomes, failure: { code: failure.code, message: failure.message } });
   }

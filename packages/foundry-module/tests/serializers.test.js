@@ -4088,7 +4088,7 @@ describe("ownership on world-doc reads", () => {
 });
 
 describe("serializeUser", () => {
-  it("projects {id,_id,name,role,isGM,active,character,color}", () => {
+  it("projects {id,_id,name,role,isGM,active,character,color,pronouns,avatar,flags}", () => {
     const user = {
       id: "user-1",
       name: "Hrelga",
@@ -4098,7 +4098,15 @@ describe("serializeUser", () => {
       character: { id: "actor-9" },
       color: { toString: () => "#ff0000" },
       toObject() {
-        return { _id: "user-1", name: "Hrelga", role: 1, active: true };
+        return {
+          _id: "user-1",
+          name: "Hrelga",
+          role: 1,
+          active: true,
+          pronouns: "she/her",
+          avatar: "worlds/w/a.png",
+          flags: { world: { seat: 3 } }
+        };
       }
     };
     const result = serializeUser(user);
@@ -4110,7 +4118,10 @@ describe("serializeUser", () => {
       isGM: false,
       active: true,
       character: "actor-9",
-      color: "#ff0000"
+      color: "#ff0000",
+      pronouns: "she/her",
+      avatar: "worlds/w/a.png",
+      flags: { world: { seat: 3 } }
     });
   });
 
@@ -4121,6 +4132,9 @@ describe("serializeUser", () => {
     expect(result.color).toBeNull();
     expect(result.isGM).toBe(true);
     expect(result.active).toBe(false);
+    expect(result.pronouns).toBeNull();
+    expect(result.avatar).toBeNull();
+    expect(result.flags).toEqual({});
   });
 });
 

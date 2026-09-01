@@ -4,6 +4,16 @@ import { createBridgeError } from "./errors.js";
 import { getJournalById } from "./game-collections.js";
 import { previewDocumentCreate, previewDocumentUpdate, resolveEmbeddedDocumentClass } from "./world-docs.js";
 
+/**
+ * The Journal world collection carries Foundry's two sharing entry points. Foundry 14 keeps the bare
+ * global only as a deprecated alias, so the namespaced path is read first.
+ * @returns {any}
+ */
+export function resolveJournalCollection() {
+  const namespaced = /** @type {any} */ (globalThis).foundry?.documents?.collections?.Journal;
+  return namespaced ?? /** @type {any} */ (globalThis).Journal ?? null;
+}
+
 const CORE_JOURNAL_PAGE_TYPES = new Set(["text", "image", "pdf", "video"]);
 
 const MEANINGFUL_VIDEO_FIELDS = ["loop", "autoplay", "timestamp", "width", "height"];

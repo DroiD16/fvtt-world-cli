@@ -4,6 +4,10 @@ import {
   createEffectClonePatch,
   createEffectCreateParams,
   createEffectUpdatePatch,
+  createExecutableBehaviorCloneParams,
+  createExecutableBehaviorCreateParams,
+  createExecutableBehaviorUpdateParams,
+  type ExecutableBehaviorFieldOptions,
   createItemCreateParams,
   createItemUpdateParams,
   createSceneCloneParams,
@@ -51,10 +55,11 @@ import {
   type TokenFieldOptions
 } from "../params.js";
 import { executeRemoteCommand } from "../exec.js";
-import { parseIdList, parseNumber, parseTokenIncludeFields } from "../parse.js";
+import { parseCsvList, parseIdList, parseNumber, parseTokenIncludeFields } from "../parse.js";
 import {
   addEffectFieldOptions,
   addEmbeddedItemFieldOptions,
+  addExecutableBehaviorFieldOptions,
   addRegionBehaviorFieldOptions,
   addReservedIncludeOption,
   addSceneFieldOptions,
@@ -173,6 +178,41 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       await executeRemoteCommand({
         commandName: "scene.delete",
         params: { sceneId: options.sceneId, ...(options.force ? { force: true } : {}) },
+        command: this,
+        dependencies
+      });
+    });
+
+  scene
+    .command("activate")
+    .description("Make a scene the active one for the whole world (a no-op reports changed:false)")
+    .requiredOption("--scene-id <sceneId>", "Scene id")
+    .action(async function activateScene(options: { sceneId: string }) {
+      await executeRemoteCommand({
+        commandName: "scene.activate",
+        params: { sceneId: options.sceneId },
+        command: this,
+        dependencies
+      });
+    });
+  scene
+    .command("pull-users")
+    .description(
+      "Pull users' views to a scene (a broadcast, not a mutation: only currently ONLINE users are reachable and nothing can be confirmed afterwards)"
+    )
+    .requiredOption("--scene-id <sceneId>", "Scene id")
+    .option(
+      "--user-ids <list>",
+      "Comma-separated user ids to pull (default: every online user); offline users are reported as skipped",
+      (value: string) => parseCsvList(value, "--user-ids")
+    )
+    .action(async function pullUsersToScene(options: { sceneId: string; userIds?: string[] }) {
+      await executeRemoteCommand({
+        commandName: "scene.pull-users",
+        params: {
+          sceneId: options.sceneId,
+          ...(options.userIds ? { userIds: options.userIds } : {})
+        },
         command: this,
         dependencies
       });
@@ -1341,8 +1381,8 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     "after",
     "\nResult key (--json): .result.behavior (single/write) / .result.behaviors[] (list), with .result.sceneId and .result.regionId alongside." +
       '\nA behavior name may legitimately be BLANK (Foundry then displays the localized type label): pass --name "" to author one; the CLI prints it as (blank).' +
-      "\n--type is CREATE-ONLY, so update/clone have no --type. If a --patch-json carries a `type` key it is refused even when it restates the current type: drop the key and resend (an unchanged type is a no-op for Foundry). Changing a behavior's type really is impossible — for that, create the new behavior and delete the old one." +
-      "\nThe code-executing types executeScript and executeMacro are REFUSED whenever you supply them, and every patch on an existing one is refused too (even --disabled): use delete to remove such a behavior, or edit it in the Foundry UI." +
+      "\n--type is CREATE-ONLY, so update/clone have no --type. If a --patch-json carries a `type` key it is refused even when it restates the current type: drop the key and resend (an unchanged type is a no-op for Foundry). On this family changing a behavior's type is impossible — for that, create the new behavior and delete the old one." +
+      "\nThe code-executing types executeScript and executeMacro are REFUSED on THIS family whenever you supply them, and every patch on an existing one is refused too (even --disabled). executeScript is refused everywhere — it runs its source in every connected player's browser. For executeMacro use `scene region behavior executable`; delete removes either type." +
       "\nclone with NO patch flags IS allowed on any behavior — note that cloning a code-executing one mints a NEW self-arming auto-trigger, so audit the region afterwards."
   );
   addNameFilterOption(
@@ -1477,6 +1517,89 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       await executeRemoteCommand({
         commandName: "scene.region.behavior.delete",
         params: { sceneId: options.sceneId, regionId: options.regionId, behaviorId: options.behaviorId },
+        command: this,
+        dependencies
+      });
+    });
+
+  const executableBehavior = sceneRegionBehavior
+    .command("executable")
+    .description("Region behaviors that RUN A MACRO when the region fires");
+  executableBehavior.addHelpText(
+    "after",
+    "\nResult key (--json): .result.behavior, with .result.sceneId and .result.regionId alongside — the same shape the ordinary behavior verbs return." +
+      "\nThese three verbs are the only route to an executeMacro behavior. The type is fixed: there is no --type, and the behavior cannot be turned into another type later." +
+      "\n--macro-uuid must name a macro in THIS world (e.g. Macro.abc123); a compendium macro or a missing uuid is refused, so the behavior never arms a trigger that points at nothing." +
+      "\n--events decides WHEN the macro runs (e.g. tokenEnter), and --everyone true runs it in EVERY connected client instead of one elected executor — read it as: every player's browser executes that macro." +
+      "\nclone with no patch flags mints a second armed trigger on the same region; audit the region afterwards."
+  );
+  addExecutableBehaviorFieldOptions(
+    addIdempotencyKeyOption(executableBehavior.command("create"))
+      .description("Arm a region with an executeMacro behavior")
+      .requiredOption("--scene-id <sceneId>", "Scene id")
+      .requiredOption("--region-id <regionId>", "Region id"),
+    "create"
+  )
+    .option("--data-json <json>", "Full/extra behavior data as a JSON object (merged last)")
+    .action(async function createExecutableBehavior(
+      options: ExecutableBehaviorFieldOptions & {
+        sceneId: string;
+        regionId: string;
+        dataJson?: string;
+      }
+    ) {
+      await executeRemoteCommand({
+        commandName: "scene.region.behavior.executable.create",
+        params: createExecutableBehaviorCreateParams(options),
+        command: this,
+        dependencies
+      });
+    });
+  addExecutableBehaviorFieldOptions(
+    executableBehavior
+      .command("update")
+      .description("Edit an executeMacro behavior (the only route the ordinary update refuses)")
+      .requiredOption("--scene-id <sceneId>", "Scene id")
+      .requiredOption("--region-id <regionId>", "Region id")
+      .requiredOption("--behavior-id <behaviorId>", "Behavior id"),
+    "update"
+  )
+    .option("--patch-json <json>", "Full/extra behavior patch as a JSON object (merged last)")
+    .action(async function updateExecutableBehavior(
+      options: ExecutableBehaviorFieldOptions & {
+        sceneId: string;
+        regionId: string;
+        behaviorId: string;
+        patchJson?: string;
+      }
+    ) {
+      await executeRemoteCommand({
+        commandName: "scene.region.behavior.executable.update",
+        params: createExecutableBehaviorUpdateParams(options),
+        command: this,
+        dependencies
+      });
+    });
+  addExecutableBehaviorFieldOptions(
+    addIdempotencyKeyOption(executableBehavior.command("clone"))
+      .description("Copy an executeMacro behavior into a second armed trigger")
+      .requiredOption("--scene-id <sceneId>", "Scene id")
+      .requiredOption("--region-id <regionId>", "Region id")
+      .requiredOption("--behavior-id <behaviorId>", "Source behavior id"),
+    "clone"
+  )
+    .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
+    .action(async function cloneExecutableBehavior(
+      options: ExecutableBehaviorFieldOptions & {
+        sceneId: string;
+        regionId: string;
+        behaviorId: string;
+        patchJson?: string;
+      }
+    ) {
+      await executeRemoteCommand({
+        commandName: "scene.region.behavior.executable.clone",
+        params: createExecutableBehaviorCloneParams(options),
         command: this,
         dependencies
       });

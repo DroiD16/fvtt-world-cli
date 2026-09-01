@@ -6,6 +6,16 @@ const OWNERSHIP_LEVEL_LABELS: Record<string, string> = {
   "3": "owner"
 };
 
+export function renderBroadcastLines(result: any): string[] {
+  const requested = result?.userIds;
+  return [
+    `requested: ${Array.isArray(requested) ? requested.join(", ") || "(none)" : "every user"}`,
+    `reached: ${(result?.activeUserIds ?? []).join(", ") || "(nobody online)"}`,
+    `skipped (offline): ${(result?.inactiveUserIds ?? result?.skippedUserIds ?? []).join(", ") || "(none)"}`,
+    `dispatched: ${Boolean(result?.dispatched)} — a broadcast writes nothing, so there is no state to confirm afterwards`
+  ];
+}
+
 export function renderCompendiumSourceLines(document: any): string[] {
   return document?.compendiumSource ? [`compendiumSource: ${document.compendiumSource}`] : [];
 }

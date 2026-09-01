@@ -112,6 +112,10 @@ export const compendiumIncludeProperty = {
   include: { type: "array", items: { type: "string", enum: ["effects"] } }
 };
 
+export const userIdsProperty = {
+  userIds: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 }
+};
+
 export const idempotencyKeyProperty = {
   idempotencyKey: { type: "string", minLength: 1 }
 };

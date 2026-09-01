@@ -55,11 +55,32 @@ daemon for `cli-daemon`. Compare the reported versions for `unknown`.
   with their complete parent chain (actor → item → effect, scene → token → item).
 - Ownership changes go through dedicated `*.ownership.set` commands; raw `ownership` is rejected
   in ordinary payloads.
-- The CLI cannot execute JavaScript, write settings, edit compendium packs in place, or reach
-  outside the managed file boundary, and executable region-behavior types are rejected on write.
-  Do not look for workarounds; report the limitation instead.
+- The CLI cannot evaluate arbitrary JavaScript, edit compendium packs in place, or reach outside
+  the managed file boundary, and ordinary region-behavior writes reject executable types. Do not
+  look for workarounds; report the limitation instead.
 - Check stderr before diagnosing a hung command. An approval-listed command prints a waiting line
   while the GM decides in Foundry. Deletions require approval by default.
+
+## Disabled commands
+
+Some commands ship denied. A command that `schema <command>` or `--help` knows but a
+`commands --json` listing with `policy.applied: true` omits is disabled by the GM of this bridge:
+report that it needs enabling in the Command permissions window instead of hunting for an
+equivalent. `macro.execute` is the only way to run code and is not a workaround for a missing
+command.
+
+## Command-specific cautions
+
+A macro that throws fails `macro.execute` with a partial outcome — read what it touched before
+retrying — while a macro that catches its own errors still returns `null`, which proves nothing;
+verify effects with reads, and treat `MACRO_TIMEOUT` as indeterminate — the macro may still be
+running.
+`setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
+When a setting write returns `requiresReload: true`, the change needs a GM-client reload to take
+effect; `system.reload` performs it, drops the bridge, and requires a reconnect wait before the
+next command. The reload commonly races its own result: the page can go away before the confirming
+`reloading: true` is delivered, so a disconnect or `APPROVAL_UNKNOWN` there is the expected success
+signal, not a failure — reconnect and continue rather than retrying the reload.
 
 ## The working loop
 

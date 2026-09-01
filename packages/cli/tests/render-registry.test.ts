@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { humanizeCommandResult, RENDERERS, registerRenderers } from "../src/render/registry.js";
 
+// Only the protocol's internal plumbing falls back to pretty JSON: every discoverable command has a
+// renderer that describes its result.
 const INTENTIONAL_FALLBACK_JSON: readonly string[] = COMMAND_NAMES.filter(
   (name) => !DISCOVERABLE_COMMAND_NAMES.includes(name)
 );
@@ -13,6 +15,16 @@ describe("human-output renderer registry", () => {
     expect(expected.length).toBeGreaterThan(0);
     expect(INTENTIONAL_FALLBACK_JSON.length).toBeGreaterThan(0);
     expect(Object.keys(RENDERERS).sort()).toEqual(expected);
+  });
+
+  it("describes the result of every command a caller can discover", () => {
+    const undescribed = DISCOVERABLE_COMMAND_NAMES.filter((command) => !(command in RENDERERS));
+
+    expect(DISCOVERABLE_COMMAND_NAMES.length).toBeGreaterThan(0);
+    expect(
+      undescribed,
+      "a discoverable command with no renderer prints raw JSON to a human: register one in src/render/"
+    ).toEqual([]);
   });
 
   it("registers no name outside the protocol command set", () => {

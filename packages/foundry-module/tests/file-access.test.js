@@ -48,6 +48,14 @@ describe("normalizeFilePath rejection branches", () => {
     ["a single-dot segment", "worlds/./file.txt"],
     ["a bare single-dot path", "."],
     ["a bare double-dot path", ".."],
+    ["a percent-encoded parent traversal", "%2e%2e/%2e%2e/worlds/w/data/x.png"],
+    ["an uppercase percent-encoded parent traversal", "%2E%2E/worlds/w/data/x.png"],
+    ["a mid-path percent-encoded parent traversal", "a/%2e%2e/b.png"],
+    ["a percent-encoded single-dot segment", "assets/%2e/x.png"],
+    ["a percent-encoded separator hiding a traversal", "..%2f..%2fx.png"],
+    ["a wholly percent-encoded traversal in one segment", "%2e%2e%2f%2e%2e"],
+    ["a percent-encoded separator between names", "a%2fb.png"],
+    ["a backslash-encoded separator", "a%5c..%5cb.png"],
     ["a doubled slash (empty segment)", "a//b"],
     ["a trailing slash (empty segment)", "worlds/world-1/"],
     ["a leading slash (absolute)", "/a/b"]
@@ -80,6 +88,25 @@ describe("normalizeFilePath rejection branches", () => {
       "worlds/world-1/fvtt-world-cli/x.txt"
     );
     expect(normalizeFilePath("worlds\\world-1\\file.txt")).toBe("worlds/world-1/file.txt");
+  });
+
+  it("accepts a doubly-encoded dot segment as a literal name, not a traversal", () => {
+    expect(normalizeFilePath("%252e%252e/x.png")).toBe("%252e%252e/x.png");
+  });
+
+  it("never yields a `.` or `..` segment out of canonicalizeDataPath for an accepted path", () => {
+    for (const path of ["%2e%2e/x.png", "a/%2E%2E/b.png", "assets/%2e/c.png", "worlds/../x"]) {
+      let canonical = null;
+      try {
+        canonical = canonicalizeDataPath(normalizeFilePath(path));
+      } catch {
+        canonical = null;
+      }
+      if (canonical !== null) {
+        expect(canonical.split("/")).not.toContain("..");
+        expect(canonical.split("/")).not.toContain(".");
+      }
+    }
   });
 });
 
@@ -213,20 +240,43 @@ describe("listDataPathRecursive (bounded depth-first walk)", () => {
     expect(result.truncated).toBe(false);
   });
 
-  it("enforces the path allowlist per level: a subdir with an escaping browse entry is skipped, never followed", async () => {
+  it("enforces the path allowlist per level: an escaping browse entry is dropped, never followed, without losing its siblings", async () => {
     const tree = new Map([
       ["root", { dirs: ["root/x"], files: [{ path: "root/ok.txt", size: 1, mimeType: "text/plain" }] }],
-      ["root/x", { dirs: ["/etc/passwd"], files: [] }]
+      [
+        "root/x",
+        { dirs: ["/etc/passwd"], files: [{ path: "root/x/keep.txt", size: 2, mimeType: "text/plain" }] }
+      ]
     ]);
     installBrowse(tree);
 
     const result = await listDataPathRecursive("root", { maxDepth: 5 });
 
-    expect(result.entries.map((entry) => entry.path)).toEqual(["root/ok.txt", "root/x"]);
+    expect(result.entries.map((entry) => entry.path)).toEqual(["root/ok.txt", "root/x", "root/x/keep.txt"]);
 
     expect(result.entries.some((entry) => entry.path.includes("etc/passwd"))).toBe(false);
-    expect(result.skipped).toHaveLength(1);
-    expect(result.skipped[0].path).toBe("root/x");
+    expect(result.skipped).toHaveLength(0);
+  });
+
+  it("drops a browse entry whose name hides an encoded separator without failing the directory listing", async () => {
+    const tree = new Map([
+      [
+        "root",
+        {
+          dirs: [],
+          files: [
+            { path: "root/good.png", size: 1, mimeType: "image/png" },
+            { path: "root/a%5c..%5cb.png", size: 2, mimeType: "image/png" }
+          ]
+        }
+      ]
+    ]);
+    installBrowse(tree);
+
+    const result = await listDataPathRecursive("root", { maxDepth: 1 });
+
+    expect(result.entries.map((entry) => entry.path)).toEqual(["root/good.png"]);
+    expect(result.skipped).toHaveLength(0);
   });
 
   it("throws when the ROOT path itself cannot be browsed (matches flat-list behavior)", async () => {

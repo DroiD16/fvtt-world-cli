@@ -7,7 +7,7 @@ import { CommanderError, InvalidArgumentError } from "commander";
 
 import type { CliDependencies } from "./deps.js";
 import { LocalPayloadTooLargeError } from "./errors.js";
-import { parseJsonObject, parseJsonObjectArray } from "./parse.js";
+import { parseJsonObject, parseJsonObjectArray, parseSettingItems } from "./parse.js";
 
 function readLocalFileAsBase64(path: string, uploadLimitBytes: number) {
   let actualBytes: number | undefined;
@@ -1761,6 +1761,175 @@ export function createSceneRegionBehaviorCloneParams(
     ...optionalPatch({
       ...buildRegionBehaviorFields(options),
       ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+    })
+  };
+}
+
+export const EXECUTABLE_BEHAVIOR_TYPE = "executeMacro";
+
+export interface UserFieldOptions {
+  color?: string;
+  pronouns?: string;
+  avatar?: string;
+  clearAvatar?: boolean;
+  character?: string;
+  clearCharacter?: boolean;
+  dataJson?: string;
+  patchJson?: string;
+}
+
+function nullableField<K extends string>(key: K, value: string | undefined, cleared: boolean | undefined) {
+  return cleared ? ({ [key]: null } as Record<K, null>) : value !== undefined ? { [key]: value } : {};
+}
+
+function buildUserFields(options: UserFieldOptions) {
+  return {
+    ...stringField("color", options.color),
+    ...stringField("pronouns", options.pronouns),
+    ...nullableField("avatar", options.avatar, options.clearAvatar),
+    ...nullableField("character", options.character, options.clearCharacter),
+    ...(optionalJsonObject(options.dataJson, "--data-json") ?? {}),
+    ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+  };
+}
+
+export function createSettingSetParams(options: { namespace: string; key: string; valueJson: unknown }) {
+  return { namespace: options.namespace, key: options.key, value: options.valueJson };
+}
+
+export async function resolveSettingItems(
+  options: { itemsJson?: Record<string, unknown>[]; itemsStdin?: boolean },
+  dependencies: CliDependencies
+): Promise<Record<string, unknown>[]> {
+  if (options.itemsStdin) {
+    if (dependencies.stdin.isTTY) {
+      throw new CommanderError(
+        1,
+        "fvtt-world-cli.settingItemsNoStdin",
+        "--items-stdin requires the setting items piped on stdin as a JSON array; refusing to read from an interactive terminal."
+      );
+    }
+    return parseSettingItems(await text(dependencies.stdin), "--items-stdin");
+  }
+  if (options.itemsJson === undefined) {
+    throw new CommanderError(
+      1,
+      "fvtt-world-cli.settingItemsRequired",
+      "setting set-many needs the items: pass --items-json with a JSON array of {namespace,key,value} objects, or --items-stdin to read that array from stdin."
+    );
+  }
+  return options.itemsJson;
+}
+
+export interface ExecutableBehaviorFieldOptions extends RegionBehaviorFieldOptions {
+  macroUuid?: string;
+  events?: string[];
+  everyone?: boolean;
+}
+
+function buildExecutableBehaviorFields(options: ExecutableBehaviorFieldOptions) {
+  const system = {
+    ...stringField("uuid", options.macroUuid),
+    ...(options.events ? { events: options.events } : {}),
+    ...booleanField("everyone", options.everyone),
+    ...(options.systemJson ? parseJsonObject(options.systemJson, "--system-json") : {})
+  };
+  return {
+    ...stringField("name", options.name),
+    ...booleanField("disabled", options.disabled),
+    ...(Object.keys(system).length > 0 ? { system } : {})
+  };
+}
+
+export function createExecutableBehaviorCreateParams(
+  options: ExecutableBehaviorFieldOptions & { sceneId: string; regionId: string; dataJson?: string }
+) {
+  return {
+    sceneId: options.sceneId,
+    regionId: options.regionId,
+    data: {
+      type: EXECUTABLE_BEHAVIOR_TYPE,
+      ...buildExecutableBehaviorFields(options),
+      ...(optionalJsonObject(options.dataJson, "--data-json") ?? {})
+    }
+  };
+}
+
+export function createExecutableBehaviorUpdateParams(
+  options: ExecutableBehaviorFieldOptions & {
+    sceneId: string;
+    regionId: string;
+    behaviorId: string;
+    patchJson?: string;
+  }
+) {
+  return {
+    sceneId: options.sceneId,
+    regionId: options.regionId,
+    behaviorId: options.behaviorId,
+    patch: assertNonEmptyPatch({
+      ...buildExecutableBehaviorFields(options),
+      ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+    })
+  };
+}
+
+export function createExecutableBehaviorCloneParams(
+  options: ExecutableBehaviorFieldOptions & {
+    sceneId: string;
+    regionId: string;
+    behaviorId: string;
+    patchJson?: string;
+  }
+) {
+  return {
+    sceneId: options.sceneId,
+    regionId: options.regionId,
+    behaviorId: options.behaviorId,
+    ...optionalPatch({
+      ...buildExecutableBehaviorFields(options),
+      ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+    })
+  };
+}
+
+export function createMacroExecuteParams(options: {
+  macroId: string;
+  actorId?: string;
+  sceneId?: string;
+  tokenId?: string;
+  argsJson?: string;
+  macroTimeoutMs?: number;
+}) {
+  const scope = {
+    ...stringField("actorId", options.actorId),
+    ...stringField("sceneId", options.sceneId),
+    ...stringField("tokenId", options.tokenId),
+    ...jsonObjectField("args", options.argsJson, "--args-json")
+  };
+  return {
+    macroId: options.macroId,
+    ...(Object.keys(scope).length > 0 ? { scope } : {}),
+    ...numberField("timeoutMs", options.macroTimeoutMs)
+  };
+}
+
+export function createUserCreateParams(options: UserFieldOptions & { name: string; role?: number }) {
+  return {
+    data: {
+      name: options.name,
+      ...numberField("role", options.role),
+      ...buildUserFields(options)
+    }
+  };
+}
+
+export function createUserUpdateParams(options: UserFieldOptions & { userId: string; name?: string }) {
+  return {
+    userId: options.userId,
+    patch: assertNonEmptyPatch({
+      ...stringField("name", options.name),
+      ...buildUserFields(options)
     })
   };
 }

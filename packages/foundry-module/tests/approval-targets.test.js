@@ -21,6 +21,9 @@ const ID_PARAMETER_PATTERN = /^(?:.+Ids?|from|to)$/;
 // A new command whose id is missing here has no resolved target.
 const UNRESOLVED_ID_PARAMETERS = [
   "actor.import-from-compendium entryId",
+  "image.show userIds",
+  "journal.show userIds",
+  "scene.pull-users userIds",
   "actor.item.import-from-compendium entryId",
   "approval.await approvalId",
   "approval.cancel approvalId",
@@ -37,7 +40,21 @@ const UNRESOLVED_ID_PARAMETERS = [
 // Families whose commands address no world document: the approval plumbing, compendium sources,
 // managed files, the policy layer, world settings, and world-wide queries. A family in neither this
 // set nor the resolver's node map would reach the GM with no target summary at all.
-const DOCUMENT_FREE_FAMILIES = ["approval", "compendium", "file", "policy", "setting", "system", "world"];
+const DOCUMENT_FREE_FAMILIES = [
+  "approval",
+  "compendium",
+  "file",
+  "game",
+  "image",
+  "policy",
+  "setting",
+  "system",
+  "world"
+];
+
+// Writes that change world state no document addresses: the settings store, the whole chat log and
+// the paused flag. Their approval summary rests on the descriptor and the parameters, not a target.
+const DOCUMENT_FREE_MUTATIONS = ["chat.flush", "game.pause", "setting.set", "setting.set-many"];
 
 /** @param {string} command */
 function idParameters(command) {
@@ -81,8 +98,9 @@ describe("approval target strategies", () => {
   });
 
   it("names a document collection for every command that changes the world", () => {
+    const documentFree = new Set(DOCUMENT_FREE_MUTATIONS);
     const undescribed = COMMAND_NAMES.filter((command) => {
-      if (!COMMAND_DEFINITIONS[command].mutation) {
+      if (!COMMAND_DEFINITIONS[command].mutation || documentFree.has(command)) {
         return false;
       }
 
@@ -95,13 +113,19 @@ describe("approval target strategies", () => {
     });
 
     expect(undescribed).toEqual([]);
+    for (const command of DOCUMENT_FREE_MUTATIONS) {
+      expect(COMMAND_DEFINITIONS[command]?.mutation, `${command} must be a mutation`).toBe(true);
+    }
   });
 
   it("names the document type of every command that describes a collection of them", () => {
+    const documentFree = new Set(DOCUMENT_FREE_FAMILIES);
     const untyped = COMMAND_NAMES.filter((command) => {
       const strategy = getApprovalTargetStrategy(command);
       return (
-        (strategy?.kind === "create" || strategy?.kind === "bulk") && (strategy?.collection ?? null) === null
+        (strategy?.kind === "create" || strategy?.kind === "bulk") &&
+        (strategy?.collection ?? null) === null &&
+        !documentFree.has(command.split(".")[0])
       );
     });
 
@@ -639,6 +663,35 @@ describe("approval target resolution", () => {
     );
 
     expect([...new Set(marked)].sort()).toEqual([...APPROVAL_TARGET_STATES].sort());
+  });
+
+  it("names every setting a batch write would change instead of a bare element count", () => {
+    const summary = resolveApprovalTargets("setting.set-many", {
+      items: [
+        { namespace: "core", key: "chatBubbles", value: false },
+        { namespace: "my-module", key: "mode", value: "deny" }
+      ]
+    });
+
+    expect(summary.kind).toBe("bulk");
+    expect(summary.totalCount).toBe(2);
+    expect(summary.targets.map((target) => [target.role, target.name, target.state])).toEqual([
+      ["items", "core.chatBubbles", "proposed"],
+      ["items", "my-module.mode", "proposed"]
+    ]);
+  });
+
+  it("describes a single setting write by its namespace and key", () => {
+    const summary = resolveApprovalTargets("setting.set", {
+      namespace: "core",
+      key: "chatBubbles",
+      value: false
+    });
+
+    expect(summary.descriptor).toEqual([
+      { key: "namespace", value: "core" },
+      { key: "key", value: "chatBubbles" }
+    ]);
   });
 
   it("answers without a game rather than raising the readiness error", () => {

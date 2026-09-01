@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildSync } from "esbuild";
 
 import { COMMAND_NAMES } from "../packages/protocol/src/commands.js";
-import { isDestructiveCommand } from "../packages/protocol/src/destructive-commands.js";
+import { defaultBehaviorFor } from "../packages/protocol/src/command-risk.js";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(SCRIPT_DIR, "..");
@@ -30,12 +30,13 @@ const BANNER = [
 
 const PROFILE_BANNER = [
   "// Generated from the command registry by scripts/generate-protocol.mjs. Do not edit.",
-  "// Every registry command maps to the baseline behavior: approve when destructive, otherwise allow."
+  "// Every registry command maps to the baseline behavior: deny when denied by default, approve when",
+  "// destructive or an approve extra, otherwise allow."
 ].join("\n");
 
 export function buildDefaultCommandProfileSource() {
   const entries = COMMAND_NAMES.map(
-    (command) => `  ${JSON.stringify(command)}: ${isDestructiveCommand(command) ? '"approve"' : '"allow"'}`
+    (command) => `  ${JSON.stringify(command)}: ${JSON.stringify(defaultBehaviorFor(command))}`
   );
 
   return [

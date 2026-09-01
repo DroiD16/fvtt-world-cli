@@ -12,6 +12,8 @@ import { registerDiscovery } from "./commands/discovery.js";
 import { registerExec } from "./commands/exec.js";
 import { registerFile } from "./commands/file.js";
 import { registerFolder } from "./commands/folder.js";
+import { registerGame } from "./commands/game.js";
+import { registerImage } from "./commands/image.js";
 import { registerItem } from "./commands/item.js";
 import { registerJournal } from "./commands/journal.js";
 import { registerMacro } from "./commands/macro.js";
@@ -95,6 +97,8 @@ export function createProgram(partialDependencies: Partial<CliDependencies> = {}
   registerCompendium({ program, dependencies });
   registerFolder({ program, dependencies });
   registerFile({ program, dependencies });
+  registerGame({ program, dependencies });
+  registerImage({ program, dependencies });
 
   applyOutputRouting(program, dependencies);
   applyExitOverride(program);

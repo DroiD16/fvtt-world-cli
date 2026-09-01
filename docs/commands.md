@@ -65,21 +65,23 @@ the active slot can be cleared with `bridge release`. The daemon never prints a 
   drops, which is reported as `DAEMON_UNAVAILABLE` rather than a silent stop and is safe to re-run once
   the daemon is back. `y` or `yes` approves the displayed code and exits 0, any other answer denies that
   code and exits 1 with `PAIRING_DECLINED`.
-  Ctrl+C, or an ended stdin, at the confirmation instead leaves the request untouched, and it stays
-  pending until it expires or another run answers for it. An ended stdin, and Ctrl+C while output goes
-  to the terminal too, report `PAIRING_PROMPT_ABORTED` and exit 1; with output redirected the prompt
-  does not read keystrokes itself, so Ctrl+C ends the run as an ordinary interrupt instead.
+  Interrupting the confirmation instead leaves the request untouched: after Ctrl+C or an ended
+  stdin it stays pending until it expires or another run answers for it. An ended stdin reports
+  `PAIRING_PROMPT_ABORTED` and exits 1, and Ctrl+C does the same while output goes to the terminal;
+  with output redirected the prompt does not read keystrokes itself, so Ctrl+C ends the run as an
+  ordinary interrupt instead.
   Delivery is a long-poll control call the CLI re-issues on its own, and the daemon answers each call
   inside its own park cap, so an ordinary wait does not end in a timeout; a daemon that stops answering
   altogether still trips the client's request timeout and is reported as `DAEMON_UNAVAILABLE`. The
   command is interactive-only: `--json`, and a stdin that is not a terminal, each fail
   immediately and name `auth pending` plus `auth approve --yes` as the path for scripts.
-  `--timeout-ms` cannot cut the wait short either — a value below the daemon's park cap plus five
-  seconds is raised to it for the long-poll call, because a smaller client wait would abandon a parked
-  response the daemon is still holding. That long poll is the only call the flag cannot shorten: the
-  approval or denial that follows the answer, and the listing an interactive `auth approve` or
-  `auth prune` reads before its prompt, take `--timeout-ms` as given for their client wait, as the
-  other `auth` verbs and `bridge release` do; without the flag that wait is 60 seconds.
+  `--timeout-ms` cannot cut the wait short either. For the long-poll call, a value below the
+  daemon's park cap plus five seconds is raised to it, because a smaller client wait would abandon
+  a parked response the daemon is still holding. That long poll is the only call the flag cannot
+  shorten. The approval or denial that follows the answer takes `--timeout-ms` as given for its
+  client wait, and so does the listing an interactive `auth approve` or `auth prune` reads before
+  its prompt, as the other `auth` verbs and `bridge release` do. Without the flag that wait is
+  60 seconds.
 - `auth status` shows bridge state and public profile metadata.
 - `auth pending` lists approval candidates with code, expiry, exact Origin, world, GM, browser client
   id, browser label, and module version.
@@ -87,13 +89,13 @@ the active slot can be cleared with `bridge release`. The daemon never prints a 
   request is pending. Interactive use confirms the displayed identity, including the browser label and
   client id, and then approves that exact request: one that expired or disappeared while the prompt
   waited fails rather than approving whatever else is pending. When no single pending request can be
-  shown — nothing pending, an unknown code, or several candidates — it names the live pending codes and
-  stops instead of asking. Answering anything but `y` or `yes` cancels the approval, reports
-  `PAIRING_DECLINED` and exits 1 — the same code and exit the bare `auth` wait reports for a declined
-  request, which the wait also denies outright while this verb leaves it pending. Interrupting the
-  prompt also leaves the request pending, and reports `PAIRING_PROMPT_ABORTED` with exit 1 on the same
-  terms as the wait. Scripts must pass `--yes`. The stored label is the one the browser sent — approval
-  does not rename it.
+  shown, because nothing is pending, the code is unknown, or several candidates exist, it names the
+  live pending codes and stops instead of asking. Answering anything but `y` or `yes` cancels the
+  approval, reports `PAIRING_DECLINED` and exits 1, the same code and exit the bare `auth` wait
+  reports for a declined request; the wait also denies the request outright, while this verb leaves
+  it pending. Interrupting the prompt also leaves the request pending, and reports
+  `PAIRING_PROMPT_ABORTED` with exit 1 on the same terms as the wait. Scripts must pass `--yes`.
+  The stored label is the one the browser sent; approval does not rename it.
 - `auth deny <code>` rejects a pending request.
 - `auth list` shows non-secret profile metadata, including each profile's `clientId` and `label`.
   A label is set in the browser at pairing time and no control operation renames a stored record, so
@@ -107,11 +109,11 @@ the active slot can be cleared with `bridge release`. The daemon never prints a 
 - `auth prune [--older-than <days>] [--yes]` deletes the profiles that have gone unused. A profile is
   a candidate when its `lastSeenAt` is older than the cutoff, which defaults to 30 days; the active
   bridge profile and the holder of an abnormal-disconnect lease are never deleted, however idle their
-  stored timestamp looks. Interactive use lists the candidates it found — label, client id, world, GM,
-  last-seen timestamp, and pairing id — and asks once for the whole set. The listing skips the profile
-  `auth list` reports as active, so a browser that has stayed connected past the cutoff is neither shown
-  nor counted in the prompt, matching what the daemon will do. Answering anything but `y` or
-  `yes` removes nothing, reports `PAIRING_DECLINED` and exits 1; interrupting the prompt reports
+  stored timestamp looks. Interactive use lists the candidates it found, with label, client id,
+  world, GM, last-seen timestamp, and pairing id, and asks once for the whole set. The listing
+  skips the profile `auth list` reports as active, so a browser that has stayed connected past the
+  cutoff is neither shown nor counted in the prompt, matching what the daemon will do. Answering
+  anything but `y` or `yes` removes nothing, reports `PAIRING_DECLINED` and exits 1; interrupting the prompt reports
   `PAIRING_PROMPT_ABORTED` and exits 1 on the same terms as `auth approve`. A listing that found no
   candidate asks nothing and still runs the operation, so the command's output is the daemon's own empty
   result rather than a local verdict. The listing is a preview only: the daemon recomputes the set,
@@ -120,7 +122,7 @@ the active slot can be cleared with `bridge release`. The daemon never prints a 
   crossed the cutoff while the prompt waited is removed although it was never listed; it can equally be
   smaller, because a profile that became active or was already removed between the two steps is
   reported as the daemon left it. There is no dry-run mode, and `--older-than 0` treats every profile
-  as idle, which is the one case where a preview can name a lease holder the daemon then keeps —
+  as idle, which is the one case where a preview can name a lease holder the daemon then keeps.
   `auth list` does not expose the lease, and a lease holder's last-seen timestamp is fresh by
   definition, so no realistic threshold selects it. Scripts pass `--yes`, which skips both the preview
   and the prompt; `--json` requires `--yes` as well, because the confirmation is never mixed into JSON
@@ -132,8 +134,8 @@ the active slot can be cleared with `bridge release`. The daemon never prints a 
   An active browser stopped by release stays stopped until its operator chooses Connect.
 
 Every command in this section is answered by the daemon alone, with no Foundry browser involved, so
-a daemon that is not running or not reachable ends any of them — the `auth` verbs and
-`bridge release` alike — with `DAEMON_UNAVAILABLE` and exit 3 rather than a command-level failure.
+a daemon that is not running or not reachable ends any of them, the `auth` verbs and
+`bridge release` alike, with `DAEMON_UNAVAILABLE` and exit 3 rather than a command-level failure.
 
 In Foundry, Connect reuses the stored browser credential and Disconnect releases the slot without
 touching it. Unpair waits for confirmed daemon revocation
@@ -173,7 +175,22 @@ With a bridge connected, that inventory is also filtered by the GM client's comm
 
 - `actor`, `item`, `journal`, `scene`, `macro`, `playlist`, `table`, and `cards` manage world
   documents.
-- `chat` reads, creates, and deletes chat messages.
+- `chat` reads, creates, and deletes chat messages. `chat flush` erases the entire log at once and
+  asks for GM approval by default because nothing brings the messages back.
+- `user` manages Foundry user accounts. `user update` edits harmless profile fields, `user create`
+  and `user delete` ask for approval by default, and `user role set` plus `user permissions set` are
+  [off by default](#commands-that-are-off-by-default). No command reads or writes a password, and
+  the account holding the bridge cannot demote or delete itself; see
+  [Security](security.md#users).
+- `setting` lists registrations and reads values, including `setting get-many` for batch reads.
+  `setting set` and `setting set-many` write world, client, and user scopes but are
+  [off by default](#commands-that-are-off-by-default); they refuse this module's own namespace in
+  every mode, and a write to an already-stored value is reported as unchanged without touching
+  Foundry. The result's `value` is the value read back after the write, not the value requested: a
+  setting's registered type or `onChange` handler may normalize or clamp what was asked for, so
+  compare `value` against the requested input when the exact stored form matters. The write is
+  confirmed only in that Foundry no longer holds the `previous` value. A result carrying
+  `requiresReload: true` names the follow-up that Foundry expects, which `system reload` performs.
 - `combat` manages encounters and exposes explicit encounter transitions.
 - `folder` manages document organization.
 - Dedicated `*.ownership.set` commands change supported document ownership.
@@ -193,7 +210,11 @@ Common world-document operations include `list`, `get`, `get-many`, `create`, `u
 - `scene.token`, `tile`, `sound`, `wall`, `note`, `drawing`, `light`, `template`, and `region` manage
   scene placeables.
 - `scene.region.behavior` manages region behaviors; writes that supply executable core behavior
-  types are rejected (see [Security](security.md#executable-content)).
+  types are rejected (see [Security](security.md#executable-content)). The separate
+  `scene.region.behavior.executable` family, [off by default](#commands-that-are-off-by-default),
+  authors `executeMacro` behaviors that reference an existing world macro; `executeScript` has no
+  command surface at all. Deleting an executable behavior uses the ordinary
+  `scene region behavior delete`.
 
 Embedded commands require the complete parent ID chain; a read of the parent supplies those IDs when
 they are not already known.
@@ -206,7 +227,38 @@ Some commands invoke a typed Foundry action instead of ordinary CRUD:
 - roll-table draw and reset;
 - card shuffle, reset, deal, draw, and pass;
 - combat start, activation, advancement, and initiative;
-- scene thumbnail generation and fog reset.
+- scene thumbnail generation and fog reset;
+- scene activation (`scene activate`) and pulling active users to a scene (`scene pull-users`);
+- showing a journal entry (`journal show`) or an image (`image show`) to players;
+- pausing or resuming the game clock for everyone (`game pause`);
+- reloading the GM client (`system reload`), which asks for approval by default because it drops
+  the bridge until the client reconnects;
+- macro execution (`macro execute`), [off by default](#commands-that-are-off-by-default).
+
+`scene pull-users`, `journal show`, and `image show` reach every connected player when no
+`--user-ids` list is given. A supplied list has to name at least one user: an empty one is
+indistinguishable from "everyone" on the Foundry side, while the result would report that nobody was
+addressed.
+
+`macro execute` runs a world macro the GM can already execute, waits for it to finish up to a
+bounded `--macro-timeout-ms`, and reports the returned value plus the chat messages it observed the
+macro create. A macro that outlives the timeout keeps running in the GM browser and the command
+returns the indeterminate `MACRO_TIMEOUT`, so the effect is verified by reads. A script macro that
+throws fails the command and the error names what the macro raised; the outcome is partial, because
+whatever the macro changed before it threw stays changed. A macro that catches its own errors still
+reports a `null` return, and a macro is free to reload the page or navigate away, which ends the
+bridge session the same way any disconnect does. Effects therefore deserve a read-back whenever the
+return value alone does not prove them.
+
+Each key of `--args-json` becomes a named variable Foundry splices into the compiled macro, so an
+argument name must be a plain JavaScript identifier (letters, digits, `_` or `$`, not starting with
+a digit) and cannot reuse a name Foundry already binds (`speaker`, `actor`, `token`, `character`,
+`scope`). Any other name is refused before the macro runs.
+
+The result's `chatCapture` field says how much of the chat the run observed: `captured` when every
+message the macro was expected to create was seen, `not-created` when a chat macro created none,
+`partial` when only some were seen, and `unknown` when this client could not watch the chat log at
+all.
 
 Actions can have Foundry, system, or module side effects. Their result describes what the bridge can
 confirm, which may differ from a document post-state, so each action's schema and help are worth
@@ -218,7 +270,8 @@ reading before automating it.
 - `world.audit-files` finds document references to missing managed assets.
 - `compendium.list`, `compendium.index`, and `compendium.get` read pack content.
 - Supported `*.import-from-compendium` commands create world documents from pack sources.
-- `user` and `setting` provide read-only discovery surfaces.
+- `user list`/`user get` and `setting list`/`setting get`/`setting get-many` are the discovery
+  side of the [user and setting families](#world-content).
 
 ### Managed files
 
@@ -269,10 +322,34 @@ Ctrl+C asks the GM client to cancel a waiting decision. Only `APPROVAL_CANCELLED
 command will not run. If the command has started or the client cannot confirm cancellation, the CLI
 reports an indeterminate result.
 
-The default policy asks for approval on commands ending in `delete` or `delete-many`, plus
-`file.move` and `scene.fog.reset`. It allows the remaining commands unless they are exempt from the
-policy. Use the Command permissions window or `fvtt-world-cli commands --json` for the current
-inventory.
+The default policy sorts commands into the three behaviors by what a mistake would cost. Commands
+that can execute code, change who can do what, or persist outside the world's own data are denied
+until a human enables them; the next section lists them. Commands that destroy world data ask for
+approval, as do `system.reload` and `user.create`; the destructive set is the `delete` and
+`delete-many` verbs, plus `file.move`, `scene.fog.reset`, and `chat.flush`. The remaining commands
+run on their own unless they are exempt from the policy. The Command permissions window and
+`fvtt-world-cli commands --json` show the current inventory.
+
+#### Commands that are off by default
+
+The following commands ship with the deny behavior. They stay invisible to
+[discovery](#discovery-under-a-policy) and refuse to run, even as dry runs, until a GM enables
+them in the Command permissions window of the browser profile holding the bridge:
+
+- `macro.execute`
+- `setting.set`
+- `setting.set-many`
+- `user.role.set`
+- `user.permissions.set`
+- `scene.region.behavior.executable.create`
+- `scene.region.behavior.executable.update`
+- `scene.region.behavior.executable.clone`
+
+They are denied by default because each one executes code, changes who can do what, or persists
+outside the world's own data. Enabling one is a per-browser-profile decision, and the approval
+behavior remains available as a middle ground: a GM who wants to see every macro body before it
+runs sets `macro.execute` to approve rather than allow. [Security](security.md) describes what each
+of these surfaces can and cannot do.
 
 `system.ping`, `system.info`, and the internal approval-wait commands always run. This keeps the
 bridge able to report its state and finish an existing decision. The permissions window omits those
@@ -381,9 +458,9 @@ All mutation commands accept the global `--dry-run` flag:
 fvtt-world-cli --dry-run actor update --actor-id <id> --name "New name" --json
 ```
 
-The result uses the normal command shape and includes `dryRun: true`. The preview contract — what a
-dry run executes, what it can report, and its non-reservation of state — is defined in
-[Protocol](protocol.md#dry-run).
+The result uses the normal command shape and includes `dryRun: true`. The preview contract is
+defined in [Protocol](protocol.md#dry-run): what a dry run executes, what it can report, and its
+non-reservation of state.
 
 Approval does not hold a preview. A command whose permission is approve previews without asking the
 GM, and its result carries `approvalRequired: true` so the caller knows the commit will wait. The GM
@@ -443,7 +520,9 @@ First-run setup is covered in [Getting started](getting-started.md).
 
 ## Unsupported boundaries
 
-The CLI intentionally does not provide arbitrary JavaScript execution, direct world-database writes,
-unrestricted filesystem access, generic RPC, compendium editing, setting writes, or transactional
-Foundry batches. Consult [Security](security.md) for the trust boundary and
-[Foundry compatibility](compatibility.md) for version-dependent capabilities.
+The CLI intentionally does not provide arbitrary JavaScript evaluation, direct world-database
+writes, unrestricted filesystem access, generic RPC, compendium editing, or transactional Foundry
+batches. Code runs only through `macro.execute` and `executeMacro` region behaviors, both off by
+default; when a GM keeps them on approve, the window shows a macro execution's own body and names
+the macro a region behavior would run. [Security](security.md) describes the trust
+boundary and [Foundry compatibility](compatibility.md) the version-dependent capabilities.

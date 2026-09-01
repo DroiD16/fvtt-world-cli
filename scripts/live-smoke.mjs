@@ -34,7 +34,8 @@ function parseArgs(argv) {
     baseUrl: process.env.FVTT_WORLD_CLI_TEST_BASE_URL || DEFAULT_BASE_URL,
     foundryDataDir: process.env.FVTT_WORLD_CLI_TEST_FOUNDRY_DATA_DIR || null,
     gmControlUrl: process.env.FVTT_WORLD_CLI_TEST_GM_CONTROL || null,
-    policyTimeoutBranch: process.env.FVTT_WORLD_CLI_TEST_POLICY_TIMEOUT_BRANCH === "1"
+    policyTimeoutBranch: process.env.FVTT_WORLD_CLI_TEST_POLICY_TIMEOUT_BRANCH === "1",
+    allowChatFlush: process.env.FVTT_WORLD_CLI_TEST_ALLOW_CHAT_FLUSH === "1"
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -73,6 +74,11 @@ function parseArgs(argv) {
       continue;
     }
 
+    if (arg === "--allow-chat-flush") {
+      options.allowChatFlush = true;
+      continue;
+    }
+
     if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -93,7 +99,7 @@ function printHelp() {
   process.stdout.write(
     [
       "Usage: npm run smoke:live -- [--json] [--actor-id <actorId>] [--base-url <url>] [--foundry-data-dir <path>]",
-      "                              [--gm-control <url>] [--policy-timeout-branch]",
+      "                              [--gm-control <url>] [--policy-timeout-branch] [--allow-chat-flush]",
       "",
       "Defaults:",
       `  base URL: ${DEFAULT_BASE_URL}`,
@@ -105,6 +111,7 @@ function printHelp() {
       "  FVTT_WORLD_CLI_TEST_FOUNDRY_DATA_DIR",
       "  FVTT_WORLD_CLI_TEST_GM_CONTROL",
       "  FVTT_WORLD_CLI_TEST_POLICY_TIMEOUT_BRANCH=1",
+      "  FVTT_WORLD_CLI_TEST_ALLOW_CHAT_FLUSH=1",
       "",
       "--gm-control names a loopback endpoint that evaluates JavaScript in the logged-in GM page.",
       'It receives POST {"script": "<javascript>"} — the body of an async function whose return',
@@ -113,7 +120,15 @@ function printHelp() {
       "every skipped branch is reported in the summary notes; with it the run also relaxes the GM",
       "client's command policy for its own duration, because the shipped defaults hold every delete",
       "for a human decision. --policy-timeout-branch additionally exercises the approval timeout with",
-      "a one-minute setting, which costs about a minute of wall clock."
+      "a one-minute setting, which costs about a minute of wall clock.",
+      "",
+      "The denied-by-default command segment also requires --gm-control, because those commands run",
+      "only under a policy that enables them. Its chat.flush branch erases the world's entire chat",
+      "log and therefore runs only with --allow-chat-flush (or FVTT_WORLD_CLI_TEST_ALLOW_CHAT_FLUSH=1);",
+      "without the flag it is skipped and reported in the summary notes. The run ends with",
+      "system.reload, issued after every cleanup step and after the stored command policy is back,",
+      "because the reload destroys the page the GM control endpoint drives; it then waits for the",
+      "bridge to reconnect."
     ].join("\n") + "\n"
   );
 }
@@ -455,6 +470,51 @@ const POLICY_SEGMENT_BRANCHES = Object.freeze([
 
 const POLICY_TIMEOUT_BRANCH_STEP = "policy.approve(timeout)";
 
+const DANGEROUS_SEGMENT_BRANCHES = Object.freeze([
+  {
+    step: "dangerous.macro.execute(script)",
+    branch: "an enabled macro.execute runs a script macro and reports its return value"
+  },
+  {
+    step: "dangerous.macro.execute(chat)",
+    branch: "a chat macro's created message is captured in chatMessageIds"
+  },
+  {
+    step: "dangerous.setting.protected",
+    branch: "a setting write to this module's own namespace is refused"
+  },
+  {
+    step: "dangerous.setting.set(roundtrip)",
+    branch: "a registered core setting is written, confirmed, and restored"
+  },
+  {
+    step: "dangerous.user.lifecycle",
+    branch: "a scratch user is created, re-roled, permission-overridden, updated, and deleted"
+  },
+  {
+    step: "dangerous.user.self-guard",
+    branch: "a role change aimed at the bridge GM's own account is refused"
+  },
+  {
+    step: "dangerous.behavior.executable",
+    branch: "the executable family authors an executeMacro behavior the ordinary family refuses"
+  },
+  {
+    step: "dangerous.scene.activate",
+    branch: "a scratch scene is activated and the previously active scene restored"
+  },
+  { step: "dangerous.game.pause", branch: "the game pause is toggled and restored" },
+  { step: "dangerous.system.reload", branch: "system.reload reloads the GM client and the bridge reconnects" }
+]);
+
+const DANGEROUS_CHAT_FLUSH_STEP = "dangerous.chat.flush";
+
+const DANGEROUS_SEGMENT_ENABLE_HINT =
+  "pass --gm-control <url>, or set FVTT_WORLD_CLI_TEST_GM_CONTROL, and run the smoke again";
+
+const RELOAD_RECONNECT_WAIT_MS = 120_000;
+const RELOAD_POLL_INTERVAL_MS = 2_000;
+
 const POLICY_SEGMENT_ENABLE_HINT =
   "pass --gm-control <url>, or set FVTT_WORLD_CLI_TEST_GM_CONTROL, and run the smoke again";
 
@@ -764,7 +824,7 @@ function reportedStep(summary, name) {
 }
 
 function createPolicyCoverage() {
-  return { segment: null, timeout: null };
+  return { segment: null, timeout: null, dangerous: null, chatFlush: null };
 }
 
 function recordSkippedPolicySegment(coverage, reason, remedy) {
@@ -781,6 +841,22 @@ function recordSkippedTimeoutBranch(coverage, reason) {
   }
 
   coverage.timeout = { reason };
+}
+
+function recordSkippedDangerousSegment(coverage, reason, remedy) {
+  if (coverage.dangerous) {
+    return;
+  }
+
+  coverage.dangerous = { reason, remedy };
+}
+
+function recordSkippedChatFlushBranch(coverage, reason) {
+  if (coverage.chatFlush) {
+    return;
+  }
+
+  coverage.chatFlush = { reason };
 }
 
 function flushPolicyCoverageNotes(summary, coverage) {
@@ -810,6 +886,33 @@ function flushPolicyCoverageNotes(summary, coverage) {
   );
 }
 
+function flushDangerousCoverageNotes(summary, coverage) {
+  const skipped = DANGEROUS_SEGMENT_BRANCHES.filter((entry) => !reportedStep(summary, entry.step));
+  if (skipped.length > 0) {
+    const { reason, remedy } = coverage.dangerous ?? {
+      reason: "the run ended before the segment",
+      remedy: POLICY_SEGMENT_EARLY_EXIT_HINT
+    };
+    const ran = DANGEROUS_SEGMENT_BRANCHES.length - skipped.length;
+    const lead =
+      ran === 0
+        ? `DENIED-BY-DEFAULT COMMAND SEGMENT SKIPPED (${reason})`
+        : `DENIED-BY-DEFAULT COMMAND SEGMENT INCOMPLETE (${reason}); ${ran} of its ${DANGEROUS_SEGMENT_BRANCHES.length} branches ran and are reported as steps above`;
+
+    summary.notes.push(
+      `${lead}. Not verified by this run: ${skipped.map((entry) => entry.branch).join("; ")}. To cover ${skipped.length === 1 ? "it" : "them"}, ${remedy}.`
+    );
+  }
+
+  if (reportedStep(summary, DANGEROUS_CHAT_FLUSH_STEP)) {
+    return;
+  }
+
+  summary.notes.push(
+    `chat.flush branch SKIPPED (${coverage.chatFlush?.reason ?? "the segment it belongs to did not run"}); no run verified that chat.flush erases the log. It destroys the world's entire chat log and is enabled with --allow-chat-flush (or FVTT_WORLD_CLI_TEST_ALLOW_CHAT_FLUSH=1) in a world whose chat log is disposable.`
+  );
+}
+
 function noteAbandonedRun(summary, reason, remedy) {
   summary.notes.push(
     `WHOLE SUITE NOT RUN (${reason}). It stopped at the command policy preconditions, so the steps it reports are the only ones it took: nothing after them — documents, files, scenes, search, error paths — was verified either way, and the failed step above is not one isolated check. ${remedy}.`
@@ -824,6 +927,12 @@ async function preparePolicyHarness(summary, options, coverage) {
   if (!options.gmControlUrl) {
     recordSkippedPolicySegment(coverage, "no GM control endpoint was supplied", POLICY_SEGMENT_ENABLE_HINT);
     recordSkippedTimeoutBranch(coverage, "the segment it belongs to did not run");
+    recordSkippedDangerousSegment(
+      coverage,
+      "no GM control endpoint was supplied",
+      DANGEROUS_SEGMENT_ENABLE_HINT
+    );
+    recordSkippedChatFlushBranch(coverage, "the segment it belongs to did not run");
 
     const discoveryRun = runFoundryctl(["commands"]);
 
@@ -861,7 +970,7 @@ async function preparePolicyHarness(summary, options, coverage) {
       return { ready: false, restore: null };
     }
 
-    const denied = deniedCommands(discoveryRun);
+    const denied = deniedCommands(discoveryRun).filter((command) => defaultProfile(command) !== "deny");
 
     if (denied.length > 0) {
       markAndPush(summary, "policy.preconditions", false, {
@@ -889,7 +998,15 @@ async function preparePolicyHarness(summary, options, coverage) {
   let previousPolicy = null;
   let previousTimeoutMinutes = null;
 
+  // The stored policy may be restored early (before system.reload destroys the GM page) and is then
+  // reported again from the run's own cleanup, so a completed restore must not be written twice.
+  let restored = false;
+
   const restoreStoredSettings = async () => {
+    if (restored) {
+      return [];
+    }
+
     const failures = [];
     const restoreSetting = async (key, value) => {
       try {
@@ -904,6 +1021,7 @@ async function preparePolicyHarness(summary, options, coverage) {
       await restoreSetting(APPROVAL_TIMEOUT_SETTING_KEY, previousTimeoutMinutes);
     }
 
+    restored = failures.length === 0;
     return failures;
   };
 
@@ -1265,6 +1383,430 @@ async function runPolicySegment(summary, options, { stamp, coverage }) {
       runFoundryctl(["journal", "delete", "--journal-id", journalId])
     );
   }
+}
+
+/** @returns {Promise<boolean>} whether the run may still issue the system.reload branch */
+async function runDangerousSegment(summary, options, { stamp, coverage }) {
+  const gmControlUrl = options.gmControlUrl;
+  if (!gmControlUrl) {
+    return false;
+  }
+
+  let scriptMacroId = null;
+  let chatMacroId = null;
+  let sceneId = null;
+  let userId = null;
+  let chatFlushAttempted = false;
+  let chatFlushConfirmed = false;
+  let capturedChatMessageIds = [];
+
+  try {
+    const systemInfoRun = runFoundryctl(["system", "info"]);
+    const gmUserId = systemInfoRun.response?.result?.user?.id || null;
+
+    const scriptMacroRun = runFoundryctl([
+      "macro",
+      "create",
+      "--name",
+      `CLI Smoke Script ${stamp}`,
+      "--type",
+      "script",
+      "--command",
+      "return 7;"
+    ]);
+    scriptMacroId = scriptMacroRun.response?.result?.macro?.id || null;
+
+    const chatMacroRun = runFoundryctl([
+      "macro",
+      "create",
+      "--name",
+      `CLI Smoke Chat ${stamp}`,
+      "--type",
+      "chat",
+      "--command",
+      `CLI smoke dangerous ${stamp}`
+    ]);
+    chatMacroId = chatMacroRun.response?.result?.macro?.id || null;
+
+    markAndPush(summary, "dangerous.fixture", Boolean(scriptMacroId && chatMacroId && gmUserId), {
+      scriptMacro: summarizeCommand(scriptMacroRun),
+      chatMacro: summarizeCommand(chatMacroRun),
+      gmUserId
+    });
+
+    if (!scriptMacroId || !chatMacroId || !gmUserId) {
+      recordSkippedDangerousSegment(
+        coverage,
+        "the scratch macros or the GM user id the segment needs could not be resolved",
+        POLICY_SEGMENT_EARLY_EXIT_HINT
+      );
+      return false;
+    }
+
+    const scriptExecuteRun = runFoundryctl(["macro", "execute", "--macro-id", scriptMacroId]);
+    const scriptResult = scriptExecuteRun.response?.result || null;
+    markAndPush(
+      summary,
+      "dangerous.macro.execute(script)",
+      Boolean(
+        scriptExecuteRun.response?.ok && scriptResult?.type === "script" && scriptResult?.returned === 7
+      ),
+      { ...summarizeCommand(scriptExecuteRun), returned: scriptResult?.returned ?? null }
+    );
+
+    const chatExecuteRun = runFoundryctl(["macro", "execute", "--macro-id", chatMacroId]);
+    const chatResult = chatExecuteRun.response?.result || null;
+    capturedChatMessageIds = Array.isArray(chatResult?.chatMessageIds) ? chatResult.chatMessageIds : [];
+    markAndPush(
+      summary,
+      "dangerous.macro.execute(chat)",
+      Boolean(
+        chatExecuteRun.response?.ok && chatResult?.type === "chat" && capturedChatMessageIds.length > 0
+      ),
+      {
+        ...summarizeCommand(chatExecuteRun),
+        chatMessageIds: capturedChatMessageIds,
+        chatCapture: chatResult?.chatCapture ?? null
+      }
+    );
+
+    expectErr(
+      summary,
+      "dangerous.setting.protected",
+      runFoundryctl([
+        "setting",
+        "set",
+        "--namespace",
+        MODULE_ID,
+        "--key",
+        "commandPolicy",
+        "--value-json",
+        "{}"
+      ]),
+      ERROR_CODES.SETTING_PROTECTED
+    );
+
+    const settingGetRun = runFoundryctl(["setting", "get", "--namespace", "core", "--key", "chatBubbles"]);
+    const previousBubbles = settingGetRun.response?.result?.setting?.value;
+    const bubblesReadable = typeof previousBubbles === "boolean";
+    const writeBubbles = (value) =>
+      runFoundryctl([
+        "setting",
+        "set",
+        "--namespace",
+        "core",
+        "--key",
+        "chatBubbles",
+        "--value-json",
+        JSON.stringify(value)
+      ]);
+    const settingSetRun = bubblesReadable ? writeBubbles(!previousBubbles) : null;
+    const settingRestoreRun = settingSetRun?.response?.ok === true ? writeBubbles(previousBubbles) : null;
+    markAndPush(
+      summary,
+      "dangerous.setting.set(roundtrip)",
+      Boolean(
+        settingGetRun.response?.ok &&
+        bubblesReadable &&
+        settingSetRun?.response?.ok &&
+        settingSetRun.response?.result?.changed === true &&
+        settingSetRun.response?.result?.value === !previousBubbles &&
+        settingRestoreRun?.response?.ok &&
+        settingRestoreRun.response?.result?.value === previousBubbles
+      ),
+      {
+        read: summarizeCommand(settingGetRun),
+        write: settingSetRun ? summarizeCommand(settingSetRun) : null,
+        restore: settingRestoreRun ? summarizeCommand(settingRestoreRun) : null,
+        previous: bubblesReadable ? previousBubbles : null
+      }
+    );
+    if (!bubblesReadable) {
+      summary.notes.push(
+        "The dangerous.setting.set(roundtrip) branch could not read core.chatBubbles, so it wrote nothing: neither the toggle nor a guessed restore. Nothing about setting.set was verified on this run."
+      );
+    }
+
+    const userCreateRun = runFoundryctl(["user", "create", "--name", `CLI Smoke User ${stamp}`]);
+    userId = userCreateRun.response?.result?.user?.id || null;
+    const roleSetRun = userId
+      ? runFoundryctl(["user", "role", "set", "--user-id", userId, "--role", "3"])
+      : null;
+    const permissionsSetRun = userId
+      ? runFoundryctl([
+          "user",
+          "permissions",
+          "set",
+          "--user-id",
+          userId,
+          "--permissions-json",
+          '{"FILES_UPLOAD":false}'
+        ])
+      : null;
+    const userUpdateRun = userId
+      ? runFoundryctl(["user", "update", "--user-id", userId, "--color", "#336699"])
+      : null;
+    const userDeleteRun = userId ? runFoundryctl(["user", "delete", "--user-id", userId]) : null;
+    if (userDeleteRun?.response?.ok) {
+      userId = null;
+    }
+    markAndPush(
+      summary,
+      "dangerous.user.lifecycle",
+      Boolean(
+        userCreateRun.response?.ok &&
+        roleSetRun?.response?.ok &&
+        roleSetRun.response?.result?.role === 3 &&
+        permissionsSetRun?.response?.ok &&
+        permissionsSetRun.response?.result?.overrides?.FILES_UPLOAD === false &&
+        userUpdateRun?.response?.ok &&
+        userDeleteRun?.response?.ok
+      ),
+      {
+        create: summarizeCommand(userCreateRun),
+        roleSet: roleSetRun ? summarizeCommand(roleSetRun) : null,
+        permissionsSet: permissionsSetRun ? summarizeCommand(permissionsSetRun) : null,
+        update: userUpdateRun ? summarizeCommand(userUpdateRun) : null,
+        delete: userDeleteRun ? summarizeCommand(userDeleteRun) : null
+      }
+    );
+
+    expectErr(
+      summary,
+      "dangerous.user.self-guard",
+      runFoundryctl(["user", "role", "set", "--user-id", gmUserId, "--role", "3"]),
+      ERROR_CODES.USER_SELF_PROTECTED
+    );
+
+    const sceneCreateRun = runFoundryctl(["scene", "create", "--name", `CLI Smoke Dangerous ${stamp}`]);
+    sceneId = sceneCreateRun.response?.result?.scene?.id || null;
+    const regionCreateRun = sceneId
+      ? runFoundryctl([
+          "scene",
+          "region",
+          "create",
+          "--scene-id",
+          sceneId,
+          "--data-json",
+          '{"name":"CLI Smoke Region","shapes":[{"type":"rectangle","x":0,"y":0,"width":100,"height":100}]}'
+        ])
+      : null;
+    const regionId = regionCreateRun?.response?.result?.region?.id || null;
+    const executableCreateRun = regionId
+      ? runFoundryctl([
+          "scene",
+          "region",
+          "behavior",
+          "executable",
+          "create",
+          "--scene-id",
+          sceneId,
+          "--region-id",
+          regionId,
+          "--macro-uuid",
+          `Macro.${scriptMacroId}`,
+          "--events",
+          "tokenEnter",
+          "--name",
+          "CLI Smoke Executable"
+        ])
+      : null;
+    const executableBehavior = executableCreateRun?.response?.result?.behavior || null;
+    const ordinaryRouteProbe = regionId
+      ? runFoundryctl([
+          "scene",
+          "region",
+          "behavior",
+          "create",
+          "--scene-id",
+          sceneId,
+          "--region-id",
+          regionId,
+          "--type",
+          "executeMacro"
+        ])
+      : null;
+    markAndPush(
+      summary,
+      "dangerous.behavior.executable",
+      Boolean(
+        regionId &&
+        executableCreateRun?.response?.ok &&
+        executableBehavior?.type === "executeMacro" &&
+        ordinaryRouteProbe &&
+        isExpectedError(ordinaryRouteProbe, ERROR_CODES.INVALID_PARAMS)
+      ),
+      {
+        region: regionCreateRun ? summarizeCommand(regionCreateRun) : null,
+        create: executableCreateRun ? summarizeCommand(executableCreateRun) : null,
+        behaviorType: executableBehavior?.type ?? null,
+        ordinaryRouteProbe: ordinaryRouteProbe ? summarizeCommand(ordinaryRouteProbe) : null
+      }
+    );
+
+    const previousActiveSceneId = await evaluateInGmPage(
+      gmControlUrl,
+      "return globalThis.game.scenes.active?.id ?? null;"
+    );
+    const activateRun = sceneId ? runFoundryctl(["scene", "activate", "--scene-id", sceneId]) : null;
+    const restoreActivateRun = previousActiveSceneId
+      ? runFoundryctl(["scene", "activate", "--scene-id", previousActiveSceneId])
+      : null;
+    const restoredActiveSceneId = await evaluateInGmPage(
+      gmControlUrl,
+      "return globalThis.game.scenes.active?.id ?? null;"
+    );
+    markAndPush(
+      summary,
+      "dangerous.scene.activate",
+      Boolean(
+        activateRun?.response?.ok &&
+        activateRun.response?.result?.active === true &&
+        (previousActiveSceneId
+          ? restoreActivateRun?.response?.ok && restoredActiveSceneId === previousActiveSceneId
+          : restoredActiveSceneId === sceneId)
+      ),
+      {
+        activate: activateRun ? summarizeCommand(activateRun) : null,
+        restore: restoreActivateRun ? summarizeCommand(restoreActivateRun) : null,
+        previousActiveSceneId,
+        restoredActiveSceneId
+      }
+    );
+    if (!previousActiveSceneId) {
+      summary.notes.push(
+        "The dangerous.scene.activate branch found no previously active scene to restore, so the scratch scene stayed active and its cleanup deletes it with --force; the world is left with no active scene, as it started."
+      );
+    }
+
+    const pauseRun = runFoundryctl(["game", "pause", "--paused", "true"]);
+    const previousPaused = pauseRun.response?.result?.previousPaused;
+    const pausedReadable = typeof previousPaused === "boolean";
+    const pauseRestoreRun = pausedReadable
+      ? runFoundryctl(["game", "pause", "--paused", JSON.stringify(previousPaused)])
+      : null;
+    markAndPush(
+      summary,
+      "dangerous.game.pause",
+      Boolean(
+        pauseRun.response?.ok &&
+        pauseRun.response?.result?.paused === true &&
+        pausedReadable &&
+        pauseRestoreRun?.response?.ok &&
+        pauseRestoreRun.response?.result?.paused === previousPaused
+      ),
+      {
+        pause: summarizeCommand(pauseRun),
+        restore: pauseRestoreRun ? summarizeCommand(pauseRestoreRun) : null,
+        previousPaused: pausedReadable ? previousPaused : null
+      }
+    );
+    if (!pausedReadable) {
+      summary.notes.push(
+        "The dangerous.game.pause branch did not learn the pause state the world held before it paused the game, so it did NOT guess one back: the world may be left PAUSED. Unpause it in Foundry."
+      );
+    }
+
+    if (options.allowChatFlush) {
+      const flushPreviewRun = runFoundryctl(["--dry-run", "chat", "flush"]);
+      chatFlushAttempted = true;
+      const flushRun = runFoundryctl(["chat", "flush"]);
+      chatFlushConfirmed = flushRun.response?.result?.remaining === 0;
+      markAndPush(
+        summary,
+        DANGEROUS_CHAT_FLUSH_STEP,
+        Boolean(
+          flushPreviewRun.response?.ok &&
+          flushPreviewRun.response?.result?.dryRun === true &&
+          typeof flushPreviewRun.response?.result?.count === "number" &&
+          flushRun.response?.ok &&
+          flushRun.response?.result?.remaining === 0
+        ),
+        {
+          preview: summarizeCommand(flushPreviewRun),
+          flush: summarizeCommand(flushRun),
+          previewCount: flushPreviewRun.response?.result?.count ?? null,
+          deleted: flushRun.response?.result?.deleted ?? null
+        }
+      );
+    } else {
+      recordSkippedChatFlushBranch(coverage, "--allow-chat-flush was not passed");
+    }
+  } catch (error) {
+    markAndPush(summary, "dangerous.segment", false, { reason: error.message });
+    recordSkippedDangerousSegment(
+      coverage,
+      `the segment stopped on an error: ${error.message}`,
+      POLICY_SEGMENT_ENDPOINT_HINT
+    );
+    return false;
+  } finally {
+    if (!chatFlushConfirmed) {
+      for (const messageId of capturedChatMessageIds) {
+        const deleteRun = runFoundryctl(["chat", "delete", "--message-id", messageId]);
+        // A flush that did not confirm may still have deleted some of these, so a message that is
+        // already gone is a clean cleanup and not a failure.
+        markAndPush(
+          summary,
+          "chat.delete(dangerous cleanup)",
+          Boolean(
+            deleteRun.response?.ok ||
+            (chatFlushAttempted && isExpectedError(deleteRun, ERROR_CODES.CHAT_MESSAGE_NOT_FOUND))
+          ),
+          summarizeCommand(deleteRun)
+        );
+      }
+    }
+    if (sceneId) {
+      expectOk(
+        summary,
+        "scene.delete(dangerous cleanup)",
+        // The scratch scene is still the active one whenever the world had no active scene to restore,
+        // and Foundry refuses to delete the active scene without --force.
+        runFoundryctl(["scene", "delete", "--scene-id", sceneId, "--force"])
+      );
+    }
+    if (userId) {
+      expectOk(
+        summary,
+        "user.delete(dangerous cleanup)",
+        runFoundryctl(["user", "delete", "--user-id", userId])
+      );
+    }
+    for (const macroId of [scriptMacroId, chatMacroId]) {
+      if (macroId) {
+        expectOk(
+          summary,
+          "macro.delete(dangerous cleanup)",
+          runFoundryctl(["macro", "delete", "--macro-id", macroId])
+        );
+      }
+    }
+  }
+
+  return true;
+}
+
+// system.reload destroys the page the GM control endpoint drives, so this branch runs only after the
+// whole run's cleanup and after the stored command policy is back: nothing may need that endpoint again.
+async function runSystemReloadBranch(summary) {
+  const reloadRun = runFoundryctl(["system", "reload"]);
+  let reconnected = false;
+  const reconnectDeadline = Date.now() + RELOAD_RECONNECT_WAIT_MS;
+  while (Date.now() < reconnectDeadline) {
+    await delayMs(RELOAD_POLL_INTERVAL_MS);
+    const probeRun = runFoundryctl(["system", "info"]);
+    if (probeRun.response?.ok && probeRun.response?.result?.bridge?.status === "connected") {
+      reconnected = true;
+      break;
+    }
+  }
+  markAndPush(
+    summary,
+    "dangerous.system.reload",
+    Boolean(reloadRun.response?.ok && reloadRun.response?.result?.reloading === true && reconnected),
+    { ...summarizeCommand(reloadRun), reconnected }
+  );
 }
 
 function runExtendedCoverage(
@@ -12477,6 +13019,7 @@ async function main() {
   const policyCoverage = createPolicyCoverage();
   let tempDir = null;
   let policyHarness = null;
+  let reloadPending = false;
 
   try {
     const systemInfoRun = runFoundryctl(["system", "info"]);
@@ -13583,6 +14126,8 @@ async function main() {
 
     await runPolicySegment(summary, options, { stamp, coverage: policyCoverage });
 
+    reloadPending = await runDangerousSegment(summary, options, { stamp, coverage: policyCoverage });
+
     return { options, summary };
   } finally {
     if (summary.artifacts.actorItemId && options.actorId) {
@@ -13614,6 +14159,7 @@ async function main() {
         runFoundryctl(["journal", "delete", "--journal-id", summary.artifacts.journalId])
       );
     }
+    let policyRestored = false;
     if (policyHarness?.restore) {
       let failures = [];
       try {
@@ -13621,10 +14167,25 @@ async function main() {
       } catch (error) {
         failures = [{ setting: null, reason: error.message }];
       }
-      markAndPush(summary, "policy.restore", failures.length === 0, { failures });
+      policyRestored = failures.length === 0;
+      markAndPush(summary, "policy.restore", policyRestored, { failures });
+    }
+
+    if (reloadPending && policyRestored) {
+      await runSystemReloadBranch(summary);
+    } else if (reloadPending) {
+      recordSkippedDangerousSegment(
+        policyCoverage,
+        "the stored command policy could not be restored, and the reload destroys the page the GM control endpoint drives, so this run did not issue it",
+        "restore Module Settings → Command permissions by hand, make the endpoint named by --gm-control reachable, and run the smoke again"
+      );
+      summary.notes.push(
+        "The stored command policy was NOT restored: this world is left with the run's scratch policy, which ALLOWS every command including the denied-by-default ones. Restore Module Settings → Command permissions before anyone else uses this world."
+      );
     }
 
     flushPolicyCoverageNotes(summary, policyCoverage);
+    flushDangerousCoverageNotes(summary, policyCoverage);
 
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });

@@ -1922,3 +1922,279 @@ describe("folder management", () => {
     expect(actors.get("act-in-b")).not.toBeNull();
   });
 });
+
+describe("user write surface", () => {
+  let router;
+
+  beforeEach(() => {
+    installFakeFoundry();
+    router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+  });
+
+  function users() {
+    return globalThis.game.users;
+  }
+
+  it("creates a user and confirms it against the world's user list", async () => {
+    const response = await router.route(
+      createRequest("user.create", { data: { name: "Scratch", role: 2, color: "#123456" } })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result.user).toMatchObject({ name: "Scratch", role: 2, color: "#123456" });
+    expect(users().get(response.result.user.id)).not.toBeNull();
+    expect(response.result.user).not.toHaveProperty("password");
+    expect(response.result.user).not.toHaveProperty("passwordSalt");
+  });
+
+  it("serializes profile fields a write accepts and canonicalizes the avatar path", async () => {
+    const response = await router.route(
+      createRequest("user.create", {
+        data: {
+          name: "Profiled",
+          role: 2,
+          pronouns: "they/them",
+          avatar: "worlds/world-1/portraits/hero shot.png",
+          flags: { world: { seat: 3 } }
+        }
+      })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result.user).toMatchObject({
+      name: "Profiled",
+      pronouns: "they/them",
+      avatar: "worlds/world-1/portraits/hero%20shot.png",
+      flags: { world: { seat: 3 } }
+    });
+    expect(users().get(response.result.user.id).avatar).toBe("worlds/world-1/portraits/hero%20shot.png");
+
+    const updated = await router.route(
+      createRequest("user.update", {
+        userId: response.result.user.id,
+        patch: { avatar: "worlds/world-1/portraits/new face.png" }
+      })
+    );
+    expect(updated.result.user.avatar).toBe("worlds/world-1/portraits/new%20face.png");
+  });
+
+  it("previews a creation without adding a user", async () => {
+    const before = users().size;
+
+    const response = await router.route(
+      createRequest("user.create", { data: { name: "Ghost" }, dryRun: true })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toMatchObject({ dryRun: true });
+    expect(response.result.user.name).toBe("Ghost");
+    expect(users().size).toBe(before);
+  });
+
+  it("refuses a password or a role on the closed write schemas", async () => {
+    const created = await router.route(
+      createRequest("user.create", { data: { name: "Sneaky", password: "hunter2" } })
+    );
+    expect(created.ok).toBe(false);
+    expect(created.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+
+    const patched = await router.route(
+      createRequest("user.update", { userId: "player-1", patch: { password: "hunter2" } })
+    );
+    expect(patched.ok).toBe(false);
+    expect(patched.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+
+    const promoted = await router.route(
+      createRequest("user.update", { userId: "player-1", patch: { role: 4 } })
+    );
+    expect(promoted.ok).toBe(false);
+    expect(promoted.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+  });
+
+  it("updates the fields a user may change and previews without writing", async () => {
+    const preview = await router.route(
+      createRequest("user.update", {
+        userId: "player-1",
+        patch: { pronouns: "she/her" },
+        dryRun: true
+      })
+    );
+    expect(preview.ok).toBe(true);
+    expect(preview.result.user).toMatchObject({ id: "player-1" });
+    expect(users().get("player-1").pronouns).toBe("");
+
+    const response = await router.route(
+      createRequest("user.update", { userId: "player-1", patch: { pronouns: "she/her" } })
+    );
+    expect(response.ok).toBe(true);
+    expect(users().get("player-1").pronouns).toBe("she/her");
+  });
+
+  it("deletes another user and confirms the world's user list dropped it", async () => {
+    const preview = await router.route(createRequest("user.delete", { userId: "player-2", dryRun: true }));
+    expect(preview.result).toMatchObject({ id: "player-2", deleted: false, dryRun: true });
+    expect(users().get("player-2")).not.toBeNull();
+
+    const response = await router.route(createRequest("user.delete", { userId: "player-2" }));
+    expect(response.result).toMatchObject({ id: "player-2", deleted: true });
+    expect(users().get("player-2")).toBeNull();
+  });
+
+  it("refuses to delete or demote the user this bridge runs through, preview included", async () => {
+    for (const params of [
+      { command: "user.delete", params: { userId: "user-1" } },
+      { command: "user.delete", params: { userId: "user-1", dryRun: true } },
+      { command: "user.role.set", params: { userId: "user-1", role: 1 } },
+      { command: "user.role.set", params: { userId: "user-1", role: 1, dryRun: true } },
+      {
+        command: "user.permissions.set",
+        params: { userId: "user-1", permissions: { BROADCAST_AUDIO: false } }
+      },
+      {
+        command: "user.permissions.set",
+        params: { userId: "user-1", permissions: { BROADCAST_AUDIO: false }, dryRun: true }
+      }
+    ]) {
+      const response = await router.route(createRequest(params.command, params.params));
+
+      expect(response.ok, JSON.stringify(params)).toBe(false);
+      expect(response.error.code).toBe(ERROR_CODES.USER_SELF_PROTECTED);
+      expect(response.error.details).toMatchObject({ userId: "user-1", command: params.command });
+    }
+
+    expect(users().get("user-1").role).toBe(4);
+    expect(users().get("user-1").delete).not.toHaveBeenCalled();
+  });
+
+  it("refuses a user write when the client cannot say which account the bridge runs through", async () => {
+    globalThis.game.user.id = null;
+
+    const response = await router.route(createRequest("user.delete", { userId: "player-2" }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.BRIDGE_NOT_READY);
+    expect(response.error.details).toMatchObject({ userId: "player-2", command: "user.delete" });
+    expect(users().get("player-2")).not.toBeNull();
+  });
+
+  it("changes another user's role, names it, and reports a request for the stored role as a no-op", async () => {
+    const response = await router.route(createRequest("user.role.set", { userId: "player-1", role: 3 }));
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toEqual({
+      userId: "player-1",
+      previousRole: 1,
+      role: 3,
+      roleName: "ASSISTANT",
+      changed: true
+    });
+    expect(users().get("player-1").role).toBe(3);
+
+    const again = await router.route(createRequest("user.role.set", { userId: "player-1", role: 3 }));
+    expect(again.result).toMatchObject({ changed: false, previousRole: 3 });
+  });
+
+  it("reports a role change Foundry silently refused", async () => {
+    users().get("player-1").update = vi.fn(async () => users().get("player-1"));
+
+    const response = await router.route(createRequest("user.role.set", { userId: "player-1", role: 3 }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.details).toMatchObject({ requested: 3, stored: 1 });
+  });
+
+  it("maps Foundry's own refusal to a permission error", async () => {
+    users().get("player-1").update = vi.fn(async () => {
+      throw new Error("You are not authorized to perform this role change");
+    });
+
+    const response = await router.route(createRequest("user.role.set", { userId: "player-1", role: 3 }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.PERMISSION_DENIED);
+    expect(response.error.details.message).toContain("not authorized");
+  });
+
+  it("grants, revokes and clears a permission override and reports the effective map", async () => {
+    const granted = await router.route(
+      createRequest("user.permissions.set", {
+        userId: "player-1",
+        permissions: { MACRO_SCRIPT: false, TOKEN_CREATE: true }
+      })
+    );
+
+    expect(granted.ok).toBe(true);
+    expect(granted.result.overrides).toEqual({
+      FILES_UPLOAD: true,
+      MACRO_SCRIPT: false,
+      TOKEN_CREATE: true
+    });
+    expect(granted.result.permissions).toMatchObject({
+      MACRO_SCRIPT: false,
+      TOKEN_CREATE: true,
+      ACTOR_CREATE: false
+    });
+    expect(granted.result.role).toBe(1);
+
+    const cleared = await router.route(
+      createRequest("user.permissions.set", { userId: "player-1", permissions: { MACRO_SCRIPT: null } })
+    );
+
+    expect(cleared.ok).toBe(true);
+    expect(cleared.result.overrides).toEqual({ FILES_UPLOAD: true, TOKEN_CREATE: true });
+    expect(cleared.result.permissions.MACRO_SCRIPT).toBe(true);
+  });
+
+  it("previews a permission write without changing the stored overrides", async () => {
+    const response = await router.route(
+      createRequest("user.permissions.set", {
+        userId: "player-1",
+        permissions: { ACTOR_CREATE: true },
+        dryRun: true
+      })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toMatchObject({ dryRun: true, requested: { ACTOR_CREATE: true } });
+    expect(response.result.overrides).toEqual({ FILES_UPLOAD: true });
+    expect(users().get("player-1").permissions).toEqual({ FILES_UPLOAD: true });
+  });
+
+  it("refuses a permission name this Foundry version does not define", async () => {
+    const response = await router.route(
+      createRequest("user.permissions.set", { userId: "player-1", permissions: { FLY_ANYWHERE: true } })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(response.error.details.unknown).toEqual(["FLY_ANYWHERE"]);
+    expect(response.error.details.known).toContain("MACRO_SCRIPT");
+  });
+
+  it("refuses a role Foundry does not let a user hold", async () => {
+    globalThis.CONST.USER_ROLES = { NONE: 0, PLAYER: 1, GAMEMASTER: 4 };
+
+    const response = await router.route(createRequest("user.role.set", { userId: "player-1", role: 3 }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(response.error.details.assignable).toEqual({ PLAYER: 1, GAMEMASTER: 4 });
+  });
+
+  it("reports an unknown user for every write", async () => {
+    /** @type {Array<{ command: string, params: any }>} */
+    const writes = [
+      { command: "user.update", params: { userId: "ghost", patch: { pronouns: "they/them" } } },
+      { command: "user.delete", params: { userId: "ghost" } },
+      { command: "user.role.set", params: { userId: "ghost", role: 2 } },
+      { command: "user.permissions.set", params: { userId: "ghost", permissions: { MACRO_SCRIPT: true } } }
+    ];
+    for (const { command, params } of writes) {
+      const response = await router.route(createRequest(command, params));
+
+      expect(response.ok, command).toBe(false);
+      expect(response.error.code, command).toBe(ERROR_CODES.USER_NOT_FOUND);
+    }
+  });
+});

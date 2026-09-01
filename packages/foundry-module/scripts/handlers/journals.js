@@ -14,9 +14,11 @@ import {
   journalPagesReferencingCategory,
   previewJournalCategoryCreate,
   previewJournalUpdate,
+  resolveJournalCollection,
   updateJournalCategory,
   updateJournalPages
 } from "../lib/journal-docs.js";
+import { resolveBroadcastUsers } from "../lib/broadcast-targets.js";
 import { assertTableFamilyDeleteCommitted, assertTableFamilyUpdateCommitted } from "../lib/table-docs.js";
 import {
   cloneDocument,
@@ -276,6 +278,42 @@ export function createJournalHandlers() {
       return {
         id,
         deleted: true
+      };
+    },
+
+    async "journal.show"(params) {
+      const journal = getJournalById(params.journalId);
+      const journalId = journal.id ?? params.journalId;
+      const force = params.force === true;
+      const users = resolveBroadcastUsers(params.userIds);
+
+      if (journal.isOwner === false) {
+        throw createBridgeError(
+          ERROR_CODES.PERMISSION_DENIED,
+          `Foundry only lets an OWNER of journal ${journalId} show it to players, and this GM user is not one. ` +
+            `Grant ownership with \`journal ownership set\`. Nothing was shown`,
+          { journalId }
+        );
+      }
+
+      const Journal = resolveJournalCollection();
+      if (typeof Journal?.show !== "function") {
+        throw createBridgeError(
+          ERROR_CODES.UNSUPPORTED_OPERATION,
+          "This Foundry version exposes no journal-sharing API (Journal.show); nothing was shown",
+          { journalId }
+        );
+      }
+
+      await Journal.show(journal, { force, users: users.requested ?? [] });
+
+      return {
+        journalId,
+        force,
+        userIds: users.requested,
+        activeUserIds: users.active,
+        inactiveUserIds: users.inactive,
+        dispatched: true
       };
     },
 

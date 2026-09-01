@@ -28,6 +28,8 @@ import { createItemEffectHandlers } from "./handlers/item-effects.js";
 import { createSceneTokenEffectHandlers } from "./handlers/scene-token-effects.js";
 import { createFileHandlers } from "./handlers/files.js";
 import { createFolderHandlers } from "./handlers/folders.js";
+import { createGameHandlers } from "./handlers/game.js";
+import { createImageHandlers } from "./handlers/image.js";
 import { createItemHandlers } from "./handlers/items.js";
 import { createJournalHandlers } from "./handlers/journals.js";
 import { createMacroHandlers } from "./handlers/macros.js";
@@ -132,6 +134,8 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
     ...createCombatHandlers(),
     ...createCompendiumHandlers(),
     ...createFolderHandlers(),
+    ...createGameHandlers(),
+    ...createImageHandlers(),
     ...createFileHandlers(),
     ...createJournalHandlers(),
     ...createMacroHandlers(),

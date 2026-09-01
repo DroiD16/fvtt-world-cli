@@ -1,12 +1,18 @@
+import { MACRO_EXECUTE_TIMEOUT_DEFAULT_MS, MODULE_ID } from "./generated/protocol.js";
 import { format, localize } from "./lib/i18n.js";
 import { readApprovalSoundEnabled } from "./lib/policy.js";
+import { suppliedExecutableBehaviorField } from "./lib/region-behavior-guards.js";
+import { getSceneRegionBehaviorById } from "./lib/region-behaviors.js";
 import { utf8ByteLength } from "./lib/setting-values.js";
+import { assignableUserRoles } from "./lib/validators.js";
 
 /** @typedef {import("./lib/approval-store.js").ApprovalStore} ApprovalStore */
 /** @typedef {import("./lib/approval-store.js").ApprovalQueueView} ApprovalQueueView */
 /** @typedef {import("./lib/approval-store.js").ApprovalRequestView} ApprovalRequestView */
 /** @typedef {import("./lib/approval-targets.js").ApprovalTargetSummary} ApprovalTargetSummary */
 /** @typedef {{ role: string | null, label: string | null, type: string | null, missing: boolean, unnamed: boolean, parents: string }} ApprovalTargetRow */
+/** @typedef {{ key: string | null, name: string | null, value: string }} ApprovalDetailRow */
+/** @typedef {{ rows: ApprovalDetailRow[], omitted: number, body: string | null }} ApprovalDetails */
 /**
  * @typedef {{
  *   command: string,
@@ -16,6 +22,9 @@ import { utf8ByteLength } from "./lib/setting-values.js";
  *   descriptor: { key: string, value: string }[],
  *   hasTargets: boolean,
  *   omitted: number,
+ *   details: ApprovalDetailRow[],
+ *   detailsOmitted: number,
+ *   body: string | null,
  *   params: { json: string, bytes: number },
  *   timeoutMinutes: number,
  *   expiresAt: number
@@ -47,6 +56,15 @@ const NO_TARGET_SUMMARY = Object.freeze({
 });
 
 const APPROVAL_PARAM_TEXT_MAX_CHARS = 16_384;
+
+const APPROVAL_DETAIL_DISPLAY_MAX = 25;
+
+const DIFF_SEPARATOR = " → ";
+
+const EVENT_SEPARATOR = ", ";
+
+/** @type {ApprovalDetails} */
+const NO_DETAILS = Object.freeze({ rows: [], omitted: 0, body: null });
 
 /**
  * @param {string} value
@@ -127,12 +145,424 @@ function prepareTargetRows(summary) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+function readableString(value) {
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {number | null}
+ */
+function readableCount(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * @param {string | null} key
+ * @param {string | null} name
+ * @param {string} value
+ * @returns {ApprovalDetailRow}
+ */
+function detailRow(key, name, value) {
+  return { key, name, value };
+}
+
+/**
+ * @param {string} text
+ * @returns {string}
+ */
+function boundedText(text) {
+  return text.length > APPROVAL_PARAM_TEXT_MAX_CHARS
+    ? format("FVTTWORLDCLI.Approval.RedactedText", { characters: text.length })
+    : text;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function describeValue(value) {
+  if (value === undefined) return localize("FVTTWORLDCLI.Approval.ValueAbsent");
+  const text = readableString(JSON.stringify(value));
+  return text === null ? localize("FVTTWORLDCLI.Approval.ValueUnreadable") : boundedText(text);
+}
+
+/**
+ * @param {string} namespace
+ * @param {string} key
+ * @returns {string}
+ */
+function readSettingValue(namespace, key) {
+  if (namespace === MODULE_ID) return localize("FVTTWORLDCLI.Approval.ValueRedacted");
+
+  try {
+    const settings = /** @type {any} */ (globalThis).game?.settings;
+    if (!settings?.settings?.get(`${namespace}.${key}`)) {
+      return localize("FVTTWORLDCLI.Approval.SettingUnregistered");
+    }
+
+    return describeValue(settings.get(namespace, key));
+  } catch {
+    return localize("FVTTWORLDCLI.Approval.ValueUnreadable");
+  }
+}
+
+/**
+ * @param {any} item
+ * @returns {string}
+ */
+function settingDiff(item) {
+  const requested =
+    item?.namespace === MODULE_ID
+      ? localize("FVTTWORLDCLI.Approval.ValueRedacted")
+      : describeValue(item?.value);
+  return `${readSettingValue(String(item?.namespace), String(item?.key))}${DIFF_SEPARATOR}${requested}`;
+}
+
+/**
+ * @param {unknown} role
+ * @returns {string}
+ */
+function describeRole(role) {
+  if (readableCount(role) === null) return localize("FVTTWORLDCLI.Approval.ValueAbsent");
+
+  try {
+    const name = Object.entries(assignableUserRoles()).find(([, value]) => value === role)?.[0];
+    return name ? `${name} (${role})` : String(role);
+  } catch {
+    return String(role);
+  }
+}
+
+/**
+ * @param {unknown} role
+ * @returns {string}
+ */
+function describeCreatedUserRole(role) {
+  if (readableCount(role) !== null) return describeRole(role);
+
+  const fallback = /** @type {any} */ (globalThis).CONST?.USER_ROLES?.PLAYER;
+  return readableCount(fallback) === null
+    ? localize("FVTTWORLDCLI.Approval.ValueAbsent")
+    : format("FVTTWORLDCLI.Approval.RoleDefault", { role: describeRole(fallback) });
+}
+
+/**
+ * @param {unknown} override
+ * @returns {string}
+ */
+function describeOverride(override) {
+  if (override === true) return localize("FVTTWORLDCLI.Approval.PermissionGranted");
+  if (override === false) return localize("FVTTWORLDCLI.Approval.PermissionRevoked");
+  return localize("FVTTWORLDCLI.Approval.PermissionRoleDefault");
+}
+
+/**
+ * @param {string} uuid
+ * @returns {string | null}
+ */
+function resolveMacroName(uuid) {
+  try {
+    return readableString(/** @type {any} */ (globalThis).fromUuidSync?.(uuid)?.name);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {unknown} uuid
+ * @returns {string}
+ */
+function describeMacroReference(uuid) {
+  const reference = readableString(uuid);
+  if (reference === null) return localize("FVTTWORLDCLI.Approval.ValueAbsent");
+  const name = resolveMacroName(reference);
+
+  return name === null
+    ? format("FVTTWORLDCLI.Approval.MacroNotFound", { uuid: reference })
+    : `${name} [${reference}]`;
+}
+
+/**
+ * @param {any} params
+ * @returns {ApprovalDetails}
+ */
+function macroExecuteDetails(params) {
+  const macro = /** @type {any} */ (globalThis).game?.macros?.get?.(params?.macroId) ?? null;
+  const timeoutMs = readableCount(params?.timeoutMs) ?? MACRO_EXECUTE_TIMEOUT_DEFAULT_MS;
+  const command = readableString(macro?.command);
+  const missing = format("FVTTWORLDCLI.Approval.MacroIdNotFound", {
+    macroId: readableString(params?.macroId) ?? ""
+  });
+
+  return {
+    rows: [
+      detailRow(
+        "FVTTWORLDCLI.Approval.DetailMacroType",
+        null,
+        macro === null
+          ? missing
+          : (readableString(macro.type) ?? localize("FVTTWORLDCLI.Approval.ValueAbsent"))
+      ),
+      detailRow(
+        "FVTTWORLDCLI.Approval.DetailTimeout",
+        null,
+        format("FVTTWORLDCLI.Approval.TimeoutSeconds", { seconds: Math.ceil(timeoutMs / 1000) })
+      )
+    ],
+    omitted: 0,
+    body:
+      macro === null
+        ? missing
+        : command === null
+          ? localize("FVTTWORLDCLI.Approval.MacroBodyEmpty")
+          : boundedText(command)
+  };
+}
+
+/**
+ * @param {any} params
+ * @returns {ApprovalDetails}
+ */
+function settingSetDetails(params) {
+  return {
+    rows: [detailRow("FVTTWORLDCLI.Approval.DetailValue", null, settingDiff(params))],
+    omitted: 0,
+    body: null
+  };
+}
+
+/**
+ * @param {any} params
+ * @returns {ApprovalDetails}
+ */
+function settingSetManyDetails(params) {
+  const items = Array.isArray(params?.items) ? params.items : [];
+  const shown = items.slice(0, APPROVAL_DETAIL_DISPLAY_MAX);
+
+  return {
+    rows: shown.map((/** @type {any} */ item) =>
+      detailRow(null, `${item?.namespace}.${item?.key}`, settingDiff(item))
+    ),
+    omitted: items.length - shown.length,
+    body: null
+  };
+}
+
+/**
+ * @param {any} params
+ * @returns {ApprovalDetails}
+ */
+function userRoleDetails(params) {
+  const current = /** @type {any} */ (globalThis).game?.users?.get?.(params?.userId)?.role;
+
+  return {
+    rows: [
+      detailRow(
+        "FVTTWORLDCLI.Approval.DetailRole",
+        null,
+        `${describeRole(current)}${DIFF_SEPARATOR}${describeRole(params?.role)}`
+      )
+    ],
+    omitted: 0,
+    body: null
+  };
+}
+
+/**
+ * @param {any} params
+ * @returns {ApprovalDetails}
+ */
+function userPermissionDetails(params) {
+  const overrides = /** @type {any} */ (globalThis).game?.users?.get?.(params?.userId)?.permissions ?? {};
+  const requested = Object.entries(params?.permissions ?? {});
+  const shown = requested.slice(0, APPROVAL_DETAIL_DISPLAY_MAX);
+
+  return {
+    rows: shown.map(([name, value]) =>
+      detailRow(
+        null,
+        name,
+        `${describeOverride(Object.hasOwn(overrides, name) ? overrides[name] : undefined)}${DIFF_SEPARATOR}${describeOverride(value)}`
+      )
+    ),
+    omitted: requested.length - shown.length,
+    body: null
+  };
+}
+
+/**
+ * @returns {ApprovalDetails}
+ */
+function chatFlushDetails() {
+  const size = readableCount(/** @type {any} */ (globalThis).game?.messages?.size);
+
+  return {
+    rows: [
+      detailRow(
+        "FVTTWORLDCLI.Approval.DetailMessages",
+        null,
+        size === null ? localize("FVTTWORLDCLI.Approval.ValueUnreadable") : String(size)
+      )
+    ],
+    omitted: 0,
+    body: null
+  };
+}
+
+/**
+ * @param {any} params
+ * @returns {ApprovalDetails}
+ */
+function gamePauseDetails(params) {
+  const current = /** @type {any} */ (globalThis).game?.paused;
+
+  return {
+    rows: [
+      detailRow(
+        "FVTTWORLDCLI.Approval.DetailPaused",
+        null,
+        `${describeValue(Boolean(current))}${DIFF_SEPARATOR}${describeValue(params?.paused)}`
+      )
+    ],
+    omitted: 0,
+    body: null
+  };
+}
+
+/**
+ * @returns {ApprovalDetails}
+ */
+function systemReloadDetails() {
+  return {
+    rows: [
+      detailRow("FVTTWORLDCLI.Approval.DetailReload", null, localize("FVTTWORLDCLI.Approval.ReloadWarning"))
+    ],
+    omitted: 0,
+    body: null
+  };
+}
+
+/**
+ * @param {any} params
+ * @returns {Record<string, any> | null}
+ */
+function storedBehaviorSystem(params) {
+  if (typeof params?.behaviorId !== "string") return null;
+
+  try {
+    const { behavior } = getSceneRegionBehaviorById(params.sceneId, params.regionId, params.behaviorId);
+    const source =
+      behavior?._source ?? (typeof behavior?.toObject === "function" ? behavior.toObject() : behavior);
+    const system = source?.system ?? null;
+    return system && typeof system === "object" ? system : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {any} params
+ * @returns {{ uuid: unknown, events: unknown, everyone: unknown }}
+ */
+function executableBehaviorValues(params) {
+  const payload = params?.data ?? params?.patch ?? null;
+  const stored = storedBehaviorSystem(params);
+  const effective = (/** @type {string} */ field) => {
+    const supplied = suppliedExecutableBehaviorField(payload, field);
+    return supplied.supplied ? supplied.value : stored?.[field];
+  };
+
+  return { uuid: effective("uuid"), events: effective("events"), everyone: effective("everyone") };
+}
+
+/**
+ * @param {any} params
+ * @returns {ApprovalDetails}
+ */
+function executableBehaviorDetails(params) {
+  const { uuid, events, everyone } = executableBehaviorValues(params);
+
+  return {
+    rows: [
+      detailRow("FVTTWORLDCLI.Approval.DetailMacro", null, describeMacroReference(uuid)),
+      detailRow(
+        "FVTTWORLDCLI.Approval.DetailEvents",
+        null,
+        Array.isArray(events) && events.length > 0
+          ? events.join(EVENT_SEPARATOR)
+          : localize("FVTTWORLDCLI.Approval.ValueAbsent")
+      ),
+      detailRow("FVTTWORLDCLI.Approval.DetailEveryone", null, describeValue(everyone))
+    ],
+    omitted: 0,
+    body: null
+  };
+}
+
+/**
+ * @param {any} params
+ * @returns {ApprovalDetails}
+ */
+function userCreateDetails(params) {
+  return {
+    rows: [
+      detailRow(
+        "FVTTWORLDCLI.Approval.DetailUserName",
+        null,
+        readableString(params?.data?.name) ?? localize("FVTTWORLDCLI.Approval.ValueAbsent")
+      ),
+      detailRow("FVTTWORLDCLI.Approval.DetailRole", null, describeCreatedUserRole(params?.data?.role))
+    ],
+    omitted: 0,
+    body: null
+  };
+}
+
+const DETAIL_BUILDERS = Object.freeze({
+  "macro.execute": macroExecuteDetails,
+  "setting.set": settingSetDetails,
+  "setting.set-many": settingSetManyDetails,
+  "user.create": userCreateDetails,
+  "user.role.set": userRoleDetails,
+  "user.permissions.set": userPermissionDetails,
+  "chat.flush": chatFlushDetails,
+  "game.pause": gamePauseDetails,
+  "system.reload": systemReloadDetails,
+  "scene.region.behavior.executable.create": executableBehaviorDetails,
+  "scene.region.behavior.executable.update": executableBehaviorDetails,
+  "scene.region.behavior.executable.clone": executableBehaviorDetails
+});
+
+/**
+ * @param {string} command
+ * @param {unknown} params
+ * @returns {ApprovalDetails}
+ */
+export function buildApprovalDetails(command, params) {
+  const build = Object.hasOwn(DETAIL_BUILDERS, command)
+    ? DETAIL_BUILDERS[/** @type {keyof typeof DETAIL_BUILDERS} */ (command)]
+    : null;
+  if (build === null) return NO_DETAILS;
+
+  try {
+    return build(params);
+  } catch {
+    return NO_DETAILS;
+  }
+}
+
+/**
  * @param {ApprovalRequestView} request
  * @returns {PreparedApprovalRequest}
  */
 function prepareRequest(request) {
   const summary = /** @type {ApprovalTargetSummary} */ (request.targets ?? NO_TARGET_SUMMARY);
   const rows = prepareTargetRows(summary);
+  const details = buildApprovalDetails(request.command, request.params);
 
   return {
     command: request.command,
@@ -142,6 +572,9 @@ function prepareRequest(request) {
     descriptor: summary.descriptor,
     hasTargets: rows.length > 0 || summary.descriptor.length > 0,
     omitted: summary.omittedCount,
+    details: details.rows,
+    detailsOmitted: details.omitted,
+    body: details.body,
     params: formatApprovalParams(request.params),
     timeoutMinutes: Math.max(1, Math.round((request.expiresAt - request.createdAt) / MS_PER_MINUTE)),
     expiresAt: request.expiresAt

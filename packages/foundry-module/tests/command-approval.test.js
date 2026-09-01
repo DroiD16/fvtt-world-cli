@@ -329,6 +329,344 @@ describe("Command approval window", () => {
     expect(rendered.json).toContain("kept");
   });
 
+  it("shows the macro body and type a macro execution would run, not just its id", async () => {
+    const store = createStore();
+    admit(store, "macro.execute", { macroId: "macro-1", timeoutMs: 45_000 });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).body).toBe("console.log('heal');");
+    expect(shown(context).details.map((/** @type {any} */ row) => [row.key, row.name, row.value])).toEqual([
+      ["FVTTWORLDCLI.Approval.DetailMacroType", null, "script"],
+      ["FVTTWORLDCLI.Approval.DetailTimeout", null, "45 seconds"]
+    ]);
+    expect(TEMPLATE).toContain("{{request.body}}");
+    expect(TEMPLATE).toMatch(/localize\s+this\.key/);
+  });
+
+  it("says a macro with no body has none rather than leaving the block blank", async () => {
+    const store = createStore();
+    globalThis.game.macros.get("macro-1").command = "";
+    admit(store, "macro.execute", { macroId: "macro-1" });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).body).toBe("(empty)");
+    expect(shown(context).details[1].value).toBe("30 seconds");
+  });
+
+  it("summarizes a macro body too long to read instead of filling the window with it", async () => {
+    const store = createStore();
+    globalThis.game.macros.get("macro-1").command = "x".repeat(20_000);
+    admit(store, "macro.execute", { macroId: "macro-1" });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).body).toBe("<text: 20000 characters>");
+  });
+
+  it("shows a setting write as the change it makes, reading the stored value now", async () => {
+    const store = createStore();
+    globalThis.game.settings.register("core", "chatBubbles", { scope: "client", default: true });
+    admit(store, "setting.set", { namespace: "core", key: "chatBubbles", value: false });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details).toEqual([
+      { key: "FVTTWORLDCLI.Approval.DetailValue", name: null, value: "true → false" }
+    ]);
+  });
+
+  it("says a setting nothing registered has no stored value instead of inventing one", async () => {
+    const store = createStore();
+    admit(store, "setting.set", { namespace: "ghost", key: "gone", value: 1 });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details[0].value).toBe("(not registered on this client) → 1");
+  });
+
+  it("never reads or shows a value in this module's own namespace", async () => {
+    const store = createStore();
+    admit(store, "setting.set", {
+      namespace: MODULE_ID,
+      key: MODULE_SETTING_KEYS.COMMAND_POLICY,
+      value: { profile: "open" }
+    });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details[0].value).toBe("(redacted) → (redacted)");
+    expect(JSON.stringify(shown(context).details)).not.toContain("open");
+  });
+
+  it("shows one diff row per element of a batch write and caps how many it renders", async () => {
+    const store = createStore();
+    globalThis.game.settings.register("core", "a", { scope: "world", default: 1 });
+    const items = [
+      { namespace: "core", key: "a", value: 2 },
+      ...Array.from({ length: 30 }, (_unused, index) => ({
+        namespace: "core",
+        key: `bulk-${index}`,
+        value: index
+      }))
+    ];
+    admit(store, "setting.set-many", { items });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details).toHaveLength(25);
+    expect(shown(context).details[0]).toEqual({ key: null, name: "core.a", value: "1 → 2" });
+    expect(shown(context).detailsOmitted).toBe(6);
+    expect(TEMPLATE).toContain("count=request.detailsOmitted");
+  });
+
+  it("shows a role change as the role the user holds now beside the requested one", async () => {
+    const store = createStore();
+    admit(store, "user.role.set", { userId: "player-1", role: 3 });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details).toEqual([
+      { key: "FVTTWORLDCLI.Approval.DetailRole", name: null, value: "PLAYER (1) → ASSISTANT (3)" }
+    ]);
+  });
+
+  it("shows each permission override against what the user already has", async () => {
+    const store = createStore();
+    admit(store, "user.permissions.set", {
+      userId: "player-1",
+      permissions: { FILES_UPLOAD: false, MACRO_SCRIPT: true, BROADCAST_AUDIO: null }
+    });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details.map((/** @type {any} */ row) => [row.name, row.value])).toEqual([
+      ["FILES_UPLOAD", "granted → revoked"],
+      ["MACRO_SCRIPT", "role default → granted"],
+      ["BROADCAST_AUDIO", "role default → role default"]
+    ]);
+  });
+
+  it("counts the chat log a flush would destroy", async () => {
+    const store = createStore();
+    admit(store, "chat.flush", {});
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details).toEqual([
+      {
+        key: "FVTTWORLDCLI.Approval.DetailMessages",
+        name: null,
+        value: String(globalThis.game.messages.size)
+      }
+    ]);
+  });
+
+  it("shows a pause request against the state the world is in", async () => {
+    const store = createStore();
+    admit(store, "game.pause", { paused: true });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details).toEqual([
+      { key: "FVTTWORLDCLI.Approval.DetailPaused", name: null, value: "false → true" }
+    ]);
+  });
+
+  it("warns that a reload drops the bridge, because the command names no target at all", async () => {
+    const store = createStore();
+    admit(store, "system.reload", {});
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).hasTargets).toBe(false);
+    expect(shown(context).details[0].key).toBe("FVTTWORLDCLI.Approval.DetailReload");
+    expect(shown(context).details[0].value).toMatch(/reloads immediately/);
+  });
+
+  it("names the macro an armed behavior would run, its events and its reach", async () => {
+    const store = createStore();
+    admit(store, "scene.region.behavior.executable.create", {
+      sceneId: "scene-1",
+      regionId: "region-lava",
+      data: {
+        type: "executeMacro",
+        system: { uuid: "Macro.macro-1", events: ["tokenEnter", "tokenExit"], everyone: true }
+      }
+    });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details.map((/** @type {any} */ row) => [row.key, row.value])).toEqual([
+      ["FVTTWORLDCLI.Approval.DetailMacro", "Heal Macro [Macro.macro-1]"],
+      ["FVTTWORLDCLI.Approval.DetailEvents", "tokenEnter, tokenExit"],
+      ["FVTTWORLDCLI.Approval.DetailEveryone", "true"]
+    ]);
+  });
+
+  it("says an armed behavior points at no macro this world holds", async () => {
+    const store = createStore();
+    admit(store, "scene.region.behavior.executable.update", {
+      sceneId: "scene-1",
+      regionId: "region-safe",
+      behaviorId: "behavior-macro",
+      patch: { system: { uuid: "Macro.ghost" } }
+    });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details[0].value).toBe("no macro with UUID Macro.ghost in this world");
+    expect(shown(context).details[1].value).toBe("(not set)");
+  });
+
+  it("reads the stored behavior when a clone carries no payload of its own", async () => {
+    const store = createStore();
+    admit(store, "scene.region.behavior.executable.clone", {
+      sceneId: "scene-1",
+      regionId: "region-safe",
+      behaviorId: "behavior-macro"
+    });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details.map((/** @type {any} */ row) => row.value)).toEqual([
+      "no macro with UUID Macro.abc in this world",
+      "(not set)",
+      "(not set)"
+    ]);
+  });
+
+  it("resolves a dotted patch key against the stored behavior it edits", async () => {
+    const store = createStore();
+    admit(store, "scene.region.behavior.executable.update", {
+      sceneId: "scene-1",
+      regionId: "region-safe",
+      behaviorId: "behavior-macro",
+      patch: { "system.uuid": "Macro.macro-1", "system.everyone": true }
+    });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details.map((/** @type {any} */ row) => row.value)).toEqual([
+      "Heal Macro [Macro.macro-1]",
+      "(not set)",
+      "true"
+    ]);
+  });
+
+  it("never names a macro an operator-spelled 'system' carries, because that spelling never runs", async () => {
+    const spellings = [
+      { "==system": { uuid: "Macro.macro-1", everyone: true } },
+      { "==system": { uuid: "Macro.macro-1" }, system: { events: ["tokenEnter"] } },
+      { "==system.uuid": "Macro.macro-1" },
+      { "-=system": null },
+      { "-=system.uuid": null },
+      { "system.==uuid": "Macro.macro-1" },
+      { "system.-=uuid": null },
+      { system: { "==uuid": "Macro.macro-1" } },
+      { system: { "-=uuid": null } }
+    ];
+
+    for (const patch of spellings) {
+      const store = createStore();
+      admit(store, "scene.region.behavior.executable.update", {
+        sceneId: "scene-1",
+        regionId: "region-safe",
+        behaviorId: "behavior-macro",
+        patch
+      });
+      const { app } = application(store);
+
+      const context = await app._prepareContext();
+      const values = shown(context)
+        .details.map((/** @type {any} */ row) => row.value)
+        .join(" | ");
+
+      expect(values, JSON.stringify(patch)).not.toContain("Macro.macro-1");
+      expect(values, JSON.stringify(patch)).not.toContain("Heal Macro");
+    }
+  });
+
+  it("shows the name and role a new user would be created with", async () => {
+    const store = createStore();
+    admit(store, "user.create", { data: { name: "Scribe", role: 4 } });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details.map((/** @type {any} */ row) => [row.key, row.value])).toEqual([
+      ["FVTTWORLDCLI.Approval.DetailUserName", "Scribe"],
+      ["FVTTWORLDCLI.Approval.DetailRole", "GAMEMASTER (4)"]
+    ]);
+  });
+
+  it("names the role Foundry would give a new user the command did not ask a role for", async () => {
+    const store = createStore();
+    admit(store, "user.create", { data: { name: "Scribe" } });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details[1].value).toContain("PLAYER (1)");
+  });
+
+  it("says a macro execution names no macro this world holds", async () => {
+    const store = createStore();
+    admit(store, "macro.execute", { macroId: "ghost" });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details[0].value).toBe(
+      "no macro with id ghost in this world, so this command would fail"
+    );
+    expect(shown(context).body).toBe(shown(context).details[0].value);
+  });
+
+  it("adds no detail rows to a command whose parameters already say everything", async () => {
+    const store = createStore();
+    admit(store, "actor.update", { actorId: "actor-1", patch: { name: "Valeros the Bold" } });
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details).toEqual([]);
+    expect(shown(context).detailsOmitted).toBe(0);
+    expect(shown(context).body).toBeNull();
+  });
+
+  it("renders a request whose live reads all fail instead of throwing at the GM", async () => {
+    const store = createStore();
+    admit(store, "macro.execute", { macroId: "macro-1" });
+    const { app } = application(store);
+    globalThis.game.macros.get = () => {
+      throw new Error("collection unavailable");
+    };
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).details).toEqual([]);
+    expect(shown(context).body).toBeNull();
+    expect(shown(context).command).toBe("macro.execute");
+  });
+
   it("opens on the first arrival and pings once for every request that arrives", async () => {
     const store = createStore();
     createApprovalWindow({ approvalStore: store });

@@ -6,10 +6,11 @@ import {
   createJournalCloneParams,
   createJournalCreateParams,
   createJournalUpdateParams,
+  booleanField,
   type JournalCategoryFieldOptions
 } from "../params.js";
 import { executeRemoteCommand } from "../exec.js";
-import { parseCsvList, parseIdList } from "../parse.js";
+import { parseBoolean, parseCsvList, parseIdList } from "../parse.js";
 import {
   JOURNAL_CATEGORY_NAME_HELP,
   addJournalCategoryFieldOptions,
@@ -261,6 +262,34 @@ export function registerJournal({ program, dependencies }: RegistrationContext) 
       await executeRemoteCommand({
         commandName: "journal.category.delete",
         params: { journalId: options.journalId, categoryId: options.categoryId },
+        command: this,
+        dependencies
+      });
+    });
+
+  journal
+    .command("show")
+    .description("Open a journal entry in other users' browsers (a broadcast, not a mutation)")
+    .requiredOption("--journal-id <journalId>", "Journal entry id")
+    .addOption(
+      new Option(
+        "--force <force>",
+        "Push the entry even to users who cannot normally see it (true|false)"
+      ).argParser(parseBoolean)
+    )
+    .option(
+      "--user-ids <list>",
+      "Comma-separated user ids to show it to (default: every user); offline users are reported as skipped",
+      (value: string) => parseCsvList(value, "--user-ids")
+    )
+    .action(async function showJournal(options: { journalId: string; force?: boolean; userIds?: string[] }) {
+      await executeRemoteCommand({
+        commandName: "journal.show",
+        params: {
+          journalId: options.journalId,
+          ...booleanField("force", options.force),
+          ...(options.userIds ? { userIds: options.userIds } : {})
+        },
         command: this,
         dependencies
       });

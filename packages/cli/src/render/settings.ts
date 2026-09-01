@@ -17,6 +17,56 @@ export function renderSettingSummaryLine(setting: any): string {
   ].join("\t");
 }
 
+function renderSettingValue(value: unknown): string {
+  return JSON.stringify(value ?? null, null, 2);
+}
+
+export function renderSettingWriteLines(row: any, dryRun: boolean): string[] {
+  const verb = dryRun ? "would write" : row?.changed ? "wrote" : "left unchanged";
+  return [
+    `${verb}: ${row?.id ?? `${row?.namespace}.${row?.key}`} (scope: ${row?.scope ?? "?"})`,
+    `previous: ${renderSettingValue(row?.previous)}`,
+    `${dryRun ? "requested" : "value"}: ${renderSettingValue(row?.value)}`,
+    `changed: ${Boolean(row?.changed)} / validated: ${Boolean(row?.validated)}`,
+    ...(row?.requiresReload
+      ? ["requiresReload: true — Foundry acts on this only after `system reload` or a manual browser reload"]
+      : ["requiresReload: false"])
+  ];
+}
+
+export function renderSettingWriteResult(result: any): string {
+  return renderSettingWriteLines(result, Boolean(result?.dryRun)).join("\n");
+}
+
+export function renderSettingWriteOutcomes(result: any): string {
+  const outcomes = result?.outcomes ?? [];
+  const dryRun = Boolean(result?.dryRun);
+  const lines = [
+    `${dryRun ? "Would write" : "Wrote"} settings (${outcomes.length}) — complete: ${Boolean(result?.complete)}`,
+    ...outcomes.flatMap((outcome: any) =>
+      outcome?.status === "updated" || outcome?.status === "unchanged"
+        ? [
+            `[${outcome.index}] ${outcome.status}`,
+            ...renderSettingWriteLines(outcome, dryRun).map((line) => `  ${line}`)
+          ]
+        : [`[${outcome?.index}] ${outcome?.status}\t${outcome?.id ?? ""}`]
+    )
+  ];
+  if (result?.failure) {
+    lines.push(`failure: ${result.failure.code} — ${result.failure.message}`);
+  }
+  return lines.join("\n");
+}
+
+export function renderSettingBatchRows(setting: any): string[] {
+  return [
+    renderSettingSummaryLine(setting),
+    ...(setting?.error
+      ? [`  error: ${setting.error.code} — ${setting.error.message}`]
+      : [`  value: ${renderSettingValue(setting?.value)}`])
+  ];
+}
+
 export function renderSettingDetails(setting: any): string {
   return [
     `setting: ${setting?.id ?? `${setting?.namespace}.${setting?.key}`}`,

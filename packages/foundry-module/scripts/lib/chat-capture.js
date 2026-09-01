@@ -98,6 +98,41 @@ export function startCombatInitiativeChatCapture(correlationId) {
 }
 
 /**
+ * A macro writes no bridge flag on the messages it creates, so the only correlation available is the
+ * window of the awaited call and the authoring user.
+ * @returns {ChatCapture}
+ */
+export function startAuthoredChatCapture() {
+  const hooks = globalThis.Hooks;
+  if (!hooks || typeof hooks.on !== "function" || typeof hooks.off !== "function") {
+    return { available: false, stop: () => [] };
+  }
+
+  /** @type {string[]} */
+  const ids = [];
+  const userId = globalThis.game?.user?.id ?? null;
+
+  const handler = (/** @type {any} */ message, /** @type {any} */ _options, createdByUserId) => {
+    if (userId && createdByUserId && createdByUserId !== userId) return;
+    const id = message?.id ?? message?._id ?? null;
+    if (typeof id === "string" && id !== "" && !ids.includes(id)) ids.push(id);
+  };
+
+  hooks.on("createChatMessage", handler);
+  let stopped = false;
+  return {
+    available: true,
+    stop() {
+      if (!stopped) {
+        stopped = true;
+        hooks.off("createChatMessage", handler);
+      }
+      return [...ids];
+    }
+  };
+}
+
+/**
  * @param {object} options
  * @param {number} options.expectedCount
  * @param {string[]} options.ids

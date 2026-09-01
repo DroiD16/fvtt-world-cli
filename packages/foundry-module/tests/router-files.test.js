@@ -533,7 +533,8 @@ describe("command router", () => {
     ["worlds/world-1", "the bare world root"],
     ["../secrets", "traversal"],
     ["/etc/passwd", "absolute"],
-    ["worlds/world-1/fvtt-world-cli/%2e%2e/escape.txt", "encoded traversal"]
+    ["worlds/world-1/fvtt-world-cli/%2e%2e/escape.txt", "encoded traversal"],
+    ["worlds/world-1/fvtt-world-cli/%252e%252e/escape.txt", "doubly-encoded traversal"]
   ])(
     "hard-denies file.move with PATH_NOT_ALLOWED for a bad SOURCE before the capability gate (%s)",
     async (from) => {
@@ -560,7 +561,8 @@ describe("command router", () => {
     ["worlds/world-1", "the bare world root"],
     ["../secrets", "traversal"],
     ["/etc/passwd", "absolute"],
-    ["worlds/world-1/fvtt-world-cli/%2e%2e/escape.txt", "encoded traversal"]
+    ["worlds/world-1/fvtt-world-cli/%2e%2e/escape.txt", "encoded traversal"],
+    ["worlds/world-1/fvtt-world-cli/%252e%252e/escape.txt", "doubly-encoded traversal"]
   ])(
     "hard-denies file.move with PATH_NOT_ALLOWED for a bad DESTINATION before the capability gate (%s)",
     async (to) => {

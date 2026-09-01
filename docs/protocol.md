@@ -26,7 +26,7 @@ Mismatch errors identify the older component when the two versions can be ordere
 ## Transport model
 
 The daemon listens on a loopback WebSocket endpoint. Credentials never appear in URLs. A local
-client — the CLI or a future Companion — has no browser Origin and must establish its role with its
+client, the CLI or a future Companion, has no browser Origin and must establish its role with its
 first message: the daemon enforces a short deadline for a valid first frame, closes malformed
 openings immediately, and never assigns a role before authentication has succeeded. Browser sockets
 are identified by their exact HTTP(S) Origin and participate only in pairing and bridge sessions;
@@ -39,7 +39,7 @@ a malformed control request receives a correlated error and may keep using its c
 The daemon accepts one active authenticated bridge at a time:
 
 - another pairing cannot displace the active bridge and is rejected as `BRIDGE_BUSY`;
-- a new socket from the same pairing takes the slot over — the tab-reload recovery path;
+- a new socket from the same pairing takes the slot over, the tab-reload recovery path;
 - a clean goodbye releases the slot immediately, while an abnormal close reserves it briefly for
   the same pairing;
 - a daemon-initiated release is terminal for the released client: it does not reconnect on its
@@ -85,7 +85,7 @@ independent records and neither re-pair disturbs the other.
 
 The bridge hello carries `clientId` at the top level, beside `pairingId` and `credential`, because it
 is authentication material rather than session content: the daemon rejects a hello whose client id
-does not match the stored pairing. The label is not resent on hello — the daemon's pairing record owns
+does not match the stored pairing. The label is not resent on hello; the daemon's pairing record owns
 it, and the browser keeps a copy only to display it.
 
 ## Daemon control
@@ -113,8 +113,8 @@ never stamps it. The pairing that owns the active bridge, and the holder of a li
 abnormal-disconnect lease, are excluded from removal regardless of their timestamps, so pruning can
 never unpair the browser that is connected or the one the daemon is still holding a slot for. The
 config is rewritten only when at least one record is removed. The result is `{ olderThanDays, pruned }`,
-where `olderThanDays` is the cutoff the daemon applied — including the default when the caller omitted
-it — and `pruned` carries the removed records in the same public, digest-free shape `auth.list`
+where `olderThanDays` is the cutoff the daemon applied, including the default when the caller omitted
+it, and `pruned` carries the removed records in the same public, digest-free shape `auth.list`
 serializes. The daemon computes the set at execution time; a caller that previewed candidates from
 `auth.list` holds an advisory list, not the outcome, and the executed set may be wider than that
 preview when a record crosses the cutoff between the two calls.
@@ -156,6 +156,12 @@ exclusive: success carries a result, failure carries a structured error.
 
 Document results live under a type-named key inside the result. Collection, action, and bulk
 results use their documented keys, which vary between commands but are stable for each one.
+Broadcast commands that change no document, pulling users to a scene and showing a journal entry
+or image, report `dispatched` rather than a confirmed post-state, because a socket broadcast offers
+nothing to read back; the result names the users it targeted and the active/inactive split where
+that is knowable. `macro.execute` reports the macro's returned value and observed chat messages,
+and a timeout there is indeterminate: the macro keeps running in the GM client, so `MACRO_TIMEOUT`
+callers verify effects by reads instead of retrying blindly.
 Serialized projections expose `id` as the public identifier; a source `_id` mirror may accompany
 it. A previewed new document has no persistent identity, and an id observed during a preview must
 not be reused. List-like responses that paginate return their collection with a total and a
@@ -167,7 +173,7 @@ Mutation commands accept a dry-run request that passes through validation, resol
 sanitization, permission checks, capability checks, and preparation, then returns before
 persistence using the normal result shape with an explicit dry-run marker. Only values knowable
 before execution are reported: random selection, rendering, hooks, and other execution-dependent
-observations may be absent or explicitly unconfirmed. A successful preview reserves nothing — the
+observations may be absent or explicitly unconfirmed. A successful preview reserves nothing; the
 world can change between preview and commit.
 
 ## Idempotency
@@ -187,6 +193,12 @@ commands over bounded arrays: elements are prevalidated, but Foundry persistence
 transactional, so the result reports overall completeness plus a per-element outcome, and every
 outcome carries its own meaning.
 
+Batch reads (`get-many`) fail the whole request when any requested id cannot be read, with one
+exception: `setting.get-many` reports an unregistered key on its own result row (`SETTING_NOT_FOUND`)
+rather than failing the request, because a world routinely registers settings only for the systems
+and modules it has active, so a partially resolvable set of keys is the normal case rather than an
+error.
+
 ## Error model
 
 Errors have a stable code, a human-readable message, and optional structured details. The code and
@@ -198,13 +210,14 @@ code set is exported by the protocol package. The classes consumers act on:
 | Request/schema | `INVALID_PARAMS`, `UNKNOWN_COMMAND` | Correct the request or resolve version skew |
 | Authentication/permission | `UNAUTHORIZED`, `PERMISSION_DENIED` | Restore credentials or authority |
 | Pairing | `PAIRING_REQUIRED`, `PAIRING_EXPIRED`, `BRIDGE_BUSY` | Pair, retry revocation, or release the active owner as indicated |
-| Lookup | `*_NOT_FOUND` | Refresh ids and world state |
-| Safety/policy | `DELETE_FORBIDDEN`, `PATH_NOT_ALLOWED` | Change the requested operation |
+| Lookup | `*_NOT_FOUND`, `SETTING_UNREGISTERED` | Refresh ids and world state |
+| Safety/policy | `DELETE_FORBIDDEN`, `PATH_NOT_ALLOWED`, `SETTING_PROTECTED`, `USER_SELF_PROTECTED` | Change the requested operation |
 | Capability | `UNSUPPORTED_OPERATION` | Choose a supported workflow or runtime |
 | Size/resource | `PAYLOAD_TOO_LARGE`, `QUERY_TOO_BROAD`, `IDEMPOTENCY_STORE_FULL` | Reduce, page, or resend the request later |
 | Command policy | `COMMAND_DENIED` | Treat the command as unavailable on that GM client |
 | Approval | `APPROVAL_PENDING`, `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED`, `APPROVAL_QUEUE_FULL`, `APPROVAL_UNKNOWN` | Apply the approval rules below |
 | Bridge state | `BRIDGE_NOT_READY`, `BRIDGE_TIMEOUT`, `BRIDGE_DISCONNECTED` | Apply the delivery rules below |
+| Indeterminate outcome | `MACRO_TIMEOUT` | Verify the effect by reads before retrying |
 | Unexpected | `INTERNAL_ERROR` | Preserve details and investigate |
 
 Foundry DataModel validation failures surface as parameter errors and are distinguished in details

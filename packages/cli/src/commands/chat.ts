@@ -73,6 +73,19 @@ export function registerChat({ program, dependencies }: RegistrationContext) {
       });
     });
   chat
+    .command("flush")
+    .description(
+      "Delete the ENTIRE chat log (irreversible). --dry-run reports the message count without deleting anything"
+    )
+    .action(async function flushChat() {
+      await executeRemoteCommand({
+        commandName: "chat.flush",
+        params: {},
+        command: this,
+        dependencies
+      });
+    });
+  chat
     .command("delete")
     .requiredOption("--message-id <messageId>", "Chat message id")
     .action(async function deleteChat(options: { messageId: string }) {

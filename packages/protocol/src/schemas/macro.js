@@ -1,3 +1,4 @@
+import { MACRO_EXECUTE_TIMEOUT_MAX_MS } from "../constants.js";
 import { ownershipLevelSchema, ownershipSetSchema } from "./ownership-users.js";
 import {
   batchIdsProperty,
@@ -31,6 +32,24 @@ const macroDataSchema = {
 };
 
 const macroPatchSchema = patchFrom(macroDataSchema);
+
+const macroExecuteArgsSchema = {
+  ...freeformObjectSchema,
+  propertyNames: { pattern: "^[A-Za-z_$][A-Za-z0-9_$]*$" }
+};
+
+const macroExecuteScopeSchema = {
+  type: "object",
+  required: [],
+  properties: {
+    actorId: { type: "string", minLength: 1 },
+    sceneId: { type: "string", minLength: 1 },
+    tokenId: { type: "string", minLength: 1 },
+    args: macroExecuteArgsSchema
+  },
+  additionalProperties: false,
+  minProperties: 1
+};
 
 const macroIdSchema = {
   type: "object",
@@ -97,6 +116,20 @@ export const macroCommands = {
         patch: macroPatchSchema,
         ...dryRunProperty,
         ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "macro.execute": cmd(
+    {
+      type: "object",
+      required: ["macroId"],
+      properties: {
+        macroId: { type: "string", minLength: 1 },
+        scope: macroExecuteScopeSchema,
+        timeoutMs: { type: "integer", minimum: 1, maximum: MACRO_EXECUTE_TIMEOUT_MAX_MS },
+        ...dryRunProperty
       },
       additionalProperties: false
     },

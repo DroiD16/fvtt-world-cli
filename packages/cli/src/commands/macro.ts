@@ -1,11 +1,15 @@
+import { MACRO_EXECUTE_TIMEOUT_DEFAULT_MS, MACRO_EXECUTE_TIMEOUT_MAX_MS } from "@fvtt-world-cli/protocol";
+import { Option } from "commander";
+
 import {
   createMacroCloneParams,
   createMacroCreateParams,
+  createMacroExecuteParams,
   createMacroUpdateParams,
   resolveMacroCommandBody
 } from "../params.js";
 import { executeRemoteCommand } from "../exec.js";
-import { parseIdList } from "../parse.js";
+import { parseIdList, parsePositiveInt } from "../parse.js";
 import { addMacroFieldOptions } from "./field-options.js";
 import {
   type RegistrationContext,
@@ -151,6 +155,36 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
       await executeRemoteCommand({
         commandName: "macro.delete",
         params: { macroId: options.macroId },
+        command: this,
+        dependencies
+      });
+    });
+
+  macro
+    .command("execute")
+    .description("Run a macro in the GM client and wait for it to finish")
+    .requiredOption("--macro-id <macroId>", "Macro id")
+    .option("--actor-id <actorId>", "Actor the macro receives as its `actor`/speaker")
+    .option("--scene-id <sceneId>", "Scene the token belongs to (required with --token-id)")
+    .option("--token-id <tokenId>", "Token the macro receives as its `token` (needs --scene-id)")
+    .option("--args-json <json>", "Extra scope values as a JSON object, reachable as `scope` in the macro")
+    .addOption(
+      new Option(
+        "--macro-timeout-ms <ms>",
+        `How long the GM client waits for the macro, in ms (default ${MACRO_EXECUTE_TIMEOUT_DEFAULT_MS}, max ${MACRO_EXECUTE_TIMEOUT_MAX_MS}). Raise the global --timeout-ms above it, or the CLI stops waiting before MACRO_TIMEOUT can be reported.`
+      ).argParser(parsePositiveInt)
+    )
+    .action(async function executeMacroCommand(options: {
+      macroId: string;
+      actorId?: string;
+      sceneId?: string;
+      tokenId?: string;
+      argsJson?: string;
+      macroTimeoutMs?: number;
+    }) {
+      await executeRemoteCommand({
+        commandName: "macro.execute",
+        params: createMacroExecuteParams(options),
         command: this,
         dependencies
       });

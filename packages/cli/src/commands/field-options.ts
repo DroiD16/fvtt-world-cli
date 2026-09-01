@@ -3,6 +3,7 @@ import { Command, Option } from "commander";
 import {
   parseActorIncludeFields,
   parseBoolean,
+  parseCsvList,
   parseIncludeFields,
   parseNumber,
   parsePositiveInt
@@ -243,6 +244,77 @@ const REGION_BEHAVIOR_FIELDS: readonly FieldSpec[] = [
 
 export function addRegionBehaviorFieldOptions(command: Command, verb: FieldVerb): Command {
   return addFieldOptions(command, verb, REGION_BEHAVIOR_FIELDS);
+}
+
+const EXECUTABLE_BEHAVIOR_FIELDS: readonly FieldSpec[] = [
+  ...REGION_BEHAVIOR_FIELDS,
+  {
+    flag: "--macro-uuid <uuid>",
+    help: {
+      create: "UUID of the world macro to run (e.g. Macro.abc123); a compendium macro is refused",
+      update: "UUID of the world macro to run instead",
+      clone: "UUID of the world macro the clone runs"
+    }
+  },
+  {
+    flag: "--events <list>",
+    help: {
+      create: "Comma-separated region events that run the macro (e.g. tokenEnter,tokenExit)",
+      update: "Comma-separated region events that run the macro",
+      clone: "Comma-separated region events for the clone"
+    },
+    parser: (value: string) => parseCsvList(value, "--events")
+  },
+  {
+    flag: "--everyone <everyone>",
+    help: {
+      create: "Run the macro on EVERY connected client instead of one elected executor (true|false)",
+      update: "Run the macro on EVERY connected client instead of one elected executor (true|false)",
+      clone: "Run the macro on EVERY connected client instead of one elected executor (true|false)"
+    },
+    parser: parseBoolean
+  }
+];
+
+export function addExecutableBehaviorFieldOptions(command: Command, verb: FieldVerb): Command {
+  return addFieldOptions(command, verb, EXECUTABLE_BEHAVIOR_FIELDS);
+}
+
+const USER_FIELDS: readonly FieldSpec[] = [
+  {
+    flag: "--color <color>",
+    help: { create: "User color (e.g. #ff0000)", update: "New user color", clone: "User color override" }
+  },
+  {
+    flag: "--pronouns <pronouns>",
+    help: { create: "Pronouns shown to other players", update: "New pronouns", clone: "Pronouns override" }
+  },
+  {
+    flag: "--avatar <avatar>",
+    help: { create: "Avatar image path", update: "New avatar image path", clone: "Avatar override" }
+  },
+  {
+    flag: "--clear-avatar",
+    help: "Explicitly set avatar to null",
+    conflicts: "avatar"
+  },
+  {
+    flag: "--character <actorId>",
+    help: {
+      create: "Actor id of the assigned character",
+      update: "Actor id of the assigned character",
+      clone: "Assigned character override"
+    }
+  },
+  {
+    flag: "--clear-character",
+    help: "Explicitly unassign the character (character = null)",
+    conflicts: "character"
+  }
+];
+
+export function addUserFieldOptions(command: Command, verb: FieldVerb): Command {
+  return addFieldOptions(command, verb, USER_FIELDS);
 }
 
 function effectFields(transferNote: string): readonly FieldSpec[] {

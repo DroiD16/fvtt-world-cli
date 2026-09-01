@@ -8,6 +8,7 @@ import {
   previewDocumentUpdate,
   previewSceneCreate
 } from "../lib/world-docs.js";
+import { resolveBroadcastUsers } from "../lib/broadcast-targets.js";
 import { createBridgeError } from "../lib/errors.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
@@ -113,6 +114,69 @@ export function createSceneHandlers() {
         id,
         deleted: true,
         wasActive
+      };
+    },
+
+    async "scene.activate"(params) {
+      const scene = getSceneById(params.sceneId);
+      const wasActive = Boolean(scene.active);
+      const sceneId = scene.id ?? params.sceneId;
+
+      if (wasActive) {
+        const result = { sceneId, active: true, wasActive, changed: false };
+        return isDryRun(params) ? dryRunResponse(result) : result;
+      }
+
+      if (typeof scene.activate !== "function") {
+        throw createBridgeError(
+          ERROR_CODES.BRIDGE_NOT_READY,
+          "Foundry scene activation API (Scene#activate) is not available; reload the GM client"
+        );
+      }
+
+      if (isDryRun(params)) {
+        return dryRunResponse({ sceneId, active: true, wasActive, changed: true });
+      }
+
+      await scene.activate();
+      const stored = getSceneById(sceneId);
+      if (!stored.active) {
+        throw createBridgeError(
+          ERROR_CODES.INTERNAL_ERROR,
+          `Foundry accepted the activation of scene ${sceneId} and still reports it as inactive, so the requested ` +
+            `state did not land: another client may have activated a different scene in the meantime. Re-read the ` +
+            `scene before retrying`,
+          { sceneId }
+        );
+      }
+
+      return { sceneId, active: true, wasActive, changed: true };
+    },
+
+    async "scene.pull-users"(params) {
+      const scene = getSceneById(params.sceneId);
+      const sceneId = scene.id ?? params.sceneId;
+      const users = resolveBroadcastUsers(params.userIds);
+
+      if (typeof scene.pullUsers !== "function") {
+        throw createBridgeError(
+          ERROR_CODES.UNSUPPORTED_OPERATION,
+          "This Foundry version exposes no player-pulling API (Scene#pullUsers); nobody was pulled",
+          { sceneId }
+        );
+      }
+
+      // Foundry only reaches a connected client, and one supported version throws on an empty list, so
+      // a call with nothing to pull stays on this side of the socket.
+      if (users.active.length > 0) {
+        scene.pullUsers(users.active);
+      }
+
+      return {
+        sceneId,
+        userIds: users.active,
+        skippedUserIds: users.inactive,
+        dispatched: users.active.length > 0
       };
     }
   };
