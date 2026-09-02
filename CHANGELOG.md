@@ -2,6 +2,13 @@
 
 All notable user-visible changes to fvtt-world-cli will be recorded in this file.
 
+## [1.1.1] - 2026-09-02
+
+- Skill updates work again. The refresh used to run from an npm install script, and npm
+  blocks those by default, so it never ran. Now the daemon refreshes installed copies of
+  the `foundry-world-editor` skill when it starts.
+- If no copy of the skill is installed, the daemon says so and prints the install command.
+
 ## [1.1.0] - 2026-09-01
 
 This release puts the GM in charge of what an agent may do. Every command now runs under a
