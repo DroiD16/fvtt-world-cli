@@ -3593,7 +3593,8 @@ describe("fvtt-world-cli commands", () => {
     );
     expect(configStore.readConfig()?.daemonUrl).toBe("ws://127.0.0.1:49005");
     expect(stdout.read()).not.toContain("token");
-    expect(stderr.read()).toBe("");
+    expect(stderr.read()).toContain("skill install");
+    expect(stderr.read()).not.toContain("token");
     expect(daemon.stop).toHaveBeenCalledTimes(1);
     rmSync(emptyHome, { recursive: true, force: true });
   });

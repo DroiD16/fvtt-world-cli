@@ -167,10 +167,12 @@ export function syncInstalledSkillCopies(
   try {
     const sourceDirectory = resolveSkillSourceDirectory();
     if (!sourceDirectory) return;
+    let installedAnywhere = false;
     for (const root of knownSkillRoots(dependencies)) {
       try {
         const destination = join(root, SKILL_NAME);
         const state = inspectInstalledSkill(destination, sourceDirectory);
+        if (state !== "missing") installedAnywhere = true;
         if (state === "pristine") {
           rmSync(destination, { recursive: true, force: true });
           cpSync(sourceDirectory, destination, { recursive: true });
@@ -187,6 +189,12 @@ export function syncInstalledSkillCopies(
       } catch {
         continue;
       }
+    }
+    if (!installedAnywhere) {
+      write(
+        dependencies.stderr,
+        `The ${SKILL_NAME} agent skill is not installed. If AI agents use this CLI, consider running \`fvtt-world-cli skill install\` to give them its operating manual.\n`
+      );
     }
   } catch {
     return;

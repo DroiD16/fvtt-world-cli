@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,94 @@ const localCliEnvironment = {
   XDG_CONFIG_HOME: localCliConfigHome
 };
 
+const timingLogDir = resolve(repoRoot, ".local/testing/smoke-timings");
+const timingLog = {
+  startedAtMs: Date.now(),
+  lastStepAtMs: 0,
+  commands: [],
+  steps: []
+};
+
+function timingElapsedMs() {
+  return Date.now() - timingLog.startedAtMs;
+}
+
+class SmokeWatchdogError extends Error {}
+
+const watchdog = {
+  deadlineMs: Infinity,
+  cleanupPhase: false
+};
+
+function armWatchdog(maxMinutes) {
+  watchdog.deadlineMs = maxMinutes * 60_000;
+}
+
+function assertWatchdog() {
+  if (watchdog.cleanupPhase || timingElapsedMs() <= watchdog.deadlineMs) {
+    return;
+  }
+  throw new SmokeWatchdogError(
+    `The run exceeded its --max-minutes budget (${Math.round(watchdog.deadlineMs / 60_000)} minutes); it aborts here so a hang fails loudly instead of waiting out server-side timeouts. Cleanup still executes.`
+  );
+}
+
+function recordCommandTiming(command, startMs, exitCode, mode = "sequential") {
+  timingLog.commands.push({
+    command,
+    mode,
+    startMs,
+    durationMs: timingElapsedMs() - startMs,
+    exitCode
+  });
+}
+
+function recordStepTiming(name, passed) {
+  const atMs = timingElapsedMs();
+  timingLog.steps.push({
+    name,
+    passed,
+    atMs,
+    sinceLastStepMs: atMs - timingLog.lastStepAtMs
+  });
+  timingLog.lastStepAtMs = atMs;
+}
+
+function writeTimingLog(summary, { announce = false } = {}) {
+  const startedAtIso = new Date(timingLog.startedAtMs).toISOString();
+  const logPath = join(timingLogDir, `smoke-${startedAtIso.replaceAll(":", "-")}.json`);
+
+  try {
+    mkdirSync(timingLogDir, { recursive: true });
+    writeFileSync(
+      logPath,
+      `${JSON.stringify(
+        {
+          startedAt: startedAtIso,
+          totalMs: timingElapsedMs(),
+          ok: summary.ok,
+          worldId: summary.environment.worldId,
+          foundryGeneration: summary.environment.foundryGeneration ?? null,
+          baseUrl: summary.environment.baseUrl,
+          steps: timingLog.steps,
+          commands: timingLog.commands
+        },
+        null,
+        2
+      )}\n`
+    );
+    if (announce) {
+      process.stderr.write(`Timing log: ${logPath}\n`);
+    }
+  } catch (error) {
+    if (announce) {
+      process.stderr.write(
+        `Timing log write failed: ${error instanceof Error ? error.message : String(error)}\n`
+      );
+    }
+  }
+}
+
 function parseArgs(argv) {
   const options = {
     json: false,
@@ -34,6 +122,8 @@ function parseArgs(argv) {
     baseUrl: process.env.FVTT_WORLD_CLI_TEST_BASE_URL || DEFAULT_BASE_URL,
     foundryDataDir: process.env.FVTT_WORLD_CLI_TEST_FOUNDRY_DATA_DIR || null,
     gmControlUrl: process.env.FVTT_WORLD_CLI_TEST_GM_CONTROL || null,
+    gmClientCommand: process.env.FVTT_WORLD_CLI_TEST_GM_CLIENT_CMD || null,
+    maxMinutes: Number(process.env.FVTT_WORLD_CLI_TEST_MAX_MINUTES) || WATCHDOG_DEFAULT_MINUTES,
     policyTimeoutBranch: process.env.FVTT_WORLD_CLI_TEST_POLICY_TIMEOUT_BRANCH === "1",
     allowChatFlush: process.env.FVTT_WORLD_CLI_TEST_ALLOW_CHAT_FLUSH === "1"
   };
@@ -69,6 +159,18 @@ function parseArgs(argv) {
       continue;
     }
 
+    if (arg === "--gm-client-cmd") {
+      options.gmClientCommand = argv[index + 1] || options.gmClientCommand;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--max-minutes") {
+      options.maxMinutes = Number(argv[index + 1]) || options.maxMinutes;
+      index += 1;
+      continue;
+    }
+
     if (arg === "--policy-timeout-branch") {
       options.policyTimeoutBranch = true;
       continue;
@@ -99,7 +201,8 @@ function printHelp() {
   process.stdout.write(
     [
       "Usage: npm run smoke:live -- [--json] [--actor-id <actorId>] [--base-url <url>] [--foundry-data-dir <path>]",
-      "                              [--gm-control <url>] [--policy-timeout-branch] [--allow-chat-flush]",
+      "                              [--gm-control <url>] [--gm-client-cmd <shell command>] [--max-minutes <n>]",
+      "                              [--policy-timeout-branch] [--allow-chat-flush]",
       "",
       "Defaults:",
       `  base URL: ${DEFAULT_BASE_URL}`,
@@ -112,6 +215,16 @@ function printHelp() {
       "  FVTT_WORLD_CLI_TEST_GM_CONTROL",
       "  FVTT_WORLD_CLI_TEST_POLICY_TIMEOUT_BRANCH=1",
       "  FVTT_WORLD_CLI_TEST_ALLOW_CHAT_FLUSH=1",
+      "  FVTT_WORLD_CLI_TEST_GM_CLIENT_CMD",
+      "  FVTT_WORLD_CLI_TEST_MAX_MINUTES",
+      "",
+      "--gm-client-cmd names a shell command that starts a GM client owning a control endpoint (it",
+      'must print "control channel: <url>" on stdout once ready). The run starts it, uses its',
+      "endpoint as --gm-control when none was given, and stops it — with its whole process group —",
+      "when the run ends, however it ends.",
+      "",
+      `--max-minutes aborts a run that exceeds the limit (default ${WATCHDOG_DEFAULT_MINUTES}): cleanup still executes,`,
+      "and the summary and timing log report the abort instead of the run hanging silently.",
       "",
       "--gm-control names a loopback endpoint that evaluates JavaScript in the logged-in GM page.",
       'It receives POST {"script": "<javascript>"} — the body of an async function whose return',
@@ -127,8 +240,9 @@ function printHelp() {
       "log and therefore runs only with --allow-chat-flush (or FVTT_WORLD_CLI_TEST_ALLOW_CHAT_FLUSH=1);",
       "without the flag it is skipped and reported in the summary notes. The run ends with",
       "system.reload, issued after every cleanup step and after the stored command policy is back,",
-      "because the reload destroys the page the GM control endpoint drives; it then waits for the",
-      "bridge to reconnect."
+      "because the reload destroys the page the GM control endpoint drives; when that restored policy",
+      "holds system.reload for approval, the run answers the approval itself through the GM control",
+      "endpoint before the page goes away, and then waits for the bridge to reconnect."
     ].join("\n") + "\n"
   );
 }
@@ -146,28 +260,36 @@ function commandLabel(args) {
 }
 
 function runFoundryctl(args) {
+  assertWatchdog();
   const commandArgs = [localCliPath, ...args, "--json"];
+  const startMs = timingElapsedMs();
 
   try {
     const stdout = execFileSync(process.execPath, commandArgs, {
       cwd: repoRoot,
       encoding: "utf8",
       env: localCliEnvironment,
+      timeout: SMOKE_COMMAND_TIMEOUT_MS,
+      killSignal: "SIGKILL",
 
       maxBuffer: 64 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"]
     });
 
+    const response = JSON.parse(stdout);
+    recordCommandTiming(commandLabel(args), startMs, 0);
     return {
       command: commandLabel(args),
       exitCode: 0,
       stdout,
       stderr: "",
-      response: JSON.parse(stdout)
+      response
     };
   } catch (error) {
     const stdout = typeof error?.stdout === "string" ? error.stdout : error?.stdout?.toString("utf8") || "";
     const stderr = typeof error?.stderr === "string" ? error.stderr : error?.stderr?.toString("utf8") || "";
+    const exitCode = Number.isInteger(error?.status) ? error.status : 1;
+    const timedOut = error?.code === "ETIMEDOUT" || (error?.status === null && error?.signal === "SIGKILL");
     let response = null;
 
     try {
@@ -176,24 +298,31 @@ function runFoundryctl(args) {
       response = null;
     }
 
+    recordCommandTiming(commandLabel(args), startMs, exitCode);
     return {
       command: commandLabel(args),
-      exitCode: Number.isInteger(error?.status) ? error.status : 1,
+      exitCode,
       stdout,
       stderr,
       response,
-      transportError: error instanceof Error ? error.message : String(error)
+      transportError: timedOut
+        ? `SMOKE_COMMAND_TIMEOUT: the command was killed after ${SMOKE_COMMAND_TIMEOUT_MS}ms without exiting; it may be parked on a GM approval or held by an interactive wrapper, and its outcome is unknown`
+        : error instanceof Error
+          ? error.message
+          : String(error)
     };
   }
 }
 
 function runFoundryctlPair(argsA, argsB) {
+  assertWatchdog();
   const dir = mkdtempSync(join(tmpdir(), "fvtt-world-cli-smoke-pair-"));
   const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
   const childLine = (args, outPath) =>
-    `${shellQuote(process.execPath)} ${shellQuote(localCliPath)} ${args.map(shellQuote).join(" ")} --json > ${shellQuote(outPath)} 2>${shellQuote(`${outPath}.err`)}`;
+    `timeout --kill-after=5s ${Math.round(SMOKE_COMMAND_TIMEOUT_MS / 1000)}s ${shellQuote(process.execPath)} ${shellQuote(localCliPath)} ${args.map(shellQuote).join(" ")} --json > ${shellQuote(outPath)} 2>${shellQuote(`${outPath}.err`)}`;
   const outA = join(dir, "a.json");
   const outB = join(dir, "b.json");
+  const startMs = timingElapsedMs();
 
   try {
     execFileSync("bash", ["-c", `${childLine(argsA, outA)} & ${childLine(argsB, outB)} & wait`], {
@@ -238,6 +367,9 @@ function runFoundryctlPair(argsA, argsB) {
   };
 
   const runs = [readRun(argsA, outA), readRun(argsB, outB)];
+  for (const run of runs) {
+    recordCommandTiming(run.command, startMs, run.exitCode, "pair");
+  }
   rmSync(dir, { recursive: true, force: true });
   return runs;
 }
@@ -391,10 +523,13 @@ function emitSummary(summary, options) {
 }
 
 function markAndPush(summary, name, passed, details = {}) {
+  recordStepTiming(name, passed);
   summary.steps.push(createStep(name, passed, details));
   if (!passed) {
     summary.ok = false;
   }
+  writeTimingLog(summary);
+  assertWatchdog();
 }
 
 function sleepMs(ms) {
@@ -515,6 +650,12 @@ const DANGEROUS_SEGMENT_ENABLE_HINT =
 const RELOAD_RECONNECT_WAIT_MS = 120_000;
 const RELOAD_POLL_INTERVAL_MS = 2_000;
 
+const SMOKE_COMMAND_TIMEOUT_MS = 90_000;
+const GM_CONTROL_TIMEOUT_MS = 30_000;
+const WATCHDOG_DEFAULT_MINUTES = 60;
+const GM_CLIENT_READY_WAIT_MS = 240_000;
+const GM_CLIENT_STOP_WAIT_MS = 10_000;
+
 const POLICY_SEGMENT_ENABLE_HINT =
   "pass --gm-control <url>, or set FVTT_WORLD_CLI_TEST_GM_CONTROL, and run the smoke again";
 
@@ -593,11 +734,22 @@ function delayMs(ms) {
 }
 
 async function evaluateInGmPage(gmControlUrl, script) {
-  const response = await fetch(gmControlUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ script })
-  });
+  let response;
+  try {
+    response = await fetch(gmControlUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ script }),
+      signal: AbortSignal.timeout(GM_CONTROL_TIMEOUT_MS)
+    });
+  } catch (error) {
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      throw new Error(
+        `GM control endpoint did not answer within ${GM_CONTROL_TIMEOUT_MS}ms; the GM page may be busy, reloading, or gone`
+      );
+    }
+    throw error;
+  }
 
   if (!response.ok) {
     throw new Error(`GM control endpoint answered HTTP ${response.status}`);
@@ -646,6 +798,7 @@ function installFoundryctlInterruptRelay() {
 
 function startFoundryctl(args) {
   installFoundryctlInterruptRelay();
+  const startMs = timingElapsedMs();
   const child = spawn(process.execPath, [localCliPath, ...args, "--json"], {
     cwd: repoRoot,
     env: localCliEnvironment,
@@ -694,7 +847,10 @@ function startFoundryctl(args) {
   };
 
   const done = new Promise((resolve) => {
-    child.on("close", (code) => resolve(buildResult(code)));
+    child.on("close", (code) => {
+      recordCommandTiming(commandLabel(args), startMs, Number.isInteger(code) ? code : 1, "spawned");
+      resolve(buildResult(code));
+    });
   });
 
   return {
@@ -724,6 +880,129 @@ async function settleFoundryctl(call, waitMs) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+let gmClient = null;
+
+function killGmClientGroup(signal) {
+  if (!gmClient) {
+    return;
+  }
+  try {
+    process.kill(-gmClient.child.pid, signal);
+  } catch {
+    return;
+  }
+}
+
+function installGmClientTeardownHooks() {
+  process.on("exit", () => killGmClientGroup("SIGKILL"));
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.once(signal, () => {
+      killGmClientGroup("SIGKILL");
+      process.kill(process.pid, signal);
+    });
+  }
+}
+
+async function launchGmClient(commandLine) {
+  installGmClientTeardownHooks();
+  const child = spawn("bash", ["-c", commandLine], {
+    cwd: repoRoot,
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const exited = new Promise((resolve) => child.on("exit", resolve));
+  gmClient = { child, exited };
+
+  let output = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  const controlUrl = await new Promise((resolveUrl, rejectUrl) => {
+    const timer = setTimeout(
+      () =>
+        rejectUrl(
+          new Error(
+            `the GM client announced no "control channel: <url>" line within ${GM_CLIENT_READY_WAIT_MS}ms; its output so far:\n${output.slice(-2000)}`
+          )
+        ),
+      GM_CLIENT_READY_WAIT_MS
+    );
+    const inspect = (chunk) => {
+      output += chunk;
+      const match = output.match(/control channel: (\S+)/);
+      if (match) {
+        clearTimeout(timer);
+        resolveUrl(match[1]);
+      }
+    };
+    child.stdout.on("data", inspect);
+    child.stderr.on("data", inspect);
+    child.on("exit", (code) => {
+      clearTimeout(timer);
+      rejectUrl(
+        new Error(
+          `the GM client exited with code ${code} before announcing a control channel; its output:\n${output.slice(-2000)}`
+        )
+      );
+    });
+  });
+
+  return { controlUrl };
+}
+
+async function stopGmClient() {
+  if (!gmClient) {
+    return;
+  }
+  const { child, exited } = gmClient;
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    gmClient = null;
+    return;
+  }
+  await Promise.race([exited, delayMs(GM_CLIENT_STOP_WAIT_MS)]);
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    gmClient = null;
+    return;
+  }
+  gmClient = null;
+}
+
+async function runFoundryctlAutoApproving(args, command, gmControlUrl) {
+  const call = startFoundryctl(args);
+  let exited = false;
+  void call.exited.then(() => {
+    exited = true;
+  });
+
+  const deadline = Date.now() + APPROVAL_WINDOW_WAIT_MS;
+  let autoApproved = false;
+  let approvalError = null;
+  while (!exited && Date.now() < deadline) {
+    const view = await evaluateInGmPage(gmControlUrl, APPROVAL_WINDOW_SCRIPT).catch((error) => {
+      approvalError = error instanceof Error ? error.message : String(error);
+      return null;
+    });
+    if (view && view.command === command && view.executing === false && view.approvalId) {
+      const clicked = await evaluateInGmPage(
+        gmControlUrl,
+        approvalClickScript("allow", view.approvalId)
+      ).catch((error) => {
+        approvalError = error instanceof Error ? error.message : String(error);
+        return false;
+      });
+      autoApproved = clicked === true;
+      break;
+    }
+    await delayMs(APPROVAL_POLL_INTERVAL_MS);
+  }
+
+  const run = await settleFoundryctl(call, APPROVAL_DECISION_WAIT_MS);
+  return { run, autoApproved, approvalError };
 }
 
 async function waitForApprovalWindow(gmControlUrl, command, handledApprovalIds) {
@@ -1788,24 +2067,57 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
 }
 
 // system.reload destroys the page the GM control endpoint drives, so this branch runs only after the
-// whole run's cleanup and after the stored command policy is back: nothing may need that endpoint again.
-async function runSystemReloadBranch(summary) {
-  const reloadRun = runFoundryctl(["system", "reload"]);
+// whole run's cleanup and after the stored command policy is back: nothing may need that endpoint after
+// the reload. The restored policy may hold system.reload for approval, so the command starts detached
+// and the endpoint answers its approval window before the page goes away. On that approval path the
+// response dies with the page (approval state is runtime state), so the CLI answering APPROVAL_UNKNOWN
+// after the auto-approve click is the expected shape; the proof the reload happened is a NEW bridge
+// session, observed as bridge.lastConnectedAt advancing past its pre-reload value.
+async function runSystemReloadBranch(summary, gmControlUrl) {
+  const beforeRun = runFoundryctl(["system", "info"]);
+  const beforeConnectedAt = beforeRun.response?.result?.bridge?.lastConnectedAt ?? null;
+
+  const {
+    run: reloadRun,
+    autoApproved,
+    approvalError
+  } = await runFoundryctlAutoApproving(["system", "reload"], "system.reload", gmControlUrl);
+
   let reconnected = false;
   const reconnectDeadline = Date.now() + RELOAD_RECONNECT_WAIT_MS;
   while (Date.now() < reconnectDeadline) {
     await delayMs(RELOAD_POLL_INTERVAL_MS);
     const probeRun = runFoundryctl(["system", "info"]);
-    if (probeRun.response?.ok && probeRun.response?.result?.bridge?.status === "connected") {
+    const bridge = probeRun.response?.ok ? probeRun.response.result?.bridge : null;
+    if (
+      bridge?.status === "connected" &&
+      (beforeConnectedAt === null || (bridge.lastConnectedAt ?? "") > beforeConnectedAt)
+    ) {
       reconnected = true;
       break;
     }
   }
+
+  const respondedReloading = Boolean(
+    reloadRun.response?.ok && reloadRun.response?.result?.reloading === true
+  );
+  const responseLostToReload =
+    autoApproved &&
+    reloadRun.response?.ok !== true &&
+    reloadRun.response?.error?.code === ERROR_CODES.APPROVAL_UNKNOWN;
+
   markAndPush(
     summary,
     "dangerous.system.reload",
-    Boolean(reloadRun.response?.ok && reloadRun.response?.result?.reloading === true && reconnected),
-    { ...summarizeCommand(reloadRun), reconnected }
+    (respondedReloading || responseLostToReload) && reconnected,
+    {
+      ...summarizeCommand(reloadRun),
+      reconnected,
+      autoApproved,
+      respondedReloading,
+      responseLostToReload,
+      ...(approvalError ? { approvalError } : {})
+    }
   );
 }
 
@@ -13021,6 +13333,24 @@ async function main() {
   let policyHarness = null;
   let reloadPending = false;
 
+  armWatchdog(options.maxMinutes);
+
+  if (options.gmClientCommand) {
+    try {
+      const { controlUrl } = await launchGmClient(options.gmClientCommand);
+      options.gmControlUrl = options.gmControlUrl || controlUrl;
+      summary.notes.push(
+        `This run started its own GM client (--gm-client-cmd) and stops it — with its whole process group — when the run ends; its control endpoint is ${controlUrl}.`
+      );
+    } catch (error) {
+      markAndPush(summary, "gm-client.start", false, {
+        reason: error instanceof Error ? error.message : String(error)
+      });
+      await stopGmClient();
+      return { options, summary };
+    }
+  }
+
   try {
     const systemInfoRun = runFoundryctl(["system", "info"]);
     const systemInfoOk = isCommandSuccess(systemInfoRun);
@@ -14129,7 +14459,17 @@ async function main() {
     reloadPending = await runDangerousSegment(summary, options, { stamp, coverage: policyCoverage });
 
     return { options, summary };
+  } catch (error) {
+    watchdog.cleanupPhase = true;
+    markAndPush(summary, error instanceof SmokeWatchdogError ? "run.watchdog" : "run.aborted", false, {
+      reason: error instanceof Error ? error.message : String(error)
+    });
+    summary.notes.push(
+      `The run ABORTED before completing its coverage${error instanceof SmokeWatchdogError ? " because it exceeded its --max-minutes budget" : " on an unexpected error"}; every step after the failed one above is unverified. Cleanup of the artifacts recorded so far still executed.`
+    );
+    return { options, summary };
   } finally {
+    watchdog.cleanupPhase = true;
     if (summary.artifacts.actorItemId && options.actorId) {
       expectOk(
         summary,
@@ -14172,7 +14512,7 @@ async function main() {
     }
 
     if (reloadPending && policyRestored) {
-      await runSystemReloadBranch(summary);
+      await runSystemReloadBranch(summary, options.gmControlUrl);
     } else if (reloadPending) {
       recordSkippedDangerousSegment(
         policyCoverage,
@@ -14187,6 +14527,8 @@ async function main() {
     flushPolicyCoverageNotes(summary, policyCoverage);
     flushDangerousCoverageNotes(summary, policyCoverage);
 
+    await stopGmClient();
+
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -14196,5 +14538,6 @@ async function main() {
 const { options, summary } = await main();
 
 appendTimeoutHazardNote(summary);
+writeTimingLog(summary, { announce: true });
 emitSummary(summary, options);
 process.exit(summary.ok ? 0 : 1);
