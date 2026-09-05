@@ -8,13 +8,14 @@
 Tell your AI agent what should change in your Foundry VTT world, and it happens in the live
 world, validated by Foundry, visible to your players immediately.
 
-![A prompt to an AI agent and the resulting lit tavern scene in Foundry](https://raw.githubusercontent.com/DroiD16/fvtt-world-cli/main/publishing/media/cover.jpg)
+![An AI agent adds lights and goblins to a Foundry tavern scene, shown before and after](https://raw.githubusercontent.com/DroiD16/fvtt-world-cli/main/publishing/media/cover.webp)
 
 Modern agents already understand requests like that. What they have lacked is a safe way into
-Foundry: driving the browser UI is brittle and token consuming, and editing world files on disk
-bypasses everything Foundry does to keep a world consistent. fvtt-world-cli is the missing bridge,
-a command line wired into your open GM session that performs every change through Foundry's own
-APIs, exactly as if a GM had made it in the UI.
+Foundry. Driving the browser UI is brittle and uses extra tokens. Editing world files on disk
+bypasses Foundry's validation.
+
+World CLI for Foundry VTT connects your agent to your open GM session. Every change runs through
+Foundry's own APIs, exactly as if a GM had made it in the UI.
 
 Two things it's not. It is not an AI game master: it does not run the game, it only edits the
 world when asked. And it includes no AI of its own: you connect the agent you already use, such as
@@ -33,14 +34,12 @@ A few asks it handles end to end:
 - "Turn the bestiary goblin into a flying one that throws dynamite for 2d6 damage, and add it to
   the scene."
 
-![An agent lights a tavern scene and stages a hidden ambush, and the Foundry scene updates live](https://raw.githubusercontent.com/DroiD16/fvtt-world-cli/main/publishing/media/cli-demo.gif)
-
-[Commands](docs/commands.md) maps the full surface.
+See [Commands](docs/commands.md) for the full list of supported operations.
 
 ## Setting up
 
-The simplest setup is one step: point your AI agent at this repository and ask it to set
-fvtt-world-cli up. Then follow its lead. It will most likely ask you to install the module in
+The simplest setup is one step: point your AI agent at this repository and ask it to set up
+World CLI for Foundry VTT. Then follow its lead. It will most likely ask you to install the module in
 Foundry and click *Pair* there, and it handles the rest itself.
 
 ### Manual setup
@@ -68,6 +67,9 @@ agent works with the world.
    fvtt-world-cli bridge serve
    ```
 
+   Keep this terminal open and use a second terminal for the remaining commands. Keep the target
+   world open in Foundry, logged in as a GM.
+
 4. Pair the browser: choose *Pair* in the module's Authorization window, reachable from the
    *World CLI* group in the scene controls or from the module's settings. Then approve the request
    from the terminal. It shows the requesting origin, world, GM, and browser, and asks for a yes
@@ -77,7 +79,10 @@ agent works with the world.
    fvtt-world-cli auth
    ```
 
-5. Optionally, install the packaged skill into your AI agent; the next section explains what it
+5. Check the connection in Foundry. The *World CLI* icon in the scene controls turns green when
+   connected. Open *Bridge status* from the same group to see the connection details.
+
+6. Optionally, install the packaged skill into your AI agent; the next section explains what it
    does:
 
    ```bash
@@ -101,11 +106,9 @@ instructions survive updates.
 
 ## Built to be trusted with a live world
 
-The whole design assumes an automated caller that must not be able to exceed its intended
-authority; [Security](docs/security.md) covers the boundaries in full. In short:
+You control which browser connects and which commands the agent may run. The main safeguards are:
 
-- Everything stays on your machine: the daemon accepts loopback connections only, and there is no
-  internet-facing mode.
+- The daemon accepts connections only from your machine, with no internet-facing mode.
 - Nothing connects without your approval: every browser pairs once through an explicit yes at your
   terminal, and no secrets are printed along the way.
 - Foundry remains the authority: every change runs through the same Document APIs and validation
@@ -114,21 +117,23 @@ authority; [Security](docs/security.md) covers the boundaries in full. In short:
   validation and guards as a real call and stops before mutation.
 - Every command has a permission in the active Foundry client: run, ask the GM, or refuse.
   Destructive commands ask the GM by default.
-- There is no arbitrary-code path: commands are typed and validated on both sides of the transport,
-  and executable content such as scripted region behaviors is blocked on every write route.
-- File access is confined to the active world's managed assets and always excludes its manifest,
-  databases, and packs.
+- Commands are typed and validated on both sides of the connection. Macro execution and regions
+  that trigger macros are disabled by default and require the GM to enable dedicated commands.
+  Region behaviors that execute script code are blocked on every write route.
+- File commands read assets within Foundry's managed `data` source. Writes are limited to the
+  active world's asset folders and always exclude its manifest, databases, and packs.
+
+[Security](docs/security.md) explains these safeguards and their limits.
 
 ## Foundry compatibility
 
-Supported on Foundry VTT v13 and v14 (both verified). Version-dependent behavior is
-capability-gated and reported per command; [Compatibility](docs/compatibility.md) lists the
-differences that matter to operators.
+Supported and verified on Foundry VTT v13 and v14. Some commands are available only on certain
+Foundry versions. See [Compatibility](docs/compatibility.md) for the differences.
 
 ## Documentation
 
-[docs/README.md](docs/README.md) maps the full set: commands, protocol, security, architecture,
-compatibility, and the agent skill. The same documents ship inside the package and are printed by
-`fvtt-world-cli docs [document]`, so the installed CLI is self-describing offline.
+The [documentation index](docs/README.md) links to the command reference, setup guides, security,
+compatibility, and technical documentation. These documents also ship with the CLI. Read them
+offline with `fvtt-world-cli docs [document]`.
 
 Bug reports and questions go to [GitHub Issues](https://github.com/DroiD16/fvtt-world-cli/issues).
