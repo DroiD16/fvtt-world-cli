@@ -44,8 +44,26 @@ const response = await fetch("https://foundryvtt.com/_api/packages/release_versi
   headers: { "Content-Type": "application/json", Authorization: token },
   body: JSON.stringify(requestBody)
 });
+const isAlreadyReleased = (status, text) => {
+  if (status !== 400) {
+    return false;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  const errors = parsed?.errors?.__all__;
+  return Array.isArray(errors) && errors.some((entry) => entry?.code === "unique_together");
+};
+
 const responseText = await response.text();
 if (!response.ok) {
+  if (isAlreadyReleased(response.status, responseText)) {
+    console.log(`${moduleManifest.id} ${version} is already released in the Foundry registry.`);
+    process.exit(0);
+  }
   fail(`Foundry release API responded ${response.status}:\n${responseText}`);
 }
 console.log(
