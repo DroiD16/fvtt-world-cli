@@ -1,0 +1,57 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify the tag matches the package version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+
+      - run: npm install -g npm@latest
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run release:artifacts
+
+      - name: Create the GitHub release
+        run: >
+          gh release create "$GITHUB_REF_NAME"
+          dist/release/fvtt-world-cli.zip
+          dist/release/module.json
+          --verify-tag
+          --title "$GITHUB_REF_NAME"
+          --notes-file dist/release/release-notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publish the CLI package to npm
+        run: npm publish
+        working-directory: packages/cli
+
+      - name: Publish the release to the Foundry package registry
+        run: node scripts/publish-foundry-release.mjs
+        env:
+          FOUNDRY_RELEASE_TOKEN: ${{ secrets.FOUNDRY_RELEASE_TOKEN }}

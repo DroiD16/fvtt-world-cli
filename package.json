@@ -21,6 +21,7 @@
     "generate:skill-checksum": "node scripts/generate-skill-checksum.mjs",
     "generate:skill-checksum:check": "node scripts/generate-skill-checksum.mjs --check",
     "release:artifacts": "node scripts/build-release-artifacts.mjs",
+    "release:foundry": "node scripts/publish-foundry-release.mjs",
     "smoke:live": "node scripts/live-smoke.mjs",
     "test": "npm run format:check && vitest run",
     "test:watch": "vitest",
