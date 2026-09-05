@@ -313,10 +313,13 @@ remains open. Other outcomes use structured errors:
 | `APPROVAL_CANCELLED` | A cancellation the GM client confirmed won the decision | Not executed |
 | `APPROVAL_QUEUE_FULL` | The module refused admission before showing the request | Not executed |
 | `APPROVAL_UNKNOWN` | The module no longer holds the decision | Indeterminate |
+| `APPROVAL_STALE` | The GM allowed the request, but the content shown for it — a macro's body or type — no longer matches the stored document | Not executed |
 
 `APPROVAL_UNKNOWN` means the client can no longer prove whether the command ran. Read the affected
 world state before trying again. `APPROVAL_QUEUE_FULL` means the module refused the request before
-execution. Retry after the GM clears earlier requests.
+execution. Retry after the GM clears earlier requests. `APPROVAL_STALE` means the macro changed
+between display and decision; a new `macro execute` request opens a fresh approval showing the
+current content.
 
 Ctrl+C asks the GM client to cancel a waiting decision. Only `APPROVAL_CANCELLED` proves that the
 command will not run. If the command has started or the client cannot confirm cancellation, the CLI

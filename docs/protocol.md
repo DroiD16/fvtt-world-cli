@@ -215,7 +215,7 @@ code set is exported by the protocol package. The classes consumers act on:
 | Capability | `UNSUPPORTED_OPERATION` | Choose a supported workflow or runtime |
 | Size/resource | `PAYLOAD_TOO_LARGE`, `QUERY_TOO_BROAD`, `IDEMPOTENCY_STORE_FULL` | Reduce, page, or resend the request later |
 | Command policy | `COMMAND_DENIED` | Treat the command as unavailable on that GM client |
-| Approval | `APPROVAL_PENDING`, `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED`, `APPROVAL_QUEUE_FULL`, `APPROVAL_UNKNOWN` | Apply the approval rules below |
+| Approval | `APPROVAL_PENDING`, `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED`, `APPROVAL_QUEUE_FULL`, `APPROVAL_UNKNOWN`, `APPROVAL_STALE` | Apply the approval rules below |
 | Bridge state | `BRIDGE_NOT_READY`, `BRIDGE_TIMEOUT`, `BRIDGE_DISCONNECTED` | Apply the delivery rules below |
 | Indeterminate outcome | `MACRO_TIMEOUT` | Verify the effect by reads before retrying |
 | Unexpected | `INTERNAL_ERROR` | Preserve details and investigate |
@@ -265,6 +265,13 @@ The wait has two phases because the decision can outlast a normal request timeou
 - `APPROVAL_UNKNOWN` means the module no longer holds that approval. Reloading the GM client, ending
   its bridge session, or expiry can remove the state. The command may not have started, or it may have
   completed. Read world state before another write.
+- An approval decision covers exactly the content the GM was shown. For `macro.execute`, the module
+  captures the macro's body and type when the request is admitted, displays that captured content,
+  and re-reads the stored macro when the GM allows the execution. If the macro changed or was
+  deleted in the meantime, the approved outcome carries an `APPROVAL_STALE` error instead of a
+  command response, nothing executes, and no new approval is created. Its details name the
+  `macroId` and the `drifted` fields. A fresh `macro.execute` request opens a new approval showing
+  the current content.
 - A dry run bypasses approval and reports `approvalRequired: true` when the real command would wait.
   The policy still refuses denied commands during a dry run.
 - `policy.snapshot` reports `{ approve: [names], deny: [names] }`. The result is advisory because the
@@ -308,6 +315,7 @@ Retry safety is a function of whether the request reached Foundry:
 | `COMMAND_DENIED` | Refused before dispatch | Not executed; the command is unavailable on that GM client |
 | `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED` | Reached Foundry, never dispatched | Not executed; the same request is safe to send again |
 | `APPROVAL_QUEUE_FULL` | Refused before admission | Not executed; safe to retry when the waiting decisions clear |
+| `APPROVAL_STALE` | Allowed, refused before dispatch | Not executed; the same request is safe to send again and opens a new approval |
 | `IDEMPOTENCY_STORE_FULL` | No | Not executed; safe to retry when earlier keys settle or expire |
 | `APPROVAL_UNKNOWN` | Unknown | May have committed; inspect state, then re-request under a fresh idempotency key |
 | Structured command rejection | Resolved with an error | Correct according to the code |

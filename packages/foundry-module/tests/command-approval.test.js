@@ -13,6 +13,7 @@ import {
 } from "../scripts/command-approval.js";
 import { createCommandRouter } from "../scripts/command-router.js";
 import { COMMAND_DEFINITIONS, MODULE_ID } from "../scripts/generated/protocol.js";
+import { captureApprovalBinding } from "../scripts/lib/approval-bindings.js";
 import { ApprovalStore } from "../scripts/lib/approval-store.js";
 import { resolveApprovalTargets } from "../scripts/lib/approval-targets.js";
 import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
@@ -142,6 +143,7 @@ describe("Command approval window", () => {
       command,
       params,
       resolveTargets: () => resolveApprovalTargets(command, params),
+      resolveBinding: () => captureApprovalBinding(command, params),
       requestBytes: 1024
     });
   }
@@ -366,6 +368,17 @@ describe("Command approval window", () => {
     const context = await app._prepareContext();
 
     expect(shown(context).body).toBe("<text: 20000 characters>");
+  });
+
+  it("keeps showing the macro body captured at admission when the stored macro changes afterwards", async () => {
+    const store = createStore();
+    admit(store, "macro.execute", { macroId: "macro-1" });
+    globalThis.game.macros.get("macro-1").command = "game.actors.forEach(a => a.delete());";
+    const { app } = application(store);
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).body).toBe("console.log('heal');");
   });
 
   it("shows a setting write as the change it makes, reading the stored value now", async () => {
@@ -652,7 +665,7 @@ describe("Command approval window", () => {
     expect(shown(context).body).toBeNull();
   });
 
-  it("renders a request whose live reads all fail instead of throwing at the GM", async () => {
+  it("renders the macro request from its admission snapshot even when live reads fail", async () => {
     const store = createStore();
     admit(store, "macro.execute", { macroId: "macro-1" });
     const { app } = application(store);
@@ -662,9 +675,23 @@ describe("Command approval window", () => {
 
     const context = await app._prepareContext();
 
-    expect(shown(context).details).toEqual([]);
-    expect(shown(context).body).toBeNull();
+    expect(shown(context).body).toBe("console.log('heal');");
     expect(shown(context).command).toBe("macro.execute");
+  });
+
+  it("renders a request whose live reads all fail instead of throwing at the GM", async () => {
+    const store = createStore();
+    globalThis.game.settings.register("core", "chatBubbles", { scope: "client", default: true });
+    admit(store, "setting.set", { namespace: "core", key: "chatBubbles", value: false });
+    const { app } = application(store);
+    globalThis.game.settings.get = () => {
+      throw new Error("settings unavailable");
+    };
+
+    const context = await app._prepareContext();
+
+    expect(shown(context).body).toBeNull();
+    expect(shown(context).command).toBe("setting.set");
   });
 
   it("opens on the first arrival and pings once for every request that arrives", async () => {

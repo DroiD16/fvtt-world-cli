@@ -287,25 +287,28 @@ function describeMacroReference(uuid) {
 }
 
 /**
+ * The rendered body and type come from the binding snapshot captured at admission — the same
+ * snapshot the executor verifies against — never from the live macro, so what the GM reads is
+ * exactly what an Allow can run.
  * @param {any} params
+ * @param {any} binding
  * @returns {ApprovalDetails}
  */
-function macroExecuteDetails(params) {
-  const macro = /** @type {any} */ (globalThis).game?.macros?.get?.(params?.macroId) ?? null;
+function macroExecuteDetails(params, binding) {
+  const snapshot = binding !== null && typeof binding === "object" ? binding : null;
   const timeoutMs = readableCount(params?.timeoutMs) ?? MACRO_EXECUTE_TIMEOUT_DEFAULT_MS;
-  const command = readableString(macro?.command);
+  const command = readableString(snapshot?.command);
   const missing = format("FVTTWORLDCLI.Approval.MacroIdNotFound", {
     macroId: readableString(params?.macroId) ?? ""
   });
+  const shown = snapshot !== null && snapshot.found === true;
 
   return {
     rows: [
       detailRow(
         "FVTTWORLDCLI.Approval.DetailMacroType",
         null,
-        macro === null
-          ? missing
-          : (readableString(macro.type) ?? localize("FVTTWORLDCLI.Approval.ValueAbsent"))
+        shown ? (readableString(snapshot.type) ?? localize("FVTTWORLDCLI.Approval.ValueAbsent")) : missing
       ),
       detailRow(
         "FVTTWORLDCLI.Approval.DetailTimeout",
@@ -314,12 +317,11 @@ function macroExecuteDetails(params) {
       )
     ],
     omitted: 0,
-    body:
-      macro === null
-        ? missing
-        : command === null
-          ? localize("FVTTWORLDCLI.Approval.MacroBodyEmpty")
-          : boundedText(command)
+    body: !shown
+      ? missing
+      : command === null
+        ? localize("FVTTWORLDCLI.Approval.MacroBodyEmpty")
+        : boundedText(command)
   };
 }
 
@@ -522,6 +524,7 @@ function userCreateDetails(params) {
   };
 }
 
+/** @type {Readonly<Record<string, (params: any, binding?: unknown) => ApprovalDetails>>} */
 const DETAIL_BUILDERS = Object.freeze({
   "macro.execute": macroExecuteDetails,
   "setting.set": settingSetDetails,
@@ -540,16 +543,17 @@ const DETAIL_BUILDERS = Object.freeze({
 /**
  * @param {string} command
  * @param {unknown} params
+ * @param {unknown} [binding]
  * @returns {ApprovalDetails}
  */
-export function buildApprovalDetails(command, params) {
+export function buildApprovalDetails(command, params, binding = null) {
   const build = Object.hasOwn(DETAIL_BUILDERS, command)
     ? DETAIL_BUILDERS[/** @type {keyof typeof DETAIL_BUILDERS} */ (command)]
     : null;
   if (build === null) return NO_DETAILS;
 
   try {
-    return build(params);
+    return build(params, binding);
   } catch {
     return NO_DETAILS;
   }
@@ -562,7 +566,7 @@ export function buildApprovalDetails(command, params) {
 function prepareRequest(request) {
   const summary = /** @type {ApprovalTargetSummary} */ (request.targets ?? NO_TARGET_SUMMARY);
   const rows = prepareTargetRows(summary);
-  const details = buildApprovalDetails(request.command, request.params);
+  const details = buildApprovalDetails(request.command, request.params, request.binding);
 
   return {
     command: request.command,

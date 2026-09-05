@@ -295,6 +295,62 @@ describe("the guards an allowed command meets at decision time", () => {
     expect(actorName()).toBe("Valeros");
   });
 
+  it("runs an allowed macro execution whose macro still matches what the GM was shown", async () => {
+    await storePolicy({ "macro.execute": "approve" });
+    const approvalId = await askForApproval("macro.execute", { macroId: "macro-1" });
+
+    await router.approvalStore.decide(approvalId, "allow");
+    const response = await pollOutcome(approvalId);
+
+    expect(response.result.response.ok).toBe(true);
+    expect(globalThis.game.macros.get("macro-1").execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses an allowed macro execution whose body changed after the GM was shown it", async () => {
+    await storePolicy({ "macro.execute": "approve" });
+    const approvalId = await askForApproval("macro.execute", { macroId: "macro-1" });
+
+    globalThis.game.macros.get("macro-1").command = "game.actors.forEach(a => a.delete());";
+    await router.approvalStore.decide(approvalId, "allow");
+    const response = await pollOutcome(approvalId);
+
+    expect(response.result.outcome).toBe("approved");
+    expect(response.result.response.ok).toBe(false);
+    expect(response.result.response.error.code).toBe(ERROR_CODES.APPROVAL_STALE);
+    expect(response.result.response.error.details).toMatchObject({
+      macroId: "macro-1",
+      drifted: ["body"]
+    });
+    expect(globalThis.game.macros.get("macro-1").execute).not.toHaveBeenCalled();
+  });
+
+  it("refuses an allowed macro execution whose macro was deleted while the decision waited", async () => {
+    await storePolicy({ "macro.execute": "approve" });
+    const approvalId = await askForApproval("macro.execute", { macroId: "macro-1" });
+
+    const macro = globalThis.game.macros.get("macro-1");
+    globalThis.game.macros.delete("macro-1");
+    await router.approvalStore.decide(approvalId, "allow");
+    const response = await pollOutcome(approvalId);
+
+    expect(response.result.response.error.code).toBe(ERROR_CODES.APPROVAL_STALE);
+    expect(macro.execute).not.toHaveBeenCalled();
+  });
+
+  it("refuses an allowed macro execution admitted without the shown-content snapshot", async () => {
+    const admission = router.approvalStore.admit({
+      command: "macro.execute",
+      params: { macroId: "macro-1" },
+      requestBytes: REQUEST_BYTES
+    });
+
+    await router.approvalStore.decide(admission.approvalId, "allow");
+    const response = await pollOutcome(admission.approvalId);
+
+    expect(response.result.response.error.code).toBe(ERROR_CODES.APPROVAL_STALE);
+    expect(globalThis.game.macros.get("macro-1").execute).not.toHaveBeenCalled();
+  });
+
   it("validates the params again, so a request the store holds cannot smuggle any past them", async () => {
     const admission = router.approvalStore.admit({
       command: "actor.update",

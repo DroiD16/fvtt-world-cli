@@ -55,6 +55,7 @@ import { createSettingHandlers } from "./handlers/settings.js";
 import { createPolicyHandlers } from "./handlers/policy.js";
 import { createSystemHandlers } from "./handlers/system.js";
 import { createTableHandlers, withQueuedTableOwnership } from "./handlers/tables.js";
+import { assertApprovalBindingFresh, captureApprovalBinding } from "./lib/approval-bindings.js";
 import { ApprovalStore } from "./lib/approval-store.js";
 import { resolveApprovalTargets } from "./lib/approval-targets.js";
 import { isDryRun } from "./lib/dry-run.js";
@@ -116,8 +117,15 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
       bridgeClient?.getEffectiveLimits?.()?.wsMaxPayloadBytes ?? DEFAULT_WS_MAX_PAYLOAD_BYTES,
     ...approvalStoreOptions,
     // The guarded path is what makes a delayed decision safe to run: this option is not replaceable.
-    execute: ({ approvalId, command, params }) =>
-      executeGuardedCommand({ command, params, messageId: approvalId, skipApprovalGate: true })
+    execute: ({ approvalId, command, params, binding }) => {
+      try {
+        assertApprovalBindingFresh(command, params, binding);
+      } catch (error) {
+        return createErrorResponse({ id: approvalId, error: toProtocolError(error) });
+      }
+
+      return executeGuardedCommand({ command, params, messageId: approvalId, skipApprovalGate: true });
+    }
   });
 
   const handlers = /** @type {Record<string, (params: any, context: any) => Promise<any>>} */ ({
@@ -192,6 +200,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
       command,
       params,
       resolveTargets: () => resolveTargetsForDisplay(command, params),
+      resolveBinding: () => captureApprovalBinding(command, params),
       requestBytes: /** @type {number} */ (measureRequestBytes?.())
     });
 

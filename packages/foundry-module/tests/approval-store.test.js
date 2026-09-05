@@ -410,6 +410,23 @@ describe("approval store admission", () => {
 });
 
 describe("approval store decisions", () => {
+  it("hands the executor the binding captured at admission and drops it with the verdict", async () => {
+    const { store, executions } = createHarness();
+    const binding = { macroId: "macro-1", found: true, type: "script", command: "1 + 1" };
+    const admission = admitRequest(store, {
+      command: "macro.execute",
+      params: { macroId: "macro-1" },
+      resolveBinding: () => binding
+    });
+
+    expect(store.getQueueView().current?.binding).toEqual(binding);
+
+    await store.decide(admission.approvalId, "allow");
+
+    expect(executions[0].binding).toEqual(binding);
+    expect(store.getQueueView().current).toBeNull();
+  });
+
   it("executes an allowed request and retains its success response", async () => {
     const { store, executions } = createHarness();
     const admission = admitRequest(store);
@@ -421,7 +438,8 @@ describe("approval store decisions", () => {
       {
         approvalId: admission.approvalId,
         command: "actor.update",
-        params: { actorId: "actor-1", patch: { name: "Aria" } }
+        params: { actorId: "actor-1", patch: { name: "Aria" } },
+        binding: null
       }
     ]);
     await expect(store.awaitOutcome({ approvalId: admission.approvalId, waitMs: 0 })).resolves.toEqual({
@@ -524,6 +542,7 @@ describe("approval store decisions", () => {
       approvalId: admission.approvalId,
       command: "actor.update",
       targets: [{ display: "Aria", kind: "Actor", missing: false }],
+      binding: null,
       createdAt: expect.any(Number),
       expiresAt: admission.expiresAt,
       state: "executing"
