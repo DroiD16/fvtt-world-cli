@@ -48,7 +48,8 @@ const BINDING_DEFINITIONS = Object.freeze({
      */
     assertFresh(params, binding) {
       const macroId = typeof params?.macroId === "string" ? params.macroId : null;
-      const drifted = macroBindingDrift(binding, readMacroContent(macroId));
+      const drifted =
+        binding.macroId !== macroId ? ["identity"] : macroBindingDrift(binding, readMacroContent(macroId));
       if (drifted.length === 0) {
         return;
       }

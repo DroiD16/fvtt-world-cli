@@ -324,6 +324,23 @@ describe("the guards an allowed command meets at decision time", () => {
     expect(globalThis.game.macros.get("macro-1").execute).not.toHaveBeenCalled();
   });
 
+  it("leaves no gap between the freshness check and dispatch for a late mutation to win", async () => {
+    await storePolicy({ "macro.execute": "approve" });
+    const approvalId = await askForApproval("macro.execute", { macroId: "macro-1" });
+    const macro = globalThis.game.macros.get("macro-1");
+    let seenBody = null;
+    macro.execute = vi.fn(async () => {
+      seenBody = macro.command;
+    });
+
+    const decision = router.approvalStore.decide(approvalId, "allow");
+    macro.command = "game.actors.forEach(a => a.delete());";
+    await decision;
+
+    expect(macro.execute).toHaveBeenCalledTimes(1);
+    expect(seenBody).toBe("console.log('heal');");
+  });
+
   it("refuses an allowed macro execution whose macro was deleted while the decision waited", async () => {
     await storePolicy({ "macro.execute": "approve" });
     const approvalId = await askForApproval("macro.execute", { macroId: "macro-1" });

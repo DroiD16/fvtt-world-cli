@@ -302,6 +302,84 @@ describe("a vetoed embedded-document write is reported instead of a false succes
   });
 });
 
+describe("an embedded write that changes nothing keeps reporting success", () => {
+  it("actor.item.update", async () => {
+    const actor = globalThis.game.actors.get("actor-1");
+    const storedName = actor.items.get("actor-item-1").name;
+    actor.updateEmbeddedDocuments = vi.fn(async () => []);
+
+    const response = await send("actor.item.update", {
+      actorId: "actor-1",
+      itemId: "actor-item-1",
+      patch: { name: storedName }
+    });
+
+    expect(response.ok).toBe(true);
+  });
+
+  it("playlist.sound.update", async () => {
+    const playlist = globalThis.game.playlists.get("playlist-1");
+    const storedVolume = playlist.sounds.get("sound-1").volume;
+    playlist.updateEmbeddedDocuments = vi.fn(async () => []);
+
+    const response = await send("playlist.sound.update", {
+      playlistId: "playlist-1",
+      soundId: "sound-1",
+      patch: { volume: storedVolume }
+    });
+
+    expect(response.ok).toBe(true);
+  });
+
+  it("scene.token.update", async () => {
+    const scene = globalThis.game.scenes.get("scene-1");
+    const storedName = scene.tokens.get("token-a").name;
+    scene.updateEmbeddedDocuments = vi.fn(async () => []);
+
+    const response = await send("scene.token.update", {
+      sceneId: "scene-1",
+      tokenId: "token-a",
+      patch: { name: storedName }
+    });
+
+    expect(response.ok).toBe(true);
+  });
+
+  it("journal.update page patch", async () => {
+    const journal = globalThis.game.journal.get("journal-1");
+    const storedName = journal.pages.get("page-1").name;
+    journal.updateEmbeddedDocuments = vi.fn(async () => []);
+
+    const response = await send("journal.update", {
+      journalId: "journal-1",
+      patch: { pages: [{ id: "page-1", name: storedName }] }
+    });
+
+    expect(response.ok).toBe(true);
+  });
+
+  it("actor.item.effect.update", async () => {
+    const created = await send("actor.item.effect.create", {
+      actorId: "actor-1",
+      itemId: "actor-item-1",
+      data: { name: "Glow" }
+    });
+    const effectId = created.result.effect.id ?? created.result.effect._id;
+
+    const item = globalThis.game.actors.get("actor-1").items.get("actor-item-1");
+    item.updateEmbeddedDocuments = vi.fn(async () => []);
+
+    const response = await send("actor.item.effect.update", {
+      actorId: "actor-1",
+      itemId: "actor-item-1",
+      effectId,
+      patch: { name: "Glow" }
+    });
+
+    expect(response.ok).toBe(true);
+  });
+});
+
 describe("a vetoed journal page write inside journal.update is reported per page", () => {
   it("page update", async () => {
     const journal = globalThis.game.journal.get("journal-1");
@@ -313,7 +391,40 @@ describe("a vetoed journal page write inside journal.update is reported per page
     });
 
     expectUpdateVetoError(response, /preUpdateJournalEntryPage/);
-    expect(response.error.details).toMatchObject({ journalId: "journal-1", pageId: "page-1" });
+    expect(response.error.details).toMatchObject({
+      journalId: "journal-1",
+      pageId: "page-1",
+      updatedPageIds: []
+    });
+  });
+
+  it("page update names the pages that did land when another page's write was refused", async () => {
+    const created = await send("journal.update", {
+      journalId: "journal-1",
+      patch: { pages: [{ name: "Second", type: "text" }] }
+    });
+    expect(created.ok).toBe(true);
+    const secondId = created.result.journal.pages.find((page) => page.name === "Second").id;
+
+    const journal = globalThis.game.journal.get("journal-1");
+    journal.updateEmbeddedDocuments = vi.fn(async () => [journal.pages.get(secondId)]);
+
+    const response = await send("journal.update", {
+      journalId: "journal-1",
+      patch: {
+        pages: [
+          { id: "page-1", name: "Renamed Page" },
+          { id: secondId, name: "Second Renamed" }
+        ]
+      }
+    });
+
+    expectUpdateVetoError(response, /preUpdateJournalEntryPage/);
+    expect(response.error.details).toMatchObject({
+      journalId: "journal-1",
+      pageId: "page-1",
+      updatedPageIds: [secondId]
+    });
   });
 
   it("page create", async () => {

@@ -274,9 +274,10 @@ The wait has two phases because the decision can outlast a normal request timeou
   captures the macro's body and type when the request is admitted, displays that captured content,
   and re-reads the stored macro when the GM allows the execution. If the macro changed or was
   deleted in the meantime, the approved outcome carries an `APPROVAL_STALE` error instead of a
-  command response, nothing executes, and no new approval is created. Its details name the
-  `macroId` and the `drifted` fields. A fresh `macro.execute` request opens a new approval showing
-  the current content.
+  command response, nothing executes, and no new approval is created. A drift refusal names the
+  `macroId` and the `drifted` fields in its details; an approval the module holds no captured
+  content for is refused with the same code and names only the `command`. A fresh `macro.execute`
+  request opens a new approval showing the current content.
 - A dry run bypasses approval and reports `approvalRequired: true` when the real command would wait.
   The policy still refuses denied commands during a dry run.
 - `policy.snapshot` reports `{ approve: [names], deny: [names] }`. The result is advisory because the

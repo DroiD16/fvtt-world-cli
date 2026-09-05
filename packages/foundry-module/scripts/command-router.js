@@ -118,6 +118,8 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
     ...approvalStoreOptions,
     // The guarded path is what makes a delayed decision safe to run: this option is not replaceable.
     execute: ({ approvalId, command, params, binding }) => {
+      // No suspension point may separate this freshness check from the dispatch below: an await
+      // between them would reopen the shown-content-to-execution gap the binding closes.
       try {
         assertApprovalBindingFresh(command, params, binding);
       } catch (error) {

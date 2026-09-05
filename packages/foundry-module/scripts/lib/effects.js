@@ -144,7 +144,7 @@ export async function updateEmbeddedEffect(parent, effectId, patch, details = {}
   );
   if (!writeCommitted(results)) {
     await assertDocumentUpdateCommitted({
-      document: getEmbeddedEffect(parent, effectId, details),
+      document: parent.effects?.get?.(effectId) ?? current,
       patch: preparedPatch,
       subject: `Active effect ${effectId} of ${parent.documentName ?? "document"} ${parent.id}`,
       hookName: "preUpdateActiveEffect",

@@ -2,7 +2,12 @@ import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
 
 import { getJournalById } from "./game-collections.js";
-import { previewDocumentCreate, previewDocumentUpdate, resolveEmbeddedDocumentClass } from "./world-docs.js";
+import {
+  computeDocumentUpdateDiff,
+  previewDocumentCreate,
+  previewDocumentUpdate,
+  resolveEmbeddedDocumentClass
+} from "./world-docs.js";
 import { WORLD_VETO_REMEDY, assertDocumentUpdateCommitted } from "./write-confirmation.js";
 
 /**
@@ -186,25 +191,54 @@ export async function updateJournalPages(journalId, pages) {
     render: true
   });
   const returned = new Set((Array.isArray(results) ? results : []).map((page) => page?.id).filter(Boolean));
+  const updatedPageIds = [];
+  const unconfirmed = [];
   for (const { _id, ...patch } of pages) {
-    if (returned.has(_id)) continue;
+    if (returned.has(_id)) {
+      updatedPageIds.push(_id);
+      continue;
+    }
     const page = journal.pages?.get?.(_id) ?? null;
-    if (page === null) {
+    let confirmed = false;
+    if (page !== null) {
+      try {
+        confirmed = Object.keys(await computeDocumentUpdateDiff(page, patch)).length === 0;
+      } catch {
+        confirmed = false;
+      }
+    }
+    if (confirmed) updatedPageIds.push(_id);
+    else unconfirmed.push({ pageId: _id, patch, page });
+  }
+
+  const failed = unconfirmed[0];
+  if (failed !== undefined) {
+    const details = { journalId, pageId: failed.pageId, updatedPageIds };
+    if (failed.page === null) {
       throw createBridgeError(
         ERROR_CODES.INTERNAL_ERROR,
-        `Journal page ${_id} of journal ${journalId} was NOT updated: the page no longer exists now that the ` +
-          `update has resolved, so the requested change cannot be stored. Re-read the journal with journal.get ` +
-          `before deciding what to do. ${WORLD_VETO_REMEDY}`,
-        { journalId, pageId: _id }
+        `Journal page ${failed.pageId} of journal ${journalId} was NOT updated: the page no longer exists now ` +
+          `that the update has resolved, so the requested change cannot be stored. The pages in ` +
+          `details.updatedPageIds DID update — re-read the journal with journal.get before deciding what to do. ` +
+          WORLD_VETO_REMEDY,
+        details
       );
     }
     await assertDocumentUpdateCommitted({
-      document: page,
-      patch,
-      subject: `Journal page ${_id} of journal ${journalId}`,
+      document: failed.page,
+      patch: failed.patch,
+      subject: `Journal page ${failed.pageId} of journal ${journalId}`,
       hookName: "preUpdateJournalEntryPage",
-      details: { journalId, pageId: _id }
+      details
     });
+    throw createBridgeError(
+      ERROR_CODES.INTERNAL_ERROR,
+      `Journal page ${failed.pageId} of journal ${journalId} was NOT updated when the bridge first probed it, ` +
+        `and a second probe could not reproduce the refusal, so the stored state is UNSETTLED. The pages in ` +
+        `details.updatedPageIds DID update — re-read the journal with journal.get before deciding what to do. ` +
+        WORLD_VETO_REMEDY,
+      details
+    );
   }
   return results;
 }

@@ -761,7 +761,7 @@ describe("folder management", () => {
     expect(response.error.message).toMatch(/was NOT updated/);
     expect(response.error.message).toMatch(/preUpdateFolder/);
 
-    expect(response.error.message).toMatch(/no override for a world-side veto/);
+    expect(response.error.message).toMatch(/no force flag for a world-side veto/);
     expect(response.error.details.folderId).toBe("fd");
 
     expect(response.error.details.fields).toEqual(["name"]);

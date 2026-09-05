@@ -12,11 +12,8 @@ import {
   resolveFolderDocumentClass
 } from "../lib/folders.js";
 import { getFoldersCollection } from "../lib/game-collections.js";
-import {
-  computeDocumentUpdateDiff,
-  previewDocumentCreate,
-  previewDocumentUpdate
-} from "../lib/world-docs.js";
+import { previewDocumentCreate, previewDocumentUpdate } from "../lib/world-docs.js";
+import { assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
 import { createBridgeError } from "../lib/errors.js";
 import { createMutationQueue } from "../lib/mutation-queue.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
@@ -70,6 +67,9 @@ function capIds(ids) {
     truncated: ids.length > FOLDER_DELETE_ID_CAP
   };
 }
+
+const FOLDER_VETO_REMEDY =
+  "There is no force flag for a world-side veto — disable the module that locks this folder (or edit it from the Foundry UI) and retry.";
 
 function computeDeletePlan(folder, { deleteSubfolders, deleteContents }) {
   const type = folder.type ?? folder.toObject?.().type ?? null;
@@ -291,31 +291,15 @@ export function createFolderHandlers() {
         }
 
         const updated = await folder.update(patch, { diff: true, render: true });
-
         if (!updated) {
-          let diff;
-          let probeError = null;
-          try {
-            diff = await computeDocumentUpdateDiff(folder, patch);
-          } catch (error) {
-            probeError = /** @type {any} */ (error)?.message ?? String(error);
-            diff = null;
-          }
-          if (diff === null || Object.keys(diff).length > 0) {
-            const fields = (diff ? Object.keys(diff) : Object.keys(patch)).filter((key) => key !== "_id");
-            throw createBridgeError(
-              ERROR_CODES.INTERNAL_ERROR,
-              `Folder ${folder.id} was NOT updated: Foundry resolved the update without applying it, which means a module's preUpdateFolder hook or a core _preUpdate refused the write, or the patch failed Foundry's own client-side validation (which Foundry reports only as a UI notification). The folder still holds its previous values for ${
-                fields.join(", ") || "the requested fields"
-              }. There is no override for a world-side veto — folder.update takes no force flag, and force would not help: disable the module that locks this folder (or edit it from the Foundry UI) and retry.`,
-              {
-                folderId: folder.id,
-                fields,
-
-                validationError: probeError
-              }
-            );
-          }
+          await assertDocumentUpdateCommitted({
+            document: folder,
+            patch,
+            subject: `Folder ${folder.id}`,
+            hookName: "preUpdateFolder",
+            details: { folderId: folder.id },
+            remedy: FOLDER_VETO_REMEDY
+          });
         }
 
         return {
