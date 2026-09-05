@@ -37,18 +37,27 @@ jobs:
       - run: npm run release:artifacts
 
       - name: Create the GitHub release
-        run: >
-          gh release create "$GITHUB_REF_NAME"
-          dist/release/fvtt-world-cli.zip
-          dist/release/module.json
-          --verify-tag
-          --title "$GITHUB_REF_NAME"
-          --notes-file dist/release/release-notes.md
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --json name > /dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists, skipping"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              dist/release/fvtt-world-cli.zip \
+              dist/release/module.json \
+              --verify-tag \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file dist/release/release-notes.md
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Publish the CLI package to npm
-        run: npm publish
+        run: |
+          if [ "$(npm view "fvtt-world-cli@$GITHUB_REF_NAME" version 2> /dev/null)" = "$GITHUB_REF_NAME" ]; then
+            echo "fvtt-world-cli@$GITHUB_REF_NAME is already on npm, skipping"
+          else
+            npm publish
+          fi
         working-directory: packages/cli
 
       - name: Publish the release to the Foundry package registry
