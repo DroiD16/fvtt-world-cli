@@ -1,6 +1,11 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
+import {
+  assertDocumentDeleteCommitted,
+  assertDocumentUpdateCommitted,
+  writeCommitted
+} from "./write-confirmation.js";
 
 import { getFoundryGeneration } from "./foundry-capabilities.js";
 import { getActorById, getGame, getSceneById } from "./game-collections.js";
@@ -219,10 +224,19 @@ export async function updateSceneEmbedded(
     return document;
   }
 
-  await scene.updateEmbeddedDocuments(type, [{ _id: embeddedId, ...preparedPatch }], {
+  const results = await scene.updateEmbeddedDocuments(type, [{ _id: embeddedId, ...preparedPatch }], {
     diff: true,
     render: true
   });
+  if (!writeCommitted(results)) {
+    await assertDocumentUpdateCommitted({
+      document: sceneEmbeddedCollection(scene, type).get(embeddedId) ?? document,
+      patch: preparedPatch,
+      subject: `${type} ${embeddedId} of scene ${sceneId}`,
+      hookName: `preUpdate${type}`,
+      details: { sceneId, [idField]: embeddedId }
+    });
+  }
 
   return sceneEmbeddedCollection(scene, type).get(embeddedId);
 }
@@ -241,7 +255,13 @@ export async function deleteSceneEmbedded(
     return;
   }
 
-  await scene.deleteEmbeddedDocuments(type, [embeddedId], { render: true });
+  const results = await scene.deleteEmbeddedDocuments(type, [embeddedId], { render: true });
+  assertDocumentDeleteCommitted({
+    committed: writeCommitted(results),
+    subject: `${type} ${embeddedId} of scene ${sceneId}`,
+    hookName: `preDelete${type}`,
+    details: { sceneId, [idField]: embeddedId }
+  });
 }
 
 export async function cloneSceneEmbedded(

@@ -30,7 +30,7 @@ import {
   updateCard
 } from "../lib/cards-docs.js";
 import { getCardsCollection } from "../lib/game-collections.js";
-import { assertTableFamilyDeleteCommitted, assertTableFamilyUpdateCommitted } from "../lib/table-docs.js";
+import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
 import {
   assertClonePatchValid,
   cloneDocument,
@@ -988,7 +988,7 @@ export function createCardsHandlers() {
         const requestedPatch = cloneValue(patch);
         const updated = await stack.update(patch, { diff: true, render: true });
         if (!updated) {
-          await assertTableFamilyUpdateCommitted({
+          await assertDocumentUpdateCommitted({
             document: stack,
             patch: requestedPatch,
             subject: `Cards ${stack.id ?? params.cardsId}`,
@@ -1148,7 +1148,7 @@ export function createCardsHandlers() {
         const requestedPatch = cloneValue(patch);
         const { card: updated, committed } = await updateCard(stack, params.cardId, patch);
         if (!committed) {
-          await assertTableFamilyUpdateCommitted({
+          await assertDocumentUpdateCommitted({
             document: updated ?? card,
             patch: requestedPatch,
             subject: `Card ${params.cardId} of Cards ${params.cardsId}`,
@@ -1190,7 +1190,7 @@ export function createCardsHandlers() {
         }
         const { committed } = await deleteCard(stack, params.cardId);
 
-        assertTableFamilyDeleteCommitted({
+        assertDocumentDeleteCommitted({
           committed,
           subject: `Card ${params.cardId} of Cards ${params.cardsId}`,
           hookName: "preDeleteCard",

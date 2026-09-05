@@ -47,7 +47,7 @@ import {
   updateCombatantGroup
 } from "../lib/combat-docs.js";
 import { getCombatsCollection } from "../lib/game-collections.js";
-import { assertTableFamilyDeleteCommitted, assertTableFamilyUpdateCommitted } from "../lib/table-docs.js";
+import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
 import { deleteDocument, previewDocumentUpdate } from "../lib/world-docs.js";
 import { createBridgeError, toFailureSummary } from "../lib/errors.js";
 import {
@@ -232,7 +232,7 @@ export function createCombatHandlers() {
           throw error;
         }
         if (!updated) {
-          await assertTableFamilyUpdateCommitted({
+          await assertDocumentUpdateCommitted({
             document: combat,
             patch,
             subject: `Combat ${combatId}`,
@@ -265,7 +265,7 @@ export function createCombatHandlers() {
         }
 
         const deletedDocument = await deleteDocument(combat);
-        assertTableFamilyDeleteCommitted({
+        assertDocumentDeleteCommitted({
           committed: Boolean(deletedDocument),
           subject: `Combat ${id}`,
           hookName: "preDeleteCombat",
@@ -361,7 +361,7 @@ export function createCombatHandlers() {
 
         const updated = await activateCombat(combat);
         if (!updated) {
-          await assertTableFamilyUpdateCommitted({
+          await assertDocumentUpdateCommitted({
             document: combat,
             patch: { active: true },
             subject: `Combat ${combatId}`,
@@ -874,7 +874,7 @@ export function createCombatHandlers() {
 
         const { combatant: updated, committed } = await updateCombatant(combat, params.combatantId, patch);
         if (!committed) {
-          await assertTableFamilyUpdateCommitted({
+          await assertDocumentUpdateCommitted({
             document: await detachedCombatantRow(combat, params.combatantId),
             patch,
             subject: `Combatant ${params.combatantId} of combat ${combatId}`,
@@ -914,7 +914,7 @@ export function createCombatHandlers() {
         }
 
         const { committed } = await deleteCombatant(combat, params.combatantId);
-        assertTableFamilyDeleteCommitted({
+        assertDocumentDeleteCommitted({
           committed,
           subject: `Combatant ${params.combatantId} of combat ${combatId}`,
           hookName: "preDeleteCombatant",
@@ -1004,7 +1004,7 @@ export function createCombatHandlers() {
 
         const { group: updated, committed } = await updateCombatantGroup(combat, params.groupId, patch);
         if (!committed) {
-          await assertTableFamilyUpdateCommitted({
+          await assertDocumentUpdateCommitted({
             document: updated ?? group,
             patch,
             subject: `Combatant group ${params.groupId} of combat ${combatId}`,
@@ -1039,7 +1039,7 @@ export function createCombatHandlers() {
         }
 
         const { committed } = await deleteCombatantGroup(combat, params.groupId);
-        assertTableFamilyDeleteCommitted({
+        assertDocumentDeleteCommitted({
           committed,
           subject: `Combatant group ${params.groupId} of combat ${combatId}`,
           hookName: "preDeleteCombatantGroup",

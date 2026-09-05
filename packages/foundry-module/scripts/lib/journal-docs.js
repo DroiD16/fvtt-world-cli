@@ -3,6 +3,7 @@ import { createBridgeError } from "./errors.js";
 
 import { getJournalById } from "./game-collections.js";
 import { previewDocumentCreate, previewDocumentUpdate, resolveEmbeddedDocumentClass } from "./world-docs.js";
+import { WORLD_VETO_REMEDY, assertDocumentUpdateCommitted } from "./write-confirmation.js";
 
 /**
  * The Journal world collection carries Foundry's two sharing entry points. Foundry 14 keeps the bare
@@ -159,7 +160,19 @@ export async function createJournalPages(journalId, pages) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Journal page creation API is not available");
   }
 
-  return journal.createEmbeddedDocuments("JournalEntryPage", pages, { render: true });
+  const results = await journal.createEmbeddedDocuments("JournalEntryPage", pages, { render: true });
+  const createdPageIds = (Array.isArray(results) ? results : []).map((page) => page?.id).filter(Boolean);
+  if (createdPageIds.length < pages.length) {
+    throw createBridgeError(
+      ERROR_CODES.INTERNAL_ERROR,
+      `Journal ${journalId} pages were NOT all created: Foundry resolved the create with ${createdPageIds.length} of ` +
+        `${pages.length} requested pages stored, which means a module's preCreateJournalEntryPage hook or a core ` +
+        `_preCreate refused the rest. The pages in details.createdPageIds DID land — re-read the journal with ` +
+        `journal.get before deciding what to do. ${WORLD_VETO_REMEDY}`,
+      { journalId, requested: pages.length, createdPageIds }
+    );
+  }
+  return results;
 }
 
 export async function updateJournalPages(journalId, pages) {
@@ -168,7 +181,32 @@ export async function updateJournalPages(journalId, pages) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Journal page update API is not available");
   }
 
-  return journal.updateEmbeddedDocuments("JournalEntryPage", pages, { diff: true, render: true });
+  const results = await journal.updateEmbeddedDocuments("JournalEntryPage", pages, {
+    diff: true,
+    render: true
+  });
+  const returned = new Set((Array.isArray(results) ? results : []).map((page) => page?.id).filter(Boolean));
+  for (const { _id, ...patch } of pages) {
+    if (returned.has(_id)) continue;
+    const page = journal.pages?.get?.(_id) ?? null;
+    if (page === null) {
+      throw createBridgeError(
+        ERROR_CODES.INTERNAL_ERROR,
+        `Journal page ${_id} of journal ${journalId} was NOT updated: the page no longer exists now that the ` +
+          `update has resolved, so the requested change cannot be stored. Re-read the journal with journal.get ` +
+          `before deciding what to do. ${WORLD_VETO_REMEDY}`,
+        { journalId, pageId: _id }
+      );
+    }
+    await assertDocumentUpdateCommitted({
+      document: page,
+      patch,
+      subject: `Journal page ${_id} of journal ${journalId}`,
+      hookName: "preUpdateJournalEntryPage",
+      details: { journalId, pageId: _id }
+    });
+  }
+  return results;
 }
 
 /**
@@ -227,7 +265,19 @@ export async function deleteJournalPages(journalId, pageIds) {
 
   assertJournalPagesExist(journalId, pageIds);
 
-  return journal.deleteEmbeddedDocuments("JournalEntryPage", pageIds, { render: true });
+  const results = await journal.deleteEmbeddedDocuments("JournalEntryPage", pageIds, { render: true });
+  const remaining = pageIds.filter((pageId) => journal.pages?.get?.(pageId));
+  if (remaining.length > 0) {
+    throw createBridgeError(
+      ERROR_CODES.INTERNAL_ERROR,
+      `Journal ${journalId} pages ${remaining.join(", ")} were NOT deleted: Foundry resolved the delete without ` +
+        `removing them, which means a module's preDeleteJournalEntryPage hook or a core _preDelete refused them. ` +
+        `Any other requested page WAS deleted — re-read the journal with journal.get before deciding what to do. ` +
+        WORLD_VETO_REMEDY,
+      { journalId, pageIds: remaining }
+    );
+  }
+  return results;
 }
 
 export const JOURNAL_CATEGORY_VETO_REMEDY =

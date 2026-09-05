@@ -22,7 +22,7 @@ import {
   previewSceneEmbeddedUpdate,
   updateSceneEmbedded
 } from "../lib/scene-embedded.js";
-import { assertTableFamilyDeleteCommitted, assertTableFamilyUpdateCommitted } from "../lib/table-docs.js";
+import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { createBridgeError } from "../lib/errors.js";
 import {
@@ -181,7 +181,7 @@ async function updateBehavior(params, route) {
     );
   }
   if (!committed) {
-    await assertTableFamilyUpdateCommitted({
+    await assertDocumentUpdateCommitted({
       document: updated,
       patch: sent,
       subject: `Region behavior ${params.behaviorId} of region ${params.regionId}`,
@@ -372,7 +372,7 @@ export function createSceneRegionHandlers() {
       }
 
       const { committed } = await deleteRegionBehavior(region, params.behaviorId);
-      assertTableFamilyDeleteCommitted({
+      assertDocumentDeleteCommitted({
         committed,
         subject: `Region behavior ${params.behaviorId} of region ${params.regionId}`,
         hookName: "preDeleteRegionBehavior",

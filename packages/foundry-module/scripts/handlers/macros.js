@@ -11,6 +11,7 @@ import {
   previewMacroCreate
 } from "../lib/world-docs.js";
 import { BridgeError, createBridgeError, toFailureSummary } from "../lib/errors.js";
+import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import { filterByName, paginate, serializeMacro, serializeMacroSummary } from "../lib/serializers.js";
@@ -317,7 +318,16 @@ export function createMacroHandlers() {
         return dryRunResponse({ macro: serializeMacro(preview) });
       }
 
-      await macro.update(patch, { diff: true, render: true });
+      const updated = await macro.update(patch, { diff: true, render: true });
+      if (!updated) {
+        await assertDocumentUpdateCommitted({
+          document: macro,
+          patch,
+          subject: `Macro ${macro.id ?? params.macroId}`,
+          hookName: "preUpdateMacro",
+          details: { macroId: macro.id ?? params.macroId }
+        });
+      }
       return {
         macro: serializeMacro(macro)
       };
@@ -338,7 +348,13 @@ export function createMacroHandlers() {
         return dryRunResponse({ id, deleted: false });
       }
 
-      await deleteDocument(macro);
+      const deletedDocument = await deleteDocument(macro);
+      assertDocumentDeleteCommitted({
+        committed: Boolean(deletedDocument),
+        subject: `Macro ${id}`,
+        hookName: "preDeleteMacro",
+        details: { macroId: id }
+      });
       return {
         id,
         deleted: true

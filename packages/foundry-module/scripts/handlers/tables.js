@@ -3,8 +3,7 @@ import {
   assertTableDrawCommitted,
   assertTableDrawCountSupported,
   assertTableDrawSupported,
-  assertTableFamilyDeleteCommitted,
-  assertTableFamilyUpdateCommitted,
+  TABLE_VETO_REMEDY,
   assertTableResetSupported,
   countDrawnTableResults,
   countPersistedAvailableTableResults,
@@ -26,6 +25,7 @@ import {
   snapshotTableDrawEvidence,
   updateTableResult
 } from "../lib/table-docs.js";
+import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
 import {
   assertClonePatchValid,
   cloneDocument,
@@ -183,12 +183,13 @@ export function createTableHandlers() {
 
         const updated = await table.update(patch, { diff: true, render: true });
         if (!updated) {
-          await assertTableFamilyUpdateCommitted({
+          await assertDocumentUpdateCommitted({
             document: table,
             patch,
             subject: `Roll table ${table.id ?? params.tableId}`,
             hookName: "preUpdateRollTable",
-            details: { tableId: table.id ?? params.tableId }
+            details: { tableId: table.id ?? params.tableId },
+            remedy: TABLE_VETO_REMEDY
           });
         }
         return {
@@ -219,11 +220,12 @@ export function createTableHandlers() {
         }
 
         const deletedDocument = await deleteDocument(table);
-        assertTableFamilyDeleteCommitted({
+        assertDocumentDeleteCommitted({
           committed: Boolean(deletedDocument),
           subject: `Roll table ${id}`,
           hookName: "preDeleteRollTable",
-          details: { tableId: id }
+          details: { tableId: id },
+          remedy: TABLE_VETO_REMEDY
         });
         return {
           id,
@@ -466,12 +468,13 @@ export function createTableHandlers() {
           patch
         );
         if (!committed) {
-          await assertTableFamilyUpdateCommitted({
+          await assertDocumentUpdateCommitted({
             document: updated,
             patch,
             subject: `Table result ${params.resultId} of roll table ${params.tableId}`,
             hookName: "preUpdateTableResult",
-            details: { tableId: params.tableId, resultId: params.resultId }
+            details: { tableId: params.tableId, resultId: params.resultId },
+            remedy: TABLE_VETO_REMEDY
           });
         }
         return { tableId: params.tableId, result: serializeTableResult(updated) };
@@ -497,11 +500,12 @@ export function createTableHandlers() {
           dryRun: isDryRun(params)
         });
         if (!isDryRun(params)) {
-          assertTableFamilyDeleteCommitted({
+          assertDocumentDeleteCommitted({
             committed,
             subject: `Table result ${params.resultId} of roll table ${params.tableId}`,
             hookName: "preDeleteTableResult",
-            details: { tableId: params.tableId, resultId: params.resultId }
+            details: { tableId: params.tableId, resultId: params.resultId },
+            remedy: TABLE_VETO_REMEDY
           });
         }
         const body = {

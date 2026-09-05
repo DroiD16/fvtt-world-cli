@@ -1,5 +1,10 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
+import {
+  assertDocumentDeleteCommitted,
+  assertDocumentUpdateCommitted,
+  writeCommitted
+} from "./write-confirmation.js";
 
 import { omitFields, sanitizeEffectData } from "./sanitize.js";
 import {
@@ -128,11 +133,24 @@ export async function updateEmbeddedEffect(parent, effectId, patch, details = {}
     return current;
   }
 
-  await parent.updateEmbeddedDocuments(
+  const preparedPatch = prepareEmbeddedEffectUpdateData(parent, patch);
+  const results = await parent.updateEmbeddedDocuments(
     "ActiveEffect",
-    [{ ...prepareEmbeddedEffectUpdateData(parent, patch), _id: effectId }],
-    { diff: true, render: true }
+    [{ ...preparedPatch, _id: effectId }],
+    {
+      diff: true,
+      render: true
+    }
   );
+  if (!writeCommitted(results)) {
+    await assertDocumentUpdateCommitted({
+      document: getEmbeddedEffect(parent, effectId, details),
+      patch: preparedPatch,
+      subject: `Active effect ${effectId} of ${parent.documentName ?? "document"} ${parent.id}`,
+      hookName: "preUpdateActiveEffect",
+      details: { ...details, effectId }
+    });
+  }
   return getEmbeddedEffect(parent, effectId, details);
 }
 
@@ -147,7 +165,13 @@ export async function deleteEmbeddedEffect(parent, effectId, details = {}, { dry
     return;
   }
 
-  await parent.deleteEmbeddedDocuments("ActiveEffect", [effectId], { render: true });
+  const results = await parent.deleteEmbeddedDocuments("ActiveEffect", [effectId], { render: true });
+  assertDocumentDeleteCommitted({
+    committed: writeCommitted(results),
+    subject: `Active effect ${effectId} of ${parent.documentName ?? "document"} ${parent.id}`,
+    hookName: "preDeleteActiveEffect",
+    details: { ...details, effectId }
+  });
 }
 
 export async function cloneEmbeddedEffect(

@@ -19,7 +19,7 @@ import {
   updateJournalPages
 } from "../lib/journal-docs.js";
 import { resolveBroadcastUsers } from "../lib/broadcast-targets.js";
-import { assertTableFamilyDeleteCommitted, assertTableFamilyUpdateCommitted } from "../lib/table-docs.js";
+import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
 import {
   cloneDocument,
   createJournalEntry,
@@ -240,7 +240,16 @@ export function createJournalHandlers() {
       assertJournalPageOpsValid(journal, { createPagesPayload, updatePagesPayload });
 
       if (Object.keys(documentPatch).length > 0) {
-        await journal.update(documentPatch, { diff: true, render: true });
+        const updated = await journal.update(documentPatch, { diff: true, render: true });
+        if (!updated) {
+          await assertDocumentUpdateCommitted({
+            document: journal,
+            patch: documentPatch,
+            subject: `Journal ${journal.id ?? params.journalId}`,
+            hookName: "preUpdateJournalEntry",
+            details: { journalId: journal.id ?? params.journalId }
+          });
+        }
       }
 
       if (createPagesPayload.length > 0) {
@@ -274,7 +283,13 @@ export function createJournalHandlers() {
         return dryRunResponse({ id, deleted: false });
       }
 
-      await deleteDocument(journal);
+      const deletedDocument = await deleteDocument(journal);
+      assertDocumentDeleteCommitted({
+        committed: Boolean(deletedDocument),
+        subject: `Journal ${id}`,
+        hookName: "preDeleteJournalEntry",
+        details: { journalId: id }
+      });
       return {
         id,
         deleted: true
@@ -373,7 +388,7 @@ export function createJournalHandlers() {
         );
       }
       if (!committed) {
-        await assertTableFamilyUpdateCommitted({
+        await assertDocumentUpdateCommitted({
           document: updated,
           patch: params.patch,
           subject: `Journal category ${params.categoryId} of journal ${params.journalId}`,
@@ -398,7 +413,7 @@ export function createJournalHandlers() {
 
       const { journal: parent, committed } = await deleteJournalCategory(params.journalId, params.categoryId);
 
-      assertTableFamilyDeleteCommitted({
+      assertDocumentDeleteCommitted({
         committed,
         subject: `Journal category ${params.categoryId} of journal ${params.journalId}`,
         hookName: "preDeleteJournalEntryCategory",

@@ -20,6 +20,7 @@ import {
 import { cloneDocument, deleteDocument, previewDocumentUpdate } from "../lib/world-docs.js";
 import { BATCH_GET_MAX_IDS, ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "../lib/errors.js";
+import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import {
@@ -98,7 +99,16 @@ export function createPlaylistHandlers() {
         return dryRunResponse({ playlist: serializePlaylist(preview) });
       }
 
-      await playlist.update(params.patch, { diff: true, render: true });
+      const updated = await playlist.update(params.patch, { diff: true, render: true });
+      if (!updated) {
+        await assertDocumentUpdateCommitted({
+          document: playlist,
+          patch: params.patch,
+          subject: `Playlist ${playlist.id ?? params.playlistId}`,
+          hookName: "preUpdatePlaylist",
+          details: { playlistId: playlist.id ?? params.playlistId }
+        });
+      }
       return {
         playlist: serializePlaylist(playlist)
       };
@@ -118,7 +128,13 @@ export function createPlaylistHandlers() {
         return dryRunResponse({ id, deleted: false });
       }
 
-      await deleteDocument(playlist);
+      const deletedDocument = await deleteDocument(playlist);
+      assertDocumentDeleteCommitted({
+        committed: Boolean(deletedDocument),
+        subject: `Playlist ${id}`,
+        hookName: "preDeletePlaylist",
+        details: { playlistId: id }
+      });
       return {
         id,
         deleted: true

@@ -162,6 +162,11 @@ nothing to read back; the result names the users it targeted and the active/inac
 that is knowable. `macro.execute` reports the macro's returned value and observed chat messages,
 and a timeout there is indeterminate: the macro keeps running in the GM client, so `MACRO_TIMEOUT`
 callers verify effects by reads instead of retrying blindly.
+A mutation result reports success only after the bridge confirms that Foundry persisted the
+requested state. Foundry resolves a write vetoed by a module hook or refused by its client-side
+validation without throwing, so the bridge re-checks stored state after every write — single and
+bulk alike. A single write that did not land fails with a structured error naming the hook family
+that can refuse it; a patch that changes nothing remains an ordinary success.
 Serialized projections expose `id` as the public identifier; a source `_id` mirror may accompany
 it. A previewed new document has no persistent identity, and an id observed during a preview must
 not be reused. List-like responses that paginate return their collection with a total and a

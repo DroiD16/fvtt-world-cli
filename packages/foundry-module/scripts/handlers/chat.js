@@ -8,6 +8,7 @@ import { getMessagesCollection } from "../lib/game-collections.js";
 import { deleteDocument } from "../lib/world-docs.js";
 import { createBridgeError } from "../lib/errors.js";
 import { ERROR_CODES } from "../generated/protocol.js";
+import { assertDocumentDeleteCommitted } from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import { paginate, serializeChatMessage, serializeChatMessageSummary } from "../lib/serializers.js";
@@ -107,7 +108,13 @@ export function createChatHandlers() {
       if (isDryRun(params)) {
         return dryRunResponse({ id, deleted: false });
       }
-      await deleteDocument(message);
+      const deletedDocument = await deleteDocument(message);
+      assertDocumentDeleteCommitted({
+        committed: Boolean(deletedDocument),
+        subject: `Chat message ${id}`,
+        hookName: "preDeleteChatMessage",
+        details: { messageId: id }
+      });
       return { id, deleted: true };
     }
   };
