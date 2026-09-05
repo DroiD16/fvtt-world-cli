@@ -1,21 +1,14 @@
 # World CLI for Foundry VTT
 
-[![Foundry VTT v13–v14](https://img.shields.io/badge/Foundry%20VTT-v13%E2%80%93v14-ff6400)](https://foundryvtt.com)
+[![Supported Foundry versions](https://img.shields.io/endpoint?url=https%3A%2F%2Ffoundryshields.com%2Fversion%3Furl%3Dhttps%3A%2F%2Fraw.githubusercontent.com%2FDroiD16%2Ffvtt-world-cli%2Fmain%2Fpackages%2Ffoundry-module%2Fmodule.json)](https://foundryvtt.com)
+[![npm](https://img.shields.io/npm/v/fvtt-world-cli)](https://www.npmjs.com/package/fvtt-world-cli)
+[![npm downloads](https://img.shields.io/npm/dm/fvtt-world-cli)](https://www.npmjs.com/package/fvtt-world-cli)
+[![license](https://img.shields.io/github/license/DroiD16/fvtt-world-cli)](LICENSE)
 
 Tell your AI agent what should change in your Foundry VTT world, and it happens in the live
 world, validated by Foundry, visible to your players immediately.
 
-```text
-You → agent:  "The scimitar in Valeros's inventory should burn targets on hit.
-               Add a Flaming effect to it."
-
-agent → fvtt-world-cli:
-              actor list --name Valeros            find the character
-              actor item list --name scimitar      find the sword in their inventory
-              actor item effect create …           add the effect to it
-
-agent → you:  "Done. Flaming effect added, already live in the world."
-```
+![A prompt to an AI agent and the resulting lit tavern scene in Foundry](https://raw.githubusercontent.com/DroiD16/fvtt-world-cli/main/publishing/media/cover.jpg)
 
 Modern agents already understand requests like that. What they have lacked is a safe way into
 Foundry: driving the browser UI is brittle and token consuming, and editing world files on disk
@@ -39,6 +32,8 @@ A few asks it handles end to end:
 - "Find every NPC that still has no portrait and list them."
 - "Turn the bestiary goblin into a flying one that throws dynamite for 2d6 damage, and add it to
   the scene."
+
+![An agent lights a tavern scene and stages a hidden ambush, and the Foundry scene updates live](https://raw.githubusercontent.com/DroiD16/fvtt-world-cli/main/publishing/media/cli-demo.gif)
 
 [Commands](docs/commands.md) maps the full surface.
 
