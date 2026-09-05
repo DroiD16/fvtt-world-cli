@@ -151,6 +151,8 @@ in repository-scoped memory or version control.
 - `packages/foundry-module/tests/`: runtime and regression contracts
 - `scripts/live-smoke.mjs`: live coverage and cleanup behavior
 - `scripts/build-release-artifacts.mjs`: release artifact assembly and version-consistency checks
+- `.github/workflows/release.yml` and `scripts/publish-foundry-release.mjs`: the tag-triggered
+  publish pipeline (GitHub release, npm, Foundry package registry)
 - `docs/commands.md`: user-facing command behavior
 - `docs/protocol.md`: wire protocol and result shapes
 - `docs/security.md`: trust boundaries, permissions, and security rationale
@@ -258,6 +260,12 @@ or publishing artifacts, agree with the user on the release scope, exact version
 - Publishing, pushing tags, and creating a release require explicit user approval after the final
   version, notes, changelog entry, diff, verification results, and expected artifacts have been
   reviewed.
+- Pushing the version tag publishes the release: `.github/workflows/release.yml` reacts to the tag
+  by running the tests, building the artifacts, creating the GitHub release from the changelog
+  section, publishing the CLI package to npm, and submitting the release to the Foundry package
+  registry. After pushing the tag, verify that the workflow run succeeded and that all three
+  destinations carry the new version. Publish to a destination by hand only when the user directs
+  it after a CI failure.
 
 ## Documentation Sources
 
