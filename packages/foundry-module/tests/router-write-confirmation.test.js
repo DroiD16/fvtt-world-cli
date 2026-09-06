@@ -457,7 +457,24 @@ describe("a patch shape Foundry stores nothing for is refused before the write",
     expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
     expect(response.error.message).toMatch(/SILENTLY DISCARDS/);
     expect(response.error.message).toMatch(/Nothing was written/);
+    expect(response.error.details).toMatchObject({ sceneId: "scene-1", wallId: "wall-plain" });
     expect(scene.walls.get("wall-plain").c).toEqual(stored);
+    expect(scene.updateEmbeddedDocuments).not.toHaveBeenCalled();
+  });
+
+  it("a dry run refuses the same shape the real write refuses", async () => {
+    const scene = globalThis.game.scenes.get("scene-1");
+
+    const response = await send("scene.wall.update", {
+      sceneId: "scene-1",
+      wallId: "wall-plain",
+      patch: { "c.0": 999 },
+      dryRun: true
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(response.error.message).toMatch(/SILENTLY DISCARDS/);
     expect(scene.updateEmbeddedDocuments).not.toHaveBeenCalled();
   });
 
@@ -474,7 +491,7 @@ describe("a patch shape Foundry stores nothing for is refused before the write",
 });
 
 describe("an operator-key patch confirms through the merged preview, not the raw diff", () => {
-  it("a forced-replacement flag write succeeds", async () => {
+  it("a forced-replacement flag write succeeds and lands the value", async () => {
     const response = await send("scene.token.update", {
       sceneId: "scene-1",
       tokenId: "token-a",
@@ -482,6 +499,27 @@ describe("an operator-key patch confirms through the merged preview, not the raw
     });
 
     expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
+    expect(globalThis.game.scenes.get("scene-1").tokens.get("token-a").toObject().flags).toMatchObject({
+      scope: { only: 1 }
+    });
+  });
+
+  it("a total veto beside a trivially reflected operator key is NOT reported as partial", async () => {
+    const scene = globalThis.game.scenes.get("scene-1");
+    const token = scene.tokens.get("token-a");
+    const currentName = token.name;
+    scene.updateEmbeddedDocuments = vi.fn(async () => []);
+
+    const response = await send("scene.token.update", {
+      sceneId: "scene-1",
+      tokenId: "token-a",
+      patch: { "==name": currentName, alpha: 0.25 }
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.message).toMatch(/was NOT updated/);
+    expect(response.error.message).not.toMatch(/PART/);
+    expect(response.error.details.partial).toBeUndefined();
   });
 
   it("a stripped plain field beside an applied operator key is reported as partial", async () => {
@@ -507,6 +545,7 @@ describe("an operator-key patch confirms through the merged preview, not the raw
       partial: true
     });
     expect(token.name).not.toBe("Renamed");
+    expect(token.toObject().flags).toMatchObject({ scope: { only: 1 } });
   });
 });
 

@@ -28,7 +28,8 @@ import {
 import {
   applyConfirmedUpdate,
   assertDocumentDeleteCommitted,
-  assertDocumentUpdateCommitted
+  assertDocumentUpdateCommitted,
+  assertRequestedWriteStorable
 } from "../lib/write-confirmation.js";
 import {
   assertClonePatchValid,
@@ -181,6 +182,12 @@ export function createTableHandlers() {
 
         const patch = canonicalizeFilePathFields(params.patch, "RollTable");
         if (isDryRun(params)) {
+          await assertRequestedWriteStorable({
+            document: table,
+            patch,
+            subject: `Roll table ${table.id ?? params.tableId}`,
+            details: { tableId: table.id ?? params.tableId }
+          });
           const preview = await previewDocumentUpdate(table, patch);
           return dryRunResponse({ table: serializeTable(preview) });
         }

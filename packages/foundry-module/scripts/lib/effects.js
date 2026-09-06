@@ -1,6 +1,11 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
-import { applyConfirmedUpdate, assertDocumentDeleteCommitted, writeCommitted } from "./write-confirmation.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable,
+  writeCommitted
+} from "./write-confirmation.js";
 
 import { omitFields, sanitizeEffectData } from "./sanitize.js";
 import {
@@ -125,11 +130,17 @@ export async function updateEmbeddedEffect(parent, effectId, patch, details = {}
 
   const current = getEmbeddedEffect(parent, effectId, details);
 
+  const preparedPatch = prepareEmbeddedEffectUpdateData(parent, patch);
   if (dryRun) {
+    await assertRequestedWriteStorable({
+      document: current,
+      patch: preparedPatch,
+      subject: `Active effect ${effectId} of ${parent.documentName ?? "document"} ${parent.id}`,
+      details: { ...details, effectId }
+    });
     return current;
   }
 
-  const preparedPatch = prepareEmbeddedEffectUpdateData(parent, patch);
   await applyConfirmedUpdate({
     document: current,
     patch: preparedPatch,

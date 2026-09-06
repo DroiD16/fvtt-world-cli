@@ -46,27 +46,50 @@ export function createFetchResponse({ ok, status, bytes, contentType = null, con
   };
 }
 
+function isPlainMergeTarget(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function applyMergeKey(out, rawKey, value, performDeletions) {
+  const dot = rawKey.indexOf(".");
+  const segment = dot === -1 ? rawKey : rawKey.slice(0, dot);
+  const rest = dot === -1 ? null : rawKey.slice(dot + 1);
+  const operator = segment.startsWith("==") ? "==" : segment.startsWith("-=") ? "-=" : "";
+  const name = operator ? segment.slice(2) : segment;
+
+  if (operator === "-=") {
+    if (performDeletions) delete out[name];
+    return;
+  }
+
+  if (rest === null) {
+    if (operator === "==") {
+      out[name] = value;
+      return;
+    }
+    const target = out[name];
+    if (isPlainMergeTarget(value) && isPlainMergeTarget(target)) {
+      out[name] = applyDocumentMerge(target, value, { performDeletions });
+    } else {
+      out[name] = value;
+    }
+    return;
+  }
+
+  // Foundry 14 silently discards a dotted write that descends into an array field; mirror that
+  // rather than replacing the array with an object the guards could never have seen.
+  if (Array.isArray(out[name])) return;
+  const base = operator === "==" || !isPlainMergeTarget(out[name]) ? {} : out[name];
+  const container = { ...base };
+  applyMergeKey(container, rest, value, performDeletions);
+  out[name] = container;
+}
+
 export function applyDocumentMerge(base, patch, options = {}) {
   const performDeletions = options?.performDeletions === true;
   const out = Array.isArray(base) ? [...base] : { ...(base ?? {}) };
   for (const [key, value] of Object.entries(patch ?? {})) {
-    if (performDeletions && key.startsWith("-=")) {
-      delete out[key.slice(2)];
-      continue;
-    }
-    const target = out[key];
-    if (
-      value &&
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      target &&
-      typeof target === "object" &&
-      !Array.isArray(target)
-    ) {
-      out[key] = applyDocumentMerge(target, value, options);
-    } else {
-      out[key] = value;
-    }
+    applyMergeKey(out, key, value, performDeletions);
   }
   return out;
 }
@@ -348,33 +371,47 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
       }
       const current = this.toObject();
       const merged = applyDocumentMerge(current, patch ?? {}, { performDeletions: true });
+      const readAtPath = (source, segments) =>
+        segments.reduce(
+          (value, segment) => (value && typeof value === "object" ? value[segment] : undefined),
+          source
+        );
       if (context.dryRun) {
         const diff = {};
         for (const key of Object.keys(patch ?? {})) {
-          if (key === "id") continue;
+          if (key === "id" || key === "_id") continue;
+          const segments = key.split(".");
           // Foundry re-emits a "==" forced-replacement key in every diff, so the probe can never
           // confirm it directly; the fake must model that or the merged-preview fallback goes dark.
-          if (key.split(".").some((segment) => segment.startsWith("=="))) {
+          if (segments.some((segment) => segment.startsWith("=="))) {
             diff[key] = patch[key];
             continue;
           }
-          if (key.startsWith("-=")) {
-            if (Object.prototype.hasOwnProperty.call(current, key.slice(2))) diff[key] = patch[key];
+          const cleanPath = segments.map((segment) =>
+            segment.startsWith("-=") ? segment.slice(2) : segment
+          );
+          const before = readAtPath(current, cleanPath);
+          if (segments.some((segment) => segment.startsWith("-="))) {
+            if (before !== undefined) diff[key] = patch[key];
             continue;
           }
-          if (JSON.stringify(merged[key]) !== JSON.stringify(current[key])) diff[key] = merged[key];
+          const after = readAtPath(merged, cleanPath);
+          if (JSON.stringify(after) !== JSON.stringify(before)) diff[key] = after;
         }
         return diff;
       }
       for (const key of Object.keys(patch ?? {})) {
         if (key === "_id" || key === "id") continue;
-        if (key.startsWith("-=")) {
-          delete this[key.slice(2)];
-          delete data[key.slice(2)];
-          continue;
+        const first = key.split(".")[0];
+        const root = first.startsWith("==") || first.startsWith("-=") ? first.slice(2) : first;
+        if (!root) continue;
+        if (Object.prototype.hasOwnProperty.call(merged, root)) {
+          this[root] = merged[root];
+          data[root] = merged[root];
+        } else {
+          delete this[root];
+          delete data[root];
         }
-        this[key] = merged[key];
-        data[key] = merged[key];
       }
       return merged;
     },
@@ -392,13 +429,16 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
       const merged = applyDocumentMerge(this.toObject(), patch ?? {}, { performDeletions: true });
       for (const key of Object.keys(patch ?? {})) {
         if (key === "_id" || key === "id") continue;
-        if (key.startsWith("-=")) {
-          delete this[key.slice(2)];
-          delete data[key.slice(2)];
-          continue;
+        const first = key.split(".")[0];
+        const root = first.startsWith("==") || first.startsWith("-=") ? first.slice(2) : first;
+        if (!root) continue;
+        if (Object.prototype.hasOwnProperty.call(merged, root)) {
+          this[root] = merged[root];
+          data[root] = merged[root];
+        } else {
+          delete this[root];
+          delete data[root];
         }
-        this[key] = merged[key];
-        data[key] = merged[key];
       }
       return this;
     },
@@ -2866,7 +2906,7 @@ function attachRegionBehaviors(region, entries) {
         if (root !== "behaviors") return null;
         return {
           getCollection: () => collection,
-          schema: {},
+          schema: { get: () => ({}) },
           clean: (value) => (Array.isArray(value) ? [...value] : [])
         };
       }

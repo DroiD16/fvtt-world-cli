@@ -10,7 +10,7 @@ import {
 import { assertKnownOwnershipUsers, mergeOwnershipPatch } from "../lib/ownership.js";
 import { getPlaylistById } from "../lib/playlist-docs.js";
 import { getTableById } from "../lib/table-docs.js";
-import { applyConfirmedUpdate } from "../lib/write-confirmation.js";
+import { applyConfirmedUpdate, assertRequestedWriteStorable } from "../lib/write-confirmation.js";
 import { createBridgeError } from "../lib/errors.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 
@@ -46,6 +46,12 @@ function makeOwnershipSetHandler({ idField, getDoc, serialize, resultKey, docume
     const merged = mergeOwnershipPatch(doc, { defaultLevel: params.default, users: params.users });
 
     if (isDryRun(params)) {
+      await assertRequestedWriteStorable({
+        document: doc,
+        patch: { ownership: merged },
+        subject: `${documentName} ${doc.id ?? params[idField]}`,
+        details: { [idField]: doc.id ?? params[idField] }
+      });
       const preview = serialize(doc, { ownership: true, flags: true, provenance: true });
       preview.ownership = merged;
       return dryRunResponse({ [resultKey]: preview });
@@ -155,6 +161,18 @@ export function createOwnershipHandlers() {
       const merged = mergeOwnershipPatch(target, { defaultLevel: params.default, users: params.users });
 
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: target,
+          patch: { ownership: merged },
+          subject:
+            params.pageId !== undefined
+              ? `Journal page ${params.pageId} of journal ${params.journalId}`
+              : `Journal ${params.journalId}`,
+          details: {
+            journalId: params.journalId,
+            ...(params.pageId !== undefined ? { pageId: params.pageId } : {})
+          }
+        });
         const preview = serializeJournal(journal, { ownership: true });
         if (params.pageId !== undefined) {
           const previewPage = preview.pages.find(

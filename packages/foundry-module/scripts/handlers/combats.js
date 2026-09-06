@@ -50,7 +50,8 @@ import { getCombatsCollection } from "../lib/game-collections.js";
 import {
   applyConfirmedUpdate,
   assertDocumentDeleteCommitted,
-  assertDocumentUpdateCommitted
+  assertDocumentUpdateCommitted,
+  assertRequestedWriteStorable
 } from "../lib/write-confirmation.js";
 import { deleteDocument, previewDocumentUpdate } from "../lib/world-docs.js";
 import { createBridgeError, toFailureSummary } from "../lib/errors.js";
@@ -223,6 +224,12 @@ export function createCombatHandlers() {
         assertCombatReferenceIdsNotBlank(patch, ["scene"], { combatId, verb: "combat.update" });
         assertCombatSceneContainsCombatants(combat, patch, { combatId });
         if (isDryRun(params)) {
+          await assertRequestedWriteStorable({
+            document: combat,
+            patch,
+            subject: `Combat ${combatId}`,
+            details: { combatId }
+          });
           const preview = await previewDocumentUpdate(combat, cloneValue(patch));
 
           return dryRunResponse({ combat: serializeCombat(preview, { turnOrderFrom: combat }) });

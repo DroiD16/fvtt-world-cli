@@ -33,7 +33,8 @@ import { getCardsCollection } from "../lib/game-collections.js";
 import {
   applyConfirmedUpdate,
   assertDocumentDeleteCommitted,
-  assertDocumentUpdateCommitted
+  assertDocumentUpdateCommitted,
+  assertRequestedWriteStorable
 } from "../lib/write-confirmation.js";
 import {
   assertClonePatchValid,
@@ -985,6 +986,12 @@ export function createCardsHandlers() {
 
         const patch = canonicalizeFilePathFields(params.patch, "Cards");
         if (isDryRun(params)) {
+          await assertRequestedWriteStorable({
+            document: stack,
+            patch,
+            subject: `Cards ${stack.id ?? params.cardsId}`,
+            details: { cardsId: stack.id ?? params.cardsId }
+          });
           const preview = await previewDocumentUpdate(stack, patch);
           return dryRunResponse({ cards: serializeCards(preview) });
         }

@@ -1,7 +1,12 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
-import { applyConfirmedUpdate, assertDocumentDeleteCommitted, writeCommitted } from "./write-confirmation.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable,
+  writeCommitted
+} from "./write-confirmation.js";
 
 import { getActorById, getItemsCollection } from "./game-collections.js";
 import { sanitizeEmbeddedItemData, stripProtectedMeta } from "./sanitize.js";
@@ -93,11 +98,17 @@ export async function updateEmbeddedItem(actor, itemId, patch, details = {}, { d
 
   const current = getEmbeddedItem(actor, itemId, details);
 
+  const canonicalPatch = canonicalizeFilePathFields(patch, "Item");
   if (dryRun) {
+    await assertRequestedWriteStorable({
+      document: current,
+      patch: canonicalPatch,
+      subject: `Item ${itemId} of actor ${actor.id}`,
+      details: { ...details, itemId }
+    });
     return current;
   }
 
-  const canonicalPatch = canonicalizeFilePathFields(patch, "Item");
   await applyConfirmedUpdate({
     document: current,
     patch: canonicalPatch,

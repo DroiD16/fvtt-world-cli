@@ -1,7 +1,12 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
-import { applyConfirmedUpdate, assertDocumentDeleteCommitted, writeCommitted } from "./write-confirmation.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable,
+  writeCommitted
+} from "./write-confirmation.js";
 
 import { getFoundryGeneration } from "./foundry-capabilities.js";
 import { getActorById, getGame, getSceneById } from "./game-collections.js";
@@ -217,6 +222,12 @@ export async function updateSceneEmbedded(
   const preparedPatch = prepareSceneEmbeddedUpdateData(type, patch, document);
 
   if (dryRun) {
+    await assertRequestedWriteStorable({
+      document,
+      patch: preparedPatch,
+      subject: `${type} ${embeddedId} of scene ${sceneId}`,
+      details: { sceneId, [idField]: embeddedId }
+    });
     return document;
   }
 

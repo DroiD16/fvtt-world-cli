@@ -10,7 +10,11 @@ import {
 } from "../lib/world-docs.js";
 import { resolveBroadcastUsers } from "../lib/broadcast-targets.js";
 import { createBridgeError } from "../lib/errors.js";
-import { applyConfirmedUpdate, assertDocumentDeleteCommitted } from "../lib/write-confirmation.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable
+} from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import { filterByName, paginate, serializeScene } from "../lib/serializers.js";
@@ -71,6 +75,12 @@ export function createSceneHandlers() {
       assertSceneLevelsFieldsSupported(params.patch);
       const patch = canonicalizeFilePathFields(params.patch, "Scene");
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: scene,
+          patch,
+          subject: `Scene ${scene.id ?? params.sceneId}`,
+          details: { sceneId: scene.id ?? params.sceneId }
+        });
         const preview = await previewDocumentUpdate(scene, patch);
         return dryRunResponse({ scene: serializeScene(preview, { flags: true, provenance: true }) });
       }

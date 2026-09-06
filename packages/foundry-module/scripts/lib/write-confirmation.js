@@ -136,9 +136,10 @@ function patchKeyRoot(key) {
  * @param {Record<string, any>} args.requested
  * @param {any} args.mergedPreview
  * @param {string} args.subject
+ * @param {Record<string, any>} args.details
  * @returns {void}
  */
-function assertPatchShapeStorable({ document, documentClass, requested, mergedPreview, subject }) {
+function assertPatchShapeStorable({ document, documentClass, requested, mergedPreview, subject, details }) {
   const id = typeof document?.id === "string" ? document.id : "";
   const coordinate = `${subject} element 0 (id ${id})`;
   try {
@@ -162,16 +163,44 @@ function assertPatchShapeStorable({ document, documentClass, requested, mergedPr
     }
   } catch (error) {
     if (error instanceof BridgeError) {
-      const { index: _index, id: _entryId, ...details } = error.details ?? {};
+      const { index: _index, id: _entryId, ...guardDetails } = error.details ?? {};
       const message = error.message.split(coordinate).join(subject);
       throw createBridgeError(
         error.code,
         message.endsWith("Nothing was written.") ? message : `${message} Nothing was written.`,
-        details
+        { ...details, ...guardDetails }
       );
     }
     throw error;
   }
+}
+
+/**
+ * The preview-time face of the shape guard: a dry run must refuse exactly the patches the real
+ * write refuses, before reporting a preview.
+ * @param {object} args
+ * @param {any} args.document
+ * @param {Record<string, any>} args.patch
+ * @param {string} args.subject
+ * @param {Record<string, any>} [args.details]
+ * @returns {Promise<void>}
+ */
+export async function assertRequestedWriteStorable({ document, patch, subject, details = {} }) {
+  const requested = structuredCloneish(patch ?? {});
+  let mergedPreview = null;
+  try {
+    mergedPreview = await previewDocumentUpdate(document, structuredCloneish(requested));
+  } catch {
+    mergedPreview = null;
+  }
+  assertPatchShapeStorable({
+    document,
+    documentClass: document?.constructor,
+    requested,
+    mergedPreview,
+    subject,
+    details
+  });
 }
 
 /**
@@ -210,12 +239,20 @@ export async function applyConfirmedUpdate({
   } catch {
     mergedPreview = null;
   }
-  assertPatchShapeStorable({ document, documentClass, requested, mergedPreview, subject });
+  assertPatchShapeStorable({ document, documentClass, requested, mergedPreview, subject, details });
   const mergedSource =
     mergedConfirmationKeys.length > 0 && mergedPreview !== null ? readDocumentSource(mergedPreview) : null;
 
   const before = await probeRequestedState(document, requested);
   const requestedChangeFields = before.status === "pending" ? before.fields : null;
+  const operatorBaseline =
+    mergedConfirmationKeys.length > 0
+      ? structuredCloneish(
+          Object.fromEntries(
+            mergedConfirmationKeys.map((root) => [root, readDocumentSource(document)?.[root]])
+          )
+        )
+      : null;
 
   const returned = await write(structuredCloneish(requested));
 
@@ -260,9 +297,16 @@ export async function applyConfirmedUpdate({
 
   if (probeAnswered && requestedChangeFields !== null && pending !== null) {
     const pendingRoots = new Set(pending.map((key) => patchKeyRoot(key)));
-    const appliedFields = [...new Set(requestedChangeFields.map((key) => patchKeyRoot(key)))].filter(
+    let appliedFields = [...new Set(requestedChangeFields.map((key) => patchKeyRoot(key)))].filter(
       (root) => !pendingRoots.has(root)
     );
+    if (operatorBaseline !== null && appliedFields.length > 0) {
+      const storedNow = readDocumentSource(document) ?? {};
+      appliedFields = appliedFields.filter(
+        (root) =>
+          !mergedConfirmationKeys.includes(root) || !batchValuesEqual(operatorBaseline[root], storedNow[root])
+      );
+    }
     if (appliedFields.length > 0) {
       throw createBridgeError(
         ERROR_CODES.INTERNAL_ERROR,

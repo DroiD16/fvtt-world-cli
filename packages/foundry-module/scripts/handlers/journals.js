@@ -22,7 +22,8 @@ import { resolveBroadcastUsers } from "../lib/broadcast-targets.js";
 import {
   applyConfirmedUpdate,
   assertDocumentDeleteCommitted,
-  assertDocumentUpdateCommitted
+  assertDocumentUpdateCommitted,
+  assertRequestedWriteStorable
 } from "../lib/write-confirmation.js";
 import {
   cloneDocument,
@@ -226,6 +227,14 @@ export function createJournalHandlers() {
       }
 
       if (isDryRun(params)) {
+        if (Object.keys(documentPatch).length > 0) {
+          await assertRequestedWriteStorable({
+            document: journal,
+            patch: documentPatch,
+            subject: `Journal ${journal.id ?? params.journalId}`,
+            details: { journalId: journal.id ?? params.journalId }
+          });
+        }
         if (deletePageIds.length > 0) {
           assertJournalPagesExist(params.journalId, deletePageIds);
         }

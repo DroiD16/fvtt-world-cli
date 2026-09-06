@@ -20,7 +20,11 @@ import {
 import { cloneDocument, deleteDocument, previewDocumentUpdate } from "../lib/world-docs.js";
 import { BATCH_GET_MAX_IDS, ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "../lib/errors.js";
-import { applyConfirmedUpdate, assertDocumentDeleteCommitted } from "../lib/write-confirmation.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable
+} from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import {
@@ -95,6 +99,12 @@ export function createPlaylistHandlers() {
     async "playlist.update"(params) {
       const playlist = getPlaylistById(params.playlistId);
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: playlist,
+          patch: params.patch,
+          subject: `Playlist ${playlist.id ?? params.playlistId}`,
+          details: { playlistId: playlist.id ?? params.playlistId }
+        });
         const preview = await previewDocumentUpdate(playlist, params.patch);
         return dryRunResponse({ playlist: serializePlaylist(preview) });
       }
@@ -190,6 +200,12 @@ export function createPlaylistHandlers() {
       });
       const result = { playlistId: params.playlistId, sound: serializePlaylistSound(sound) };
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: sound,
+          patch,
+          subject: `Playlist sound ${params.soundId} of playlist ${params.playlistId}`,
+          details: { playlistId: params.playlistId, soundId: params.soundId }
+        });
         const preview = await previewDocumentUpdate(sound, patch);
         return dryRunResponse({ ...result, sound: serializePlaylistSound(preview) });
       }

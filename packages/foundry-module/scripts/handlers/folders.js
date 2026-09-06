@@ -13,7 +13,7 @@ import {
 } from "../lib/folders.js";
 import { getFoldersCollection } from "../lib/game-collections.js";
 import { previewDocumentCreate, previewDocumentUpdate } from "../lib/world-docs.js";
-import { applyConfirmedUpdate } from "../lib/write-confirmation.js";
+import { applyConfirmedUpdate, assertRequestedWriteStorable } from "../lib/write-confirmation.js";
 import { createBridgeError } from "../lib/errors.js";
 import { createMutationQueue } from "../lib/mutation-queue.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
@@ -286,6 +286,12 @@ export function createFolderHandlers() {
         }
 
         if (isDryRun(params)) {
+          await assertRequestedWriteStorable({
+            document: folder,
+            patch,
+            subject: `Folder ${folder.id}`,
+            details: { folderId: folder.id }
+          });
           const preview = await previewDocumentUpdate(folder, patch);
           return dryRunResponse({ folder: serializeFolder(preview, folderCounts(folder)) });
         }
