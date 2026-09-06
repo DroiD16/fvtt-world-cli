@@ -1,4 +1,5 @@
 import { ERROR_CODES } from "../generated/protocol.js";
+import { structuredCloneish } from "./batch-guards.js";
 import { createBridgeError } from "./errors.js";
 
 import { stripProtectedMeta } from "./sanitize.js";
@@ -95,10 +96,14 @@ export async function updateRegionBehavior(region, behaviorId, patch) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "RegionBehavior update API is not available");
   }
   const sent = sanitizeRegionBehaviorData(patch);
-  const updated = await region.updateEmbeddedDocuments("RegionBehavior", [{ _id: behaviorId, ...sent }], {
-    diff: true,
-    render: true
-  });
+  const updated = await region.updateEmbeddedDocuments(
+    "RegionBehavior",
+    [{ _id: behaviorId, ...structuredCloneish(sent) }],
+    {
+      diff: true,
+      render: true
+    }
+  );
   return {
     behavior: region.behaviors?.get?.(behaviorId) ?? null,
     committed: Array.isArray(updated) ? updated.length > 0 : Boolean(updated),

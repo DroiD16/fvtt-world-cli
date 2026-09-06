@@ -111,7 +111,10 @@ function withApprovalRequired(result) {
   return { ...result, approvalRequired: true };
 }
 
-export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} }) {
+/**
+ * @param {{ bridgeClient: any, approvalStoreOptions?: Record<string, any>, onStaleApproval?: () => void }} runtime
+ */
+export function createCommandRouter({ bridgeClient, approvalStoreOptions = {}, onStaleApproval }) {
   const approvalStore = new ApprovalStore({
     pendingByteBudgetProvider: () =>
       bridgeClient?.getEffectiveLimits?.()?.wsMaxPayloadBytes ?? DEFAULT_WS_MAX_PAYLOAD_BYTES,
@@ -123,6 +126,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {} })
       try {
         assertApprovalBindingFresh(command, params, binding);
       } catch (error) {
+        onStaleApproval?.();
         return createErrorResponse({ id: approvalId, error: toProtocolError(error) });
       }
 

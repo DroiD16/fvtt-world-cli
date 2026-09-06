@@ -442,6 +442,74 @@ describe("an embedded write that changes nothing keeps reporting success", () =>
   });
 });
 
+describe("a patch shape Foundry stores nothing for is refused before the write", () => {
+  it("scene.wall.update with a dotted path into the wall's coordinate array", async () => {
+    const scene = globalThis.game.scenes.get("scene-1");
+    const stored = [...scene.walls.get("wall-plain").c];
+
+    const response = await send("scene.wall.update", {
+      sceneId: "scene-1",
+      wallId: "wall-plain",
+      patch: { "c.0": 999 }
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(response.error.message).toMatch(/SILENTLY DISCARDS/);
+    expect(response.error.message).toMatch(/Nothing was written/);
+    expect(scene.walls.get("wall-plain").c).toEqual(stored);
+    expect(scene.updateEmbeddedDocuments).not.toHaveBeenCalled();
+  });
+
+  it("scene.wall.update with the whole coordinate array still succeeds", async () => {
+    const response = await send("scene.wall.update", {
+      sceneId: "scene-1",
+      wallId: "wall-plain",
+      patch: { c: [1, 2, 3, 4] }
+    });
+
+    expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
+    expect(globalThis.game.scenes.get("scene-1").walls.get("wall-plain").c).toEqual([1, 2, 3, 4]);
+  });
+});
+
+describe("an operator-key patch confirms through the merged preview, not the raw diff", () => {
+  it("a forced-replacement flag write succeeds", async () => {
+    const response = await send("scene.token.update", {
+      sceneId: "scene-1",
+      tokenId: "token-a",
+      patch: { "flags.==scope": { only: 1 } }
+    });
+
+    expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
+  });
+
+  it("a stripped plain field beside an applied operator key is reported as partial", async () => {
+    const scene = globalThis.game.scenes.get("scene-1");
+    const token = scene.tokens.get("token-a");
+    scene.updateEmbeddedDocuments = vi.fn(async (type, entries) => {
+      const { _id: _ignored, name: _stripped, ...rest } = entries[0];
+      token.applyStoredWrite(rest);
+      return [token];
+    });
+
+    const response = await send("scene.token.update", {
+      sceneId: "scene-1",
+      tokenId: "token-a",
+      patch: { name: "Renamed", "flags.==scope": { only: 1 } }
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.message).toMatch(/updated only in PART/);
+    expect(response.error.details).toMatchObject({
+      fields: ["name"],
+      appliedFields: ["flags"],
+      partial: true
+    });
+    expect(token.name).not.toBe("Renamed");
+  });
+});
+
 describe("a vetoed journal page write inside journal.update is reported per page", () => {
   it("page update", async () => {
     const journal = globalThis.game.journal.get("journal-1");

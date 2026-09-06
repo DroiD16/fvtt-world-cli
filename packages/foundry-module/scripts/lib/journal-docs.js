@@ -2,12 +2,7 @@ import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError, toFoundryValidationError } from "./errors.js";
 
 import { getJournalById } from "./game-collections.js";
-import {
-  computeDocumentUpdateDiff,
-  previewDocumentCreate,
-  previewDocumentUpdate,
-  resolveEmbeddedDocumentClass
-} from "./world-docs.js";
+import { previewDocumentCreate, previewDocumentUpdate, resolveEmbeddedDocumentClass } from "./world-docs.js";
 import { WORLD_VETO_REMEDY, probeRequestedState } from "./write-confirmation.js";
 import { structuredCloneish } from "./batch-guards.js";
 
@@ -386,7 +381,7 @@ export async function updateJournalCategory(journalId, categoryId, patch) {
 
   const updated = await journal.updateEmbeddedDocuments(
     "JournalEntryCategory",
-    [{ _id: categoryId, ...patch }],
+    [{ _id: categoryId, ...structuredCloneish(patch) }],
     { diff: true, render: true }
   );
   return {

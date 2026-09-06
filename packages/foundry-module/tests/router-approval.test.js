@@ -308,12 +308,16 @@ describe("the guards an allowed command meets at decision time", () => {
   });
 
   it("refuses an allowed macro execution whose body changed after the GM was shown it", async () => {
+    const onStaleApproval = vi.fn();
+    router = createCommandRouter({ bridgeClient: BRIDGE_CLIENT, onStaleApproval });
     await storePolicy({ "macro.execute": "approve" });
     const approvalId = await askForApproval("macro.execute", { macroId: "macro-1" });
 
     globalThis.game.macros.get("macro-1").command = "game.actors.forEach(a => a.delete());";
     await router.approvalStore.decide(approvalId, "allow");
     const response = await pollOutcome(approvalId);
+
+    expect(onStaleApproval).toHaveBeenCalledTimes(1);
 
     expect(response.result.outcome).toBe("approved");
     expect(response.result.response.ok).toBe(false);

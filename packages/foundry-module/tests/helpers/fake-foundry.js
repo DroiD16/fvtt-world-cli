@@ -352,6 +352,12 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
         const diff = {};
         for (const key of Object.keys(patch ?? {})) {
           if (key === "id") continue;
+          // Foundry re-emits a "==" forced-replacement key in every diff, so the probe can never
+          // confirm it directly; the fake must model that or the merged-preview fallback goes dark.
+          if (key.split(".").some((segment) => segment.startsWith("=="))) {
+            diff[key] = patch[key];
+            continue;
+          }
           if (key.startsWith("-=")) {
             if (Object.prototype.hasOwnProperty.call(current, key.slice(2))) diff[key] = patch[key];
             continue;
@@ -364,9 +370,11 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
         if (key === "_id" || key === "id") continue;
         if (key.startsWith("-=")) {
           delete this[key.slice(2)];
+          delete data[key.slice(2)];
           continue;
         }
         this[key] = merged[key];
+        data[key] = merged[key];
       }
       return merged;
     },
@@ -2938,6 +2946,19 @@ function createSceneDocument(id, data) {
     );
     const make = (docId, docData) => {
       const doc = createDocument(docId, docData);
+
+      if (type === "Wall") {
+        Object.defineProperty(doc.constructor, "schema", {
+          value: {
+            get(root) {
+              return root === "c" ? { clean: (value) => (Array.isArray(value) ? [...value] : value) } : null;
+            }
+          },
+          enumerable: false,
+          configurable: true,
+          writable: true
+        });
+      }
 
       if (type === "Region") {
         attachRegionBehaviors(doc, Array.isArray(docData.behaviors) ? docData.behaviors : []);

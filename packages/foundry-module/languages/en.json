@@ -169,6 +169,7 @@
     "Approval": {
       "Title": "World CLI Command Approval",
       "Arrived": "World CLI is waiting for your approval in the Command Approval window.",
+      "StaleRefusal": "World CLI refused the command you allowed: the macro changed after it was shown. Nothing was executed.",
       "Command": "Command",
       "BulkNotice": "One decision covers {count} elements.",
       "Expires": "Decision expires in",

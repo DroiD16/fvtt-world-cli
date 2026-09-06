@@ -166,9 +166,9 @@ through ordinary writes.
 - `macro.execute` is the one way to run code, and it runs only stored world macros. It is denied by
   default; a GM who enables it can keep it on approve, where the Command Approval window shows the
   macro's type and its command body, up to the length cap described above, before anything runs.
-  The decision binds to that displayed content: the module captures the body and type when the
-  request is admitted, renders the window from that capture, and re-reads the stored macro at the
-  moment of an Allow. A macro that was edited or deleted while the decision waited — for example by
+  The decision binds to the captured content: the module captures the body and type when the
+  request is admitted, renders the window from that capture (a body past the length cap as a
+  bounded summary), and re-reads the stored macro at the moment of an Allow. A macro that was edited or deleted while the decision waited — for example by
   an allowed `macro.update` — fails the approved execution with `APPROVAL_STALE` instead of running
   code the GM never saw, and the caller starts over with a fresh request.
   The `macro.create → macro.execute → macro.delete` chain is the sanctioned path for ad-hoc code,

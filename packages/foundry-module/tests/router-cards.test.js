@@ -935,22 +935,15 @@ describe("command router", () => {
       ];
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(events).toEqual(["clone-probe", "update-start"]);
+      const commandEvents = () => events.filter((event) => event !== "clone-probe");
+      expect(commandEvents()).toEqual(["update-start"]);
       release();
       const responses = await Promise.all(pending);
       expect(
         responses.map((response) => response.ok),
         JSON.stringify(responses.map((response) => response.error ?? null))
       ).toEqual([true, true, true]);
-      expect(events).toEqual([
-        "clone-probe",
-        "update-start",
-        "update-end",
-        "clone-probe",
-        "clone-probe",
-        "clone-save",
-        "delete"
-      ]);
+      expect(commandEvents()).toEqual(["update-start", "update-end", "clone-save", "delete"]);
     });
 
     it("canonicalizes all THREE FilePath leaves so a WHITESPACE-only value is rejected, not silently reset", async () => {

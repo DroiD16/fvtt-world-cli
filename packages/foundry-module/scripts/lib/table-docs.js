@@ -1,11 +1,11 @@
 import { ERROR_CODES } from "../generated/protocol.js";
-import { createBridgeError, isFoundryValidationError, toFoundryValidationError } from "./errors.js";
+import { structuredCloneish } from "./batch-guards.js";
+import { createBridgeError } from "./errors.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
 
 import { getFoundryGeneration } from "./foundry-capabilities.js";
 import { getTablesCollection } from "./game-collections.js";
 import {
-  computeDocumentUpdateDiff,
   createWorldDocument,
   getCreateResult,
   previewDocumentCreate,
@@ -137,10 +137,14 @@ export async function updateTableResult(tableId, resultId, patch, { dryRun = fal
     return { result: table.results.get(resultId), committed: false };
   }
 
-  const updated = await table.updateEmbeddedDocuments("TableResult", [{ _id: resultId, ...patch }], {
-    diff: true,
-    render: true
-  });
+  const updated = await table.updateEmbeddedDocuments(
+    "TableResult",
+    [{ _id: resultId, ...structuredCloneish(patch) }],
+    {
+      diff: true,
+      render: true
+    }
+  );
   return {
     result: table.results.get(resultId),
     committed: Array.isArray(updated) ? updated.length > 0 : Boolean(updated)

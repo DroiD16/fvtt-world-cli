@@ -8,24 +8,23 @@ import { createBridgeError } from "./errors.js";
  * @returns {{ found: boolean, type: string | null, command: string | null }}
  */
 function readMacroContent(macroId) {
-  /** @type {any} */
-  let macro = null;
-  if (typeof macroId === "string") {
-    try {
-      macro = /** @type {any} */ (globalThis.game?.macros?.get?.(macroId) ?? null);
-    } catch {
-      macro = null;
-    }
-  }
-  if (macro === null) {
+  if (typeof macroId !== "string") {
     return { found: false, type: null, command: null };
   }
 
-  return {
-    found: true,
-    type: typeof macro.type === "string" ? macro.type : null,
-    command: typeof macro.command === "string" ? macro.command : null
-  };
+  try {
+    const macro = /** @type {any} */ (globalThis.game?.macros?.get?.(macroId) ?? null);
+    if (macro === null) {
+      return { found: false, type: null, command: null };
+    }
+    return {
+      found: true,
+      type: typeof macro.type === "string" ? macro.type : null,
+      command: typeof macro.command === "string" ? macro.command : null
+    };
+  } catch {
+    return { found: false, type: null, command: null };
+  }
 }
 
 /**
@@ -34,8 +33,8 @@ function readMacroContent(macroId) {
  * @returns {string[]}
  */
 function macroBindingDrift(binding, current) {
+  if (current.found !== binding.found) return ["existence"];
   const drifted = [];
-  if (current.found !== binding.found) drifted.push("existence");
   if (current.type !== binding.type) drifted.push("type");
   if (current.command !== binding.command) drifted.push("body");
   return drifted;
@@ -65,7 +64,7 @@ const BINDING_DEFINITIONS = Object.freeze({
         ERROR_CODES.APPROVAL_STALE,
         `Macro ${binding.macroId} is no longer the macro the GM approved: its ${drifted.join(", ")} changed between ` +
           `the moment the approval request captured the macro for display and the moment the GM allowed it. ` +
-          `An approval covers exactly the content the GM was shown, so the allowed execution was refused and ` +
+          `An approval covers exactly the content captured for the GM's window, so the allowed execution was refused and ` +
           `NOTHING was executed. This refusal is terminal for this invocation and is not retried by the bridge: ` +
           `read the macro with macro.get to see what it holds now, then re-send macro.execute to request a ` +
           `fresh approval of the current content`,

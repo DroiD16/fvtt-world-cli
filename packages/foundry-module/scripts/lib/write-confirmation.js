@@ -1,13 +1,20 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import {
+  assertBatchArrayWritesReflected,
+  assertNoAmbiguousBatchKeySpellings,
   batchEcfResidualEntries,
   batchEmbeddedCreateKeys,
   batchMergedConfirmationKeys,
-  mergedPreviewReflected,
+  batchValuesEqual,
   readDocumentSource,
   structuredCloneish
 } from "./batch-guards.js";
-import { createBridgeError, isFoundryValidationError, toFoundryValidationError } from "./errors.js";
+import {
+  BridgeError,
+  createBridgeError,
+  isFoundryValidationError,
+  toFoundryValidationError
+} from "./errors.js";
 import { computeDocumentUpdateDiff, previewDocumentUpdate } from "./world-docs.js";
 
 export const WORLD_VETO_REMEDY =
@@ -110,6 +117,64 @@ export async function assertDocumentUpdateCommitted({
 }
 
 /**
+ * @param {string} key
+ * @returns {string}
+ */
+function patchKeyRoot(key) {
+  const first = key.split(".")[0] ?? "";
+  return first.startsWith("==") || first.startsWith("-=") ? first.slice(2) : first;
+}
+
+/**
+ * Foundry 14 silently discards several array-write shapes — a dotted path into an array field, an
+ * invalid array value, an ambiguous dual spelling — without an error, a diff, or any trace the
+ * post-write probe could see, so these shapes must be refused before the write, exactly as the
+ * batch commands refuse them.
+ * @param {object} args
+ * @param {any} args.document
+ * @param {any} args.documentClass
+ * @param {Record<string, any>} args.requested
+ * @param {any} args.mergedPreview
+ * @param {string} args.subject
+ * @returns {void}
+ */
+function assertPatchShapeStorable({ document, documentClass, requested, mergedPreview, subject }) {
+  const id = typeof document?.id === "string" ? document.id : "";
+  const coordinate = `${subject} element 0 (id ${id})`;
+  try {
+    assertNoAmbiguousBatchKeySpellings({
+      documentClass,
+      patch: requested,
+      index: 0,
+      command: subject,
+      id
+    });
+    if (mergedPreview !== null) {
+      assertBatchArrayWritesReflected({
+        documentClass,
+        patch: requested,
+        merged: mergedPreview,
+        stored: document,
+        index: 0,
+        command: subject,
+        id
+      });
+    }
+  } catch (error) {
+    if (error instanceof BridgeError) {
+      const { index: _index, id: _entryId, ...details } = error.details ?? {};
+      const message = error.message.split(coordinate).join(subject);
+      throw createBridgeError(
+        error.code,
+        message.endsWith("Nothing was written.") ? message : `${message} Nothing was written.`,
+        details
+      );
+    }
+    throw error;
+  }
+}
+
+/**
  * Runs one single-document update and reports success only after the stored document holds the
  * requested state. The write receives a private deep copy of the patch: a preUpdate hook may
  * mutate the payload it is handed before vetoing, so every confirmation probe must compare
@@ -137,15 +202,17 @@ export async function applyConfirmedUpdate({
   const documentClass = document?.constructor;
 
   const mergedConfirmationKeys = batchMergedConfirmationKeys(requested);
-  let mergedSource = null;
-  if (mergedConfirmationKeys.length > 0) {
-    try {
-      mergedSource = readDocumentSource(await previewDocumentUpdate(document, structuredCloneish(requested)));
-    } catch {
-      mergedSource = null;
-    }
-  }
   const embeddedCreateKeys = batchEmbeddedCreateKeys(documentClass, requested);
+
+  let mergedPreview = null;
+  try {
+    mergedPreview = await previewDocumentUpdate(document, structuredCloneish(requested));
+  } catch {
+    mergedPreview = null;
+  }
+  assertPatchShapeStorable({ document, documentClass, requested, mergedPreview, subject });
+  const mergedSource =
+    mergedConfirmationKeys.length > 0 && mergedPreview !== null ? readDocumentSource(mergedPreview) : null;
 
   const before = await probeRequestedState(document, requested);
   const requestedChangeFields = before.status === "pending" ? before.fields : null;
@@ -155,16 +222,23 @@ export async function applyConfirmedUpdate({
   const after = await probeRequestedState(document, requested);
   if (after.status === "rejected") throwUpdateRejected({ subject, hookName, details }, after.error);
 
-  let applied = after.status === "confirmed";
   let probeAnswered = after.status !== "unprovable";
+  /** @type {string[] | null} */
+  let pending = after.status === "confirmed" ? [] : after.status === "pending" ? [...after.fields] : null;
 
-  if (!applied && mergedConfirmationKeys.length > 0) {
-    const reflected = mergedPreviewReflected({ document, mergedSource, mergedConfirmationKeys });
-    applied = reflected === true;
-    probeAnswered = reflected !== null;
+  if (pending !== null && pending.length > 0 && mergedConfirmationKeys.length > 0) {
+    const stored = readDocumentSource(document);
+    if (mergedSource === null || stored === null) {
+      probeAnswered = false;
+    } else {
+      const reflected = new Set(
+        mergedConfirmationKeys.filter((root) => batchValuesEqual(mergedSource[root], stored[root]))
+      );
+      pending = pending.filter((key) => !reflected.has(patchKeyRoot(key)));
+    }
   }
 
-  if (!applied && embeddedCreateKeys.length > 0) {
+  if (pending !== null && pending.length > 0 && embeddedCreateKeys.length > 0) {
     const residual = { ...requested };
     for (const key of embeddedCreateKeys) {
       const retained = batchEcfResidualEntries(residual[key]);
@@ -177,16 +251,18 @@ export async function applyConfirmedUpdate({
       residualConfirmed = residualProbe.status === "confirmed";
       if (residualProbe.status === "unprovable") probeAnswered = false;
     }
-    applied = residualConfirmed && writeCommitted(returned);
+    if (residualConfirmed && writeCommitted(returned)) pending = [];
   }
 
-  if (applied) return;
+  if (pending !== null && pending.length === 0) return;
 
-  const fields =
-    after.status === "pending" ? after.fields : Object.keys(requested).filter((key) => key !== "_id");
+  const fields = (pending ?? Object.keys(requested)).filter((key) => key !== "_id");
 
-  if (probeAnswered && requestedChangeFields !== null && after.status === "pending") {
-    const appliedFields = requestedChangeFields.filter((key) => !after.fields.includes(key));
+  if (probeAnswered && requestedChangeFields !== null && pending !== null) {
+    const pendingRoots = new Set(pending.map((key) => patchKeyRoot(key)));
+    const appliedFields = [...new Set(requestedChangeFields.map((key) => patchKeyRoot(key)))].filter(
+      (root) => !pendingRoots.has(root)
+    );
     if (appliedFields.length > 0) {
       throw createBridgeError(
         ERROR_CODES.INTERNAL_ERROR,

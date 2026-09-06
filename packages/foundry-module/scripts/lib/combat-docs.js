@@ -1,4 +1,5 @@
 import { ERROR_CODES } from "../generated/protocol.js";
+import { structuredCloneish } from "./batch-guards.js";
 import { createBridgeError } from "./errors.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
 import { BRIDGE_FLAG_SCOPE } from "./chat-capture.js";
@@ -399,10 +400,14 @@ export async function createCombatantGroup(combat, data) {
 }
 
 export async function updateCombatant(combat, combatantId, patch) {
-  const updated = await combat.updateEmbeddedDocuments("Combatant", [{ _id: combatantId, ...patch }], {
-    diff: true,
-    render: true
-  });
+  const updated = await combat.updateEmbeddedDocuments(
+    "Combatant",
+    [{ _id: combatantId, ...structuredCloneish(patch) }],
+    {
+      diff: true,
+      render: true
+    }
+  );
   return {
     combatant: combat.combatants?.get?.(combatantId) ?? null,
     committed: Array.isArray(updated) ? updated.length > 0 : Boolean(updated)
@@ -410,10 +415,14 @@ export async function updateCombatant(combat, combatantId, patch) {
 }
 
 export async function updateCombatantGroup(combat, groupId, patch) {
-  const updated = await combat.updateEmbeddedDocuments("CombatantGroup", [{ _id: groupId, ...patch }], {
-    diff: true,
-    render: true
-  });
+  const updated = await combat.updateEmbeddedDocuments(
+    "CombatantGroup",
+    [{ _id: groupId, ...structuredCloneish(patch) }],
+    {
+      diff: true,
+      render: true
+    }
+  );
   return {
     group: combat.groups?.get?.(groupId) ?? null,
     committed: Array.isArray(updated) ? updated.length > 0 : Boolean(updated)
