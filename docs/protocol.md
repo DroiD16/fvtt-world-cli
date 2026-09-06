@@ -167,9 +167,28 @@ requested state. Foundry resolves a write vetoed by a module hook or refused by 
 validation without throwing — and a hook may strip part of a patch, or rewrite the payload it is
 handed, while letting the rest through — so the bridge hands Foundry a private copy of each patch
 and re-checks stored state against the original request after every write, single and bulk alike.
-A single write that did not land fails with a structured error naming the hook family that can
-refuse it; a write that landed only in part fails with an error naming both the persisted and the
-refused fields; a patch that changes nothing remains an ordinary success.
+A patch that changes nothing remains an ordinary success. Update confirmation errors use
+`INTERNAL_ERROR` and can include these details:
+
+- `fields`: requested fields whose state was not confirmed.
+- `partial: true`: stored data changed in a requested field, but the full requested state was
+  not reached. A hook may have applied only part of a nested object or replaced a value.
+- `changedFields`: requested top-level fields observed to change, including fields that changed
+  only in part. This does not attribute the change to this request rather than a concurrent write.
+- `appliedFields`: changed top-level fields whose requested state was confirmed. This can be empty
+  even when `partial` is true.
+- `indeterminate: true`: confirmation could not establish the outcome. Some or all of the write
+  may have persisted. `changedFields` is `null` when the before/after comparison was unavailable.
+
+Updates that create entries through a parent patch's embedded-collection field, such as
+`scene.region.update` with new `behaviors` entries without `_id`, return an indeterminate error
+after the write. A parent update result cannot confirm those creations, and
+reapplying the patch would create new entries rather than test the existing ones. Dry runs still
+preview these patches. Read the parent and its embedded entries before deciding whether anything
+remains to create. A dedicated embedded create command returns the created document directly.
+After a partial or indeterminate update error, read the affected document and send only the remaining
+changes as a new operation with a fresh idempotency key, if a key is used.
+
 Serialized projections expose `id` as the public identifier; a source `_id` mirror may accompany
 it. A previewed new document has no persistent identity, and an id observed during a preview must
 not be reused. List-like responses that paginate return their collection with a total and a

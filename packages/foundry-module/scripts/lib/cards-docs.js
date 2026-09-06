@@ -86,13 +86,12 @@ export async function updateCard(stack, cardId, patch) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Card update API is not available");
   }
 
-  const updated = await stack.updateEmbeddedDocuments("Card", [{ _id: cardId, ...patch }], {
+  await stack.updateEmbeddedDocuments("Card", [{ _id: cardId, ...patch }], {
     diff: true,
     render: true
   });
   return {
-    card: stack.cards?.get?.(cardId) ?? null,
-    committed: Array.isArray(updated) ? updated.length > 0 : Boolean(updated)
+    card: stack.cards?.get?.(cardId) ?? null
   };
 }
 

@@ -1942,7 +1942,7 @@ describe("command router", () => {
       });
       const originalCardClone = stack.cards.get("card-q1").clone;
       stack.cards.get("card-q1").clone = vi.fn(async (patch, context = {}) => {
-        events.push(context.save ? "row-clone-save" : "row-clone-probe");
+        if (context.save) events.push("row-clone-save");
         return originalCardClone(patch, context);
       });
 
@@ -1975,7 +1975,6 @@ describe("command router", () => {
         "stack-update-end",
         "row-create",
         "row-update",
-        "row-clone-probe",
         "row-clone-save",
         "row-delete"
       ]);

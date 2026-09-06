@@ -2,7 +2,6 @@ import { ERROR_CODES } from "../generated/protocol.js";
 import {
   assertBatchArrayWritesReflected,
   assertNoAmbiguousBatchKeySpellings,
-  batchEcfResidualEntries,
   batchEmbeddedCreateKeys,
   batchMergedConfirmationKeys,
   batchValuesEqual,
@@ -204,24 +203,22 @@ export async function assertRequestedWriteStorable({ document, patch, subject, d
 }
 
 /**
- * Runs one single-document update and reports success only after the stored document holds the
- * requested state. The write receives a private deep copy of the patch: a preUpdate hook may
- * mutate the payload it is handed before vetoing, so every confirmation probe must compare
- * against the caller's untouched patch, never the object Foundry saw.
  * @param {object} args
  * @param {any} args.document
  * @param {Record<string, any>} args.patch
- * @param {(payload: Record<string, any>) => Promise<unknown>} args.write
+ * @param {(payload: Record<string, any>) => Promise<any>} args.write
+ * @param {() => any | Promise<any>} [args.readDocument]
  * @param {string} args.subject
  * @param {string} args.hookName
  * @param {Record<string, any>} args.details
  * @param {string} [args.remedy]
- * @returns {Promise<void>}
+ * @returns {Promise<any>}
  */
 export async function applyConfirmedUpdate({
   document,
   patch,
   write,
+  readDocument = () => document,
   subject,
   hookName,
   details,
@@ -243,30 +240,28 @@ export async function applyConfirmedUpdate({
   const mergedSource =
     mergedConfirmationKeys.length > 0 && mergedPreview !== null ? readDocumentSource(mergedPreview) : null;
 
-  const before = await probeRequestedState(document, requested);
-  const requestedChangeFields = before.status === "pending" ? before.fields : null;
-  const operatorBaseline =
-    mergedConfirmationKeys.length > 0
-      ? structuredCloneish(
-          Object.fromEntries(
-            mergedConfirmationKeys.map((root) => [root, readDocumentSource(document)?.[root]])
-          )
-        )
+  const requestedRoots = [...new Set(Object.keys(requested).map((key) => patchKeyRoot(key)))];
+  const source = readDocumentSource(document);
+  const beforeSource =
+    source === null
+      ? null
+      : structuredCloneish(Object.fromEntries(requestedRoots.map((root) => [root, source[root]])));
+  const returned = await write(structuredCloneish(requested));
+  const current = await readDocument();
+  const after = await probeRequestedState(current, requested);
+  const stored = readDocumentSource(current);
+  const changedFields =
+    beforeSource !== null && stored !== null
+      ? requestedRoots.filter((key) => key !== "_id" && !batchValuesEqual(beforeSource[key], stored[key]))
       : null;
 
-  const returned = await write(structuredCloneish(requested));
-
-  const after = await probeRequestedState(document, requested);
-  if (after.status === "rejected") throwUpdateRejected({ subject, hookName, details }, after.error);
-
-  let probeAnswered = after.status !== "unprovable";
+  let unprovable = after.status === "unprovable";
   /** @type {string[] | null} */
   let pending = after.status === "confirmed" ? [] : after.status === "pending" ? [...after.fields] : null;
 
   if (pending !== null && pending.length > 0 && mergedConfirmationKeys.length > 0) {
-    const stored = readDocumentSource(document);
     if (mergedSource === null || stored === null) {
-      probeAnswered = false;
+      unprovable = true;
     } else {
       const reflected = new Set(
         mergedConfirmationKeys.filter((root) => batchValuesEqual(mergedSource[root], stored[root]))
@@ -275,56 +270,43 @@ export async function applyConfirmedUpdate({
     }
   }
 
-  if (pending !== null && pending.length > 0 && embeddedCreateKeys.length > 0) {
-    const residual = { ...requested };
-    for (const key of embeddedCreateKeys) {
-      const retained = batchEcfResidualEntries(residual[key]);
-      if (retained.length > 0) residual[key] = retained;
-      else delete residual[key];
-    }
-    let residualConfirmed = Object.keys(residual).length === 0;
-    if (!residualConfirmed) {
-      const residualProbe = await probeRequestedState(document, residual);
-      residualConfirmed = residualProbe.status === "confirmed";
-      if (residualProbe.status === "unprovable") probeAnswered = false;
-    }
-    if (residualConfirmed && writeCommitted(returned)) pending = [];
-  }
+  if (pending !== null && pending.length === 0 && embeddedCreateKeys.length === 0) return returned;
 
-  if (pending !== null && pending.length === 0) return;
-
-  const fields = (pending ?? Object.keys(requested)).filter((key) => key !== "_id");
-
-  if (probeAnswered && requestedChangeFields !== null && pending !== null) {
-    const pendingRoots = new Set(pending.map((key) => patchKeyRoot(key)));
-    let appliedFields = [...new Set(requestedChangeFields.map((key) => patchKeyRoot(key)))].filter(
-      (root) => !pendingRoots.has(root)
-    );
-    if (operatorBaseline !== null && appliedFields.length > 0) {
-      const storedNow = readDocumentSource(document) ?? {};
-      appliedFields = appliedFields.filter(
-        (root) =>
-          !mergedConfirmationKeys.includes(root) || !batchValuesEqual(operatorBaseline[root], storedNow[root])
-      );
-    }
-    if (appliedFields.length > 0) {
-      throw createBridgeError(
-        ERROR_CODES.INTERNAL_ERROR,
-        `${subject} was updated only in PART: Foundry persisted ${appliedFields.join(", ")} but resolved ` +
-          `${fields.join(", ")} without applying ${fields.length === 1 ? "it" : "them"} — a module's ` +
-          `${hookName} hook stripped or rewrote that part of the change while letting the rest through, ` +
-          `which Foundry reports only as a UI notification, if at all. The document now holds a MIX of ` +
-          `requested and previous values — re-read it before deciding what to do. ${remedy}`,
-        { ...details, fields, appliedFields, partial: true }
-      );
-    }
-  }
-
-  throwUpdateNotCommitted(
-    { subject, hookName, details, remedy },
-    fields,
-    after.status === "unprovable" ? after.probeError : null
+  const fields = [...new Set([...(pending ?? Object.keys(requested)), ...embeddedCreateKeys])].filter(
+    (key) => key !== "_id"
   );
+
+  if (unprovable || changedFields === null || embeddedCreateKeys.length > 0) {
+    throw createBridgeError(
+      ERROR_CODES.INTERNAL_ERROR,
+      `${subject}: the requested update could not be confirmed. Foundry may have persisted some or all ` +
+        `of the change. ${embeddedCreateKeys.length > 0 ? "Embedded creations without requested ids cannot be confirmed from the parent update result. " : ""}` +
+        `Re-read the document before retrying, especially before creating embedded documents again.`,
+      {
+        ...details,
+        fields,
+        changedFields,
+        indeterminate: true,
+        validationError: after.status === "unprovable" ? after.probeError : null
+      }
+    );
+  }
+
+  if (changedFields.length > 0) {
+    const pendingRoots = new Set(fields.map((key) => patchKeyRoot(key)));
+    const appliedFields = changedFields.filter((root) => !pendingRoots.has(root));
+    throw createBridgeError(
+      ERROR_CODES.INTERNAL_ERROR,
+      `${subject} was updated only in PART or rewritten: stored data changed in ${changedFields.join(", ")}, ` +
+        `but the requested state is not confirmed for ${fields.join(", ")}. A module's ${hookName} hook, ` +
+        `core _preUpdate, or another concurrent write may have changed the outcome. Re-read the document ` +
+        `before deciding what remains to apply. ${remedy}`,
+      { ...details, fields, changedFields, appliedFields, partial: true }
+    );
+  }
+
+  if (after.status === "rejected") throwUpdateRejected({ subject, hookName, details }, after.error);
+  throwUpdateNotCommitted({ subject, hookName, details, remedy }, fields, null);
 }
 
 /**

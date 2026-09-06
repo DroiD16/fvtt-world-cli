@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createCommandRouter } from "../scripts/command-router.js";
 import { ERROR_CODES } from "../scripts/generated/protocol.js";
 
-import { createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
+import { COMBAT_GROUP_A, createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
 
 /** @type {any} */
 let router;
@@ -147,6 +147,107 @@ describe("a hook that rewrites the payload it is handed cannot fake the confirma
 });
 
 describe("a write that landed only in part is reported as partial, not as success", () => {
+  it("reports a stored leaf even when another leaf under the same root was stripped", async () => {
+    const actor = globalThis.game.actors.get("actor-1");
+    actor.update = vi.fn(async () => {
+      actor.applyStoredWrite({ flags: { review: { a: 1 } } });
+      return actor;
+    });
+
+    const response = await send("actor.update", {
+      actorId: "actor-1",
+      patch: { flags: { review: { a: 1, b: 2 } } }
+    });
+
+    expect(actor.toObject().flags.review).toEqual({ a: 1 });
+    expect(response.ok).toBe(false);
+    expect(response.error.details).toMatchObject({
+      fields: ["flags"],
+      changedFields: ["flags"],
+      appliedFields: [],
+      partial: true
+    });
+  });
+
+  it("reports a hook's replacement value as a change without crediting the requested value", async () => {
+    const actor = globalThis.game.actors.get("actor-1");
+    actor.update = vi.fn(async () => actor.applyStoredWrite({ name: "Hook replacement" }));
+
+    const response = await send("actor.update", { actorId: "actor-1", patch: { name: "Requested" } });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.details).toMatchObject({
+      fields: ["name"],
+      changedFields: ["name"],
+      appliedFields: [],
+      partial: true
+    });
+    expect(actor.name).toBe("Hook replacement");
+  });
+
+  it.each([
+    {
+      command: "table.result.update",
+      params: { tableId: "table-1", resultId: "result-1" },
+      parent: () => globalThis.game.tables.get("table-1"),
+      row: (parent) => parent.results.get("result-1")
+    },
+    {
+      command: "cards.card.update",
+      params: { cardsId: "cards-deck", cardId: "card-ace" },
+      parent: () => globalThis.game.cards.get("cards-deck"),
+      row: (parent) => parent.cards.get("card-ace")
+    },
+    {
+      command: "combat.combatant.update",
+      params: { combatId: "combat-1", combatantId: "combatant-1" },
+      parent: () => globalThis.game.combats.get("combat-1"),
+      row: (parent) => parent.combatants.get("combatant-1")
+    },
+    {
+      command: "combat.group.update",
+      params: { combatId: "combat-1", groupId: COMBAT_GROUP_A },
+      parent: () => globalThis.game.combats.get("combat-1"),
+      row: (parent) => parent.groups.get(COMBAT_GROUP_A)
+    },
+    {
+      command: "journal.category.update",
+      params: { journalId: "journal-categories", categoryId: "cat-chapter-one" },
+      parent: () => globalThis.game.journal.get("journal-categories"),
+      row: (parent) => parent.categories.get("cat-chapter-one")
+    },
+    {
+      command: "scene.region.behavior.update",
+      params: { sceneId: "scene-1", regionId: "region-safe", behaviorId: "behavior-darkness" },
+      parent: () => globalThis.game.scenes.get("scene-1").regions.get("region-safe"),
+      row: (parent) => parent.behaviors.get("behavior-darkness")
+    }
+  ])("$command checks the patch even when Foundry returns an updated document", async (fixture) => {
+    const parent = fixture.parent();
+    const row = fixture.row(parent);
+    const name = row.toObject().name;
+    const update = parent.updateEmbeddedDocuments.bind(parent);
+    parent.updateEmbeddedDocuments = vi.fn(async (type, entries, options) => {
+      for (const entry of entries) delete entry.name;
+      return update(type, entries, options);
+    });
+
+    const response = await send(fixture.command, {
+      ...fixture.params,
+      patch: { name: "Requested", flags: { review: { applied: true } } }
+    });
+
+    expect(row.toObject().name).toBe(name);
+    expect(row.toObject().flags.review.applied).toBe(true);
+    expect(response.ok).toBe(false);
+    expect(response.error.details).toMatchObject({
+      fields: ["name"],
+      changedFields: ["flags"],
+      appliedFields: ["flags"],
+      partial: true
+    });
+  });
+
   it("actor.update", async () => {
     const actor = globalThis.game.actors.get("actor-1");
     actor.update = vi.fn(async (payload) => {
@@ -190,6 +291,35 @@ describe("a write that landed only in part is reported as partial, not as succes
     expect(response.ok).toBe(false);
     expect(response.error.message).toMatch(/updated only in PART/);
     expect(response.error.details).toMatchObject({ fields: ["name"], appliedFields: ["alpha"] });
+  });
+});
+
+describe("an embedded creation without a requested id needs independent confirmation", () => {
+  it.each([false, true])("reports an indeterminate result when the creation lands: %s", async (lands) => {
+    const scene = globalThis.game.scenes.get("scene-1");
+    const region = scene.regions.get("region-lava");
+    const count = region.behaviors.size;
+    const update = scene.updateEmbeddedDocuments.bind(scene);
+    scene.updateEmbeddedDocuments = vi.fn(async (type, entries, options) => {
+      if (!lands) {
+        for (const entry of entries) delete entry.behaviors;
+      }
+      return update(type, entries, options);
+    });
+
+    const response = await send("scene.region.update", {
+      sceneId: "scene-1",
+      regionId: "region-lava",
+      patch: { name: "Renamed", behaviors: [{ type: "damage", system: { damage: "4d6" } }] }
+    });
+
+    expect(region.name).toBe("Renamed");
+    expect(region.behaviors.size).toBe(count + Number(lands));
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.details).toMatchObject({ fields: ["behaviors"], indeterminate: true });
+    expect(response.error.message).toMatch(/Re-read/);
+    expect(response.error.message).not.toMatch(/was NOT updated/);
   });
 });
 

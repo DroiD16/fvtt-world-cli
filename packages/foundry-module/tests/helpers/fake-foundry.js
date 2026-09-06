@@ -1169,7 +1169,7 @@ export function createCombatantDocument(id, data) {
 
   const baseCombatantUpdateSource = combatant.updateSource.bind(combatant);
   combatant.updateSource = function updateSource(patch = {}, context = {}) {
-    const merged = cleanCombatantSource(baseCombatantUpdateSource(patch, context));
+    const merged = baseCombatantUpdateSource(cleanCombatantSource(patch), context);
     if (context.dryRun) return merged;
     for (const key of Object.keys(patch ?? {})) {
       if (key === "_id" || key === "id") continue;
@@ -2886,6 +2886,7 @@ function attachRegionBehaviors(region, entries) {
       configurable: true,
       writable: true
     });
+    behavior.toObject = () => ({ ...behavior._source });
     if (!behaviorData.name) {
       behavior.name = `Localized(${behaviorData.type})`;
     }
@@ -2899,7 +2900,7 @@ function attachRegionBehaviors(region, entries) {
       return result;
     };
     behavior.clone = vi.fn(async (patch = {}, context = {}) => {
-      const merged = applyDocumentMerge(behaviorData, patch, { performDeletions: true });
+      const merged = applyDocumentMerge(behavior.toObject(), patch, { performDeletions: true });
 
       if (!context.keepId) delete merged._id;
       const cloneDoc = make(
@@ -3025,6 +3026,11 @@ function createSceneDocument(id, data) {
           !Array.isArray(doc.behaviors) && typeof doc.behaviors?.get === "function";
 
         const behaviorSources = () => [...doc.behaviors].map((row) => ({ ...(row._source ?? {}) }));
+        const baseToObject = doc.toObject.bind(doc);
+        doc.toObject = () => ({
+          ...baseToObject(),
+          behaviors: hasBehaviorCollection() ? behaviorSources() : doc.behaviors
+        });
 
         const mergeBehaviorSources = (entries) => {
           const merged = behaviorSources();

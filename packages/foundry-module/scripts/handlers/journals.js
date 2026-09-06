@@ -22,7 +22,6 @@ import { resolveBroadcastUsers } from "../lib/broadcast-targets.js";
 import {
   applyConfirmedUpdate,
   assertDocumentDeleteCommitted,
-  assertDocumentUpdateCommitted,
   assertRequestedWriteStorable
 } from "../lib/write-confirmation.js";
 import {
@@ -380,34 +379,35 @@ export function createJournalHandlers() {
     async "journal.category.update"(params) {
       const { category } = getJournalCategoryById(params.journalId, params.categoryId);
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: category,
+          patch: params.patch,
+          subject: `Journal category ${params.categoryId} of journal ${params.journalId}`,
+          details: { journalId: params.journalId, categoryId: params.categoryId }
+        });
         const preview = await previewDocumentUpdate(category, params.patch);
         return dryRunResponse({ journalId: params.journalId, category: serializeJournalCategory(preview) });
       }
 
-      const { category: updated, committed } = await updateJournalCategory(
-        params.journalId,
-        params.categoryId,
-        params.patch
-      );
-
-      if (!updated) {
-        throw createBridgeError(
-          ERROR_CODES.JOURNAL_CATEGORY_NOT_FOUND,
-          `JournalEntryCategory ${params.categoryId} is no longer on journal ${params.journalId}: the row was REMOVED while this update was in flight (a concurrent journal.category.delete — this family takes no mutation queue — or a category removed from Foundry's own Categories dialog), so the update's outcome cannot be confirmed and the category no longer exists. This is NOT a module veto: no preUpdateJournalEntryCategory hook was involved. Re-read the journal's categories with journal.category.list before retrying.`,
-
-          { journalId: params.journalId, categoryId: params.categoryId, removedDuringUpdate: true }
-        );
-      }
-      if (!committed) {
-        await assertDocumentUpdateCommitted({
-          document: updated,
-          patch: params.patch,
-          subject: `Journal category ${params.categoryId} of journal ${params.journalId}`,
-          hookName: "preUpdateJournalEntryCategory",
-          details: { journalId: params.journalId, categoryId: params.categoryId },
-          remedy: JOURNAL_CATEGORY_VETO_REMEDY
-        });
-      }
+      const { category: updated } = await applyConfirmedUpdate({
+        document: category,
+        patch: params.patch,
+        write: async (payload) => {
+          const result = await updateJournalCategory(params.journalId, params.categoryId, payload);
+          if (!result.category) {
+            throw createBridgeError(
+              ERROR_CODES.JOURNAL_CATEGORY_NOT_FOUND,
+              `JournalEntryCategory ${params.categoryId} is no longer on journal ${params.journalId}: the row was REMOVED while this update was in flight (a concurrent journal.category.delete — this family takes no mutation queue — or a category removed from Foundry's own Categories dialog), so the update's outcome cannot be confirmed and the category no longer exists. This is NOT a module veto: no preUpdateJournalEntryCategory hook was involved. Re-read the journal's categories with journal.category.list before retrying.`,
+              { journalId: params.journalId, categoryId: params.categoryId, removedDuringUpdate: true }
+            );
+          }
+          return result;
+        },
+        subject: `Journal category ${params.categoryId} of journal ${params.journalId}`,
+        hookName: "preUpdateJournalEntryCategory",
+        details: { journalId: params.journalId, categoryId: params.categoryId },
+        remedy: JOURNAL_CATEGORY_VETO_REMEDY
+      });
       return { journalId: params.journalId, category: serializeJournalCategory(updated) };
     },
 

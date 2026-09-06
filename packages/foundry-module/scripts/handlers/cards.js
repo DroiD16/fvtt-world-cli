@@ -33,7 +33,6 @@ import { getCardsCollection } from "../lib/game-collections.js";
 import {
   applyConfirmedUpdate,
   assertDocumentDeleteCommitted,
-  assertDocumentUpdateCommitted,
   assertRequestedWriteStorable
 } from "../lib/write-confirmation.js";
 import {
@@ -1149,22 +1148,25 @@ export function createCardsHandlers() {
 
         assertCardFacesValid(stack, patch);
         if (isDryRun(params)) {
+          await assertRequestedWriteStorable({
+            document: card,
+            patch,
+            subject: `Card ${params.cardId} of Cards ${params.cardsId}`,
+            details: { cardsId: params.cardsId, cardId: params.cardId }
+          });
           const preview = await previewDocumentUpdate(card, patch);
           return dryRunResponse({ cardsId: params.cardsId, card: serializeCard(preview) });
         }
 
-        const requestedPatch = cloneValue(patch);
-        const { card: updated, committed } = await updateCard(stack, params.cardId, patch);
-        if (!committed) {
-          await assertDocumentUpdateCommitted({
-            document: updated ?? card,
-            patch: requestedPatch,
-            subject: `Card ${params.cardId} of Cards ${params.cardsId}`,
-            hookName: "preUpdateCard",
-            details: { cardsId: params.cardsId, cardId: params.cardId },
-            remedy: CARDS_VETO_REMEDY
-          });
-        }
+        const { card: updated } = await applyConfirmedUpdate({
+          document: card,
+          patch,
+          write: (payload) => updateCard(stack, params.cardId, payload),
+          subject: `Card ${params.cardId} of Cards ${params.cardsId}`,
+          hookName: "preUpdateCard",
+          details: { cardsId: params.cardsId, cardId: params.cardId },
+          remedy: CARDS_VETO_REMEDY
+        });
         return { cardsId: params.cardsId, card: serializeCard(updated ?? card) };
       });
     },

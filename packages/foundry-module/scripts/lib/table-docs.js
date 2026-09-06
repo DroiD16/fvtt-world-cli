@@ -134,20 +134,15 @@ export async function createTableResult(table, data, { dryRun = false } = {}) {
 export async function updateTableResult(tableId, resultId, patch, { dryRun = false } = {}) {
   const { table } = getTableResultById(tableId, resultId);
   if (dryRun) {
-    return { result: table.results.get(resultId), committed: false };
+    return { result: table.results.get(resultId) };
   }
 
-  const updated = await table.updateEmbeddedDocuments(
-    "TableResult",
-    [{ _id: resultId, ...structuredCloneish(patch) }],
-    {
-      diff: true,
-      render: true
-    }
-  );
+  await table.updateEmbeddedDocuments("TableResult", [{ _id: resultId, ...structuredCloneish(patch) }], {
+    diff: true,
+    render: true
+  });
   return {
-    result: table.results.get(resultId),
-    committed: Array.isArray(updated) ? updated.length > 0 : Boolean(updated)
+    result: table.results.get(resultId)
   };
 }
 

@@ -400,32 +400,22 @@ export async function createCombatantGroup(combat, data) {
 }
 
 export async function updateCombatant(combat, combatantId, patch) {
-  const updated = await combat.updateEmbeddedDocuments(
-    "Combatant",
-    [{ _id: combatantId, ...structuredCloneish(patch) }],
-    {
-      diff: true,
-      render: true
-    }
-  );
+  await combat.updateEmbeddedDocuments("Combatant", [{ _id: combatantId, ...structuredCloneish(patch) }], {
+    diff: true,
+    render: true
+  });
   return {
-    combatant: combat.combatants?.get?.(combatantId) ?? null,
-    committed: Array.isArray(updated) ? updated.length > 0 : Boolean(updated)
+    combatant: combat.combatants?.get?.(combatantId) ?? null
   };
 }
 
 export async function updateCombatantGroup(combat, groupId, patch) {
-  const updated = await combat.updateEmbeddedDocuments(
-    "CombatantGroup",
-    [{ _id: groupId, ...structuredCloneish(patch) }],
-    {
-      diff: true,
-      render: true
-    }
-  );
+  await combat.updateEmbeddedDocuments("CombatantGroup", [{ _id: groupId, ...structuredCloneish(patch) }], {
+    diff: true,
+    render: true
+  });
   return {
-    group: combat.groups?.get?.(groupId) ?? null,
-    committed: Array.isArray(updated) ? updated.length > 0 : Boolean(updated)
+    group: combat.groups?.get?.(groupId) ?? null
   };
 }
 

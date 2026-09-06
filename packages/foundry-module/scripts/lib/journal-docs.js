@@ -379,14 +379,13 @@ export async function updateJournalCategory(journalId, categoryId, patch) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "JournalEntryCategory update API is not available");
   }
 
-  const updated = await journal.updateEmbeddedDocuments(
+  await journal.updateEmbeddedDocuments(
     "JournalEntryCategory",
     [{ _id: categoryId, ...structuredCloneish(patch) }],
     { diff: true, render: true }
   );
   return {
-    category: journal.categories?.get?.(categoryId) ?? null,
-    committed: Array.isArray(updated) ? updated.length > 0 : Boolean(updated)
+    category: journal.categories?.get?.(categoryId) ?? null
   };
 }
 

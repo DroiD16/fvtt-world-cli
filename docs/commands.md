@@ -18,6 +18,18 @@ shipped with the installed CLI, this guide included. Agents operate through the 
 skill, managed with the `fvtt-world-cli skill install`, `skill update`, and `skill remove`
 commands; [Agent skill](skill.md) covers the whole lifecycle.
 
+An update can fail after changing stored data. If an `INTERNAL_ERROR` includes
+`details.partial: true` or `details.indeterminate: true`, read the document before retrying.
+`changedFields` names requested top-level fields observed to change; it does not mean every
+nested value was applied. Send only the remaining changes as a new operation with a fresh
+idempotency key, if you use one.
+
+Creating embedded entries without `_id` through a single-document update, such as adding
+`behaviors` through `scene.region.update`, returns an indeterminate error even if the entries
+were created. Read the embedded collection before retrying to avoid duplicates. Prefer the
+dedicated embedded create command when available. A dry run previews the patch without proving
+that a later write will persist it.
+
 ## Before you begin
 
 Start the local daemon and keep an authenticated GM client open in the target Foundry world:

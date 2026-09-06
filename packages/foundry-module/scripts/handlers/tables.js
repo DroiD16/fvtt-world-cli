@@ -28,7 +28,6 @@ import {
 import {
   applyConfirmedUpdate,
   assertDocumentDeleteCommitted,
-  assertDocumentUpdateCommitted,
   assertRequestedWriteStorable
 } from "../lib/write-confirmation.js";
 import {
@@ -467,25 +466,25 @@ export function createTableHandlers() {
 
         const patch = prepareTableResultPatch(result, params.patch);
         if (isDryRun(params)) {
+          await assertRequestedWriteStorable({
+            document: result,
+            patch,
+            subject: `Table result ${params.resultId} of roll table ${params.tableId}`,
+            details: { tableId: params.tableId, resultId: params.resultId }
+          });
           const preview = await previewDocumentUpdate(result, patch);
           return dryRunResponse({ tableId: params.tableId, result: serializeTableResult(preview) });
         }
 
-        const { result: updated, committed } = await updateTableResult(
-          params.tableId,
-          params.resultId,
-          patch
-        );
-        if (!committed) {
-          await assertDocumentUpdateCommitted({
-            document: updated,
-            patch,
-            subject: `Table result ${params.resultId} of roll table ${params.tableId}`,
-            hookName: "preUpdateTableResult",
-            details: { tableId: params.tableId, resultId: params.resultId },
-            remedy: TABLE_VETO_REMEDY
-          });
-        }
+        const { result: updated } = await applyConfirmedUpdate({
+          document: result,
+          patch,
+          write: (payload) => updateTableResult(params.tableId, params.resultId, payload),
+          subject: `Table result ${params.resultId} of roll table ${params.tableId}`,
+          hookName: "preUpdateTableResult",
+          details: { tableId: params.tableId, resultId: params.resultId },
+          remedy: TABLE_VETO_REMEDY
+        });
         return { tableId: params.tableId, result: serializeTableResult(updated) };
       });
     },
