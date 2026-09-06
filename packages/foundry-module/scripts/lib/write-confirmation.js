@@ -140,14 +140,14 @@ function patchKeyRoot(key) {
  */
 function assertPatchShapeStorable({ document, documentClass, requested, mergedPreview, subject, details }) {
   const id = typeof document?.id === "string" ? document.id : "";
-  const coordinate = `${subject} element 0 (id ${id})`;
   try {
     assertNoAmbiguousBatchKeySpellings({
       documentClass,
       patch: requested,
       index: 0,
       command: subject,
-      id
+      id,
+      coordinate: subject
     });
     if (mergedPreview !== null) {
       assertBatchArrayWritesReflected({
@@ -157,16 +157,18 @@ function assertPatchShapeStorable({ document, documentClass, requested, mergedPr
         stored: document,
         index: 0,
         command: subject,
-        id
+        id,
+        coordinate: subject
       });
     }
   } catch (error) {
     if (error instanceof BridgeError) {
       const { index: _index, id: _entryId, ...guardDetails } = error.details ?? {};
-      const message = error.message.split(coordinate).join(subject);
       throw createBridgeError(
         error.code,
-        message.endsWith("Nothing was written.") ? message : `${message} Nothing was written.`,
+        error.message.endsWith("Nothing was written.")
+          ? error.message
+          : `${error.message} Nothing was written.`,
         { ...details, ...guardDetails }
       );
     }

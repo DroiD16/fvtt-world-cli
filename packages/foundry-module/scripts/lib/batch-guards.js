@@ -53,8 +53,15 @@ function normalizeOperatorPath(rawKey) {
   return { path, deletes: rawKey.split(".").some((segment) => segment.startsWith("-=")) };
 }
 
-/** @param {{ documentClass: any, patch: Record<string, any>, index: number, command: string, id: string }} args */
-export function assertNoAmbiguousBatchKeySpellings({ documentClass, patch, index, command, id }) {
+/** @param {{ documentClass: any, patch: Record<string, any>, index: number, command: string, id: string, coordinate?: string }} args */
+export function assertNoAmbiguousBatchKeySpellings({
+  documentClass,
+  patch,
+  index,
+  command,
+  id,
+  coordinate = `${command} element ${index} (id ${id})`
+}) {
   if (!patch || typeof patch !== "object" || Array.isArray(patch)) return;
 
   const refuse = ({ where, rule, path, root, spellings }) => {
@@ -69,7 +76,7 @@ export function assertNoAmbiguousBatchKeySpellings({ documentClass, patch, index
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
 
-      `${command} element ${index} (id ${id}) writes the same field "${path}" through more than one key ` +
+      `${coordinate} writes the same field "${path}" through more than one key ` +
         `${where}: ${spellings.map((key) => `"${key}"`).join(" and ")}. Foundry applies exactly ONE of them and ` +
         `SILENTLY DISCARDS the rest — ${mechanism}, and no check downstream can see the loss because the merged ` +
         `preview and the stored result come from the same ambiguous patch. Merge them into one key and retry.`,
@@ -191,7 +198,7 @@ export function batchValuesEqual(a, b) {
   return false;
 }
 
-/** @param {{ documentClass: any, patch: Record<string, any>, merged: any, stored?: any, index: number, command: string, id: string }} args */
+/** @param {{ documentClass: any, patch: Record<string, any>, merged: any, stored?: any, index: number, command: string, id: string, coordinate?: string }} args */
 export function assertBatchArrayWritesReflected({
   documentClass,
   patch,
@@ -199,7 +206,8 @@ export function assertBatchArrayWritesReflected({
   stored,
   index,
   command,
-  id
+  id,
+  coordinate = `${command} element ${index} (id ${id})`
 }) {
   const schema = documentClass?.schema;
   const source = readDocumentSource(merged);
@@ -235,8 +243,8 @@ export function assertBatchArrayWritesReflected({
 
         preSource,
         index,
-        command,
-        id
+        id,
+        coordinate
       });
       continue;
     }
@@ -251,8 +259,8 @@ export function assertBatchArrayWritesReflected({
       merged,
       preSource,
       index,
-      command,
-      id
+      id,
+      coordinate
     });
 
     if (key === rootKey) {
@@ -270,8 +278,8 @@ export function assertBatchArrayWritesReflected({
           source,
           preSource,
           index,
-          command,
-          id
+          id,
+          coordinate
         });
         continue;
       }
@@ -288,7 +296,7 @@ export function assertBatchArrayWritesReflected({
       if (!batchValuesEqual(expected, source[rootKey])) {
         throw createBridgeError(
           ERROR_CODES.INVALID_PARAMS,
-          `${command} element ${index} (id ${id}) sets "${rawKey}" to a value this Foundry version SILENTLY DISCARDS: ` +
+          `${coordinate} sets "${rawKey}" to a value this Foundry version SILENTLY DISCARDS: ` +
             `the merged document keeps ${JSON.stringify(source[rootKey])}. Foundry 14 drops an invalid array field ` +
             `without an error (Foundry 13 rejects it outright), so the write would be reported as applied while ` +
             `nothing changed. Fix the value (a Wall's "c", for example, must be exactly four numbers) and retry.`,
@@ -299,7 +307,7 @@ export function assertBatchArrayWritesReflected({
       if (!arrayWriteLanded({ field, value, rootKey, source, preSource })) {
         throw createBridgeError(
           ERROR_CODES.INVALID_PARAMS,
-          `${command} element ${index} (id ${id}) sets "${rawKey}" to a value the element schema does not accept, ` +
+          `${coordinate} sets "${rawKey}" to a value the element schema does not accept, ` +
             `and this Foundry version SILENTLY DISCARDS it: cleaning it COLLAPSES onto the value already stored ` +
             `(${JSON.stringify(source[rootKey])}), so nothing changes and the write would be reported as applied. ` +
             `Send an array of values the field accepts (for a set-valued field such as a Wall's "levels", an array ` +
@@ -314,10 +322,10 @@ export function assertBatchArrayWritesReflected({
 
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
-      `${command} element ${index} (id ${id}) writes the dotted path "${rawKey}" INSIDE the ARRAY field ` +
+      `${coordinate} writes the dotted path "${rawKey}" INSIDE the ARRAY field ` +
         `"${rootKey}". Foundry does NOT patch an array in place: it REBUILDS the array from this patch alone, so ` +
         `every entry the patch does not name is DESTROYED — and when the rebuilt array fails the field's own ` +
-        `validator, Foundry 14 drops the whole write silently while Foundry 13 rejects it, so the write would be ` +
+        `validator, Foundry drops the whole write with only a UI notification, so the write would be ` +
         `reported as applied while the stored array lost data or kept none of it. Send the WHOLE array instead ` +
         `(for a Wall, "c": [x1, y1, x2, y2]): read it first, change the entry you mean, send all of them back, ` +
         `and retry.`,
@@ -333,7 +341,7 @@ export function assertBatchArrayWritesReflected({
   }
 }
 
-/** @param {{ documentClass: any, rawKey: string, key: string, rootKey: string, operator: ""|"=="|"-=", value: unknown, source: Record<string, any>, merged?: any, preSource?: Record<string, any>|null, index: number, command: string, id: string }} args */
+/** @param {{ documentClass: any, rawKey: string, key: string, rootKey: string, operator: ""|"=="|"-=", value: unknown, source: Record<string, any>, merged?: any, preSource?: Record<string, any>|null, index: number, id: string, coordinate: string }} args */
 function assertMigratedArrayKeyReflected({
   documentClass,
   rawKey,
@@ -345,8 +353,8 @@ function assertMigratedArrayKeyReflected({
   merged,
   preSource = null,
   index,
-  command,
-  id
+  id,
+  coordinate
 }) {
   const movedTo = findMigratedArrayTarget(documentClass, rootKey);
   if (!movedTo) return;
@@ -361,7 +369,7 @@ function assertMigratedArrayKeyReflected({
     if (migratedArrayWriteLanded({ merged, rootKey, migratedValue, storedNow, preSource })) return;
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
-      `${command} element ${index} (id ${id}) sets "${rawKey}" — a field this Foundry version has MOVED to ` +
+      `${coordinate} sets "${rawKey}" — a field this Foundry version has MOVED to ` +
         `"${movedTo}" — to a value the moved field does NOT accept, and this Foundry version SILENTLY ` +
         `DISCARDS it: the merged document keeps ${JSON.stringify(storedNow)} there, so nothing changes and ` +
         `the write would be reported as applied. Send entries the field accepts (an ActiveEffect change ` +
@@ -386,7 +394,7 @@ function assertMigratedArrayKeyReflected({
       : `a dotted path into the field is not migrated by this Foundry version`;
   throw createBridgeError(
     ERROR_CODES.INVALID_PARAMS,
-    `${command} element ${index} (id ${id}) writes "${rawKey}", which this Foundry version does NOT declare at ` +
+    `${coordinate} writes "${rawKey}", which this Foundry version does NOT declare at ` +
       `the top level: the field has MOVED to "${movedTo}", and ${reason}. The write is SILENTLY DISCARDED — ` +
       `no error, no diff — so it would be reported as applied while nothing changed. Send the whole array as ` +
       `"${rootKey}": [ … ] (or write "${movedTo}" directly — that spelling is judged by the same rule) and retry.`,
@@ -402,7 +410,7 @@ function assertMigratedArrayKeyReflected({
   );
 }
 
-/** @param {{ documentClass: any, rawKey: string, value: unknown, source: Record<string, any>, merged?: any, preSource?: Record<string, any>|null, index: number, command: string, id: string }} args */
+/** @param {{ documentClass: any, rawKey: string, value: unknown, source: Record<string, any>, merged?: any, preSource?: Record<string, any>|null, index: number, id: string, coordinate: string }} args */
 function assertMigratedSystemArrayReflected({
   documentClass,
   rawKey,
@@ -411,8 +419,8 @@ function assertMigratedSystemArrayReflected({
   merged,
   preSource = null,
   index,
-  command,
-  id
+  id,
+  coordinate
 }) {
   const { path: normalizedKey, deletes: keyDeletes } = normalizeOperatorPath(rawKey);
   const segments = normalizedKey.split(".");
@@ -462,7 +470,7 @@ function assertMigratedSystemArrayReflected({
 
       throw createBridgeError(
         ERROR_CODES.INVALID_PARAMS,
-        `${command} element ${index} (id ${id}) sets "${movedTo}"${rawKey === movedTo ? "" : ` (through "${rawKey}")`} ` +
+        `${coordinate} sets "${movedTo}"${rawKey === movedTo ? "" : ` (through "${rawKey}")`} ` +
           `to a value that field does NOT accept, and this Foundry version SILENTLY DISCARDS it: the merged ` +
           `document keeps ${JSON.stringify(storedNow)} there, so nothing changes and the write would be reported ` +
           `as applied. Send entries the field accepts (an ActiveEffect change "type", for example, must be ` +
@@ -488,7 +496,7 @@ function assertMigratedSystemArrayReflected({
       const arraySegment = resolvedNow.container === "array";
       throw createBridgeError(
         ERROR_CODES.INVALID_PARAMS,
-        `${command} element ${index} (id ${id}) writes "${rawKey}"${rawKey === fullPath ? "" : ` ("${fullPath}")`}, whose segment ` +
+        `${coordinate} writes "${rawKey}"${rawKey === fullPath ? "" : ` ("${fullPath}")`}, whose segment ` +
           `${JSON.stringify(resolvedNow.segment)} addresses ` +
           (arraySegment
             ? `the array field "${movedTo}" and is not an ARRAY INDEX. An array is addressed by its indices ` +
@@ -531,7 +539,7 @@ function assertMigratedSystemArrayReflected({
       if (Array.isArray(preArray) && preArray.length > 0) {
         throw createBridgeError(
           ERROR_CODES.INVALID_PARAMS,
-          `${command} element ${index} (id ${id}) writes "${rawKey}"${rawKey === fullPath ? "" : ` ("${fullPath}")`} ` +
+          `${coordinate} writes "${rawKey}"${rawKey === fullPath ? "" : ` ("${fullPath}")`} ` +
             `INSIDE the array field "${movedTo}", which currently holds ${preArray.length} ` +
             `entr${preArray.length === 1 ? "y" : "ies"}. This Foundry version does NOT patch that array in ` +
             `place: it REBUILDS it from this patch alone, and the bridge does not compare the rebuilt array ` +
@@ -559,7 +567,7 @@ function assertMigratedSystemArrayReflected({
 
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
-      `${command} element ${index} (id ${id}) writes "${rawKey}" INSIDE the array field "${movedTo}", and this ` +
+      `${coordinate} writes "${rawKey}" INSIDE the array field "${movedTo}", and this ` +
         `Foundry version SILENTLY DISCARDS the whole write: the merged document still holds ` +
         `${JSON.stringify(storedNowAtPath ?? null)} at "${fullPath}" and ${JSON.stringify(storedNow)} in the ` +
         `array, so nothing changes and the write would be reported as applied. Send the WHOLE array at ` +
@@ -714,7 +722,7 @@ function classifyArrayBackedField(field) {
   return isArrayBacked ? "array" : null;
 }
 
-/** @param {{ field: any, rootKey: string, rawKey: string, value: unknown, source: Record<string, any>, preSource: Record<string, any>|null, index: number, command: string, id: string }} args */
+/** @param {{ field: any, rootKey: string, rawKey: string, value: unknown, source: Record<string, any>, preSource: Record<string, any>|null, index: number, id: string, coordinate: string }} args */
 function assertBatchEcfEntriesReflected({
   field,
   rootKey,
@@ -723,8 +731,8 @@ function assertBatchEcfEntriesReflected({
   source,
   preSource,
   index,
-  command,
-  id
+  id,
+  coordinate
 }) {
   const stored = source[rootKey];
   /**
@@ -737,7 +745,7 @@ function assertBatchEcfEntriesReflected({
   const refuse = (detail, requested, storedValue, extraDetails) => {
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
-      `${command} element ${index} (id ${id}) writes "${rawKey}", an EMBEDDED COLLECTION, in a way this Foundry ` +
+      `${coordinate} writes "${rawKey}", an EMBEDDED COLLECTION, in a way this Foundry ` +
         `version SILENTLY DISCARDS: ${detail}. An embedded collection is merged by "_id" (entries you do not ` +
         `name are kept), so send each entry as { "_id": "<existing id>", <fields to change> } with values the ` +
         `element schema accepts. Foundry 14 drops an invalid embedded entry without an error or a diff ` +
