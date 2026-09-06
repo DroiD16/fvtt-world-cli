@@ -935,14 +935,15 @@ describe("command router", () => {
       ];
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(events).toEqual(["update-start"]);
+      const commandEvents = () => events.filter((event) => event !== "clone-probe");
+      expect(commandEvents()).toEqual(["update-start"]);
       release();
       const responses = await Promise.all(pending);
       expect(
         responses.map((response) => response.ok),
         JSON.stringify(responses.map((response) => response.error ?? null))
       ).toEqual([true, true, true]);
-      expect(events).toEqual(["update-start", "update-end", "clone-probe", "clone-save", "delete"]);
+      expect(commandEvents()).toEqual(["update-start", "update-end", "clone-save", "delete"]);
     });
 
     it("canonicalizes all THREE FilePath leaves so a WHITESPACE-only value is rejected, not silently reset", async () => {
@@ -1941,7 +1942,7 @@ describe("command router", () => {
       });
       const originalCardClone = stack.cards.get("card-q1").clone;
       stack.cards.get("card-q1").clone = vi.fn(async (patch, context = {}) => {
-        events.push(context.save ? "row-clone-save" : "row-clone-probe");
+        if (context.save) events.push("row-clone-save");
         return originalCardClone(patch, context);
       });
 
@@ -1974,7 +1975,6 @@ describe("command router", () => {
         "stack-update-end",
         "row-create",
         "row-update",
-        "row-clone-probe",
         "row-clone-save",
         "row-delete"
       ]);

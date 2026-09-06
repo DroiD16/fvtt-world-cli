@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCommandRouter } from "../scripts/command-router.js";
 import { ERROR_CODES, MODULE_ID } from "../scripts/generated/protocol.js";
 import { APPROVAL_REFUSAL_REASONS } from "../scripts/lib/approval-store.js";
+import { assertApprovalBindingFresh, captureApprovalBinding } from "../scripts/lib/approval-bindings.js";
 import { resolveApprovalTargets } from "../scripts/lib/approval-targets.js";
 import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 
@@ -293,6 +294,102 @@ describe("the guards an allowed command meets at decision time", () => {
 
     expect(response.result.response.error.code).toBe(ERROR_CODES.PERMISSION_DENIED);
     expect(actorName()).toBe("Valeros");
+  });
+
+  it("runs an allowed macro execution whose macro still matches what the GM was shown", async () => {
+    await storePolicy({ "macro.execute": "approve" });
+    const approvalId = await askForApproval("macro.execute", { macroId: "macro-1" });
+
+    await router.approvalStore.decide(approvalId, "allow");
+    const response = await pollOutcome(approvalId);
+
+    expect(response.result.response.ok).toBe(true);
+    expect(globalThis.game.macros.get("macro-1").execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses an allowed macro execution whose body changed after the GM was shown it", async () => {
+    const onStaleApproval = vi.fn();
+    router = createCommandRouter({ bridgeClient: BRIDGE_CLIENT, onStaleApproval });
+    await storePolicy({ "macro.execute": "approve" });
+    const approvalId = await askForApproval("macro.execute", { macroId: "macro-1" });
+
+    globalThis.game.macros.get("macro-1").command = "game.actors.forEach(a => a.delete());";
+    await router.approvalStore.decide(approvalId, "allow");
+    const response = await pollOutcome(approvalId);
+
+    expect(onStaleApproval).toHaveBeenCalledTimes(1);
+
+    expect(response.result.outcome).toBe("approved");
+    expect(response.result.response.ok).toBe(false);
+    expect(response.result.response.error.code).toBe(ERROR_CODES.APPROVAL_STALE);
+    expect(response.result.response.error.details).toMatchObject({
+      macroId: "macro-1",
+      drifted: ["body"]
+    });
+    expect(globalThis.game.macros.get("macro-1").execute).not.toHaveBeenCalled();
+  });
+
+  it("leaves no gap between the freshness check and dispatch for a late mutation to win", async () => {
+    await storePolicy({ "macro.execute": "approve" });
+    const approvalId = await askForApproval("macro.execute", { macroId: "macro-1" });
+    const macro = globalThis.game.macros.get("macro-1");
+    let seenBody = null;
+    macro.execute = vi.fn(async () => {
+      seenBody = macro.command;
+    });
+
+    const decision = router.approvalStore.decide(approvalId, "allow");
+    macro.command = "game.actors.forEach(a => a.delete());";
+    await decision;
+
+    expect(macro.execute).toHaveBeenCalledTimes(1);
+    expect(seenBody).toBe("console.log('heal');");
+  });
+
+  it("refuses an allowed macro execution whose macro was deleted while the decision waited", async () => {
+    await storePolicy({ "macro.execute": "approve" });
+    const approvalId = await askForApproval("macro.execute", { macroId: "macro-1" });
+
+    const macro = globalThis.game.macros.get("macro-1");
+    globalThis.game.macros.delete("macro-1");
+    await router.approvalStore.decide(approvalId, "allow");
+    const response = await pollOutcome(approvalId);
+
+    expect(response.result.response.error.code).toBe(ERROR_CODES.APPROVAL_STALE);
+    expect(macro.execute).not.toHaveBeenCalled();
+  });
+
+  it("refuses a binding whose captured macro is not the one the params name", () => {
+    const binding = captureApprovalBinding("macro.execute", { macroId: "macro-1" });
+
+    let refusal = null;
+    try {
+      assertApprovalBindingFresh("macro.execute", { macroId: "ghost" }, binding);
+    } catch (error) {
+      refusal = /** @type {any} */ (error);
+    }
+
+    expect(refusal?.code).toBe(ERROR_CODES.APPROVAL_STALE);
+    expect(refusal?.details).toMatchObject({
+      macroId: "macro-1",
+      requestedMacroId: "ghost",
+      drifted: ["identity"]
+    });
+    expect(refusal?.message).toContain("macro-1");
+  });
+
+  it("refuses an allowed macro execution admitted without the shown-content snapshot", async () => {
+    const admission = router.approvalStore.admit({
+      command: "macro.execute",
+      params: { macroId: "macro-1" },
+      requestBytes: REQUEST_BYTES
+    });
+
+    await router.approvalStore.decide(admission.approvalId, "allow");
+    const response = await pollOutcome(admission.approvalId);
+
+    expect(response.result.response.error.code).toBe(ERROR_CODES.APPROVAL_STALE);
+    expect(globalThis.game.macros.get("macro-1").execute).not.toHaveBeenCalled();
   });
 
   it("validates the params again, so a request the store holds cannot smuggle any past them", async () => {

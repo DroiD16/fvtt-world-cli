@@ -956,7 +956,7 @@ describe("command router", () => {
 
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe("INVALID_PARAMS");
-      expect(response.error.message).toContain("SILENTLY DISCARDS");
+      expect(response.error.message).toMatch(/SILENTLY DISCARDS|DESTROYED/);
       expect(response.error.details).toMatchObject({ index: 0, ...expected });
     }
     expect(scene.updateEmbeddedDocuments.mock.calls.filter((call) => call[0] === "Wall")).toHaveLength(0);
@@ -2094,14 +2094,21 @@ describe("command router", () => {
     expect(scriptUpdate.ok).toBe(false);
     expect(scriptUpdate.error.code).toBe("INVALID_PARAMS");
 
-    const okUpdate = await router.route(
+    const declarativeUpdate = await router.route(
       createRequest("scene.region.update", {
         sceneId: "scene-1",
         regionId: "region-lava",
         patch: { behaviors: [{ type: "pauseGame" }] }
       })
     );
-    expect(okUpdate.ok).toBe(true);
+    expect(declarativeUpdate.ok).toBe(false);
+    expect(declarativeUpdate.error.code).toBe("INTERNAL_ERROR");
+    expect(declarativeUpdate.error.details.indeterminate).toBe(true);
+    expect(
+      [...globalThis.game.scenes.get("scene-1").regions.get("region-lava").behaviors].some(
+        (behavior) => behavior.type === "pauseGame"
+      )
+    ).toBe(true);
   });
 
   it("scene.region.clone: rejects a PATCH-supplied executable behavior but allows duplicating a GM-authored source (supply-only boundary)", async () => {

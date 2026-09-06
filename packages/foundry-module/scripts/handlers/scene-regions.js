@@ -12,6 +12,7 @@ import {
   getSceneRegionBehaviorById,
   previewRegionBehaviorCreate,
   previewRegionBehaviorUpdate,
+  sanitizeRegionBehaviorData,
   updateRegionBehavior
 } from "../lib/region-behaviors.js";
 import {
@@ -22,7 +23,11 @@ import {
   previewSceneEmbeddedUpdate,
   updateSceneEmbedded
 } from "../lib/scene-embedded.js";
-import { assertTableFamilyDeleteCommitted, assertTableFamilyUpdateCommitted } from "../lib/table-docs.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable
+} from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { createBridgeError } from "../lib/errors.js";
 import {
@@ -157,8 +162,15 @@ async function updateBehavior(params, route) {
     assertExecutableBehaviorMacroResolves(params.patch, details, { required: armsBehavior });
   }
 
+  const patch = sanitizeRegionBehaviorData(params.patch);
   if (isDryRun(params)) {
-    const preview = await previewRegionBehaviorUpdate(behavior, params.patch);
+    await assertRequestedWriteStorable({
+      document: behavior,
+      patch,
+      subject: `Region behavior ${params.behaviorId} of region ${params.regionId}`,
+      details
+    });
+    const preview = await previewRegionBehaviorUpdate(behavior, patch);
     return dryRunResponse({
       sceneId: params.sceneId,
       regionId: params.regionId,
@@ -166,30 +178,25 @@ async function updateBehavior(params, route) {
     });
   }
 
-  const {
-    behavior: updated,
-    committed,
-
-    sent
-  } = await updateRegionBehavior(region, params.behaviorId, params.patch);
-
-  if (!updated) {
-    throw createBridgeError(
-      ERROR_CODES.REGION_BEHAVIOR_NOT_FOUND,
-      `RegionBehavior ${params.behaviorId} is no longer on region ${params.regionId} of scene ${params.sceneId}: the row was REMOVED while this update was in flight (a concurrent scene.region.behavior.delete — this family takes no mutation queue — or a behavior deleted from Foundry's own region sheet), so the update's outcome cannot be confirmed and the behavior no longer exists. This is NOT a module veto: no preUpdateRegionBehavior hook was involved. Re-read the region's behaviors with scene.region.behavior.list before retrying.`,
-      { ...details, removedDuringUpdate: true }
-    );
-  }
-  if (!committed) {
-    await assertTableFamilyUpdateCommitted({
-      document: updated,
-      patch: sent,
-      subject: `Region behavior ${params.behaviorId} of region ${params.regionId}`,
-      hookName: "preUpdateRegionBehavior",
-      details,
-      remedy: REGION_BEHAVIOR_VETO_REMEDY
-    });
-  }
+  const { behavior: updated } = await applyConfirmedUpdate({
+    document: behavior,
+    patch,
+    write: async (payload) => {
+      const result = await updateRegionBehavior(region, params.behaviorId, payload);
+      if (!result.behavior) {
+        throw createBridgeError(
+          ERROR_CODES.REGION_BEHAVIOR_NOT_FOUND,
+          `RegionBehavior ${params.behaviorId} is no longer on region ${params.regionId} of scene ${params.sceneId}: the row was REMOVED while this update was in flight (a concurrent scene.region.behavior.delete — this family takes no mutation queue — or a behavior deleted from Foundry's own region sheet), so the update's outcome cannot be confirmed and the behavior no longer exists. This is NOT a module veto: no preUpdateRegionBehavior hook was involved. Re-read the region's behaviors with scene.region.behavior.list before retrying.`,
+          { ...details, removedDuringUpdate: true }
+        );
+      }
+      return result;
+    },
+    subject: `Region behavior ${params.behaviorId} of region ${params.regionId}`,
+    hookName: "preUpdateRegionBehavior",
+    details,
+    remedy: REGION_BEHAVIOR_VETO_REMEDY
+  });
   return {
     sceneId: params.sceneId,
     regionId: params.regionId,
@@ -372,7 +379,7 @@ export function createSceneRegionHandlers() {
       }
 
       const { committed } = await deleteRegionBehavior(region, params.behaviorId);
-      assertTableFamilyDeleteCommitted({
+      assertDocumentDeleteCommitted({
         committed,
         subject: `Region behavior ${params.behaviorId} of region ${params.regionId}`,
         hookName: "preDeleteRegionBehavior",

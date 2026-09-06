@@ -1,4 +1,5 @@
 import { ERROR_CODES } from "../generated/protocol.js";
+import { structuredCloneish } from "./batch-guards.js";
 import { createBridgeError } from "./errors.js";
 
 import { stripProtectedMeta } from "./sanitize.js";
@@ -15,7 +16,7 @@ export const REGION_BEHAVIOR_VETO_REMEDY =
   "There is no force flag for a world-side veto — disable the module that locks this region (or make the change from the Foundry UI) and retry.";
 
 /** @param {Record<string, any>} data */
-function sanitizeRegionBehaviorData(data) {
+export function sanitizeRegionBehaviorData(data) {
   return stripProtectedMeta(data);
 }
 
@@ -95,14 +96,12 @@ export async function updateRegionBehavior(region, behaviorId, patch) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "RegionBehavior update API is not available");
   }
   const sent = sanitizeRegionBehaviorData(patch);
-  const updated = await region.updateEmbeddedDocuments("RegionBehavior", [{ _id: behaviorId, ...sent }], {
+  await region.updateEmbeddedDocuments("RegionBehavior", [{ _id: behaviorId, ...structuredCloneish(sent) }], {
     diff: true,
     render: true
   });
   return {
-    behavior: region.behaviors?.get?.(behaviorId) ?? null,
-    committed: Array.isArray(updated) ? updated.length > 0 : Boolean(updated),
-    sent
+    behavior: region.behaviors?.get?.(behaviorId) ?? null
   };
 }
 

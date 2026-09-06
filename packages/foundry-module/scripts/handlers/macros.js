@@ -11,6 +11,11 @@ import {
   previewMacroCreate
 } from "../lib/world-docs.js";
 import { BridgeError, createBridgeError, toFailureSummary } from "../lib/errors.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable
+} from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import { filterByName, paginate, serializeMacro, serializeMacroSummary } from "../lib/serializers.js";
@@ -313,11 +318,24 @@ export function createMacroHandlers() {
       const macro = getMacroById(params.macroId);
       const patch = canonicalizeFilePathFields(params.patch, "Macro");
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: macro,
+          patch,
+          subject: `Macro ${macro.id ?? params.macroId}`,
+          details: { macroId: macro.id ?? params.macroId }
+        });
         const preview = await previewDocumentUpdate(macro, patch);
         return dryRunResponse({ macro: serializeMacro(preview) });
       }
 
-      await macro.update(patch, { diff: true, render: true });
+      await applyConfirmedUpdate({
+        document: macro,
+        patch,
+        write: (payload) => macro.update(payload, { diff: true, render: true }),
+        subject: `Macro ${macro.id ?? params.macroId}`,
+        hookName: "preUpdateMacro",
+        details: { macroId: macro.id ?? params.macroId }
+      });
       return {
         macro: serializeMacro(macro)
       };
@@ -338,7 +356,13 @@ export function createMacroHandlers() {
         return dryRunResponse({ id, deleted: false });
       }
 
-      await deleteDocument(macro);
+      const deletedDocument = await deleteDocument(macro);
+      assertDocumentDeleteCommitted({
+        committed: Boolean(deletedDocument),
+        subject: `Macro ${id}`,
+        hookName: "preDeleteMacro",
+        details: { macroId: id }
+      });
       return {
         id,
         deleted: true

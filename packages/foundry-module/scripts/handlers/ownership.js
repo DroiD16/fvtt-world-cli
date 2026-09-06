@@ -9,10 +9,11 @@ import {
 } from "../lib/game-collections.js";
 import { assertKnownOwnershipUsers, mergeOwnershipPatch } from "../lib/ownership.js";
 import { getPlaylistById } from "../lib/playlist-docs.js";
-import { assertTableFamilyUpdateCommitted, getTableById } from "../lib/table-docs.js";
+import { getTableById } from "../lib/table-docs.js";
+import { applyConfirmedUpdate, assertRequestedWriteStorable } from "../lib/write-confirmation.js";
 import { createBridgeError } from "../lib/errors.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
-import { cloneValue } from "../lib/serializers.js";
+
 import {
   serializeActor,
   serializeCards,
@@ -45,25 +46,26 @@ function makeOwnershipSetHandler({ idField, getDoc, serialize, resultKey, docume
     const merged = mergeOwnershipPatch(doc, { defaultLevel: params.default, users: params.users });
 
     if (isDryRun(params)) {
+      await assertRequestedWriteStorable({
+        document: doc,
+        patch: { ownership: merged },
+        subject: `${documentName} ${doc.id ?? params[idField]}`,
+        details: { [idField]: doc.id ?? params[idField] }
+      });
       const preview = serialize(doc, { ownership: true, flags: true, provenance: true });
       preview.ownership = merged;
       return dryRunResponse({ [resultKey]: preview });
     }
 
-    const patch = { ownership: merged };
-
-    const requestedPatch = cloneValue(patch);
-    const updated = await doc.update(patch, { diff: true, render: true });
-    if (!updated) {
-      await assertTableFamilyUpdateCommitted({
-        document: doc,
-        patch: requestedPatch,
-        subject: `${documentName} ${doc.id ?? params[idField]}`,
-        hookName,
-        details: { [idField]: doc.id ?? params[idField] },
-        remedy: OWNERSHIP_VETO_REMEDY
-      });
-    }
+    await applyConfirmedUpdate({
+      document: doc,
+      patch: { ownership: merged },
+      write: (payload) => doc.update(payload, { diff: true, render: true }),
+      subject: `${documentName} ${doc.id ?? params[idField]}`,
+      hookName,
+      details: { [idField]: doc.id ?? params[idField] },
+      remedy: OWNERSHIP_VETO_REMEDY
+    });
     return { [resultKey]: serialize(doc, { ownership: true, flags: true, provenance: true }) };
   };
 }
@@ -159,6 +161,18 @@ export function createOwnershipHandlers() {
       const merged = mergeOwnershipPatch(target, { defaultLevel: params.default, users: params.users });
 
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: target,
+          patch: { ownership: merged },
+          subject:
+            params.pageId !== undefined
+              ? `Journal page ${params.pageId} of journal ${params.journalId}`
+              : `Journal ${params.journalId}`,
+          details: {
+            journalId: params.journalId,
+            ...(params.pageId !== undefined ? { pageId: params.pageId } : {})
+          }
+        });
         const preview = serializeJournal(journal, { ownership: true });
         if (params.pageId !== undefined) {
           const previewPage = preview.pages.find(
@@ -173,7 +187,21 @@ export function createOwnershipHandlers() {
         return dryRunResponse({ journal: preview });
       }
 
-      await target.update({ ownership: merged }, { diff: true, render: true });
+      await applyConfirmedUpdate({
+        document: target,
+        patch: { ownership: merged },
+        write: (payload) => target.update(payload, { diff: true, render: true }),
+        subject:
+          params.pageId !== undefined
+            ? `Journal page ${params.pageId} of journal ${params.journalId}`
+            : `Journal ${params.journalId}`,
+        hookName: params.pageId !== undefined ? "preUpdateJournalEntryPage" : "preUpdateJournalEntry",
+        details: {
+          journalId: params.journalId,
+          ...(params.pageId !== undefined ? { pageId: params.pageId } : {})
+        },
+        remedy: OWNERSHIP_VETO_REMEDY
+      });
       return {
         journal: serializeJournal(getJournalById(params.journalId), { ownership: true })
       };

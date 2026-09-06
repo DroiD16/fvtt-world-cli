@@ -1,8 +1,10 @@
 import { ERROR_CODES } from "../generated/protocol.js";
-import { createBridgeError } from "./errors.js";
+import { createBridgeError, toFoundryValidationError } from "./errors.js";
 
 import { getJournalById } from "./game-collections.js";
 import { previewDocumentCreate, previewDocumentUpdate, resolveEmbeddedDocumentClass } from "./world-docs.js";
+import { WORLD_VETO_REMEDY, probeRequestedState } from "./write-confirmation.js";
+import { structuredCloneish } from "./batch-guards.js";
 
 /**
  * The Journal world collection carries Foundry's two sharing entry points. Foundry 14 keeps the bare
@@ -159,7 +161,19 @@ export async function createJournalPages(journalId, pages) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Journal page creation API is not available");
   }
 
-  return journal.createEmbeddedDocuments("JournalEntryPage", pages, { render: true });
+  const results = await journal.createEmbeddedDocuments("JournalEntryPage", pages, { render: true });
+  const createdPageIds = (Array.isArray(results) ? results : []).map((page) => page?.id).filter(Boolean);
+  if (createdPageIds.length < pages.length) {
+    throw createBridgeError(
+      ERROR_CODES.INTERNAL_ERROR,
+      `Journal ${journalId} pages were NOT all created: Foundry resolved the create with ${createdPageIds.length} of ` +
+        `${pages.length} requested pages stored, which means a module's preCreateJournalEntryPage hook or a core ` +
+        `_preCreate refused the rest. The pages in details.createdPageIds DID land — re-read the journal with ` +
+        `journal.get before deciding what to do. ${WORLD_VETO_REMEDY}`,
+      { journalId, requested: pages.length, createdPageIds }
+    );
+  }
+  return results;
 }
 
 export async function updateJournalPages(journalId, pages) {
@@ -168,7 +182,64 @@ export async function updateJournalPages(journalId, pages) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Journal page update API is not available");
   }
 
-  return journal.updateEmbeddedDocuments("JournalEntryPage", pages, { diff: true, render: true });
+  const results = await journal.updateEmbeddedDocuments("JournalEntryPage", structuredCloneish(pages), {
+    diff: true,
+    render: true
+  });
+
+  const updatedPageIds = [];
+  let failure = null;
+  for (const { _id, ...patch } of pages) {
+    const page = journal.pages?.get?.(_id) ?? null;
+    const probe =
+      page === null
+        ? /** @type {{ status: "missing" }} */ ({ status: "missing" })
+        : await probeRequestedState(page, patch);
+    if (probe.status === "confirmed") {
+      updatedPageIds.push(_id);
+      continue;
+    }
+    failure ??= { pageId: _id, patch, probe };
+  }
+
+  if (failure !== null) {
+    const { pageId, patch, probe } = failure;
+    const details = { journalId, pageId, updatedPageIds };
+    const subject = `Journal page ${pageId} of journal ${journalId}`;
+    if (probe.status === "missing") {
+      throw createBridgeError(
+        ERROR_CODES.INTERNAL_ERROR,
+        `${subject} was NOT updated: the page no longer exists now that the update has resolved, so the ` +
+          `requested change cannot be stored. The pages in details.updatedPageIds DID update — re-read the ` +
+          `journal with journal.get before deciding what to do. ${WORLD_VETO_REMEDY}`,
+        details
+      );
+    }
+    if (probe.status === "rejected") {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `${subject} was NOT updated: Foundry REJECTED the patch. Foundry's client backend reports such a ` +
+          `validation failure only as a UI notification and resolves the update without writing, so the bridge ` +
+          `re-ran the same validation to recover the cause — see details.message for the raw validation error, ` +
+          `fix the offending field and resend. The pages in details.updatedPageIds DID update. This is NOT a ` +
+          `module veto: no preUpdateJournalEntryPage hook was involved.`,
+        { ...details, ...toFoundryValidationError(probe.error).details }
+      );
+    }
+    const fields =
+      probe.status === "pending" ? probe.fields : Object.keys(patch).filter((key) => key !== "_id");
+    throw createBridgeError(
+      ERROR_CODES.INTERNAL_ERROR,
+      `${subject} was NOT updated: Foundry resolved the update without applying it, which means a module's ` +
+        `preUpdateJournalEntryPage hook or a core _preUpdate refused the write, or the patch failed Foundry's ` +
+        `own client-side validation (which Foundry reports only as a UI notification). It still holds its ` +
+        `previous values for ${fields.join(", ") || "the requested fields"}. The pages in ` +
+        `details.updatedPageIds DID update — re-read the journal with journal.get before deciding what to do. ` +
+        WORLD_VETO_REMEDY,
+      { ...details, fields, validationError: probe.status === "unprovable" ? probe.probeError : null }
+    );
+  }
+  return results;
 }
 
 /**
@@ -227,7 +298,20 @@ export async function deleteJournalPages(journalId, pageIds) {
 
   assertJournalPagesExist(journalId, pageIds);
 
-  return journal.deleteEmbeddedDocuments("JournalEntryPage", pageIds, { render: true });
+  const results = await journal.deleteEmbeddedDocuments("JournalEntryPage", pageIds, { render: true });
+  const undeletedPageIds = pageIds.filter((pageId) => journal.pages?.get?.(pageId));
+  if (undeletedPageIds.length > 0) {
+    const deletedPageIds = pageIds.filter((pageId) => !undeletedPageIds.includes(pageId));
+    throw createBridgeError(
+      ERROR_CODES.INTERNAL_ERROR,
+      `Journal ${journalId} pages ${undeletedPageIds.join(", ")} were NOT deleted: Foundry resolved the delete ` +
+        `without removing them, which means a module's preDeleteJournalEntryPage hook or a core _preDelete ` +
+        `refused them. The pages in details.deletedPageIds WERE deleted — re-read the journal with journal.get ` +
+        `before deciding what to do. ${WORLD_VETO_REMEDY}`,
+      { journalId, undeletedPageIds, deletedPageIds }
+    );
+  }
+  return results;
 }
 
 export const JOURNAL_CATEGORY_VETO_REMEDY =
@@ -295,14 +379,13 @@ export async function updateJournalCategory(journalId, categoryId, patch) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "JournalEntryCategory update API is not available");
   }
 
-  const updated = await journal.updateEmbeddedDocuments(
+  await journal.updateEmbeddedDocuments(
     "JournalEntryCategory",
-    [{ _id: categoryId, ...patch }],
+    [{ _id: categoryId, ...structuredCloneish(patch) }],
     { diff: true, render: true }
   );
   return {
-    category: journal.categories?.get?.(categoryId) ?? null,
-    committed: Array.isArray(updated) ? updated.length > 0 : Boolean(updated)
+    category: journal.categories?.get?.(categoryId) ?? null
   };
 }
 

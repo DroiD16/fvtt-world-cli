@@ -20,6 +20,11 @@ import {
 import { cloneDocument, deleteDocument, previewDocumentUpdate } from "../lib/world-docs.js";
 import { BATCH_GET_MAX_IDS, ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "../lib/errors.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable
+} from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import {
@@ -94,11 +99,24 @@ export function createPlaylistHandlers() {
     async "playlist.update"(params) {
       const playlist = getPlaylistById(params.playlistId);
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: playlist,
+          patch: params.patch,
+          subject: `Playlist ${playlist.id ?? params.playlistId}`,
+          details: { playlistId: playlist.id ?? params.playlistId }
+        });
         const preview = await previewDocumentUpdate(playlist, params.patch);
         return dryRunResponse({ playlist: serializePlaylist(preview) });
       }
 
-      await playlist.update(params.patch, { diff: true, render: true });
+      await applyConfirmedUpdate({
+        document: playlist,
+        patch: params.patch,
+        write: (payload) => playlist.update(payload, { diff: true, render: true }),
+        subject: `Playlist ${playlist.id ?? params.playlistId}`,
+        hookName: "preUpdatePlaylist",
+        details: { playlistId: playlist.id ?? params.playlistId }
+      });
       return {
         playlist: serializePlaylist(playlist)
       };
@@ -118,7 +136,13 @@ export function createPlaylistHandlers() {
         return dryRunResponse({ id, deleted: false });
       }
 
-      await deleteDocument(playlist);
+      const deletedDocument = await deleteDocument(playlist);
+      assertDocumentDeleteCommitted({
+        committed: Boolean(deletedDocument),
+        subject: `Playlist ${id}`,
+        hookName: "preDeletePlaylist",
+        details: { playlistId: id }
+      });
       return {
         id,
         deleted: true
@@ -176,6 +200,12 @@ export function createPlaylistHandlers() {
       });
       const result = { playlistId: params.playlistId, sound: serializePlaylistSound(sound) };
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: sound,
+          patch,
+          subject: `Playlist sound ${params.soundId} of playlist ${params.playlistId}`,
+          details: { playlistId: params.playlistId, soundId: params.soundId }
+        });
         const preview = await previewDocumentUpdate(sound, patch);
         return dryRunResponse({ ...result, sound: serializePlaylistSound(preview) });
       }

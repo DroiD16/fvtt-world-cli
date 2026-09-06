@@ -30,7 +30,11 @@ import {
   updateCard
 } from "../lib/cards-docs.js";
 import { getCardsCollection } from "../lib/game-collections.js";
-import { assertTableFamilyDeleteCommitted, assertTableFamilyUpdateCommitted } from "../lib/table-docs.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable
+} from "../lib/write-confirmation.js";
 import {
   assertClonePatchValid,
   cloneDocument,
@@ -981,22 +985,25 @@ export function createCardsHandlers() {
 
         const patch = canonicalizeFilePathFields(params.patch, "Cards");
         if (isDryRun(params)) {
+          await assertRequestedWriteStorable({
+            document: stack,
+            patch,
+            subject: `Cards ${stack.id ?? params.cardsId}`,
+            details: { cardsId: stack.id ?? params.cardsId }
+          });
           const preview = await previewDocumentUpdate(stack, patch);
           return dryRunResponse({ cards: serializeCards(preview) });
         }
 
-        const requestedPatch = cloneValue(patch);
-        const updated = await stack.update(patch, { diff: true, render: true });
-        if (!updated) {
-          await assertTableFamilyUpdateCommitted({
-            document: stack,
-            patch: requestedPatch,
-            subject: `Cards ${stack.id ?? params.cardsId}`,
-            hookName: "preUpdateCards",
-            details: { cardsId: stack.id ?? params.cardsId },
-            remedy: CARDS_VETO_REMEDY
-          });
-        }
+        await applyConfirmedUpdate({
+          document: stack,
+          patch,
+          write: (payload) => stack.update(payload, { diff: true, render: true }),
+          subject: `Cards ${stack.id ?? params.cardsId}`,
+          hookName: "preUpdateCards",
+          details: { cardsId: stack.id ?? params.cardsId },
+          remedy: CARDS_VETO_REMEDY
+        });
         return { cards: serializeCards(stack) };
       });
     },
@@ -1141,22 +1148,25 @@ export function createCardsHandlers() {
 
         assertCardFacesValid(stack, patch);
         if (isDryRun(params)) {
+          await assertRequestedWriteStorable({
+            document: card,
+            patch,
+            subject: `Card ${params.cardId} of Cards ${params.cardsId}`,
+            details: { cardsId: params.cardsId, cardId: params.cardId }
+          });
           const preview = await previewDocumentUpdate(card, patch);
           return dryRunResponse({ cardsId: params.cardsId, card: serializeCard(preview) });
         }
 
-        const requestedPatch = cloneValue(patch);
-        const { card: updated, committed } = await updateCard(stack, params.cardId, patch);
-        if (!committed) {
-          await assertTableFamilyUpdateCommitted({
-            document: updated ?? card,
-            patch: requestedPatch,
-            subject: `Card ${params.cardId} of Cards ${params.cardsId}`,
-            hookName: "preUpdateCard",
-            details: { cardsId: params.cardsId, cardId: params.cardId },
-            remedy: CARDS_VETO_REMEDY
-          });
-        }
+        const { card: updated } = await applyConfirmedUpdate({
+          document: card,
+          patch,
+          write: (payload) => updateCard(stack, params.cardId, payload),
+          subject: `Card ${params.cardId} of Cards ${params.cardsId}`,
+          hookName: "preUpdateCard",
+          details: { cardsId: params.cardsId, cardId: params.cardId },
+          remedy: CARDS_VETO_REMEDY
+        });
         return { cardsId: params.cardsId, card: serializeCard(updated ?? card) };
       });
     },
@@ -1190,7 +1200,7 @@ export function createCardsHandlers() {
         }
         const { committed } = await deleteCard(stack, params.cardId);
 
-        assertTableFamilyDeleteCommitted({
+        assertDocumentDeleteCommitted({
           committed,
           subject: `Card ${params.cardId} of Cards ${params.cardsId}`,
           hookName: "preDeleteCard",

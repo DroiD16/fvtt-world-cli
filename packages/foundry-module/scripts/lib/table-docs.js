@@ -1,11 +1,11 @@
 import { ERROR_CODES } from "../generated/protocol.js";
-import { createBridgeError, isFoundryValidationError, toFoundryValidationError } from "./errors.js";
+import { structuredCloneish } from "./batch-guards.js";
+import { createBridgeError } from "./errors.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
 
 import { getFoundryGeneration } from "./foundry-capabilities.js";
 import { getTablesCollection } from "./game-collections.js";
 import {
-  computeDocumentUpdateDiff,
   createWorldDocument,
   getCreateResult,
   previewDocumentCreate,
@@ -134,16 +134,15 @@ export async function createTableResult(table, data, { dryRun = false } = {}) {
 export async function updateTableResult(tableId, resultId, patch, { dryRun = false } = {}) {
   const { table } = getTableResultById(tableId, resultId);
   if (dryRun) {
-    return { result: table.results.get(resultId), committed: false };
+    return { result: table.results.get(resultId) };
   }
 
-  const updated = await table.updateEmbeddedDocuments("TableResult", [{ _id: resultId, ...patch }], {
+  await table.updateEmbeddedDocuments("TableResult", [{ _id: resultId, ...structuredCloneish(patch) }], {
     diff: true,
     render: true
   });
   return {
-    result: table.results.get(resultId),
-    committed: Array.isArray(updated) ? updated.length > 0 : Boolean(updated)
+    result: table.results.get(resultId)
   };
 }
 
@@ -207,7 +206,7 @@ export function countDrawnTableResults(table) {
   return liveTableResults(table).filter((result) => persistedTableResultDrawn(result)).length;
 }
 
-const TABLE_VETO_REMEDY =
+export const TABLE_VETO_REMEDY =
   "There is no force flag for a world-side veto — disable the module that locks this table (or make the change from the Foundry UI) and retry.";
 
 /**
@@ -489,78 +488,6 @@ export function assertTableDrawCommitted({
   throw createBridgeError(
     ERROR_CODES.INTERNAL_ERROR,
     `Roll table ${tableId} drew ${rowCount} row(s) but no row the bridge could observe is stored as drawn, and the pre-call snapshot covered every table this draw could write and was undisturbed, so nothing was consumed: ${sharedCause} Re-read with table get --table-id ${tableId} before deciding what to do: this error is NOT stored under the request's idempotencyKey, so re-sending the same key will draw AGAIN rather than returning this outcome — which is safe precisely because nothing was consumed. ${TABLE_VETO_REMEDY}`,
-    details
-  );
-}
-
-/**
- * @param {object} args
- * @param {any} args.document
- * @param {Record<string, any>} args.patch
- * @param {string} args.subject
- * @param {string} args.hookName
- * @param {Record<string, any>} args.details
- * @param {string} [args.remedy]
- * @returns {Promise<void>}
- */
-export async function assertTableFamilyUpdateCommitted({
-  document,
-  patch,
-  subject,
-  hookName,
-  details,
-  remedy = TABLE_VETO_REMEDY
-}) {
-  let diff;
-  let probeError = null;
-  try {
-    diff = await computeDocumentUpdateDiff(document, patch);
-  } catch (error) {
-    if (isFoundryValidationError(error)) {
-      throw createBridgeError(
-        ERROR_CODES.INVALID_PARAMS,
-        `${subject} was NOT updated: Foundry REJECTED the patch. Foundry's client backend reports such a validation failure only as a UI notification and resolves the update without writing, so the bridge re-ran the same validation to recover the cause — see details.message for the raw validation error (and details.errors, when Foundry exposes the offending field paths), fix the offending field and resend. This is NOT a module veto: no ${hookName} hook was involved.`,
-        {
-          ...details,
-          ...toFoundryValidationError(error).details
-        }
-      );
-    }
-    probeError = /** @type {any} */ (error)?.message ?? String(error);
-    diff = null;
-  }
-  if (diff !== null && Object.keys(diff).length === 0) return;
-
-  const fields = (diff ? Object.keys(diff) : Object.keys(patch ?? {})).filter((key) => key !== "_id");
-  throw createBridgeError(
-    ERROR_CODES.INTERNAL_ERROR,
-    `${subject} was NOT updated: Foundry resolved the update without applying it, which means a module's ${hookName} hook or a core _preUpdate refused the write, or the patch failed Foundry's own client-side validation (which Foundry reports only as a UI notification). It still holds its previous values for ${
-      fields.join(", ") || "the requested fields"
-    }. ${remedy}`,
-    { ...details, fields, validationError: probeError }
-  );
-}
-
-/**
- * @param {object} args
- * @param {boolean} args.committed
- * @param {string} args.subject
- * @param {string} args.hookName
- * @param {Record<string, any>} args.details
- * @param {string} [args.remedy]
- * @returns {void}
- */
-export function assertTableFamilyDeleteCommitted({
-  committed,
-  subject,
-  hookName,
-  details,
-  remedy = TABLE_VETO_REMEDY
-}) {
-  if (committed) return;
-  throw createBridgeError(
-    ERROR_CODES.INTERNAL_ERROR,
-    `${subject} was NOT deleted: Foundry resolved the delete without removing the document, which means a module's ${hookName} hook or a core _preDelete refused it. Nothing was deleted. ${remedy}`,
     details
   );
 }

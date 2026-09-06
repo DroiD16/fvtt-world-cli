@@ -47,7 +47,12 @@ import {
   updateCombatantGroup
 } from "../lib/combat-docs.js";
 import { getCombatsCollection } from "../lib/game-collections.js";
-import { assertTableFamilyDeleteCommitted, assertTableFamilyUpdateCommitted } from "../lib/table-docs.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertDocumentUpdateCommitted,
+  assertRequestedWriteStorable
+} from "../lib/write-confirmation.js";
 import { deleteDocument, previewDocumentUpdate } from "../lib/world-docs.js";
 import { createBridgeError, toFailureSummary } from "../lib/errors.js";
 import {
@@ -219,28 +224,33 @@ export function createCombatHandlers() {
         assertCombatReferenceIdsNotBlank(patch, ["scene"], { combatId, verb: "combat.update" });
         assertCombatSceneContainsCombatants(combat, patch, { combatId });
         if (isDryRun(params)) {
+          await assertRequestedWriteStorable({
+            document: combat,
+            patch,
+            subject: `Combat ${combatId}`,
+            details: { combatId }
+          });
           const preview = await previewDocumentUpdate(combat, cloneValue(patch));
 
           return dryRunResponse({ combat: serializeCombat(preview, { turnOrderFrom: combat }) });
         }
 
-        let updated;
-        try {
-          updated = await combat.update(patch, { diff: true, render: true });
-        } catch (error) {
-          assertCombatSceneContainsCombatants(rereadCombat(combatId, combat), patch, { combatId });
-          throw error;
-        }
-        if (!updated) {
-          await assertTableFamilyUpdateCommitted({
-            document: combat,
-            patch,
-            subject: `Combat ${combatId}`,
-            hookName: "preUpdateCombat",
-            details: { combatId },
-            remedy: COMBAT_VETO_REMEDY
-          });
-        }
+        await applyConfirmedUpdate({
+          document: combat,
+          patch,
+          write: async (payload) => {
+            try {
+              return await combat.update(payload, { diff: true, render: true });
+            } catch (error) {
+              assertCombatSceneContainsCombatants(rereadCombat(combatId, combat), patch, { combatId });
+              throw error;
+            }
+          },
+          subject: `Combat ${combatId}`,
+          hookName: "preUpdateCombat",
+          details: { combatId },
+          remedy: COMBAT_VETO_REMEDY
+        });
         return {
           combat: serializeCombat(rereadCombat(combatId, combat))
         };
@@ -265,7 +275,7 @@ export function createCombatHandlers() {
         }
 
         const deletedDocument = await deleteDocument(combat);
-        assertTableFamilyDeleteCommitted({
+        assertDocumentDeleteCommitted({
           committed: Boolean(deletedDocument),
           subject: `Combat ${id}`,
           hookName: "preDeleteCombat",
@@ -361,7 +371,7 @@ export function createCombatHandlers() {
 
         const updated = await activateCombat(combat);
         if (!updated) {
-          await assertTableFamilyUpdateCommitted({
+          await assertDocumentUpdateCommitted({
             document: combat,
             patch: { active: true },
             subject: `Combat ${combatId}`,
@@ -861,6 +871,12 @@ export function createCombatHandlers() {
 
         const groupInitiativeBefore = combatantGroupInitiativeSnapshot(combat);
         if (isDryRun(params)) {
+          await assertRequestedWriteStorable({
+            document: await detachedCombatantRow(combat, params.combatantId),
+            patch,
+            subject: `Combatant ${params.combatantId} of combat ${combatId}`,
+            details: { combatId, combatantId: params.combatantId }
+          });
           const preview = await previewCombatantUpdate(combat, params.combatantId, patch);
           return dryRunResponse({
             combatId,
@@ -872,17 +888,16 @@ export function createCombatHandlers() {
           });
         }
 
-        const { combatant: updated, committed } = await updateCombatant(combat, params.combatantId, patch);
-        if (!committed) {
-          await assertTableFamilyUpdateCommitted({
-            document: await detachedCombatantRow(combat, params.combatantId),
-            patch,
-            subject: `Combatant ${params.combatantId} of combat ${combatId}`,
-            hookName: "preUpdateCombatant",
-            details: { combatId, combatantId: params.combatantId },
-            remedy: COMBAT_VETO_REMEDY
-          });
-        }
+        const { combatant: updated } = await applyConfirmedUpdate({
+          document: await detachedCombatantRow(combat, params.combatantId),
+          patch,
+          write: (payload) => updateCombatant(combat, params.combatantId, payload),
+          readDocument: () => detachedCombatantRow(combat, params.combatantId),
+          subject: `Combatant ${params.combatantId} of combat ${combatId}`,
+          hookName: "preUpdateCombatant",
+          details: { combatId, combatantId: params.combatantId },
+          remedy: COMBAT_VETO_REMEDY
+        });
         const parent = rereadCombat(combatId, combat);
         const sceneAfter = combatStoredSceneId(parent);
         return {
@@ -914,7 +929,7 @@ export function createCombatHandlers() {
         }
 
         const { committed } = await deleteCombatant(combat, params.combatantId);
-        assertTableFamilyDeleteCommitted({
+        assertDocumentDeleteCommitted({
           committed,
           subject: `Combatant ${params.combatantId} of combat ${combatId}`,
           hookName: "preDeleteCombatant",
@@ -991,6 +1006,12 @@ export function createCombatHandlers() {
         const combatId = combat.id ?? params.combatId;
         const patch = prepareCombatantGroupPayload(params.patch);
         if (isDryRun(params)) {
+          await assertRequestedWriteStorable({
+            document: group,
+            patch,
+            subject: `Combatant group ${params.groupId} of combat ${combatId}`,
+            details: { combatId, groupId: params.groupId }
+          });
           const preview = await previewDocumentUpdate(group, patch);
           return dryRunResponse({
             combatId,
@@ -1002,17 +1023,15 @@ export function createCombatHandlers() {
           });
         }
 
-        const { group: updated, committed } = await updateCombatantGroup(combat, params.groupId, patch);
-        if (!committed) {
-          await assertTableFamilyUpdateCommitted({
-            document: updated ?? group,
-            patch,
-            subject: `Combatant group ${params.groupId} of combat ${combatId}`,
-            hookName: "preUpdateCombatantGroup",
-            details: { combatId, groupId: params.groupId },
-            remedy: COMBAT_VETO_REMEDY
-          });
-        }
+        const { group: updated } = await applyConfirmedUpdate({
+          document: group,
+          patch,
+          write: (payload) => updateCombatantGroup(combat, params.groupId, payload),
+          subject: `Combatant group ${params.groupId} of combat ${combatId}`,
+          hookName: "preUpdateCombatantGroup",
+          details: { combatId, groupId: params.groupId },
+          remedy: COMBAT_VETO_REMEDY
+        });
         const parent = rereadCombat(combatId, combat);
         return {
           combatId,
@@ -1039,7 +1058,7 @@ export function createCombatHandlers() {
         }
 
         const { committed } = await deleteCombatantGroup(combat, params.groupId);
-        assertTableFamilyDeleteCommitted({
+        assertDocumentDeleteCommitted({
           committed,
           subject: `Combatant group ${params.groupId} of combat ${combatId}`,
           hookName: "preDeleteCombatantGroup",

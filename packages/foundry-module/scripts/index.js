@@ -16,6 +16,7 @@ import { createAuthorizationApplication, ensureClientId, getCurrentCredential } 
 import { createCommandPermissionsApplication } from "./command-permissions.js";
 import { createBridgeStatusApplication, registerSceneControls } from "./scene-controls.js";
 import { isGameMasterUser } from "./lib/identity.js";
+import { localize } from "./lib/i18n.js";
 import { getNotPairedWarningMessage, warnBridgeDisabled } from "./lib/startup.js";
 import { publishStatus } from "./lib/status-signal.js";
 import { MODULE_SETTING_KEYS, getBridgeSettings } from "./lib/validators.js";
@@ -62,7 +63,9 @@ function createBridgeRuntime(credential, clientId) {
           ...DEFAULT_EFFECTIVE_LIMITS,
           uploadSource: "default"
         }
-    }
+    },
+    onStaleApproval: () =>
+      globalThis.ui?.notifications?.warn?.(localize("FVTTWORLDCLI.Approval.StaleRefusal"))
   });
 
   createApprovalWindow({ approvalStore: router.approvalStore });

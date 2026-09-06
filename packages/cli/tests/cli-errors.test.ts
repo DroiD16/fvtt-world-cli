@@ -262,6 +262,7 @@ describe("fvtt-world-cli commands", () => {
         "APPROVAL_CANCELLED",
         "APPROVAL_QUEUE_FULL",
         "APPROVAL_UNKNOWN",
+        "APPROVAL_STALE",
 
         "LOCAL_FILE_ERROR",
         "PAIRING_DECLINED",

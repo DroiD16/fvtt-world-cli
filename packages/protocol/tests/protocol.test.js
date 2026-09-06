@@ -2225,15 +2225,9 @@ describe("protocol contract", () => {
     const finalSegment = (name) => name.slice(name.lastIndexOf(".") + 1);
 
     it("exposes a code for the deny verdict and for every approval outcome", () => {
-      for (const code of [
-        "COMMAND_DENIED",
-        "APPROVAL_PENDING",
-        "APPROVAL_DENIED",
-        "APPROVAL_TIMEOUT",
-        "APPROVAL_CANCELLED",
-        "APPROVAL_QUEUE_FULL",
-        "APPROVAL_UNKNOWN"
-      ]) {
+      const approvalCodes = Object.keys(ERROR_CODES).filter((code) => code.startsWith("APPROVAL_"));
+      expect(approvalCodes.length).toBeGreaterThanOrEqual(7);
+      for (const code of ["COMMAND_DENIED", ...approvalCodes]) {
         expect(ERROR_CODES[code]).toBe(code);
       }
     });

@@ -433,7 +433,7 @@ describe("command router", () => {
     expect(created.error.details.errors).toEqual(updated.error.details.errors);
   });
 
-  it("a NON-validation probe failure still reports the veto-shaped INTERNAL_ERROR", async () => {
+  it("reports an indeterminate outcome when the state probe fails", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
     const table = globalThis.game.tables.get("table-1");
@@ -448,10 +448,11 @@ describe("command router", () => {
 
     expect(response.ok).toBe(false);
     expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-    expect(response.error.message).toMatch(/was NOT updated/);
+    expect(response.error.message).toMatch(/could not be confirmed/);
     expect(response.error.details).toMatchObject({
       tableId: "table-1",
-      validationError: "probe clone exploded"
+      validationError: "probe clone exploded",
+      indeterminate: true
     });
   });
 

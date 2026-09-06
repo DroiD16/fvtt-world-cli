@@ -155,8 +155,16 @@ Classify a failure before reacting:
 - `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, and `APPROVAL_CANCELLED` mean nothing ran. Report the outcome
   and wait for user direction. `APPROVAL_QUEUE_FULL` also means nothing ran, but it can clear after
   earlier requests settle.
+- `APPROVAL_STALE` means the GM allowed a macro execution whose body or type changed — or whose
+  macro was deleted — after it was shown, so nothing ran. Read the macro again and re-send the execution if the current content is
+  still what the user wants; that opens a fresh approval.
 - `APPROVAL_UNKNOWN` and unconfirmed cancellation are indeterminate. Read the affected documents,
   report the result, and use a fresh key if the operation still needs to run.
+- For an update `INTERNAL_ERROR` with `details.partial: true` or `details.indeterminate: true`,
+  read the affected document before retrying. `changedFields` names requested top-level fields
+  observed to change, not fully applied nested values. An embedded creation without a requested
+  id may already exist despite an indeterminate error. Send only the remaining changes as a new
+  operation with a fresh idempotency key, if using one.
 - Correct a structured Foundry rejection and submit the corrected content as a new operation.
 
 ## Bulk writes and actions

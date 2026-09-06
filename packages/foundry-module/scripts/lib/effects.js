@@ -1,5 +1,11 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable,
+  writeCommitted
+} from "./write-confirmation.js";
 
 import { omitFields, sanitizeEffectData } from "./sanitize.js";
 import {
@@ -124,15 +130,29 @@ export async function updateEmbeddedEffect(parent, effectId, patch, details = {}
 
   const current = getEmbeddedEffect(parent, effectId, details);
 
+  const preparedPatch = prepareEmbeddedEffectUpdateData(parent, patch);
   if (dryRun) {
+    await assertRequestedWriteStorable({
+      document: current,
+      patch: preparedPatch,
+      subject: `Active effect ${effectId} of ${parent.documentName ?? "document"} ${parent.id}`,
+      details: { ...details, effectId }
+    });
     return current;
   }
 
-  await parent.updateEmbeddedDocuments(
-    "ActiveEffect",
-    [{ ...prepareEmbeddedEffectUpdateData(parent, patch), _id: effectId }],
-    { diff: true, render: true }
-  );
+  await applyConfirmedUpdate({
+    document: current,
+    patch: preparedPatch,
+    write: (payload) =>
+      parent.updateEmbeddedDocuments("ActiveEffect", [{ ...payload, _id: effectId }], {
+        diff: true,
+        render: true
+      }),
+    subject: `Active effect ${effectId} of ${parent.documentName ?? "document"} ${parent.id}`,
+    hookName: "preUpdateActiveEffect",
+    details: { ...details, effectId }
+  });
   return getEmbeddedEffect(parent, effectId, details);
 }
 
@@ -147,7 +167,13 @@ export async function deleteEmbeddedEffect(parent, effectId, details = {}, { dry
     return;
   }
 
-  await parent.deleteEmbeddedDocuments("ActiveEffect", [effectId], { render: true });
+  const results = await parent.deleteEmbeddedDocuments("ActiveEffect", [effectId], { render: true });
+  assertDocumentDeleteCommitted({
+    committed: writeCommitted(results),
+    subject: `Active effect ${effectId} of ${parent.documentName ?? "document"} ${parent.id}`,
+    hookName: "preDeleteActiveEffect",
+    details: { ...details, effectId }
+  });
 }
 
 export async function cloneEmbeddedEffect(

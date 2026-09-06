@@ -10,6 +10,11 @@ import {
 } from "../lib/world-docs.js";
 import { resolveBroadcastUsers } from "../lib/broadcast-targets.js";
 import { createBridgeError } from "../lib/errors.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable
+} from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import { filterByName, paginate, serializeScene } from "../lib/serializers.js";
@@ -70,11 +75,24 @@ export function createSceneHandlers() {
       assertSceneLevelsFieldsSupported(params.patch);
       const patch = canonicalizeFilePathFields(params.patch, "Scene");
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: scene,
+          patch,
+          subject: `Scene ${scene.id ?? params.sceneId}`,
+          details: { sceneId: scene.id ?? params.sceneId }
+        });
         const preview = await previewDocumentUpdate(scene, patch);
         return dryRunResponse({ scene: serializeScene(preview, { flags: true, provenance: true }) });
       }
 
-      await scene.update(patch, { diff: true, render: true });
+      await applyConfirmedUpdate({
+        document: scene,
+        patch,
+        write: (payload) => scene.update(payload, { diff: true, render: true }),
+        subject: `Scene ${scene.id ?? params.sceneId}`,
+        hookName: "preUpdateScene",
+        details: { sceneId: scene.id ?? params.sceneId }
+      });
       return {
         scene: serializeScene(scene, { flags: true, provenance: true })
       };
@@ -109,7 +127,13 @@ export function createSceneHandlers() {
         return dryRunResponse({ id, deleted: false, wasActive });
       }
 
-      await deleteDocument(scene);
+      const deletedDocument = await deleteDocument(scene);
+      assertDocumentDeleteCommitted({
+        committed: Boolean(deletedDocument),
+        subject: `Scene ${id}`,
+        hookName: "preDeleteScene",
+        details: { sceneId: id }
+      });
       return {
         id,
         deleted: true,

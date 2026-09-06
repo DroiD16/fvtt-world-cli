@@ -1,6 +1,7 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
+import { applyConfirmedUpdate, assertDocumentDeleteCommitted, writeCommitted } from "./write-confirmation.js";
 
 import { getPlaylistsCollection } from "./game-collections.js";
 import {
@@ -86,13 +87,21 @@ export async function createPlaylistSound(playlist, data, { dryRun = false } = {
 }
 
 export async function updatePlaylistSound(playlistId, soundId, patch, { dryRun = false } = {}) {
-  const { playlist } = getPlaylistSoundById(playlistId, soundId);
+  const { playlist, sound } = getPlaylistSoundById(playlistId, soundId);
   if (dryRun) {
     return playlist.sounds.get(soundId);
   }
-  await playlist.updateEmbeddedDocuments("PlaylistSound", [{ _id: soundId, ...patch }], {
-    diff: true,
-    render: true
+  await applyConfirmedUpdate({
+    document: sound,
+    patch,
+    write: (payload) =>
+      playlist.updateEmbeddedDocuments("PlaylistSound", [{ _id: soundId, ...payload }], {
+        diff: true,
+        render: true
+      }),
+    subject: `Playlist sound ${soundId} of playlist ${playlistId}`,
+    hookName: "preUpdatePlaylistSound",
+    details: { playlistId, soundId }
   });
   return playlist.sounds.get(soundId);
 }
@@ -102,7 +111,13 @@ export async function deletePlaylistSound(playlistId, soundId, { dryRun = false 
   if (dryRun) {
     return;
   }
-  await playlist.deleteEmbeddedDocuments("PlaylistSound", [soundId], { render: true });
+  const results = await playlist.deleteEmbeddedDocuments("PlaylistSound", [soundId], { render: true });
+  assertDocumentDeleteCommitted({
+    committed: writeCommitted(results),
+    subject: `Playlist sound ${soundId} of playlist ${playlistId}`,
+    hookName: "preDeletePlaylistSound",
+    details: { playlistId, soundId }
+  });
 }
 
 export function previewPlaylistSoundCreate(playlist, data) {

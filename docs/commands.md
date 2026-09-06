@@ -18,6 +18,18 @@ shipped with the installed CLI, this guide included. Agents operate through the 
 skill, managed with the `fvtt-world-cli skill install`, `skill update`, and `skill remove`
 commands; [Agent skill](skill.md) covers the whole lifecycle.
 
+An update can fail after changing stored data. If an `INTERNAL_ERROR` includes
+`details.partial: true` or `details.indeterminate: true`, read the document before retrying.
+`changedFields` names requested top-level fields observed to change; it does not mean every
+nested value was applied. Send only the remaining changes as a new operation with a fresh
+idempotency key, if you use one.
+
+Creating embedded entries without `_id` through a single-document update, such as adding
+`behaviors` through `scene.region.update`, returns an indeterminate error even if the entries
+were created. Read the embedded collection before retrying to avoid duplicates. Prefer the
+dedicated embedded create command when available. A dry run previews the patch without proving
+that a later write will persist it.
+
 ## Before you begin
 
 Start the local daemon and keep an authenticated GM client open in the target Foundry world:
@@ -313,10 +325,13 @@ remains open. Other outcomes use structured errors:
 | `APPROVAL_CANCELLED` | A cancellation the GM client confirmed won the decision | Not executed |
 | `APPROVAL_QUEUE_FULL` | The module refused admission before showing the request | Not executed |
 | `APPROVAL_UNKNOWN` | The module no longer holds the decision | Indeterminate |
+| `APPROVAL_STALE` | The GM allowed the request, but the macro shown for it — its body, type, or existence — no longer matches the stored document, or the module no longer holds the shown content | Not executed |
 
 `APPROVAL_UNKNOWN` means the client can no longer prove whether the command ran. Read the affected
 world state before trying again. `APPROVAL_QUEUE_FULL` means the module refused the request before
-execution. Retry after the GM clears earlier requests.
+execution. Retry after the GM clears earlier requests. `APPROVAL_STALE` means the macro changed
+between display and decision; a new `macro execute` request opens a fresh approval showing the
+current content.
 
 Ctrl+C asks the GM client to cancel a waiting decision. Only `APPROVAL_CANCELLED` proves that the
 command will not run. If the command has started or the client cannot confirm cancellation, the CLI

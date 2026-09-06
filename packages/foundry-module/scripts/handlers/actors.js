@@ -9,6 +9,11 @@ import {
   previewWorldActorCreate
 } from "../lib/world-docs.js";
 import { createBridgeError } from "../lib/errors.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable
+} from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import {
@@ -96,11 +101,24 @@ export function createActorHandlers() {
       const actor = getActorById(params.actorId);
       const patch = canonicalizeFilePathFields(params.patch, "Actor");
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: actor,
+          patch,
+          subject: `Actor ${actor.id ?? params.actorId}`,
+          details: { actorId: actor.id ?? params.actorId }
+        });
         const preview = await previewDocumentUpdate(actor, patch);
         return dryRunResponse({ actor: serializeActor(preview, { include: params.include }) });
       }
 
-      await actor.update(patch, { diff: true, render: true });
+      await applyConfirmedUpdate({
+        document: actor,
+        patch,
+        write: (payload) => actor.update(payload, { diff: true, render: true }),
+        subject: `Actor ${actor.id ?? params.actorId}`,
+        hookName: "preUpdateActor",
+        details: { actorId: actor.id ?? params.actorId }
+      });
       return {
         actor: serializeActor(actor, { include: params.include })
       };
@@ -131,7 +149,13 @@ export function createActorHandlers() {
         return dryRunResponse({ id, deleted: false, tokenReferences: references });
       }
 
-      await deleteDocument(actor);
+      const deletedDocument = await deleteDocument(actor);
+      assertDocumentDeleteCommitted({
+        committed: Boolean(deletedDocument),
+        subject: `Actor ${id}`,
+        hookName: "preDeleteActor",
+        details: { actorId: id }
+      });
       return {
         id,
         deleted: true,

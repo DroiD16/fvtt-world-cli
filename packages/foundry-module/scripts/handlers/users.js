@@ -5,6 +5,7 @@ import { createBridgeError, isFoundryValidationError, toFailureSummary } from ".
 import { getUserById, getUsersCollection } from "../lib/game-collections.js";
 import { filterByName, paginate, serializeUser } from "../lib/serializers.js";
 import { previewDocumentCreate, previewDocumentUpdate } from "../lib/world-docs.js";
+import { applyConfirmedUpdate, assertRequestedWriteStorable } from "../lib/write-confirmation.js";
 import { assertAssignableUserRole, assertKnownUserPermissions, getGame } from "../lib/validators.js";
 
 const FOUNDRY_REFUSAL_PATTERN = /permission|not authorized|not allowed|cannot|last gamemaster/i;
@@ -246,14 +247,29 @@ export function createUserHandlers() {
       assertFoundryAllowsWrite(user, "update", patch, command);
 
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: user,
+          patch,
+          subject: `User ${user.id ?? params.userId}`,
+          details: { userId: user.id ?? params.userId }
+        });
         return dryRunResponse({ user: serializeUser(await previewDocumentUpdate(user, patch)) });
       }
 
-      try {
-        await user.update(patch, { diff: true, render: true });
-      } catch (error) {
-        throw mapUserWriteFailure(error, { command, userId: params.userId });
-      }
+      await applyConfirmedUpdate({
+        document: user,
+        patch,
+        write: async (payload) => {
+          try {
+            return await user.update(payload, { diff: true, render: true });
+          } catch (error) {
+            throw mapUserWriteFailure(error, { command, userId: params.userId });
+          }
+        },
+        subject: `User ${user.id ?? params.userId}`,
+        hookName: "preUpdateUser",
+        details: { userId: user.id ?? params.userId }
+      });
 
       return { user: serializeUser(getUserById(params.userId)) };
     },

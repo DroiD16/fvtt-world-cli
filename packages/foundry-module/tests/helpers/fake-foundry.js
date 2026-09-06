@@ -46,27 +46,68 @@ export function createFetchResponse({ ok, status, bytes, contentType = null, con
   };
 }
 
+function isPlainMergeTarget(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function applyMergeKey(out, rawKey, value, performDeletions) {
+  const dot = rawKey.indexOf(".");
+  const segment = dot === -1 ? rawKey : rawKey.slice(0, dot);
+  const rest = dot === -1 ? null : rawKey.slice(dot + 1);
+  const operator = segment.startsWith("==") ? "==" : segment.startsWith("-=") ? "-=" : "";
+  const name = operator ? segment.slice(2) : segment;
+
+  if (operator === "-=") {
+    if (rest !== null) {
+      throw new Error(
+        "Removing a key using the -= deletion syntax requires the value of that deletion key to be null"
+      );
+    }
+    if (performDeletions) delete out[name];
+    return;
+  }
+
+  if (rest === null) {
+    if (operator === "==") {
+      out[name] = value;
+      return;
+    }
+    const target = out[name];
+    if (isPlainMergeTarget(value) && isPlainMergeTarget(target)) {
+      out[name] = applyDocumentMerge(target, value, { performDeletions });
+    } else {
+      out[name] = value;
+    }
+    return;
+  }
+
+  // Both cores REBUILD an array a dotted write descends into from the patch alone, destroying the
+  // entries the patch does not name; mirror that so the guards see what Foundry would store.
+  if (Array.isArray(out[name])) {
+    const container = {};
+    applyMergeKey(container, rest, value, performDeletions);
+    const rebuilt = [];
+    for (const [entryKey, entryValue] of Object.entries(container)) {
+      if (entryKey === "length") {
+        rebuilt.length = Number(entryValue) || 0;
+        continue;
+      }
+      rebuilt[Number(entryKey)] = entryValue;
+    }
+    out[name] = rebuilt;
+    return;
+  }
+  const base = operator === "==" || !isPlainMergeTarget(out[name]) ? {} : out[name];
+  const container = { ...base };
+  applyMergeKey(container, rest, value, performDeletions);
+  out[name] = container;
+}
+
 export function applyDocumentMerge(base, patch, options = {}) {
   const performDeletions = options?.performDeletions === true;
   const out = Array.isArray(base) ? [...base] : { ...(base ?? {}) };
   for (const [key, value] of Object.entries(patch ?? {})) {
-    if (performDeletions && key.startsWith("-=")) {
-      delete out[key.slice(2)];
-      continue;
-    }
-    const target = out[key];
-    if (
-      value &&
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      target &&
-      typeof target === "object" &&
-      !Array.isArray(target)
-    ) {
-      out[key] = applyDocumentMerge(target, value, options);
-    } else {
-      out[key] = value;
-    }
+    applyMergeKey(out, key, value, performDeletions);
   }
   return out;
 }
@@ -313,7 +354,7 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
 
     id,
     update: vi.fn(async (patch) => {
-      Object.assign(document, patch);
+      document.applyStoredWrite(patch);
       return document;
     }),
     delete: vi.fn(async () => {
@@ -321,14 +362,19 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
       return document;
     }),
 
-    clone: vi.fn(async (patch = {}, context = {}) =>
-      createDocument(
+    clone: vi.fn(async (patch = {}, context = {}) => {
+      const source = Object.fromEntries(
+        Object.entries(document.toObject()).filter(
+          ([key, value]) => typeof value !== "function" && key !== "_id" && key !== "id"
+        )
+      );
+      return createDocument(
         context.keepId ? id : context.save ? `${id}-clone` : null,
-        applyDocumentMerge(data, patch, { performDeletions: true }),
+        applyDocumentMerge(source, patch, { performDeletions: true }),
 
         { validatePreview, swallowPatchKeys }
-      )
-    ),
+      );
+    }),
 
     updateSource(rawPatch = {}, context = {}) {
       const swallowed = typeof swallowPatchKeys === "function" ? swallowPatchKeys(rawPatch ?? {}) : [];
@@ -343,25 +389,47 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
       }
       const current = this.toObject();
       const merged = applyDocumentMerge(current, patch ?? {}, { performDeletions: true });
+      const readAtPath = (source, segments) =>
+        segments.reduce(
+          (value, segment) => (value && typeof value === "object" ? value[segment] : undefined),
+          source
+        );
       if (context.dryRun) {
         const diff = {};
         for (const key of Object.keys(patch ?? {})) {
-          if (key === "id") continue;
-          if (key.startsWith("-=")) {
-            if (Object.prototype.hasOwnProperty.call(current, key.slice(2))) diff[key] = patch[key];
+          if (key === "id" || key === "_id") continue;
+          const segments = key.split(".");
+          // Foundry re-emits a "==" forced-replacement key in every diff, so the probe can never
+          // confirm it directly; the fake must model that or the merged-preview fallback goes dark.
+          if (segments.some((segment) => segment.startsWith("=="))) {
+            diff[key] = patch[key];
             continue;
           }
-          if (JSON.stringify(merged[key]) !== JSON.stringify(current[key])) diff[key] = merged[key];
+          const cleanPath = segments.map((segment) =>
+            segment.startsWith("-=") ? segment.slice(2) : segment
+          );
+          const before = readAtPath(current, cleanPath);
+          if (segments.some((segment) => segment.startsWith("-="))) {
+            if (before !== undefined) diff[key] = patch[key];
+            continue;
+          }
+          const after = readAtPath(merged, cleanPath);
+          if (JSON.stringify(after) !== JSON.stringify(before)) diff[key] = after;
         }
         return diff;
       }
       for (const key of Object.keys(patch ?? {})) {
         if (key === "_id" || key === "id") continue;
-        if (key.startsWith("-=")) {
-          delete this[key.slice(2)];
-          continue;
+        const first = key.split(".")[0];
+        const root = first.startsWith("==") || first.startsWith("-=") ? first.slice(2) : first;
+        if (!root) continue;
+        if (Object.prototype.hasOwnProperty.call(merged, root)) {
+          this[root] = merged[root];
+          data[root] = merged[root];
+        } else {
+          delete this[root];
+          delete data[root];
         }
-        this[key] = merged[key];
       }
       return merged;
     },
@@ -379,13 +447,16 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
       const merged = applyDocumentMerge(this.toObject(), patch ?? {}, { performDeletions: true });
       for (const key of Object.keys(patch ?? {})) {
         if (key === "_id" || key === "id") continue;
-        if (key.startsWith("-=")) {
-          delete this[key.slice(2)];
-          delete data[key.slice(2)];
-          continue;
+        const first = key.split(".")[0];
+        const root = first.startsWith("==") || first.startsWith("-=") ? first.slice(2) : first;
+        if (!root) continue;
+        if (Object.prototype.hasOwnProperty.call(merged, root)) {
+          this[root] = merged[root];
+          data[root] = merged[root];
+        } else {
+          delete this[root];
+          delete data[root];
         }
-        this[key] = merged[key];
-        data[key] = merged[key];
       }
       return this;
     },
@@ -747,7 +818,7 @@ export function createJournalDocument(id, data, { validatePreview } = {}) {
     expect(type).toBe("JournalEntryPage");
     return entries.map((entry) => {
       const page = pages.get(entry._id);
-      Object.assign(page, Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "_id")));
+      page.applyStoredWrite(Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "_id")));
       return page;
     });
   });
@@ -862,7 +933,7 @@ export function createPlaylistDocument(id, data) {
     expect(type).toBe("PlaylistSound");
     return entries.map((entry) => {
       const sound = sounds.get(entry._id);
-      Object.assign(sound, Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "_id")));
+      sound.applyStoredWrite(Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "_id")));
       return sound;
     });
   });
@@ -1098,7 +1169,7 @@ export function createCombatantDocument(id, data) {
 
   const baseCombatantUpdateSource = combatant.updateSource.bind(combatant);
   combatant.updateSource = function updateSource(patch = {}, context = {}) {
-    const merged = cleanCombatantSource(baseCombatantUpdateSource(patch, context));
+    const merged = baseCombatantUpdateSource(cleanCombatantSource(patch), context);
     if (context.dryRun) return merged;
     for (const key of Object.keys(patch ?? {})) {
       if (key === "_id" || key === "id") continue;
@@ -1486,7 +1557,7 @@ export function createCardsDocument(id, data, { arrayFieldSwallowsInvalidFaces =
       name: data.name,
       type: data.type ?? "deck",
       description: data.description ?? "",
-      img: data.img ?? "icons/svg/card-hand.svg",
+      img: data.img === undefined ? "icons/svg/card-hand.svg" : data.img,
       width: data.width ?? null,
       height: data.height ?? null,
       rotation: data.rotation ?? 0,
@@ -2712,7 +2783,7 @@ export function createActorDocument(id, data) {
       expect(type).toBe("Item");
       return entries.map((entry) => {
         const item = items.get(entry._id);
-        Object.assign(item, Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "_id")));
+        item.applyStoredWrite(Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "_id")));
         return item;
       });
     },
@@ -2815,6 +2886,7 @@ function attachRegionBehaviors(region, entries) {
       configurable: true,
       writable: true
     });
+    behavior.toObject = () => ({ ...behavior._source });
     if (!behaviorData.name) {
       behavior.name = `Localized(${behaviorData.type})`;
     }
@@ -2828,7 +2900,7 @@ function attachRegionBehaviors(region, entries) {
       return result;
     };
     behavior.clone = vi.fn(async (patch = {}, context = {}) => {
-      const merged = applyDocumentMerge(behaviorData, patch, { performDeletions: true });
+      const merged = applyDocumentMerge(behavior.toObject(), patch, { performDeletions: true });
 
       if (!context.keepId) delete merged._id;
       const cloneDoc = make(
@@ -2846,6 +2918,22 @@ function attachRegionBehaviors(region, entries) {
     collection.set(make(entry._id ?? entry.id ?? `${region.id}-behavior-${index + 1}`, entry))
   );
   region.behaviors = collection;
+
+  Object.defineProperty(region.constructor, "schema", {
+    value: {
+      get(root) {
+        if (root !== "behaviors") return null;
+        return {
+          getCollection: () => collection,
+          schema: { get: () => ({}) },
+          clean: (value) => (Array.isArray(value) ? [...value] : [])
+        };
+      }
+    },
+    enumerable: false,
+    configurable: true,
+    writable: true
+  });
 
   Object.defineProperty(region, "makeBehavior", { value: make, enumerable: false, configurable: true });
   region.createEmbeddedDocuments = vi.fn(async (type, docs) =>
@@ -2918,6 +3006,19 @@ function createSceneDocument(id, data) {
     const make = (docId, docData) => {
       const doc = createDocument(docId, docData);
 
+      if (type === "Wall") {
+        Object.defineProperty(doc.constructor, "schema", {
+          value: {
+            get(root) {
+              return root === "c" ? { clean: (value) => (Array.isArray(value) ? [...value] : value) } : null;
+            }
+          },
+          enumerable: false,
+          configurable: true,
+          writable: true
+        });
+      }
+
       if (type === "Region") {
         attachRegionBehaviors(doc, Array.isArray(docData.behaviors) ? docData.behaviors : []);
 
@@ -2925,6 +3026,11 @@ function createSceneDocument(id, data) {
           !Array.isArray(doc.behaviors) && typeof doc.behaviors?.get === "function";
 
         const behaviorSources = () => [...doc.behaviors].map((row) => ({ ...(row._source ?? {}) }));
+        const baseToObject = doc.toObject.bind(doc);
+        doc.toObject = () => ({
+          ...baseToObject(),
+          behaviors: hasBehaviorCollection() ? behaviorSources() : doc.behaviors
+        });
 
         const mergeBehaviorSources = (entries) => {
           const merged = behaviorSources();

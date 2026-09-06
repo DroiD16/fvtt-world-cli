@@ -2009,6 +2009,7 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
       documentClass,
       patch,
       merged: { toObject: () => ({ c: storedC, door: 1 }) },
+      stored: { toObject: () => ({ c: storedC, door: 1 }) },
       index: 3,
       command: "scene.wall.update-many",
       id: "wall-7"
@@ -3004,7 +3005,7 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
     });
   });
 
-  it("refuses a DOTTED write into an array field, which neither core applies", () => {
+  it("refuses a DOTTED write into an array field, which both cores rebuild destructively", () => {
     /** @type {any} */
     let error = null;
     try {
@@ -3014,7 +3015,7 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
     }
     expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
     expect(error?.message).toContain('dotted path "c.0"');
-    expect(error?.message).toContain("SILENTLY DISCARDS");
+    expect(error?.message).toContain("DESTROYED");
     expect(error?.message).toContain("Send the WHOLE array instead");
     expect(error?.details).toEqual({
       index: 3,
@@ -3022,12 +3023,12 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
       field: "c.0",
       arrayField: "c",
       requested: 5,
-      stored: 0
+      stored: [0, 0, 100, 100]
     });
 
-    expect(() => guard({ "c.9": 5 }, [0, 0, 100, 100])).toThrow(/SILENTLY DISCARDS/);
+    expect(() => guard({ "c.9": 5 }, [0, 0, 100, 100])).toThrow(/DESTROYED/);
 
-    expect(() => guard({ ds: 1, "c.3": 999 }, [0, 0, 100, 100])).toThrow(/SILENTLY DISCARDS/);
+    expect(() => guard({ ds: 1, "c.3": 999 }, [0, 0, 100, 100])).toThrow(/DESTROYED/);
   });
 
   it("skips a forced DELETION of a DECLARED field (no array value to compare; loud on both cores)", () => {
@@ -3036,8 +3037,8 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
     expect(() => guard({ "-=someModuleKey": null }, [0, 0, 100, 100])).not.toThrow();
   });
 
-  it("allows a dotted write whose requested value the stored array ALREADY holds", () => {
-    expect(() => guard({ "c.0": 0 }, [0, 0, 100, 100])).not.toThrow();
+  it("refuses a dotted write even when the named entry already holds the value: the rebuild drops the rest", () => {
+    expect(() => guard({ "c.0": 0 }, [0, 0, 100, 100])).toThrow(/DESTROYED/);
   });
 
   it("skips a dotted write whose root is NOT an array in the merged state", () => {
@@ -4138,7 +4139,7 @@ describe("batch-write: a Region's `shapes` — credited when it moves, refused w
   });
 
   it("refuses a DOTTED write into shapes, which no supported core applies", () => {
-    expect(() => shapesGuard({ "shapes.0.x": 5 }, [RECT], [RECT])).toThrow(/SILENTLY DISCARDS/);
+    expect(() => shapesGuard({ "shapes.0.x": 5 }, [RECT], [RECT])).toThrow(/DESTROYED/);
   });
 });
 

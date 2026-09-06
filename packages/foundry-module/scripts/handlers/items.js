@@ -8,6 +8,11 @@ import {
   previewWorldItemCreate
 } from "../lib/world-docs.js";
 import { createBridgeError } from "../lib/errors.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertRequestedWriteStorable
+} from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import {
@@ -82,11 +87,24 @@ export function createItemHandlers() {
       const item = getItemById(params.itemId);
       const patch = canonicalizeFilePathFields(params.patch, "Item");
       if (isDryRun(params)) {
+        await assertRequestedWriteStorable({
+          document: item,
+          patch,
+          subject: `Item ${item.id ?? params.itemId}`,
+          details: { itemId: item.id ?? params.itemId }
+        });
         const preview = await previewDocumentUpdate(item, patch);
         return dryRunResponse({ item: serializeItem(preview, { include: params.include }) });
       }
 
-      await item.update(patch, { diff: true, render: true });
+      await applyConfirmedUpdate({
+        document: item,
+        patch,
+        write: (payload) => item.update(payload, { diff: true, render: true }),
+        subject: `Item ${item.id ?? params.itemId}`,
+        hookName: "preUpdateItem",
+        details: { itemId: item.id ?? params.itemId }
+      });
       return {
         item: serializeItem(item, { include: params.include })
       };
@@ -107,7 +125,13 @@ export function createItemHandlers() {
         return dryRunResponse({ id, deleted: false });
       }
 
-      await deleteDocument(item);
+      const deletedDocument = await deleteDocument(item);
+      assertDocumentDeleteCommitted({
+        committed: Boolean(deletedDocument),
+        subject: `Item ${id}`,
+        hookName: "preDeleteItem",
+        details: { itemId: id }
+      });
       return {
         id,
         deleted: true

@@ -33,7 +33,7 @@ export const APPROVAL_REFUSAL_REASONS = Object.freeze({
 /** @typedef {"pending" | "executing" | "resolved" | "denied" | "timeout" | "cancelled"} ApprovalState */
 /** @typedef {"approved" | "denied" | "timeout" | "cancelled"} ApprovalOutcome */
 /** @typedef {"allow" | "deny"} ApprovalDecision */
-/** @typedef {{ approvalId: string, command: string, params: unknown }} ApprovalExecution */
+/** @typedef {{ approvalId: string, command: string, params: unknown, binding: unknown }} ApprovalExecution */
 /** @typedef {(execution: ApprovalExecution) => Promise<unknown> | unknown} ApprovalExecutor */
 /**
  * @typedef {{ approvalId: string, status: "pending", expiresAt?: number }
@@ -47,6 +47,7 @@ export const APPROVAL_REFUSAL_REASONS = Object.freeze({
  *   command: string,
  *   params: unknown,
  *   targets: unknown,
+ *   binding: unknown,
  *   createdAt: number,
  *   expiresAt: number,
  *   state: ApprovalState,
@@ -68,6 +69,7 @@ export const APPROVAL_REFUSAL_REASONS = Object.freeze({
  *   command: string,
  *   params?: unknown,
  *   targets: unknown,
+ *   binding: unknown,
  *   createdAt: number,
  *   expiresAt: number,
  *   state: ApprovalState
@@ -186,11 +188,12 @@ export class ApprovalStore {
    *   command: string,
    *   params: unknown,
    *   resolveTargets?: () => unknown,
+   *   resolveBinding?: () => unknown,
    *   requestBytes: number
    * }} request
    * @returns {ApprovalAdmission}
    */
-  admit({ command, params, resolveTargets = () => null, requestBytes }) {
+  admit({ command, params, resolveTargets = () => null, resolveBinding = () => null, requestBytes }) {
     this.#pruneExpired();
 
     const bytes = normalizeByteWeight(requestBytes);
@@ -216,6 +219,7 @@ export class ApprovalStore {
       command,
       params,
       targets: resolveTargets(),
+      binding: resolveBinding(),
       createdAt,
       expiresAt: createdAt + timeoutMs,
       state: "pending",
@@ -330,6 +334,7 @@ export class ApprovalStore {
     }
 
     const params = record.params;
+    const binding = record.binding;
     this.#claimPending(record, "executing");
     this.#wakeWaiters(record);
     this.#publish();
@@ -338,7 +343,7 @@ export class ApprovalStore {
     let response;
     let hasResponse = false;
     try {
-      response = await this.execute({ approvalId, command: record.command, params });
+      response = await this.execute({ approvalId, command: record.command, params, binding });
       hasResponse = true;
     } catch (error) {
       console.error(`[fvtt-world-cli] approved command ${record.command} failed:`, error);
@@ -388,6 +393,7 @@ export class ApprovalStore {
       this.clearTimer(record.timer);
       record.timer = null;
       record.params = null;
+      record.binding = null;
 
       if (record.state === "pending") {
         record.state = "cancelled";
@@ -457,6 +463,7 @@ export class ApprovalStore {
     this.#claimPending(record, state);
     record.terminalAt = this.now();
     record.targets = null;
+    record.binding = null;
     this.#wakeWaiters(record);
     this.#publish();
   }
@@ -470,6 +477,7 @@ export class ApprovalStore {
     record.state = "resolved";
     record.terminalAt = this.now();
     record.targets = null;
+    record.binding = null;
 
     /** @type {ApprovalReport | undefined} */
     let deliverable;
@@ -654,6 +662,7 @@ export class ApprovalStore {
       command: record.command,
       ...(record.state === "pending" ? { params: record.params } : {}),
       targets: record.targets,
+      binding: record.binding,
       createdAt: record.createdAt,
       expiresAt: record.expiresAt,
       state: record.state
