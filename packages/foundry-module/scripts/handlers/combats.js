@@ -47,7 +47,11 @@ import {
   updateCombatantGroup
 } from "../lib/combat-docs.js";
 import { getCombatsCollection } from "../lib/game-collections.js";
-import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertDocumentUpdateCommitted
+} from "../lib/write-confirmation.js";
 import { deleteDocument, previewDocumentUpdate } from "../lib/world-docs.js";
 import { createBridgeError, toFailureSummary } from "../lib/errors.js";
 import {
@@ -224,23 +228,22 @@ export function createCombatHandlers() {
           return dryRunResponse({ combat: serializeCombat(preview, { turnOrderFrom: combat }) });
         }
 
-        let updated;
-        try {
-          updated = await combat.update(patch, { diff: true, render: true });
-        } catch (error) {
-          assertCombatSceneContainsCombatants(rereadCombat(combatId, combat), patch, { combatId });
-          throw error;
-        }
-        if (!updated) {
-          await assertDocumentUpdateCommitted({
-            document: combat,
-            patch,
-            subject: `Combat ${combatId}`,
-            hookName: "preUpdateCombat",
-            details: { combatId },
-            remedy: COMBAT_VETO_REMEDY
-          });
-        }
+        await applyConfirmedUpdate({
+          document: combat,
+          patch,
+          write: async (payload) => {
+            try {
+              return await combat.update(payload, { diff: true, render: true });
+            } catch (error) {
+              assertCombatSceneContainsCombatants(rereadCombat(combatId, combat), patch, { combatId });
+              throw error;
+            }
+          },
+          subject: `Combat ${combatId}`,
+          hookName: "preUpdateCombat",
+          details: { combatId },
+          remedy: COMBAT_VETO_REMEDY
+        });
         return {
           combat: serializeCombat(rereadCombat(combatId, combat))
         };

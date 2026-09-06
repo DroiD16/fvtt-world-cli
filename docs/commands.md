@@ -313,7 +313,7 @@ remains open. Other outcomes use structured errors:
 | `APPROVAL_CANCELLED` | A cancellation the GM client confirmed won the decision | Not executed |
 | `APPROVAL_QUEUE_FULL` | The module refused admission before showing the request | Not executed |
 | `APPROVAL_UNKNOWN` | The module no longer holds the decision | Indeterminate |
-| `APPROVAL_STALE` | The GM allowed the request, but the content shown for it — a macro's body or type — no longer matches the stored document | Not executed |
+| `APPROVAL_STALE` | The GM allowed the request, but the macro shown for it — its body, type, or existence — no longer matches the stored document, or the module no longer holds the shown content | Not executed |
 
 `APPROVAL_UNKNOWN` means the client can no longer prove whether the command ran. Read the affected
 world state before trying again. `APPROVAL_QUEUE_FULL` means the module refused the request before

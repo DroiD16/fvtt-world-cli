@@ -19,7 +19,11 @@ import {
   updateJournalPages
 } from "../lib/journal-docs.js";
 import { resolveBroadcastUsers } from "../lib/broadcast-targets.js";
-import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertDocumentUpdateCommitted
+} from "../lib/write-confirmation.js";
 import {
   cloneDocument,
   createJournalEntry,
@@ -240,16 +244,14 @@ export function createJournalHandlers() {
       assertJournalPageOpsValid(journal, { createPagesPayload, updatePagesPayload });
 
       if (Object.keys(documentPatch).length > 0) {
-        const updated = await journal.update(documentPatch, { diff: true, render: true });
-        if (!updated) {
-          await assertDocumentUpdateCommitted({
-            document: journal,
-            patch: documentPatch,
-            subject: `Journal ${journal.id ?? params.journalId}`,
-            hookName: "preUpdateJournalEntry",
-            details: { journalId: journal.id ?? params.journalId }
-          });
-        }
+        await applyConfirmedUpdate({
+          document: journal,
+          patch: documentPatch,
+          write: (payload) => journal.update(payload, { diff: true, render: true }),
+          subject: `Journal ${journal.id ?? params.journalId}`,
+          hookName: "preUpdateJournalEntry",
+          details: { journalId: journal.id ?? params.journalId }
+        });
       }
 
       if (createPagesPayload.length > 0) {

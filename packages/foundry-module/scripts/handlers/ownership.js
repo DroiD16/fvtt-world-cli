@@ -10,10 +10,10 @@ import {
 import { assertKnownOwnershipUsers, mergeOwnershipPatch } from "../lib/ownership.js";
 import { getPlaylistById } from "../lib/playlist-docs.js";
 import { getTableById } from "../lib/table-docs.js";
-import { assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
+import { applyConfirmedUpdate } from "../lib/write-confirmation.js";
 import { createBridgeError } from "../lib/errors.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
-import { cloneValue } from "../lib/serializers.js";
+
 import {
   serializeActor,
   serializeCards,
@@ -51,20 +51,15 @@ function makeOwnershipSetHandler({ idField, getDoc, serialize, resultKey, docume
       return dryRunResponse({ [resultKey]: preview });
     }
 
-    const patch = { ownership: merged };
-
-    const requestedPatch = cloneValue(patch);
-    const updated = await doc.update(patch, { diff: true, render: true });
-    if (!updated) {
-      await assertDocumentUpdateCommitted({
-        document: doc,
-        patch: requestedPatch,
-        subject: `${documentName} ${doc.id ?? params[idField]}`,
-        hookName,
-        details: { [idField]: doc.id ?? params[idField] },
-        remedy: OWNERSHIP_VETO_REMEDY
-      });
-    }
+    await applyConfirmedUpdate({
+      document: doc,
+      patch: { ownership: merged },
+      write: (payload) => doc.update(payload, { diff: true, render: true }),
+      subject: `${documentName} ${doc.id ?? params[idField]}`,
+      hookName,
+      details: { [idField]: doc.id ?? params[idField] },
+      remedy: OWNERSHIP_VETO_REMEDY
+    });
     return { [resultKey]: serialize(doc, { ownership: true, flags: true, provenance: true }) };
   };
 }
@@ -174,23 +169,21 @@ export function createOwnershipHandlers() {
         return dryRunResponse({ journal: preview });
       }
 
-      const updated = await target.update({ ownership: merged }, { diff: true, render: true });
-      if (!updated) {
-        await assertDocumentUpdateCommitted({
-          document: target,
-          patch: { ownership: merged },
-          subject:
-            params.pageId !== undefined
-              ? `Journal page ${params.pageId} of journal ${params.journalId}`
-              : `Journal ${params.journalId}`,
-          hookName: params.pageId !== undefined ? "preUpdateJournalEntryPage" : "preUpdateJournalEntry",
-          details: {
-            journalId: params.journalId,
-            ...(params.pageId !== undefined ? { pageId: params.pageId } : {})
-          },
-          remedy: OWNERSHIP_VETO_REMEDY
-        });
-      }
+      await applyConfirmedUpdate({
+        document: target,
+        patch: { ownership: merged },
+        write: (payload) => target.update(payload, { diff: true, render: true }),
+        subject:
+          params.pageId !== undefined
+            ? `Journal page ${params.pageId} of journal ${params.journalId}`
+            : `Journal ${params.journalId}`,
+        hookName: params.pageId !== undefined ? "preUpdateJournalEntryPage" : "preUpdateJournalEntry",
+        details: {
+          journalId: params.journalId,
+          ...(params.pageId !== undefined ? { pageId: params.pageId } : {})
+        },
+        remedy: OWNERSHIP_VETO_REMEDY
+      });
       return {
         journal: serializeJournal(getJournalById(params.journalId), { ownership: true })
       };

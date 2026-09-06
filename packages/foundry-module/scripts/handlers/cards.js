@@ -30,7 +30,11 @@ import {
   updateCard
 } from "../lib/cards-docs.js";
 import { getCardsCollection } from "../lib/game-collections.js";
-import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertDocumentUpdateCommitted
+} from "../lib/write-confirmation.js";
 import {
   assertClonePatchValid,
   cloneDocument,
@@ -985,18 +989,15 @@ export function createCardsHandlers() {
           return dryRunResponse({ cards: serializeCards(preview) });
         }
 
-        const requestedPatch = cloneValue(patch);
-        const updated = await stack.update(patch, { diff: true, render: true });
-        if (!updated) {
-          await assertDocumentUpdateCommitted({
-            document: stack,
-            patch: requestedPatch,
-            subject: `Cards ${stack.id ?? params.cardsId}`,
-            hookName: "preUpdateCards",
-            details: { cardsId: stack.id ?? params.cardsId },
-            remedy: CARDS_VETO_REMEDY
-          });
-        }
+        await applyConfirmedUpdate({
+          document: stack,
+          patch,
+          write: (payload) => stack.update(payload, { diff: true, render: true }),
+          subject: `Cards ${stack.id ?? params.cardsId}`,
+          hookName: "preUpdateCards",
+          details: { cardsId: stack.id ?? params.cardsId },
+          remedy: CARDS_VETO_REMEDY
+        });
         return { cards: serializeCards(stack) };
       });
     },

@@ -1,11 +1,7 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
-import {
-  assertDocumentDeleteCommitted,
-  assertDocumentUpdateCommitted,
-  writeCommitted
-} from "./write-confirmation.js";
+import { applyConfirmedUpdate, assertDocumentDeleteCommitted, writeCommitted } from "./write-confirmation.js";
 
 import { getFoundryGeneration } from "./foundry-capabilities.js";
 import { getActorById, getGame, getSceneById } from "./game-collections.js";
@@ -224,19 +220,18 @@ export async function updateSceneEmbedded(
     return document;
   }
 
-  const results = await scene.updateEmbeddedDocuments(type, [{ _id: embeddedId, ...preparedPatch }], {
-    diff: true,
-    render: true
+  await applyConfirmedUpdate({
+    document,
+    patch: preparedPatch,
+    write: (payload) =>
+      scene.updateEmbeddedDocuments(type, [{ _id: embeddedId, ...payload }], {
+        diff: true,
+        render: true
+      }),
+    subject: `${type} ${embeddedId} of scene ${sceneId}`,
+    hookName: `preUpdate${type}`,
+    details: { sceneId, [idField]: embeddedId }
   });
-  if (!writeCommitted(results)) {
-    await assertDocumentUpdateCommitted({
-      document: sceneEmbeddedCollection(scene, type).get(embeddedId) ?? document,
-      patch: preparedPatch,
-      subject: `${type} ${embeddedId} of scene ${sceneId}`,
-      hookName: `preUpdate${type}`,
-      details: { sceneId, [idField]: embeddedId }
-    });
-  }
 
   return sceneEmbeddedCollection(scene, type).get(embeddedId);
 }

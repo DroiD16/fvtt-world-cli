@@ -1,11 +1,7 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
-import {
-  assertDocumentDeleteCommitted,
-  assertDocumentUpdateCommitted,
-  writeCommitted
-} from "./write-confirmation.js";
+import { applyConfirmedUpdate, assertDocumentDeleteCommitted, writeCommitted } from "./write-confirmation.js";
 
 import { getActorById, getItemsCollection } from "./game-collections.js";
 import { sanitizeEmbeddedItemData, stripProtectedMeta } from "./sanitize.js";
@@ -102,19 +98,15 @@ export async function updateEmbeddedItem(actor, itemId, patch, details = {}, { d
   }
 
   const canonicalPatch = canonicalizeFilePathFields(patch, "Item");
-  const results = await actor.updateEmbeddedDocuments("Item", [{ _id: itemId, ...canonicalPatch }], {
-    diff: true,
-    render: true
+  await applyConfirmedUpdate({
+    document: current,
+    patch: canonicalPatch,
+    write: (payload) =>
+      actor.updateEmbeddedDocuments("Item", [{ _id: itemId, ...payload }], { diff: true, render: true }),
+    subject: `Item ${itemId} of actor ${actor.id}`,
+    hookName: "preUpdateItem",
+    details: { ...details, itemId }
   });
-  if (!writeCommitted(results)) {
-    await assertDocumentUpdateCommitted({
-      document: getEmbeddedItem(actor, itemId, details),
-      patch: canonicalPatch,
-      subject: `Item ${itemId} of actor ${actor.id}`,
-      hookName: "preUpdateItem",
-      details: { ...details, itemId }
-    });
-  }
   return getEmbeddedItem(actor, itemId, details);
 }
 

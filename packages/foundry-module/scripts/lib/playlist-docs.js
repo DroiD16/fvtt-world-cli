@@ -1,11 +1,7 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
-import {
-  assertDocumentDeleteCommitted,
-  assertDocumentUpdateCommitted,
-  writeCommitted
-} from "./write-confirmation.js";
+import { applyConfirmedUpdate, assertDocumentDeleteCommitted, writeCommitted } from "./write-confirmation.js";
 
 import { getPlaylistsCollection } from "./game-collections.js";
 import {
@@ -91,23 +87,22 @@ export async function createPlaylistSound(playlist, data, { dryRun = false } = {
 }
 
 export async function updatePlaylistSound(playlistId, soundId, patch, { dryRun = false } = {}) {
-  const { playlist } = getPlaylistSoundById(playlistId, soundId);
+  const { playlist, sound } = getPlaylistSoundById(playlistId, soundId);
   if (dryRun) {
     return playlist.sounds.get(soundId);
   }
-  const results = await playlist.updateEmbeddedDocuments("PlaylistSound", [{ _id: soundId, ...patch }], {
-    diff: true,
-    render: true
+  await applyConfirmedUpdate({
+    document: sound,
+    patch,
+    write: (payload) =>
+      playlist.updateEmbeddedDocuments("PlaylistSound", [{ _id: soundId, ...payload }], {
+        diff: true,
+        render: true
+      }),
+    subject: `Playlist sound ${soundId} of playlist ${playlistId}`,
+    hookName: "preUpdatePlaylistSound",
+    details: { playlistId, soundId }
   });
-  if (!writeCommitted(results)) {
-    await assertDocumentUpdateCommitted({
-      document: playlist.sounds.get(soundId),
-      patch,
-      subject: `Playlist sound ${soundId} of playlist ${playlistId}`,
-      hookName: "preUpdatePlaylistSound",
-      details: { playlistId, soundId }
-    });
-  }
   return playlist.sounds.get(soundId);
 }
 

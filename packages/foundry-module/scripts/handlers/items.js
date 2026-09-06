@@ -8,7 +8,7 @@ import {
   previewWorldItemCreate
 } from "../lib/world-docs.js";
 import { createBridgeError } from "../lib/errors.js";
-import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
+import { applyConfirmedUpdate, assertDocumentDeleteCommitted } from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import {
@@ -87,16 +87,14 @@ export function createItemHandlers() {
         return dryRunResponse({ item: serializeItem(preview, { include: params.include }) });
       }
 
-      const updated = await item.update(patch, { diff: true, render: true });
-      if (!updated) {
-        await assertDocumentUpdateCommitted({
-          document: item,
-          patch,
-          subject: `Item ${item.id ?? params.itemId}`,
-          hookName: "preUpdateItem",
-          details: { itemId: item.id ?? params.itemId }
-        });
-      }
+      await applyConfirmedUpdate({
+        document: item,
+        patch,
+        write: (payload) => item.update(payload, { diff: true, render: true }),
+        subject: `Item ${item.id ?? params.itemId}`,
+        hookName: "preUpdateItem",
+        details: { itemId: item.id ?? params.itemId }
+      });
       return {
         item: serializeItem(item, { include: params.include })
       };

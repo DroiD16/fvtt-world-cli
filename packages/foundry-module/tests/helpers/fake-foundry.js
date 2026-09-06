@@ -313,7 +313,7 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
 
     id,
     update: vi.fn(async (patch) => {
-      Object.assign(document, patch);
+      document.applyStoredWrite(patch);
       return document;
     }),
     delete: vi.fn(async () => {
@@ -321,14 +321,19 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
       return document;
     }),
 
-    clone: vi.fn(async (patch = {}, context = {}) =>
-      createDocument(
+    clone: vi.fn(async (patch = {}, context = {}) => {
+      const source = Object.fromEntries(
+        Object.entries(document.toObject()).filter(
+          ([key, value]) => typeof value !== "function" && key !== "_id" && key !== "id"
+        )
+      );
+      return createDocument(
         context.keepId ? id : context.save ? `${id}-clone` : null,
-        applyDocumentMerge(data, patch, { performDeletions: true }),
+        applyDocumentMerge(source, patch, { performDeletions: true }),
 
         { validatePreview, swallowPatchKeys }
-      )
-    ),
+      );
+    }),
 
     updateSource(rawPatch = {}, context = {}) {
       const swallowed = typeof swallowPatchKeys === "function" ? swallowPatchKeys(rawPatch ?? {}) : [];
@@ -747,7 +752,7 @@ export function createJournalDocument(id, data, { validatePreview } = {}) {
     expect(type).toBe("JournalEntryPage");
     return entries.map((entry) => {
       const page = pages.get(entry._id);
-      Object.assign(page, Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "_id")));
+      page.applyStoredWrite(Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "_id")));
       return page;
     });
   });
@@ -862,7 +867,7 @@ export function createPlaylistDocument(id, data) {
     expect(type).toBe("PlaylistSound");
     return entries.map((entry) => {
       const sound = sounds.get(entry._id);
-      Object.assign(sound, Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "_id")));
+      sound.applyStoredWrite(Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "_id")));
       return sound;
     });
   });
@@ -1486,7 +1491,7 @@ export function createCardsDocument(id, data, { arrayFieldSwallowsInvalidFaces =
       name: data.name,
       type: data.type ?? "deck",
       description: data.description ?? "",
-      img: data.img ?? "icons/svg/card-hand.svg",
+      img: data.img === undefined ? "icons/svg/card-hand.svg" : data.img,
       width: data.width ?? null,
       height: data.height ?? null,
       rotation: data.rotation ?? 0,
@@ -2712,7 +2717,7 @@ export function createActorDocument(id, data) {
       expect(type).toBe("Item");
       return entries.map((entry) => {
         const item = items.get(entry._id);
-        Object.assign(item, Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "_id")));
+        item.applyStoredWrite(Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "_id")));
         return item;
       });
     },
@@ -2846,6 +2851,22 @@ function attachRegionBehaviors(region, entries) {
     collection.set(make(entry._id ?? entry.id ?? `${region.id}-behavior-${index + 1}`, entry))
   );
   region.behaviors = collection;
+
+  Object.defineProperty(region.constructor, "schema", {
+    value: {
+      get(root) {
+        if (root !== "behaviors") return null;
+        return {
+          getCollection: () => collection,
+          schema: {},
+          clean: (value) => (Array.isArray(value) ? [...value] : [])
+        };
+      }
+    },
+    enumerable: false,
+    configurable: true,
+    writable: true
+  });
 
   Object.defineProperty(region, "makeBehavior", { value: make, enumerable: false, configurable: true });
   region.createEmbeddedDocuments = vi.fn(async (type, docs) =>

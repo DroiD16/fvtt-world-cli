@@ -1,5 +1,5 @@
 import { ERROR_CODES } from "../generated/protocol.js";
-import { createBridgeError } from "./errors.js";
+import { createBridgeError, toFoundryValidationError } from "./errors.js";
 
 import { getJournalById } from "./game-collections.js";
 import {
@@ -8,7 +8,8 @@ import {
   previewDocumentUpdate,
   resolveEmbeddedDocumentClass
 } from "./world-docs.js";
-import { WORLD_VETO_REMEDY, assertDocumentUpdateCommitted } from "./write-confirmation.js";
+import { WORLD_VETO_REMEDY, probeRequestedState } from "./write-confirmation.js";
+import { structuredCloneish } from "./batch-guards.js";
 
 /**
  * The Journal world collection carries Foundry's two sharing entry points. Foundry 14 keeps the bare
@@ -186,58 +187,61 @@ export async function updateJournalPages(journalId, pages) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Journal page update API is not available");
   }
 
-  const results = await journal.updateEmbeddedDocuments("JournalEntryPage", pages, {
+  const results = await journal.updateEmbeddedDocuments("JournalEntryPage", structuredCloneish(pages), {
     diff: true,
     render: true
   });
-  const returned = new Set((Array.isArray(results) ? results : []).map((page) => page?.id).filter(Boolean));
+
   const updatedPageIds = [];
-  const unconfirmed = [];
+  let failure = null;
   for (const { _id, ...patch } of pages) {
-    if (returned.has(_id)) {
+    const page = journal.pages?.get?.(_id) ?? null;
+    const probe =
+      page === null
+        ? /** @type {{ status: "missing" }} */ ({ status: "missing" })
+        : await probeRequestedState(page, patch);
+    if (probe.status === "confirmed") {
       updatedPageIds.push(_id);
       continue;
     }
-    const page = journal.pages?.get?.(_id) ?? null;
-    let confirmed = false;
-    if (page !== null) {
-      try {
-        confirmed = Object.keys(await computeDocumentUpdateDiff(page, patch)).length === 0;
-      } catch {
-        confirmed = false;
-      }
-    }
-    if (confirmed) updatedPageIds.push(_id);
-    else unconfirmed.push({ pageId: _id, patch, page });
+    failure ??= { pageId: _id, patch, probe };
   }
 
-  const failed = unconfirmed[0];
-  if (failed !== undefined) {
-    const details = { journalId, pageId: failed.pageId, updatedPageIds };
-    if (failed.page === null) {
+  if (failure !== null) {
+    const { pageId, patch, probe } = failure;
+    const details = { journalId, pageId, updatedPageIds };
+    const subject = `Journal page ${pageId} of journal ${journalId}`;
+    if (probe.status === "missing") {
       throw createBridgeError(
         ERROR_CODES.INTERNAL_ERROR,
-        `Journal page ${failed.pageId} of journal ${journalId} was NOT updated: the page no longer exists now ` +
-          `that the update has resolved, so the requested change cannot be stored. The pages in ` +
-          `details.updatedPageIds DID update — re-read the journal with journal.get before deciding what to do. ` +
-          WORLD_VETO_REMEDY,
+        `${subject} was NOT updated: the page no longer exists now that the update has resolved, so the ` +
+          `requested change cannot be stored. The pages in details.updatedPageIds DID update — re-read the ` +
+          `journal with journal.get before deciding what to do. ${WORLD_VETO_REMEDY}`,
         details
       );
     }
-    await assertDocumentUpdateCommitted({
-      document: failed.page,
-      patch: failed.patch,
-      subject: `Journal page ${failed.pageId} of journal ${journalId}`,
-      hookName: "preUpdateJournalEntryPage",
-      details
-    });
+    if (probe.status === "rejected") {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `${subject} was NOT updated: Foundry REJECTED the patch. Foundry's client backend reports such a ` +
+          `validation failure only as a UI notification and resolves the update without writing, so the bridge ` +
+          `re-ran the same validation to recover the cause — see details.message for the raw validation error, ` +
+          `fix the offending field and resend. The pages in details.updatedPageIds DID update. This is NOT a ` +
+          `module veto: no preUpdateJournalEntryPage hook was involved.`,
+        { ...details, ...toFoundryValidationError(probe.error).details }
+      );
+    }
+    const fields =
+      probe.status === "pending" ? probe.fields : Object.keys(patch).filter((key) => key !== "_id");
     throw createBridgeError(
       ERROR_CODES.INTERNAL_ERROR,
-      `Journal page ${failed.pageId} of journal ${journalId} was NOT updated when the bridge first probed it, ` +
-        `and a second probe could not reproduce the refusal, so the stored state is UNSETTLED. The pages in ` +
+      `${subject} was NOT updated: Foundry resolved the update without applying it, which means a module's ` +
+        `preUpdateJournalEntryPage hook or a core _preUpdate refused the write, or the patch failed Foundry's ` +
+        `own client-side validation (which Foundry reports only as a UI notification). It still holds its ` +
+        `previous values for ${fields.join(", ") || "the requested fields"}. The pages in ` +
         `details.updatedPageIds DID update — re-read the journal with journal.get before deciding what to do. ` +
         WORLD_VETO_REMEDY,
-      details
+      { ...details, fields, validationError: probe.status === "unprovable" ? probe.probeError : null }
     );
   }
   return results;
@@ -300,15 +304,16 @@ export async function deleteJournalPages(journalId, pageIds) {
   assertJournalPagesExist(journalId, pageIds);
 
   const results = await journal.deleteEmbeddedDocuments("JournalEntryPage", pageIds, { render: true });
-  const remaining = pageIds.filter((pageId) => journal.pages?.get?.(pageId));
-  if (remaining.length > 0) {
+  const undeletedPageIds = pageIds.filter((pageId) => journal.pages?.get?.(pageId));
+  if (undeletedPageIds.length > 0) {
+    const deletedPageIds = pageIds.filter((pageId) => !undeletedPageIds.includes(pageId));
     throw createBridgeError(
       ERROR_CODES.INTERNAL_ERROR,
-      `Journal ${journalId} pages ${remaining.join(", ")} were NOT deleted: Foundry resolved the delete without ` +
-        `removing them, which means a module's preDeleteJournalEntryPage hook or a core _preDelete refused them. ` +
-        `Any other requested page WAS deleted — re-read the journal with journal.get before deciding what to do. ` +
-        WORLD_VETO_REMEDY,
-      { journalId, pageIds: remaining }
+      `Journal ${journalId} pages ${undeletedPageIds.join(", ")} were NOT deleted: Foundry resolved the delete ` +
+        `without removing them, which means a module's preDeleteJournalEntryPage hook or a core _preDelete ` +
+        `refused them. The pages in details.deletedPageIds WERE deleted — re-read the journal with journal.get ` +
+        `before deciding what to do. ${WORLD_VETO_REMEDY}`,
+      { journalId, undeletedPageIds, deletedPageIds }
     );
   }
   return results;

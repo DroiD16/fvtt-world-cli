@@ -10,7 +10,7 @@ import {
 } from "../lib/world-docs.js";
 import { resolveBroadcastUsers } from "../lib/broadcast-targets.js";
 import { createBridgeError } from "../lib/errors.js";
-import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
+import { applyConfirmedUpdate, assertDocumentDeleteCommitted } from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import { filterByName, paginate, serializeScene } from "../lib/serializers.js";
@@ -75,16 +75,14 @@ export function createSceneHandlers() {
         return dryRunResponse({ scene: serializeScene(preview, { flags: true, provenance: true }) });
       }
 
-      const updated = await scene.update(patch, { diff: true, render: true });
-      if (!updated) {
-        await assertDocumentUpdateCommitted({
-          document: scene,
-          patch,
-          subject: `Scene ${scene.id ?? params.sceneId}`,
-          hookName: "preUpdateScene",
-          details: { sceneId: scene.id ?? params.sceneId }
-        });
-      }
+      await applyConfirmedUpdate({
+        document: scene,
+        patch,
+        write: (payload) => scene.update(payload, { diff: true, render: true }),
+        subject: `Scene ${scene.id ?? params.sceneId}`,
+        hookName: "preUpdateScene",
+        details: { sceneId: scene.id ?? params.sceneId }
+      });
       return {
         scene: serializeScene(scene, { flags: true, provenance: true })
       };

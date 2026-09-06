@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCommandRouter } from "../scripts/command-router.js";
 import { ERROR_CODES, MODULE_ID } from "../scripts/generated/protocol.js";
 import { APPROVAL_REFUSAL_REASONS } from "../scripts/lib/approval-store.js";
+import { assertApprovalBindingFresh, captureApprovalBinding } from "../scripts/lib/approval-bindings.js";
 import { resolveApprovalTargets } from "../scripts/lib/approval-targets.js";
 import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 
@@ -352,6 +353,25 @@ describe("the guards an allowed command meets at decision time", () => {
 
     expect(response.result.response.error.code).toBe(ERROR_CODES.APPROVAL_STALE);
     expect(macro.execute).not.toHaveBeenCalled();
+  });
+
+  it("refuses a binding whose captured macro is not the one the params name", () => {
+    const binding = captureApprovalBinding("macro.execute", { macroId: "macro-1" });
+
+    let refusal = null;
+    try {
+      assertApprovalBindingFresh("macro.execute", { macroId: "ghost" }, binding);
+    } catch (error) {
+      refusal = /** @type {any} */ (error);
+    }
+
+    expect(refusal?.code).toBe(ERROR_CODES.APPROVAL_STALE);
+    expect(refusal?.details).toMatchObject({
+      macroId: "macro-1",
+      requestedMacroId: "ghost",
+      drifted: ["identity"]
+    });
+    expect(refusal?.message).toContain("macro-1");
   });
 
   it("refuses an allowed macro execution admitted without the shown-content snapshot", async () => {

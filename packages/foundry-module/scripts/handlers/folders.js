@@ -13,7 +13,7 @@ import {
 } from "../lib/folders.js";
 import { getFoldersCollection } from "../lib/game-collections.js";
 import { previewDocumentCreate, previewDocumentUpdate } from "../lib/world-docs.js";
-import { assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
+import { applyConfirmedUpdate } from "../lib/write-confirmation.js";
 import { createBridgeError } from "../lib/errors.js";
 import { createMutationQueue } from "../lib/mutation-queue.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
@@ -290,17 +290,15 @@ export function createFolderHandlers() {
           return dryRunResponse({ folder: serializeFolder(preview, folderCounts(folder)) });
         }
 
-        const updated = await folder.update(patch, { diff: true, render: true });
-        if (!updated) {
-          await assertDocumentUpdateCommitted({
-            document: folder,
-            patch,
-            subject: `Folder ${folder.id}`,
-            hookName: "preUpdateFolder",
-            details: { folderId: folder.id },
-            remedy: FOLDER_VETO_REMEDY
-          });
-        }
+        await applyConfirmedUpdate({
+          document: folder,
+          patch,
+          write: (payload) => folder.update(payload, { diff: true, render: true }),
+          subject: `Folder ${folder.id}`,
+          hookName: "preUpdateFolder",
+          details: { folderId: folder.id },
+          remedy: FOLDER_VETO_REMEDY
+        });
 
         return {
           folder: serializeFolder(folder, folderCounts(folder))

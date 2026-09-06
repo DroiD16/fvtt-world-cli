@@ -25,7 +25,11 @@ import {
   snapshotTableDrawEvidence,
   updateTableResult
 } from "../lib/table-docs.js";
-import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
+import {
+  applyConfirmedUpdate,
+  assertDocumentDeleteCommitted,
+  assertDocumentUpdateCommitted
+} from "../lib/write-confirmation.js";
 import {
   assertClonePatchValid,
   cloneDocument,
@@ -181,17 +185,15 @@ export function createTableHandlers() {
           return dryRunResponse({ table: serializeTable(preview) });
         }
 
-        const updated = await table.update(patch, { diff: true, render: true });
-        if (!updated) {
-          await assertDocumentUpdateCommitted({
-            document: table,
-            patch,
-            subject: `Roll table ${table.id ?? params.tableId}`,
-            hookName: "preUpdateRollTable",
-            details: { tableId: table.id ?? params.tableId },
-            remedy: TABLE_VETO_REMEDY
-          });
-        }
+        await applyConfirmedUpdate({
+          document: table,
+          patch,
+          write: (payload) => table.update(payload, { diff: true, render: true }),
+          subject: `Roll table ${table.id ?? params.tableId}`,
+          hookName: "preUpdateRollTable",
+          details: { tableId: table.id ?? params.tableId },
+          remedy: TABLE_VETO_REMEDY
+        });
         return {
           table: serializeTable(table)
         };

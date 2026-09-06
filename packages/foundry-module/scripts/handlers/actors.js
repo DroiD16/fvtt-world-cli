@@ -9,7 +9,7 @@ import {
   previewWorldActorCreate
 } from "../lib/world-docs.js";
 import { createBridgeError } from "../lib/errors.js";
-import { assertDocumentDeleteCommitted, assertDocumentUpdateCommitted } from "../lib/write-confirmation.js";
+import { applyConfirmedUpdate, assertDocumentDeleteCommitted } from "../lib/write-confirmation.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import {
@@ -101,16 +101,14 @@ export function createActorHandlers() {
         return dryRunResponse({ actor: serializeActor(preview, { include: params.include }) });
       }
 
-      const updated = await actor.update(patch, { diff: true, render: true });
-      if (!updated) {
-        await assertDocumentUpdateCommitted({
-          document: actor,
-          patch,
-          subject: `Actor ${actor.id ?? params.actorId}`,
-          hookName: "preUpdateActor",
-          details: { actorId: actor.id ?? params.actorId }
-        });
-      }
+      await applyConfirmedUpdate({
+        document: actor,
+        patch,
+        write: (payload) => actor.update(payload, { diff: true, render: true }),
+        subject: `Actor ${actor.id ?? params.actorId}`,
+        hookName: "preUpdateActor",
+        details: { actorId: actor.id ?? params.actorId }
+      });
       return {
         actor: serializeActor(actor, { include: params.include })
       };

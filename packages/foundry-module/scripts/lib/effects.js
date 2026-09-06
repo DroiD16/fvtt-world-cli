@@ -1,10 +1,6 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
-import {
-  assertDocumentDeleteCommitted,
-  assertDocumentUpdateCommitted,
-  writeCommitted
-} from "./write-confirmation.js";
+import { applyConfirmedUpdate, assertDocumentDeleteCommitted, writeCommitted } from "./write-confirmation.js";
 
 import { omitFields, sanitizeEffectData } from "./sanitize.js";
 import {
@@ -134,23 +130,18 @@ export async function updateEmbeddedEffect(parent, effectId, patch, details = {}
   }
 
   const preparedPatch = prepareEmbeddedEffectUpdateData(parent, patch);
-  const results = await parent.updateEmbeddedDocuments(
-    "ActiveEffect",
-    [{ ...preparedPatch, _id: effectId }],
-    {
-      diff: true,
-      render: true
-    }
-  );
-  if (!writeCommitted(results)) {
-    await assertDocumentUpdateCommitted({
-      document: parent.effects?.get?.(effectId) ?? current,
-      patch: preparedPatch,
-      subject: `Active effect ${effectId} of ${parent.documentName ?? "document"} ${parent.id}`,
-      hookName: "preUpdateActiveEffect",
-      details: { ...details, effectId }
-    });
-  }
+  await applyConfirmedUpdate({
+    document: current,
+    patch: preparedPatch,
+    write: (payload) =>
+      parent.updateEmbeddedDocuments("ActiveEffect", [{ ...payload, _id: effectId }], {
+        diff: true,
+        render: true
+      }),
+    subject: `Active effect ${effectId} of ${parent.documentName ?? "document"} ${parent.id}`,
+    hookName: "preUpdateActiveEffect",
+    details: { ...details, effectId }
+  });
   return getEmbeddedEffect(parent, effectId, details);
 }
 

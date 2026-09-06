@@ -131,6 +131,68 @@ describe("a vetoed single world-document update is reported instead of a false s
   });
 });
 
+describe("a hook that rewrites the payload it is handed cannot fake the confirmation", () => {
+  it("a veto that resets the sent patch to the stored values is still reported", async () => {
+    const actor = globalThis.game.actors.get("actor-1");
+    actor.update = vi.fn(async (payload) => {
+      payload.name = "Valeros";
+      return undefined;
+    });
+
+    const response = await send("actor.update", { actorId: "actor-1", patch: { name: "Renamed" } });
+
+    expectUpdateVetoError(response, /preUpdateActor/);
+    expect(actor.name).toBe("Valeros");
+  });
+});
+
+describe("a write that landed only in part is reported as partial, not as success", () => {
+  it("actor.update", async () => {
+    const actor = globalThis.game.actors.get("actor-1");
+    actor.update = vi.fn(async (payload) => {
+      const { name: _stripped, ...rest } = payload;
+      actor.applyStoredWrite(rest);
+      return actor;
+    });
+
+    const response = await send("actor.update", {
+      actorId: "actor-1",
+      patch: { name: "Renamed", img: "icons/updated.webp" }
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.message).toMatch(/updated only in PART/);
+    expect(response.error.details).toMatchObject({
+      fields: ["name"],
+      appliedFields: ["img"],
+      partial: true
+    });
+    expect(actor.img).toBe("icons/updated.webp");
+    expect(actor.name).toBe("Valeros");
+  });
+
+  it("scene.token.update", async () => {
+    const scene = globalThis.game.scenes.get("scene-1");
+    const token = scene.tokens.get("token-a");
+    scene.updateEmbeddedDocuments = vi.fn(async (type, entries) => {
+      const { _id: _ignored, name: _stripped, ...rest } = entries[0];
+      token.applyStoredWrite(rest);
+      return [token];
+    });
+
+    const response = await send("scene.token.update", {
+      sceneId: "scene-1",
+      tokenId: "token-a",
+      patch: { name: "Renamed", alpha: 0.5 }
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.message).toMatch(/updated only in PART/);
+    expect(response.error.details).toMatchObject({ fields: ["name"], appliedFields: ["alpha"] });
+  });
+});
+
 describe("a vetoed single world-document delete is reported instead of deleted: true", () => {
   it("actor.delete", async () => {
     const actor = globalThis.game.actors.get("actor-1");
@@ -407,7 +469,11 @@ describe("a vetoed journal page write inside journal.update is reported per page
     const secondId = created.result.journal.pages.find((page) => page.name === "Second").id;
 
     const journal = globalThis.game.journal.get("journal-1");
-    journal.updateEmbeddedDocuments = vi.fn(async () => [journal.pages.get(secondId)]);
+    journal.updateEmbeddedDocuments = vi.fn(async () => {
+      const second = journal.pages.get(secondId);
+      second.name = "Second Renamed";
+      return [second];
+    });
 
     const response = await send("journal.update", {
       journalId: "journal-1",
@@ -440,6 +506,29 @@ describe("a vetoed journal page write inside journal.update is reported per page
     expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
     expect(response.error.message).toMatch(/NOT all created/);
     expect(response.error.message).toMatch(/preCreateJournalEntryPage/);
+    expect(response.error.details).toMatchObject({
+      journalId: "journal-1",
+      requested: 1,
+      createdPageIds: []
+    });
+  });
+
+  it("page update whose page vanished while the write resolved", async () => {
+    const journal = globalThis.game.journal.get("journal-1");
+    journal.updateEmbeddedDocuments = vi.fn(async () => {
+      journal.pages.delete("page-1");
+      return [];
+    });
+
+    const response = await send("journal.update", {
+      journalId: "journal-1",
+      patch: { pages: [{ id: "page-1", name: "Renamed Page" }] }
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.message).toMatch(/no longer exists/);
+    expect(response.error.details).toMatchObject({ journalId: "journal-1", pageId: "page-1" });
   });
 
   it("page delete", async () => {
@@ -452,6 +541,10 @@ describe("a vetoed journal page write inside journal.update is reported per page
     });
 
     expectDeleteVetoError(response, /preDeleteJournalEntryPage/);
-    expect(response.error.details).toMatchObject({ journalId: "journal-1", pageIds: ["page-1"] });
+    expect(response.error.details).toMatchObject({
+      journalId: "journal-1",
+      undeletedPageIds: ["page-1"],
+      deletedPageIds: []
+    });
   });
 });

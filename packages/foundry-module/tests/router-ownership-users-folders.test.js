@@ -761,7 +761,7 @@ describe("folder management", () => {
     expect(response.error.message).toMatch(/was NOT updated/);
     expect(response.error.message).toMatch(/preUpdateFolder/);
 
-    expect(response.error.message).toMatch(/no force flag for a world-side veto/);
+    expect(response.error.message).toMatch(/locks this folder/);
     expect(response.error.details.folderId).toBe("fd");
 
     expect(response.error.details.fields).toEqual(["name"]);
@@ -1030,9 +1030,7 @@ describe("folder management", () => {
     const p1 = router.route(createRequest("folder.update", { folderId: "fd", patch: { folder: "fa" } }));
     const p2 = router.route(createRequest("folder.update", { folderId: "fx", patch: { name: "Renamed" } }));
 
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(order).toEqual(["t1-write"]);
+    await vi.waitFor(() => expect(order).toEqual(["t1-write"]));
     expect(fx.update).not.toHaveBeenCalled();
 
     releaseFirst();
