@@ -2009,6 +2009,7 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
       documentClass,
       patch,
       merged: { toObject: () => ({ c: storedC, door: 1 }) },
+      stored: { toObject: () => ({ c: storedC, door: 1 }) },
       index: 3,
       command: "scene.wall.update-many",
       id: "wall-7"

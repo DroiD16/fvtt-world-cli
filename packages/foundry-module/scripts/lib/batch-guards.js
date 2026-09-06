@@ -321,7 +321,14 @@ export function assertBatchArrayWritesReflected({
         `reported as applied while the stored array lost data or kept none of it. Send the WHOLE array instead ` +
         `(for a Wall, "c": [x1, y1, x2, y2]): read it first, change the entry you mean, send all of them back, ` +
         `and retry.`,
-      { index, id, field: rawKey, arrayField: rootKey, requested: value, stored: source[rootKey] ?? null }
+      {
+        index,
+        id,
+        field: rawKey,
+        arrayField: rootKey,
+        requested: value,
+        stored: preSource?.[rootKey] ?? null
+      }
     );
   }
 }
