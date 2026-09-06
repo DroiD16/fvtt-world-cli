@@ -311,17 +311,17 @@ export function assertBatchArrayWritesReflected({
     }
 
     if (!Array.isArray(source[rootKey])) continue;
-    const stored = readSourcePath(source, key);
-    if (batchValuesEqual(value, stored)) continue;
 
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
-      `${command} element ${index} (id ${id}) writes the dotted path "${rawKey}" into the ARRAY field "${rootKey}", ` +
-        `which this Foundry version SILENTLY DISCARDS: the merged document keeps ` +
-        `${JSON.stringify(stored ?? null)} there. Foundry 14 drops a dotted write into an array field without an ` +
-        `error or a diff (Foundry 13 rejects it outright), so the write would be reported as applied while nothing ` +
-        `changed. Send the WHOLE array instead (for a Wall, "c": [x1, y1, x2, y2]) and retry.`,
-      { index, id, field: rawKey, arrayField: rootKey, requested: value, stored: stored ?? null }
+      `${command} element ${index} (id ${id}) writes the dotted path "${rawKey}" INSIDE the ARRAY field ` +
+        `"${rootKey}". Foundry does NOT patch an array in place: it REBUILDS the array from this patch alone, so ` +
+        `every entry the patch does not name is DESTROYED — and when the rebuilt array fails the field's own ` +
+        `validator, Foundry 14 drops the whole write silently while Foundry 13 rejects it, so the write would be ` +
+        `reported as applied while the stored array lost data or kept none of it. Send the WHOLE array instead ` +
+        `(for a Wall, "c": [x1, y1, x2, y2]): read it first, change the entry you mean, send all of them back, ` +
+        `and retry.`,
+      { index, id, field: rawKey, arrayField: rootKey, requested: value, stored: source[rootKey] ?? null }
     );
   }
 }

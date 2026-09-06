@@ -956,7 +956,7 @@ describe("command router", () => {
 
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe("INVALID_PARAMS");
-      expect(response.error.message).toContain("SILENTLY DISCARDS");
+      expect(response.error.message).toMatch(/SILENTLY DISCARDS|DESTROYED/);
       expect(response.error.details).toMatchObject({ index: 0, ...expected });
     }
     expect(scene.updateEmbeddedDocuments.mock.calls.filter((call) => call[0] === "Wall")).toHaveLength(0);

@@ -58,6 +58,11 @@ function applyMergeKey(out, rawKey, value, performDeletions) {
   const name = operator ? segment.slice(2) : segment;
 
   if (operator === "-=") {
+    if (rest !== null) {
+      throw new Error(
+        "Removing a key using the -= deletion syntax requires the value of that deletion key to be null"
+      );
+    }
     if (performDeletions) delete out[name];
     return;
   }
@@ -76,9 +81,22 @@ function applyMergeKey(out, rawKey, value, performDeletions) {
     return;
   }
 
-  // Foundry 14 silently discards a dotted write that descends into an array field; mirror that
-  // rather than replacing the array with an object the guards could never have seen.
-  if (Array.isArray(out[name])) return;
+  // Both cores REBUILD an array a dotted write descends into from the patch alone, destroying the
+  // entries the patch does not name; mirror that so the guards see what Foundry would store.
+  if (Array.isArray(out[name])) {
+    const container = {};
+    applyMergeKey(container, rest, value, performDeletions);
+    const rebuilt = [];
+    for (const [entryKey, entryValue] of Object.entries(container)) {
+      if (entryKey === "length") {
+        rebuilt.length = Number(entryValue) || 0;
+        continue;
+      }
+      rebuilt[Number(entryKey)] = entryValue;
+    }
+    out[name] = rebuilt;
+    return;
+  }
   const base = operator === "==" || !isPlainMergeTarget(out[name]) ? {} : out[name];
   const container = { ...base };
   applyMergeKey(container, rest, value, performDeletions);

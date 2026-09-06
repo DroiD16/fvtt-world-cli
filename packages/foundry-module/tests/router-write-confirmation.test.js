@@ -455,7 +455,7 @@ describe("a patch shape Foundry stores nothing for is refused before the write",
 
     expect(response.ok).toBe(false);
     expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(response.error.message).toMatch(/SILENTLY DISCARDS/);
+    expect(response.error.message).toMatch(/DESTROYED/);
     expect(response.error.message).toMatch(/Nothing was written/);
     expect(response.error.details).toMatchObject({ sceneId: "scene-1", wallId: "wall-plain" });
     expect(scene.walls.get("wall-plain").c).toEqual(stored);
@@ -474,7 +474,7 @@ describe("a patch shape Foundry stores nothing for is refused before the write",
 
     expect(response.ok).toBe(false);
     expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(response.error.message).toMatch(/SILENTLY DISCARDS/);
+    expect(response.error.message).toMatch(/DESTROYED/);
     expect(scene.updateEmbeddedDocuments).not.toHaveBeenCalled();
   });
 
