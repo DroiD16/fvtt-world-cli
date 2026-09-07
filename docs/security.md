@@ -184,3 +184,10 @@ expensive operations. The tool assumes cooperative local automation.
 - World titles and GM names arrive in unauthenticated pairing requests without terminal-escape
   restrictions. The CLI prints them as raw text in prompts and profile listings, including
   `auth prune`. A forged value can redraw identity lines, and a stored value can do so again later.
+
+## Reporting a vulnerability
+
+Suspected vulnerabilities are best reported privately through GitHub security advisories:
+<https://github.com/DroiD16/fvtt-world-cli/security/advisories/new>. A private report leaves time
+to publish a fix before the details are public, so the issue tracker is the wrong place for one.
+Fixes land in the latest release; earlier releases are not patched separately.
