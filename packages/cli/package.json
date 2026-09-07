@@ -2,6 +2,18 @@
   "name": "fvtt-world-cli",
   "version": "1.1.1",
   "description": "Safe local CLI and authenticated bridge for automating live Foundry VTT worlds.",
+  "keywords": [
+    "foundry-vtt",
+    "foundryvtt",
+    "fvtt",
+    "virtual-tabletop",
+    "ttrpg",
+    "cli",
+    "automation",
+    "ai",
+    "ai-agent",
+    "agent-skills"
+  ],
   "license": "MIT",
   "author": "DroiD16",
   "repository": {

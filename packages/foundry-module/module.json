@@ -7,6 +7,19 @@
   "url": "https://github.com/DroiD16/fvtt-world-cli",
   "manifest": "https://github.com/DroiD16/fvtt-world-cli/releases/latest/download/module.json",
   "download": "https://github.com/DroiD16/fvtt-world-cli/releases/download/1.1.1/fvtt-world-cli.zip",
+  "readme": "https://github.com/DroiD16/fvtt-world-cli/blob/main/README.md",
+  "changelog": "https://github.com/DroiD16/fvtt-world-cli/blob/main/CHANGELOG.md",
+  "bugs": "https://github.com/DroiD16/fvtt-world-cli/issues",
+  "media": [
+    {
+      "type": "cover",
+      "url": "https://raw.githubusercontent.com/DroiD16/fvtt-world-cli/main/publishing/media/cover.jpg"
+    },
+    {
+      "type": "icon",
+      "url": "https://raw.githubusercontent.com/DroiD16/fvtt-world-cli/main/publishing/media/icon.svg"
+    }
+  ],
   "authors": [
     {
       "name": "DroiD16",
