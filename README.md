@@ -34,7 +34,7 @@ A few asks it handles end to end:
 - "Turn the bestiary goblin into a flying one that throws dynamite for 2d6 damage, and add it to
   the scene."
 
-See [Commands](docs/commands.md) for the full list of supported operations.
+See [Commands](docs/commands.md) for command families and usage examples.
 
 ## Setting up
 

@@ -1,17 +1,12 @@
 # Protocol
 
-This document describes the stable integration contract between CLI clients, the local daemon, and
-the Foundry bridge: what each party may assume, which guarantees survive reconnects and failures,
-and how errors and retries are classified. It deliberately contains no wire-level inventory. Exact
-message types, frame schemas, command names, request schemas, error codes, default timeouts, and
-size limits are defined by the protocol package and discoverable at runtime:
+This reference defines the integration contract between local clients, the daemon, and the
+Foundry bridge. For CLI workflows, use [Commands](commands.md).
 
-- [`packages/protocol/src/commands.js`](../packages/protocol/src/commands.js)
-- [`packages/protocol/src/schemas/`](../packages/protocol/src/schemas/)
-- [`packages/protocol/src/constants.js`](../packages/protocol/src/constants.js)
-- [`packages/protocol/src/validation.js`](../packages/protocol/src/validation.js)
-- `fvtt-world-cli commands --json`, `fvtt-world-cli schema <command>`, and
-  `fvtt-world-cli system info --json` for the installed checkout and the connected runtime
+Exact command and frame schemas come from the [protocol registry](../packages/protocol/src/commands.js)
+and [family schemas](../packages/protocol/src/schemas/). The [constants](../packages/protocol/src/constants.js)
+define error codes, timeouts, and limits. Inspect the installed version with `commands --json` and
+`schema <command>`; use `system info --json` for connected-runtime details.
 
 ## Versioning
 
@@ -19,31 +14,16 @@ The protocol version equals the product release version. Every transport message
 components in one installation must match exactly. The daemon and Foundry module reject a mismatch
 instead of negotiating a subset of the contract.
 
-Recover by updating the older component. Restart the daemon after updating the CLI package, or reload
-the GM client after updating the Foundry module. A refused module load does not reconnect on its own.
-Mismatch errors identify the older component when the two versions can be ordered.
-
 ## Transport model
 
 The daemon listens on a loopback WebSocket endpoint. Credentials never appear in URLs. A local
-client, the CLI or a future Companion, has no browser Origin and must establish its role with its
-first message: the daemon enforces a short deadline for a valid first frame, closes malformed
-openings immediately, and never assigns a role before authentication has succeeded. Browser sockets
-are identified by their exact HTTP(S) Origin and participate only in pairing and bridge sessions;
-they cannot assume the local-client role.
+client has no browser Origin and authenticates with `client.hello` as its first message. Browser
+sockets require an exact HTTP(S) Origin and may only request pairing or a bridge session.
 
-Every message type has a closed top-level schema. A malformed message yields a structured
-`INVALID_MESSAGE` error where a response is possible, and an authenticated local client that sends
-a malformed control request receives a correlated error and may keep using its connection.
-
-The daemon accepts one active authenticated bridge at a time:
-
-- another pairing cannot displace the active bridge and is rejected as `BRIDGE_BUSY`;
-- a new socket from the same pairing takes the slot over, the tab-reload recovery path;
-- a clean goodbye releases the slot immediately, while an abnormal close reserves it briefly for
-  the same pairing;
-- a daemon-initiated release is terminal for the released client: it does not reconnect on its
-  own, and resuming is an explicit operator action.
+The daemon imposes a first-frame deadline and assigns no role before authentication succeeds.
+Every message has a closed top-level schema. Malformed openings close immediately; later malformed
+messages return `INVALID_MESSAGE` where possible. An authenticated local client may continue after
+a correlated control-request error.
 
 ## Size limits
 
@@ -64,65 +44,45 @@ Pairing is the one-time exchange that lets a GM browser become a bridge. Its gua
   exactly once, to the requesting socket, only after the digest has been persisted;
 - approving the same Origin/world/user/client again re-pairs that client's existing profile by
   rotating its credential instead of accumulating duplicates;
-- expiry, denial, socket close, and a granted pairing all end the attempt through one idempotent
-  path, so the browser-side authorization UI is never left waiting after daemon shutdown or expiry.
+- expiry, denial, socket close, and daemon shutdown end the pending attempt.
 
 ### Client identity
 
-The pairing request carries a `client` object inside its identity: `id` is the browser's persistent
-client identifier, and `label` is a human name for that browser. Pairing records are unique per
-(Origin, world, user, client id), so two browsers signed in as the same GM on the same world hold two
-independent records and neither re-pair disturbs the other.
+Pairing identity includes a `client` object with a persistent `id` and human-readable `label`.
+Records are unique per Origin, world, user, and client id. Re-pairing one browser does not affect
+another browser using the same GM account.
 
-- `id` is bounded to hexadecimal characters and dashes, 8 to 64 characters long.
-- `label` is 1 to 64 characters of Unicode text. Whitespace-only values are rejected, as are control
-  (C0/C1), zero-width, bidirectional-override, and Unicode tag characters. The schema is the
-  enforcement point because any local process can send a pairing request and the label is later
-  printed by `auth list` and `auth pending`.
-- Labels are not unique. Duplicate labels are accepted as they arrive, without suffixing.
-- A label is chosen once, in the browser, at pairing time. No control operation renames a stored
-  record; re-pairing is the way to change a label.
+- `id` accepts 8 to 64 hexadecimal characters and dashes.
+- `label` accepts 1 to 64 Unicode characters, excluding whitespace-only values, C0/C1 controls,
+  zero-width characters, bidirectional controls, and Unicode tags.
+- Labels need not be unique. Changing a stored label requires re-pairing.
 
-The bridge hello carries `clientId` at the top level, beside `pairingId` and `credential`, because it
-is authentication material rather than session content: the daemon rejects a hello whose client id
-does not match the stored pairing. The label is not resent on hello; the daemon's pairing record owns
-it, and the browser keeps a copy only to display it.
+The bridge hello carries `clientId`, `pairingId`, and `credential`. A client id mismatch returns
+`UNAUTHORIZED`. The label is not resent; the stored pairing owns it.
 
 ## Daemon control
 
-Authenticated local clients manage pairings and the active bridge through closed,
-operation-discriminated control requests; responses repeat both the correlation id and the
-operation. The operation registry lives in the protocol package. `auth.approve` takes only an
-optional pairing `code`; the approved record's label comes from the pairing request itself.
+Authenticated local clients manage pairings and bridge ownership through closed control requests.
+Responses repeat the correlation id and operation. The protocol package defines the operation
+registry; the [command guide](commands.md#authorization-commands) covers operator use.
 
-`auth.await` is the long-poll behind the interactive pairing wait. It answers at once with the
-earliest live pending request, in the same public shape `auth.pending` serializes and with no
-credential material; when nothing is pending it parks the response until a request arrives, or until a
-bounded daemon-side cap elapses and the result carries no request. Every parked waiter is answered by
-the next arriving request, and a waiter is discarded when its client socket closes. The cap is the
-invariant that keeps a parked response inside the caller's own request timeout; `timeoutMs` may ask
-for a shorter park and is bounded by the cap, so no caller can park longer than the daemon allows.
+`auth.await` returns the earliest live pending request in the public `auth.pending` shape, without
+credentials. With no pending request, it parks until one arrives or a bounded wait expires with an
+empty result. `timeoutMs` can shorten but not exceed the daemon's poll cap. A new request answers
+all parked waiters; socket closure removes that client's waiter.
 
-`auth.prune` deletes idle pairing records. Its optional `olderThanDays` is a non-negative integer and
-defaults to 30; a record is removed when its `lastSeenAt` is older than that many days before the
-call. `lastSeenAt` is stamped when a pairing is approved, when its browser passes the bridge hello,
-again when that bridge connection closes, and when a hello whose credential the daemon accepted is
-rejected with `BRIDGE_BUSY`, so the cutoff measures how long a record has been idle rather than how
-long ago it last connected. A hello rejected with `UNAUTHORIZED` proves nothing about the record and
-never stamps it. The pairing that owns the active bridge, and the holder of a live
-abnormal-disconnect lease, are excluded from removal regardless of their timestamps, so pruning can
-never unpair the browser that is connected or the one the daemon is still holding a slot for. The
-config is rewritten only when at least one record is removed. The result is `{ olderThanDays, pruned }`,
-where `olderThanDays` is the cutoff the daemon applied, including the default when the caller omitted
-it, and `pruned` carries the removed records in the same public, digest-free shape `auth.list`
-serializes. The daemon computes the set at execution time; a caller that previewed candidates from
-`auth.list` holds an advisory list, not the outcome, and the executed set may be wider than that
-preview when a record crosses the cutoff between the two calls.
+`auth.prune` accepts a non-negative `olderThanDays`, defaulting to 30. It removes records older than
+the cutoff according to `lastSeenAt`, excluding the active pairing and a live reconnect-lease
+holder. Approval, authenticated hellos, and disconnects refresh this timestamp. A valid hello
+rejected with `BRIDGE_BUSY` refreshes it; an unauthorized hello does not.
 
-The active bridge itself may use
-exactly one control operation: revoking its own pairing. A browser Unpair deletes its stored
-credential only after a correlated successful revocation; on failure the credential is retained for
-retry, and discarding it locally is a separate deliberate action.
+The result is `{ olderThanDays, pruned }`, with removed records in the public `auth.list` shape.
+The daemon computes the set at execution time, so an earlier candidate list is advisory and can
+omit a record that later crosses the cutoff.
+
+The active authenticated bridge may use only one control operation: revoking its own pairing.
+It deletes its local credential only after a correlated successful revocation response. A failed
+revocation retains the credential for retry.
 
 ## Bridge sessions
 
@@ -137,38 +97,118 @@ active session.
 - `BRIDGE_BUSY` is terminal for that client instance but preserves the stored credential; the
   operator releases the current owner and retries explicitly rather than pairing again.
 - Only the exact active authenticated socket can release ownership with a goodbye.
-- A same-pairing takeover immediately completes requests owned by the displaced socket with an
-  indeterminate-delivery error: the operation may already have committed, so callers inspect world
-  state before retrying.
+- Another pairing cannot displace the active bridge. A same-pairing connection may take over;
+  requests forwarded to the displaced socket then fail with indeterminate delivery.
+- A clean goodbye releases ownership immediately. An abnormal close reserves it briefly for the
+  same pairing. A daemon-initiated release clears ownership and stops automatic reconnects.
 - If the connected user loses GM authority, the bridge answers the pending command with a
   correlated `PERMISSION_DENIED` without dispatching it, so the caller knows the rejected command
   started no mutation.
 
+## Client-side status signal
+
+The module emits `fvtt-world-cli.statusChanged` for macros and other modules in the GM client.
+It fires when transport status or handshake acknowledgement changes and receives the same bridge
+snapshot exposed by `system info`:
+
+`status`, `url`, `helloAcknowledged`, `hasEstablishedSession`, `lastConnectedAt`,
+`reconnectAttempts`, `terminalStopReason`, and `protocolVersionMismatch`.
+
+Readiness requires both `status === "connected"` and `helloAcknowledged`. The socket opens before
+the daemon acknowledges the handshake, and losing it clears the acknowledgement.
+`protocolVersionMismatch` is normally `null`; on a mismatch it reports both versions and identifies
+the older component as `module`, `cli-daemon`, or `unknown`.
+
+This hook is local to the GM client. Credential changes do not trigger it, and it has no wire
+protocol meaning.
+
 ## Commands and correlation
 
-Commands are explicit typed names registered in the protocol package; there is no generic RPC
-method. A request carries a caller-chosen correlation id and schema-validated parameters, validated
-in the CLI before connecting and again in the bridge before dispatch. The command must be both
-registered and advertised by the active bridge. The response repeats the correlation id and is
-exclusive: success carries a result, failure carries a structured error.
+A request supplies a caller-chosen correlation id, a registered command name, and schema-validated
+parameters. Responses repeat the id and carry either a result or an error. Validate both the
+request envelope and command parameters against the protocol registry.
+
+### Request and response example
+
+After the local client has authenticated, it can send this request to the daemon. Replace
+`<release-version>` with the installed protocol version. The active bridge must advertise the command.
+
+```json
+{
+  "protocolVersion": "<release-version>",
+  "type": "command.request",
+  "id": "check-bridge",
+  "command": "system.ping",
+  "params": {}
+}
+```
+
+A success response repeats the id and carries the result. This example omits the timestamp and
+bridge-status fields inside `result`:
+
+```json
+{
+  "protocolVersion": "<release-version>",
+  "type": "command.response",
+  "id": "check-bridge",
+  "ok": true,
+  "result": { "pong": true }
+}
+```
+
+If no bridge is ready, the response instead carries an error. Message wording is illustrative:
+
+```json
+{
+  "protocolVersion": "<release-version>",
+  "type": "command.response",
+  "id": "check-bridge",
+  "ok": false,
+  "error": {
+    "code": "BRIDGE_NOT_READY",
+    "message": "No Foundry bridge is connected."
+  }
+}
+```
+
+The protocol package exports `REQUEST_SCHEMA` and `COMMAND_RESPONSE_SCHEMA` for envelope validation.
 
 ## Result conventions
 
-Document results live under a type-named key inside the result. Collection, action, and bulk
-results use their documented keys, which vary between commands but are stable for each one.
-Broadcast commands that change no document, pulling users to a scene and showing a journal entry
-or image, report `dispatched` rather than a confirmed post-state, because a socket broadcast offers
-nothing to read back; the result names the users it targeted and the active/inactive split where
-that is knowable. `macro.execute` reports the macro's returned value and observed chat messages,
-and a timeout there is indeterminate: the macro keeps running in the GM client, so `MACRO_TIMEOUT`
-callers verify effects by reads instead of retrying blindly.
-A mutation result reports success only after the bridge confirms that Foundry persisted the
-requested state. Foundry resolves a write vetoed by a module hook or refused by its client-side
-validation without throwing — and a hook may strip part of a patch, or rewrite the payload it is
-handed, while letting the rest through — so the bridge hands Foundry a private copy of each patch
-and re-checks stored state against the original request after every write, single and bulk alike.
-A patch that changes nothing remains an ordinary success. Update confirmation errors use
-`INTERNAL_ERROR` and can include these details:
+Document results use type-named keys and expose `id` as the public identifier. A source `_id`
+mirror may accompany it. List responses use smaller projections than single-document reads;
+filters apply before pagination. Previewed documents have no persistent identity, so an id
+observed during a preview must not be reused.
+
+Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
+The active/inactive split is included where knowable.
+
+### Macro results
+
+`macro.execute` returns the macro's value and observed chat messages. `chatCapture` describes the
+observation: `captured` for all expected messages, `not-created` when a chat macro created none,
+`partial` for incomplete capture, or `unknown` when the client could not observe the chat log.
+
+`MACRO_TIMEOUT` is indeterminate because the macro keeps running. A thrown error can follow partial
+effects, while a macro that catches its own errors may return normally. Consumers must verify
+world state when the return value does not establish the effect.
+
+### Setting results
+
+Setting writes return the observed `value` and its `previous` value. Registered types or callbacks
+may normalize the input. Confirmation establishes that the previous value changed, not that the
+requested value was stored exactly. Writing an already-stored value succeeds as unchanged without
+calling Foundry. `requiresReload: true` indicates that the GM client needs a reload.
+
+## Write confirmation
+
+Document writes report success only after confirmation. Foundry can resolve a vetoed or invalid
+write without throwing, and hooks can remove or rewrite part of a patch. Single and bulk updates
+pass Foundry a private copy, then compare stored state with the original request.
+
+A valid patch whose requested state is already stored remains a successful no-op. A validation
+failure recovered after an unwritten update returns `INVALID_PARAMS`. Unconfirmed, partial, or
+indeterminate updates can return `INTERNAL_ERROR` with these details:
 
 - `fields`: requested fields whose state was not confirmed.
 - `partial: true`: stored data changed in a requested field, but the full requested state was
@@ -180,19 +220,24 @@ A patch that changes nothing remains an ordinary success. Update confirmation er
 - `indeterminate: true`: confirmation could not establish the outcome. Some or all of the write
   may have persisted. `changedFields` is `null` when the before/after comparison was unavailable.
 
-Updates that create entries through a parent patch's embedded-collection field, such as
-`scene.region.update` with new `behaviors` entries without `_id`, return an indeterminate error
-after the write. A parent update result cannot confirm those creations, and
-reapplying the patch would create new entries rather than test the existing ones. Dry runs still
-preview these patches. Read the parent and its embedded entries before deciding whether anything
-remains to create. A dedicated embedded create command returns the created document directly.
-After a partial or indeterminate update error, read the affected document and send only the remaining
-changes as a new operation with a fresh idempotency key, if a key is used.
+Parent patches that create embedded entries without `_id`, such as new `behaviors` in
+`scene.region.update`, return an indeterminate error after writing because parent update results
+cannot confirm those creations. A retry may duplicate them. Read the embedded collection first,
+or use a dedicated embedded create command. Dry runs can still preview these patches.
 
-Serialized projections expose `id` as the public identifier; a source `_id` mirror may accompany
-it. A previewed new document has no persistent identity, and an id observed during a preview must
-not be reused. List-like responses that paginate return their collection with a total and a
-has-more flag, and filters apply before pagination.
+After partial or indeterminate errors, read stored state and submit only remaining changes as a
+new operation with a fresh idempotency key if using one.
+
+### Patch shape checks
+
+Single updates, bulk updates, and dry runs reject ambiguous field spellings, invalid or discarded
+array values, and dotted writes inside arrays with `INVALID_PARAMS` before mutation. Recognized
+legacy fields are checked against their migrated destinations as well. Send whole arrays; ordinary
+dotted object-property writes remain supported where the schema permits them.
+
+Errors identify the `field` and may include `arrayField`, `requested`, `stored`, or migration
+destination details. Bulk failures add the entry's `index` and `id`; single failures use document
+coordinates. These details describe a rejected patch, not a write result.
 
 ## Dry run
 
@@ -205,66 +250,58 @@ world can change between preview and commit.
 
 ## Idempotency
 
-Commands with duplicate-creation or non-repeatable-action risk accept or require an idempotency
-key identifying one logical request. Reusing a key with a different command or payload is rejected
-as `IDEMPOTENCY_KEY_CONFLICT`. Idempotency memory is runtime state: bounded, and cleared by daemon
-restart, bridge replacement, world switch, or expiry. The daemon may also evict cached successes.
-Idempotency reduces duplicate effects across response loss. It is not a durable transaction, so an
-indeterminate delivery still ends with a world-state read.
+An idempotency key identifies one logical request. Reusing it with another command or payload
+returns `IDEMPOTENCY_KEY_CONFLICT`. The cache is bounded and temporary; it cannot guarantee exactly
+once execution across state loss. Keys remain subject to the [delivery rules](#delivery-states-and-retries).
+
+An idempotency key covers the request and its approval:
+
+- After `APPROVAL_PENDING`, the daemon links the key to that approval. A byte-identical retry returns
+  the same pending response. A different request with that key returns
+  `IDEMPOTENCY_KEY_CONFLICT`.
+- An approved outcome becomes the cached final response. A denial, timeout, or confirmed
+  cancellation removes the link, so the same request can start a new approval.
+- If the daemon cannot read the approval outcome, the key remains indeterminate and returns
+  `APPROVAL_UNKNOWN` until expiry. Read world state before retrying under a fresh key.
+- If a bridge session ends before the daemon receives the first response, the daemon retains the key
+  as lost in flight. Reuse returns `BRIDGE_DISCONNECTED` with `reason: "lost-in-flight"`. Read world
+  state, then use a fresh key if the operation still needs to run.
+- The daemon reserves bounded space before forwarding a keyed request. If no slot is available, it
+  returns `IDEMPOTENCY_STORE_FULL` before Foundry receives the request. Retry after earlier keys
+  settle or expire.
+- Daemon restart, world switch, pairing switch, and expiry clear runtime idempotency state. Cached
+  successes may also be evicted. Later requests can then reach Foundry as new operations.
 
 ## Batch requests and bulk writes
 
-Connection reuse (`exec --stdin`) is a client mechanism: each request keeps its own correlation id
-and success state, and failures are reported per request. Bulk write commands are ordinary typed
-commands over bounded arrays: elements are prevalidated, but Foundry persistence is not
-transactional, so the result reports overall completeness plus a per-element outcome, and every
-outcome carries its own meaning.
+[`exec --stdin`](commands.md#send-a-batch-of-commands) is a CLI wrapper over individual requests.
+Its input ids and line indexes belong to CLI output, not the wire contract.
 
-Batch reads (`get-many`) fail the whole request when any requested id cannot be read, with one
-exception: `setting.get-many` reports an unregistered key on its own result row (`SETTING_NOT_FOUND`)
-rather than failing the request, because a world routinely registers settings only for the systems
-and modules it has active, so a partially resolvable set of keys is the normal case rather than an
-error.
+Bulk writes accept bounded arrays and prevalidate their elements. Persistence is not transactional;
+results report `complete` and per-element `outcomes`, all of which the caller must inspect.
+
+`get-many` fails the request if any requested id cannot be read. `setting.get-many` is the exception;
+it reports an unregistered key as `SETTING_NOT_FOUND` on that row without failing the whole request.
 
 ## Error model
 
-Errors have a stable code, a human-readable message, and optional structured details. The code and
-documented detail fields are the stable contract for branching; message text is not. The exhaustive
-code set is exported by the protocol package. The classes consumers act on:
+Errors carry a stable `code`, a human-readable `message`, and optional `details`. Branch on codes
+and documented detail fields, not message text. The [constants](../packages/protocol/src/constants.js)
+export the code set. CLI exit codes are coarse classifications; the JSON error is authoritative.
 
-| Class | Representative codes | Consumer response |
-|---|---|---|
-| Request/schema | `INVALID_PARAMS`, `UNKNOWN_COMMAND` | Correct the request or resolve version skew |
-| Authentication/permission | `UNAUTHORIZED`, `PERMISSION_DENIED` | Restore credentials or authority |
-| Pairing | `PAIRING_REQUIRED`, `PAIRING_EXPIRED`, `BRIDGE_BUSY` | Pair, retry revocation, or release the active owner as indicated |
-| Lookup | `*_NOT_FOUND`, `SETTING_UNREGISTERED` | Refresh ids and world state |
-| Safety/policy | `DELETE_FORBIDDEN`, `PATH_NOT_ALLOWED`, `SETTING_PROTECTED`, `USER_SELF_PROTECTED` | Change the requested operation |
-| Capability | `UNSUPPORTED_OPERATION` | Choose a supported workflow or runtime |
-| Size/resource | `PAYLOAD_TOO_LARGE`, `QUERY_TOO_BROAD`, `IDEMPOTENCY_STORE_FULL` | Reduce, page, or resend the request later |
-| Command policy | `COMMAND_DENIED` | Treat the command as unavailable on that GM client |
-| Approval | `APPROVAL_PENDING`, `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED`, `APPROVAL_QUEUE_FULL`, `APPROVAL_UNKNOWN`, `APPROVAL_STALE` | Apply the approval rules below |
-| Bridge state | `BRIDGE_NOT_READY`, `BRIDGE_TIMEOUT`, `BRIDGE_DISCONNECTED` | Apply the delivery rules below |
-| Indeterminate outcome | `MACRO_TIMEOUT` | Verify the effect by reads before retrying |
-| Unexpected | `INTERNAL_ERROR` | Preserve details and investigate |
+Validation errors identify invalid parameters; nested lookup failures identify the failed level.
+Approval and delivery errors need the [retry rules](#delivery-states-and-retries), since a failure
+does not always mean that nothing ran.
 
-Foundry DataModel validation failures surface as parameter errors and are distinguished in details
-where available. A failed nested lookup identifies the level that failed.
-
-`UNSUPPORTED_PROTOCOL_VERSION` details carry `expectedVersion`, `actualVersion`, the rejecting
-`handshake`, and `staleComponent`. The component is `module`, `cli-daemon`, or `unknown`. Consumers
-can name the component that needs an update when the comparison identifies it. An unordered version
-or unidentified peer produces `unknown`.
-
-With JSON output, a failed command emits one structured error envelope on stdout and exits
-non-zero. The exit code is a coarse process classification; the structured error code is the
-authoritative automation signal. `exec --stdin` reports per-line errors and uses its own aggregate
-exit status.
+`UNSUPPORTED_PROTOCOL_VERSION` details contain `expectedVersion`, `actualVersion`, `handshake`,
+and `staleComponent`. The last field identifies the older component as `module`, `cli-daemon`,
+or `unknown` when the peer or version ordering cannot be established.
 
 ## Approval flow
 
-A GM client's command policy can require approval before a command runs. Approval is the GM's
-decision about one invocation. Pairing approval grants a browser credential, while confirmation
-checks a completed write. The active GM client's policy controls the invocation.
+A GM client's policy can hold an invocation for approval before dispatch. Pairing approval grants
+a browser credential; command approval permits an invocation; confirmation checks a completed write.
+See [Security](security.md#permissions-and-destructive-actions) for policy and review limits.
 
 The wait has two phases because the decision can outlast a normal request timeout:
 
@@ -292,14 +329,12 @@ The wait has two phases because the decision can outlast a normal request timeou
 - `APPROVAL_UNKNOWN` means the module no longer holds that approval. Reloading the GM client, ending
   its bridge session, or expiry can remove the state. The command may not have started, or it may have
   completed. Read world state before another write.
-- An approval decision covers exactly the content the GM was shown. For `macro.execute`, the module
-  captures the macro's body and type when the request is admitted, displays that captured content,
-  and re-reads the stored macro when the GM allows the execution. If the macro changed or was
-  deleted in the meantime, the approved outcome carries an `APPROVAL_STALE` error instead of a
-  command response, nothing executes, and no new approval is created. A drift refusal names the
-  `macroId` and the `drifted` fields in its details; an approval the module holds no captured
-  content for is refused with the same code and names only the `command`. A fresh `macro.execute`
-  request opens a new approval showing the current content.
+- For `macro.execute`, approval binds the body and type captured at admission. Drift or a missing
+  capture prevents execution and returns `APPROVAL_STALE` in the approved outcome's `response`.
+  Drift details include `macroId`, `requestedMacroId`, and `drifted`, which names `body`, `type`,
+  `existence`, or `identity`. A missing capture returns details with `command` instead. Read the
+  current macro before a fresh request, using a new idempotency key because the refusal can be
+  cached. No new approval is created automatically.
 - A dry run bypasses approval and reports `approvalRequired: true` when the real command would wait.
   The policy still refuses denied commands during a dry run.
 - `policy.snapshot` reports `{ approve: [names], deny: [names] }`. The result is advisory because the
@@ -309,25 +344,6 @@ The module supplies each opaque `approvalId`; callers do not construct one. Appr
 are closed. `approval.await`, `approval.cancel`, and `policy.snapshot` do not appear in `commands`,
 `system.info` command inventory, or bridge status. `schema <command>` still returns their schemas.
 The bridge handshake advertises them because the daemon must forward them.
-
-An idempotency key covers the request and its approval:
-
-- After `APPROVAL_PENDING`, the daemon links the key to that approval. A byte-identical retry returns
-  the same pending response. A different request with that key returns
-  `IDEMPOTENCY_KEY_CONFLICT`.
-- An approved outcome becomes the cached final response. A denial, timeout, or confirmed
-  cancellation removes the link, so the same request can start a new approval.
-- If the daemon cannot read the approval outcome, the key remains indeterminate and returns
-  `APPROVAL_UNKNOWN` until expiry. Read world state before retrying under a fresh key.
-- If a bridge session ends before the daemon receives the first response, the daemon retains the key
-  as lost in flight. Reuse returns `BRIDGE_DISCONNECTED` with `reason: "lost-in-flight"`. Read world
-  state, then use a fresh key if the operation still needs to run.
-- The daemon reserves bounded space before forwarding a keyed request. If no slot is available, it
-  returns `IDEMPOTENCY_STORE_FULL` before Foundry receives the request. Retry after earlier keys
-  settle or expire.
-- Daemon restart, world switch, pairing switch, and expiry clear runtime idempotency state. A later
-  request can reach Foundry as a new operation, so an indeterminate result still requires a state
-  read first.
 
 ## Delivery states and retries
 
@@ -343,23 +359,12 @@ Retry safety is a function of whether the request reached Foundry:
 | `COMMAND_DENIED` | Refused before dispatch | Not executed; the command is unavailable on that GM client |
 | `APPROVAL_DENIED`, `APPROVAL_TIMEOUT`, `APPROVAL_CANCELLED` | Reached Foundry, never dispatched | Not executed; the same request is safe to send again |
 | `APPROVAL_QUEUE_FULL` | Refused before admission | Not executed; safe to retry when the waiting decisions clear |
-| `APPROVAL_STALE` | Allowed, refused before dispatch | Not executed; the same request is safe to send again and opens a new approval |
+| `APPROVAL_STALE` | Allowed, refused before dispatch | Not executed; read the macro and request fresh approval with a new idempotency key if using one |
 | `IDEMPOTENCY_STORE_FULL` | No | Not executed; safe to retry when earlier keys settle or expire |
 | `APPROVAL_UNKNOWN` | Unknown | May have committed; inspect state, then re-request under a fresh idempotency key |
+| Update error with `partial` or `indeterminate` details | Yes | Read stored state; send only remaining changes as a new operation |
 | Structured command rejection | Resolved with an error | Correct according to the code |
 
 The distinction between connection-phase and response-wait failures is carried in structured error
 details. Default waits, forward timeouts, heartbeats, and backoff bounds are defined in the
 protocol and CLI constants; runtime flags can override the client and daemon request timeouts.
-
-## Compatibility rules
-
-- One release ships the CLI, daemon, and Foundry module as a compatible set. They share that release's
-  version. The bridge refuses mixed-release operation and does not negotiate a subset.
-- Within a release line, additive result and handshake fields are how the contract evolves without
-  changing the meaning of existing fields; request schemas remain explicit and versioned.
-- A bridge advertises the command set it can execute; the daemon forwards only advertised commands.
-- Unsupported version-dependent behavior produces a predictable error rather than a false success.
-
-Foundry-version behavior belongs in [Foundry compatibility](compatibility.md), while per-command
-request shape remains discoverable from the registry.

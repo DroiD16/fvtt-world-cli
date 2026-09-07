@@ -1,248 +1,92 @@
 # Architecture
 
-fvtt-world-cli is a monorepo containing a command-line client, a local daemon, a shared protocol,
-and a Foundry module. The components share contracts but have distinct runtime responsibilities.
+The `fvtt-world-cli` monorepo contains a CLI, a local daemon, a shared protocol, and a Foundry
+module. Keeping them together lets their contracts change in one release.
 
 ## Runtime roles
 
-### CLI
+| Component | Owns |
+|---|---|
+| `packages/cli` | Command parsing, local configuration and validation, transport, discovery, and output |
+| Daemon, within `packages/cli` | Loopback listener, authentication, pairings, the active bridge, request routing, timeouts, and idempotency coordination |
+| `packages/protocol` | Command registry, request and transport schemas, mutation classification, error codes, and shared constants |
+| `packages/foundry-module` | GM checks, command permissions and approval, document validation, capability adapters, execution, serialization, and write confirmation |
 
-`packages/cli` owns:
-
-- command parsing and help;
-- local configuration;
-- local request-schema validation;
-- WebSocket client transport;
-- JSON and human-readable output;
-- local discovery commands;
-- reading explicitly supplied operator files for upload or macro input.
-
-The CLI does not load Foundry or mutate world storage. It converts CLI flags into typed protocol
-requests and presents structured responses.
-
-### Daemon
-
-The daemon runs as part of the CLI package and owns:
-
-- the loopback WebSocket listener;
-- device-local client authentication and the persistent pairing registry;
-- the single active bridge session;
-- request correlation and forwarding;
-- forward timeouts and heartbeat state;
-- transport size limits;
-- runtime idempotency coordination and caching.
-
-The daemon does not interpret Foundry document payloads or provide world access without an active
-authenticated bridge.
-
-### Protocol package
-
-`packages/protocol` owns:
-
-- protocol and message constants;
-- command names and mutation classification;
-- request schemas;
-- stable error codes;
-- shared limits and enums;
-- envelope validation.
-
-The protocol registry is the source for runtime command discovery. Exhaustive command inventories are
-not copied into documentation.
-
-### Foundry module
-
-`packages/foundry-module` runs inside the logged-in Foundry GM client and owns:
-
-- second-boundary request validation;
-- GM permission checks;
-- the command-permission gate and the human approval loop it opens;
-- protected-metadata sanitization;
-- document lookup and serialization;
-- capability adaptation across supported Foundry versions;
-- mutation preparation and dry-run previews;
-- execution through Foundry Document APIs and reviewed typed actions;
-- observable write confirmation;
-- managed-file containment.
-
-The bridge checks command permissions after readiness, GM authority, parameter validation, and write
-permission. It checks them immediately before handler lookup. Direct commands and commands released
-by GM approval therefore use the same guards. The approved route skips only the permission gate for
-that invocation.
-
-The default permission profile is generated from one three-bucket rule in the protocol package,
-with deny taking precedence over approve over allow: an explicit list denies commands that can
-execute code, change who can do what, or persist outside the world's own data; destructive
-commands and listed exceptions require approval; everything else is allowed. Keeping the rule in
-the protocol package, next to the registry, means a new command cannot ship without a default
-behavior, and the generated profile is byte-pinned so the rule and its output cannot drift apart.
-
-The module ships plain browser-compatible JavaScript. Its generated protocol mirror is produced from
-the canonical protocol package.
+The daemon routes requests without interpreting Foundry document payloads. The module ships
+browser-compatible JavaScript with a generated mirror of the protocol package.
 
 ## Core assumption
 
 An authenticated GM client is open in the target world. The bridge acts through that client's
-Foundry runtime and authority. It is not a headless database editor and does not bypass Foundry's
-document lifecycle, validation, permissions, hooks, or installed system/module behavior.
+runtime and authority, using Foundry's document lifecycle, permissions, validation, and hooks.
+Installed systems and modules remain part of the execution environment.
 
 ## Request flow
 
 ```text
 CLI invocation
   -> parse flags and validate request schema
-  -> connect and authenticate to local daemon
-  -> correlate and forward to active bridge
+  -> authenticate to local daemon
+  -> forward to the active bridge
   -> validate, authorize, sanitize, and capability-check
-  -> resolve Foundry documents
   -> prepare preview or execute through a Foundry API
-  -> serialize observed result or structured error
-  -> relay response by request ID
-  -> render JSON or human output
+  -> confirm and serialize the result, or return a structured error
+  -> relay by request ID and render output
 ```
 
-The bridge advertises its supported commands during the handshake. The daemon forwards only commands
-advertised by the active session.
+The bridge advertises its commands during the handshake. The daemon forwards only advertised
+commands. A command that requires GM approval waits before execution and passes through the
+guards again after approval. The protocol registry supplies every command's default permission.
 
-A command that requires GM approval pauses before dispatch. The module keeps the invocation in
-memory and returns a pending approval. The CLI then requests the outcome through short polls keyed by
-the approval identifier. If the GM allows the command, the module runs the normal guard sequence
-again before dispatch.
+## Validation and command design
 
-## Validation boundaries
+CLI validation gives early feedback. The bridge repeats it because transport input is untrusted
+and only the live runtime can check Foundry capabilities and document state.
 
-The CLI validation pass provides fast feedback and avoids unnecessary connections. The bridge repeats
-validation because the transport input remains untrusted and because Foundry-side capability and
-document validation require the live runtime.
+Closed schemas enumerate writable fields. Open schemas allow system and module data but use
+shared sanitization before validation, preview, or execution. Foundry DataModels validate the
+system-specific and version-specific values.
 
-Closed protocol schemas define the complete accepted top-level field set for document families owned
-by the bridge. Open schemas preserve system/module extensibility but pass through shared sanitization
-before validation, diffing, preview, or dispatch.
-
-Foundry DataModels remain the final authority for system-specific and version-specific values.
-
-## Command architecture
-
-Commands are explicit typed handlers rather than a generic RPC. Related document families share
-preparation, guard, serialization, and bulk seams so their behavior does not diverge between create,
-update, clone, dry-run, and bulk routes.
-
-CRUD handlers operate through document methods. Action handlers call a fixed reviewed Foundry method
-and report only the result that can be observed or confirmed. Command-specific behavior is discovered
-from the registry and CLI schema surface.
+Each command has an explicit schema and handler. Document handlers call Foundry document methods;
+action handlers call a fixed, reviewed Foundry method. Related operations reuse preparation,
+guards, serialization, and bulk helpers so a preview or bulk write cannot bypass a single
+command's restrictions.
 
 ## Mutation model
 
-Mutations are serialized where family behavior requires ordering, but the bridge does not claim a
-global transaction. The Foundry UI, systems, modules, and other clients remain concurrent writers.
+A dry run performs the same preparation and guards as a real command, then stops before
+persistence. It reserves no state. The Foundry UI, systems, modules, and other clients remain
+concurrent writers, and bulk calls are not transactions.
 
-A dry run performs the same preparation and guards as a real command, then stops before persistence.
-Real commands confirm stored state where their contract depends on a write landing. Native Foundry
-batch calls can partially apply, so bulk results include per-element outcomes.
-
-A capability check asks whether the connected Foundry can perform an operation. Approval is the GM's
-decision to let one invocation run. Confirmation checks whether Foundry persisted a completed write.
-An approved command can still fail during execution or confirmation.
-
-Idempotency keys reduce duplicate effects across response loss while the relevant daemon/bridge cache
-entry exists. They do not create durable distributed transactions.
+Write handlers confirm stored state before reporting success, since Foundry can veto or modify a
+request without throwing. A valid no-op succeeds; a partial or unprovable write returns an error.
+[Write confirmation](protocol.md#write-confirmation) defines how the original request is preserved
+and compared with the result.
 
 ## Serialization
 
-Readers serialize authored source state from Foundry document sources. Derived runtime values are
-included only through explicit projections and are identified as derived.
+Reads return authored state from Foundry document sources. Derived runtime values require explicit
+projections and are identified as derived. Lists use smaller projections than single-document
+reads to keep collection responses bounded.
 
-List rows are lean discovery projections. Single-document reads expose richer authored projections.
-This keeps large collections bounded while allowing callers to inspect a target before mutation.
-
-Result shapes are intentionally narrower than arbitrary Foundry document models. Extensible writes
-can therefore accept valid system/module data that a curated read does not echo field-for-field.
-
-## Managed files
-
-File commands use Foundry's public managed-file APIs. Reads address the managed `data` source. Writes
-are contained to the active world's allowed asset tree and exclude the world manifest, databases,
-and packs.
-
-The bridge receives upload bytes over the local transport; it never resolves an operator-machine
-absolute path. File mutations and document-reference mutations remain separate explicit commands.
-
-See [Security](security.md#file-write-boundary) for the full boundary.
+Results expose selected fields, so an extensible write may accept system or module data that a
+read does not echo field-for-field.
 
 ## Session lifecycle
 
-The first bridge connection attempt occurs after Foundry is ready. Authentication or protocol
-rejection is terminal for that module load so a persistent configuration problem does not create a
-reconnect loop. A session that completed the handshake and later loses transport reconnects with
-bounded exponential backoff.
+The daemon routes commands through one active GM browser, which determines their world and
+permissions. Pairing and connection management use separate daemon controls so they remain
+available without that browser.
 
-The daemon persists multiple pairing profiles but routes through one active bridge. A profile is owned
-by one browser: its uniqueness key is Origin, world, GM, and the browser's own persistent client
-identifier, which is why the same person can keep two browsers paired to one world and GM and why
-re-pairing rotates only the re-pairing browser's credential. Making the browser the unit of ownership
-also makes the human label meaningful, so the label travels with the pairing request instead of being
-editable daemon-side metadata: it is fixed between pairing approvals, and an approval that reuses an
-existing record adopts the label that request carried. The design keeps slot ownership
-unambiguous. A socket receives its role only after completed authentication rather than from a
-claimed message type, and only a same-pairing socket can take over the slot, as the tab-reload
-recovery path. Intentional goodbye, release, and revocation clear ownership before close handling,
-while only an abnormal close creates a short reclaim lease. Daemon-initiated release is terminal
-for the released client, so reconnection remains an explicit operator action. Every way a
-pairing attempt can end shares one idempotent cleanup path, so the authorization UI cannot retain a
-stale pending state.
-
-While serving, the daemon owns authentication and connection configuration writes, and preserves a
-concurrently changed upload limit until a restart applies it to the transport. Daemon control
-operations for pairing, profiles, release, and client credential rotation form the future Companion
-boundary and remain separate from the Foundry command registry.
-
-One of those operations parks instead of answering at once: the wait for a pairing request holds its
-response until a request arrives or the daemon's own park cap elapses. That cap is what keeps a parked
-answer inside the caller's request timeout, so an unanswered wait ends in an empty result the CLI
-re-issues rather than in a transport failure; a cap at or above the client's wait would turn every
-unanswered wait into a transport failure.
-
-Approval waits use the same bounded polling pattern inside the Foundry module. The module answers the
-original request with a pending approval. Later polls wait within the transport timeout and ask again
-after an ordinary reconnect.
-
-Both halves of the wait use runtime state. The browser session holds the decision and retained
-outcome. The daemon links an idempotency key to the approval in its idempotency store. Neither half
-persists this state. Losing it produces an indeterminate result rather than an automatic retry.
-
-Normative handshake, takeover, lease, and release semantics are defined in
-[Protocol](protocol.md#bridge-sessions); the authentication guarantees and host validation rules are
-stated in [Security](security.md#authentication).
-
-### Client-side status signal
-
-The module's own UI needs to react to connection changes rather than read state once, so the bridge
-client publishes every status transition instead of assigning the field silently. The Foundry module
-re-emits those transitions as the `fvtt-world-cli.statusChanged` hook, which makes the same signal
-available to macros and other modules in the GM client. It is a client-side extension point only and
-carries no wire-protocol meaning; the daemon and the CLI neither send nor observe it.
-
-The hook fires once per actual change, on the client transport status or on the handshake
-acknowledgement, and receives the same snapshot that `system info` reports as `bridge`: `status`,
-`url`, `helloAcknowledged`, `hasEstablishedSession`, `lastConnectedAt`, `reconnectAttempts`,
-`terminalStopReason`, and `protocolVersionMismatch`. The last field is `null` unless the module
-refuses a handshake because the protocol versions differ. It then reports both versions and names
-the older component as `module`, `cli-daemon`, or `unknown`. The status window uses that value to
-show the required update. Readiness requires `status === "connected"` and `helloAcknowledged` because
-the socket opens before the daemon acknowledges the handshake. Losing the socket clears the
-acknowledgement before publishing the status change.
-`helloAcknowledged` stays in the snapshot for consumers that need the distinction; the module's own
-windows fold it into the connection state they display rather than showing it as its own field.
-
-Credential changes are not transitions of this hook. Pairing and unpairing refresh the module's own
-windows and toolbar indicator through an internal signal, since the connection state itself has not
-changed at that moment.
+The browser owns command approvals; the daemon owns request routing and idempotency coordination.
+Both keep temporary state. [Protocol](protocol.md#bridge-sessions) defines ownership, reconnects,
+and failure handling, plus the module's [local status hook](protocol.md#client-side-status-signal).
 
 ## Compatibility strategy
 
-The bridge supports the designated Foundry major versions through narrow capability adapters and
-explicit guards. It refuses a version-dependent request when it cannot provide the documented result
-honestly.
+Narrow adapters handle differences between supported Foundry versions. Unsupported operations
+return `UNSUPPORTED_OPERATION`. The CLI, daemon, and module must share the same release version.
 
-Mocks verify contracts and edge cases but cannot establish real Foundry compatibility. The live smoke
-workflow is the authority for executed coverage. Current operator-visible differences are summarized
-in [Foundry compatibility](compatibility.md).
+Mocks check contracts and edge cases. Only the [live smoke workflow](../scripts/live-smoke.mjs)
+establishes which operations were exercised against Foundry. See
+[Foundry compatibility](compatibility.md) for differences users need to act on.
