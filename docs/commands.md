@@ -97,6 +97,22 @@ Ctrl+C requests cancellation. Only `APPROVAL_CANCELLED` proves it succeeded. If 
 started or cancellation cannot be confirmed, inspect world state before retrying.
 [Protocol](protocol.md#delivery-states-and-retries) lists the outcomes and safe next actions.
 
+#### Commands that are off by default
+
+These commands ship with the deny behavior: hidden from discovery and refused, even as dry runs,
+until a GM enables them in the Command permissions window. Each one executes code, changes who can
+do what, or persists outside the world's own data. Approve is the middle ground: a GM who wants to
+review every macro body before it runs sets `macro.execute` to approve rather than allow.
+
+- `macro.execute`
+- `setting.set`
+- `setting.set-many`
+- `user.role.set`
+- `user.permissions.set`
+- `scene.region.behavior.executable.create`
+- `scene.region.behavior.executable.update`
+- `scene.region.behavior.executable.clone`
+
 ### JSON output
 
 Use `--json` for automation. World commands return `ok: true` with `result`, or `ok: false` with
