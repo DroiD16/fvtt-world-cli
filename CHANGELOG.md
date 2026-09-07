@@ -2,6 +2,13 @@
 
 All notable user-visible changes to fvtt-world-cli will be recorded in this file.
 
+## [1.1.2] - 2026-09-07
+
+- Improved result reporting for partially successful changes.
+- Fixed incorrect updates of single list elements.
+- Fixed macro execution approval: a macro changed after approval no longer runs.
+- Documentation was updated for readability.
+
 ## [1.1.1] - 2026-09-02
 
 - Skill updates work again. The refresh used to run from an npm install script, and npm
