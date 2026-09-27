@@ -1661,14 +1661,14 @@ describe("protocol contract", () => {
       });
 
       expect(
-        getProtocolVersionError("1.2.0", {
+        getProtocolVersionError(HIGHER_VERSION, {
           peer: CLI_DAEMON,
           reporter: MODULE,
           handshake: PROTOCOL_HANDSHAKES.COMMAND_REQUEST
         }).details
       ).toEqual({
         expectedVersion: PROTOCOL_VERSION,
-        actualVersion: "1.2.0",
+        actualVersion: HIGHER_VERSION,
         staleComponent: MODULE,
         handshake: "command-request"
       });
