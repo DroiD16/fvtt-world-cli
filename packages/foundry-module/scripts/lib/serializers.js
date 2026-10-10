@@ -1076,11 +1076,11 @@ export function serializeAppliedEffectSummary(effect) {
 }
 
 function actorItems(actor, data) {
-  if (actor.items) {
-    return Array.from(actor.items);
+  if (Array.isArray(data.items)) {
+    return data.items;
   }
 
-  return Array.isArray(data.items) ? data.items : [];
+  return actor.items ? Array.from(actor.items) : [];
 }
 
 function itemEffects(item, data) {

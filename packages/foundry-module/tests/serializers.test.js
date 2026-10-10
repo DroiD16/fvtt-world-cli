@@ -1682,6 +1682,50 @@ describe("serializeActor", () => {
     expect("items" in result).toBe(false);
   });
 
+  it("counts and returns stored items that Foundry left out of the collection for failing validation", () => {
+    const storedEffects = [
+      { _id: "ieffect-1", name: "Flaming", changes: [], system: {}, flags: {} },
+      { _id: "ieffect-2", name: "Broken", type: "unregistered", changes: [], system: {}, flags: {} }
+    ];
+    const storedItems = [
+      { _id: "item-1", name: "Sword", type: "weapon", system: {}, flags: {}, effects: storedEffects },
+      { _id: "item-2", name: "Relic", type: "unregistered", system: {}, flags: {}, effects: [] }
+    ];
+    const initializedSword = {
+      id: "item-1",
+      name: "Sword",
+      type: "weapon",
+      effects: [storedEffects[0]],
+      toObject: () => structuredClone(storedItems[0])
+    };
+    const actor = {
+      id: "actor-1",
+      name: "Valeros",
+      type: "character",
+      items: [initializedSword],
+      effects: [],
+      toObject: () => ({
+        _id: "actor-1",
+        name: "Valeros",
+        type: "character",
+        system: {},
+        items: structuredClone(storedItems)
+      })
+    };
+
+    const collapsed = serializeActor(actor);
+    expect(collapsed.itemCount).toBe(2);
+    expect("items" in collapsed).toBe(false);
+
+    const included = serializeActor(actor, { include: ["items", "items.effects"] });
+    expect(included.itemCount).toBe(included.items.length);
+    expect(included.items.map((item) => item.id)).toEqual(["item-1", "item-2"]);
+    expect(included.items[0].effectCount).toBe(2);
+    expect(included.items[0].effects.map((effect) => effect.id)).toEqual(["ieffect-1", "ieffect-2"]);
+
+    expect(serializeActorSummary(actor).itemCount).toBe(2);
+  });
+
   it("appends a derived prepared subtree only with include:['prepared']", () => {
     const actor = {
       id: "actor-1",
