@@ -112,26 +112,24 @@ export function parseCsvList(value: string, label: string) {
   return items;
 }
 
-const INCLUDE_ALLOWED = ["flags", "effects"] as const;
-
-export function parseIncludeFields(value: string) {
+function parseAllowedIncludeFields(value: string, allowed: readonly string[]) {
   const fields = value
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
   if (fields.length === 0) {
-    throw new InvalidArgumentError(
-      `--include must name at least one field (allowed: ${INCLUDE_ALLOWED.join(", ")})`
-    );
+    throw new InvalidArgumentError(`--include must name at least one field (allowed: ${allowed.join(", ")})`);
   }
   for (const field of fields) {
-    if (!INCLUDE_ALLOWED.includes(field as (typeof INCLUDE_ALLOWED)[number])) {
-      throw new InvalidArgumentError(
-        `--include only supports ${INCLUDE_ALLOWED.join(", ")}, received ${field}`
-      );
+    if (!allowed.includes(field)) {
+      throw new InvalidArgumentError(`--include only supports ${allowed.join(", ")}, received ${field}`);
     }
   }
   return fields;
+}
+
+export function parseIncludeFields(value: string) {
+  return parseAllowedIncludeFields(value, ["flags", "effects"]);
 }
 
 const OWNERSHIP_LEVELS = [-1, 0, 1, 2, 3];
@@ -260,70 +258,16 @@ export function parseWhisperIds(value: string) {
   return ids;
 }
 
-const ACTOR_INCLUDE_ALLOWED = ["flags", "effects", "items.flags", "items.effects", "prepared"] as const;
-
 export function parseActorIncludeFields(value: string) {
-  const fields = value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-  if (fields.length === 0) {
-    throw new InvalidArgumentError(
-      `--include must name at least one field (allowed: ${ACTOR_INCLUDE_ALLOWED.join(", ")})`
-    );
-  }
-  for (const field of fields) {
-    if (!ACTOR_INCLUDE_ALLOWED.includes(field as (typeof ACTOR_INCLUDE_ALLOWED)[number])) {
-      throw new InvalidArgumentError(
-        `--include only supports ${ACTOR_INCLUDE_ALLOWED.join(", ")}, received ${field}`
-      );
-    }
-  }
-  return fields;
+  return parseAllowedIncludeFields(value, ["flags", "effects", "items.flags", "items.effects", "prepared"]);
 }
-
-const TOKEN_INCLUDE_ALLOWED = ["prepared"] as const;
 
 export function parseTokenIncludeFields(value: string) {
-  const fields = value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-  if (fields.length === 0) {
-    throw new InvalidArgumentError(
-      `--include must name at least one field (allowed: ${TOKEN_INCLUDE_ALLOWED.join(", ")})`
-    );
-  }
-  for (const field of fields) {
-    if (!TOKEN_INCLUDE_ALLOWED.includes(field as (typeof TOKEN_INCLUDE_ALLOWED)[number])) {
-      throw new InvalidArgumentError(
-        `--include only supports ${TOKEN_INCLUDE_ALLOWED.join(", ")}, received ${field}`
-      );
-    }
-  }
-  return fields;
+  return parseAllowedIncludeFields(value, ["prepared"]);
 }
 
-const COMPENDIUM_INCLUDE_ALLOWED = ["effects"] as const;
-
 export function parseCompendiumIncludeFields(value: string) {
-  const fields = value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-  if (fields.length === 0) {
-    throw new InvalidArgumentError(
-      `--include must name at least one field (allowed: ${COMPENDIUM_INCLUDE_ALLOWED.join(", ")})`
-    );
-  }
-  for (const field of fields) {
-    if (!COMPENDIUM_INCLUDE_ALLOWED.includes(field as (typeof COMPENDIUM_INCLUDE_ALLOWED)[number])) {
-      throw new InvalidArgumentError(
-        `--include only supports ${COMPENDIUM_INCLUDE_ALLOWED.join(", ")}, received ${field}`
-      );
-    }
-  }
-  return fields;
+  return parseAllowedIncludeFields(value, ["effects"]);
 }
 
 export function parseCompendiumFieldsList(value: string): string[] {
