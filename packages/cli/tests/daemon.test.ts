@@ -1078,6 +1078,27 @@ describe("authorization daemon", () => {
     expect(reported).not.toContain("policy.snapshot");
   });
 
+  it("prints the bridge session's command inventory from auth status --json", async () => {
+    const credential = "b".repeat(43);
+    const config = createEmptyConfig();
+    addPairing(config, { pairingId: "pair-1", credential });
+    const daemonUrl = `ws://127.0.0.1:${await freePort()}`;
+    const daemon = createBridgeDaemon({ daemonUrl, config, logger: pino({ level: "silent" }) });
+    daemons.push(daemon);
+    await daemon.start();
+    await connectBridge(daemon, { pairingId: "pair-1", credential, commands: [...COMMAND_NAMES] });
+
+    const run = await runAuthCli({ daemonUrl, config }, ["--json", "auth", "status"]);
+
+    expect(run.error).toBeNull();
+    const envelope = JSON.parse(run.output) as {
+      ok: boolean;
+      result: { bridge: { connected: boolean; session: { commands: string[] } } };
+    };
+    expect(envelope).toMatchObject({ ok: true, result: { bridge: { connected: true } } });
+    expect(envelope.result.bridge.session.commands).toEqual([...DISCOVERABLE_COMMAND_NAMES]);
+  });
+
   it("refuses a command the bridge session does not advertise and points at the advertised inventory", async () => {
     const credential = "b".repeat(43);
     const config = createEmptyConfig();

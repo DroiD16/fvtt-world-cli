@@ -13866,36 +13866,25 @@ async function main() {
     const isV14 = typeof foundryGeneration === "number" && foundryGeneration >= 14;
     summary.environment.foundryGeneration = foundryGeneration;
 
-    policyHarness = await preparePolicyHarness(summary, options, policyCoverage);
-    if (!policyHarness.ready) {
-      return { options, summary };
-    }
-
-    const registryRun = runFoundryctl(["commands"]);
-    const inventory = compareCommandInventory(
-      (Array.isArray(registryRun.response?.result) ? registryRun.response.result : []).map(
-        (entry) => entry?.command
-      )
-    );
-    const hiddenOutsideDefaultDeny = inventory.missing.filter(
-      (command) => defaultProfile(command) !== "deny"
-    );
+    const authStatusRun = runFoundryctl(["auth", "status"]);
+    const inventory = compareCommandInventory(authStatusRun.response?.result?.bridge?.session?.commands);
     markAndPush(
       summary,
-      "commands(discoverable registry under the bridge policy)",
-      registryRun.response?.ok === true &&
-        registryRun.response?.policy?.applied === true &&
-        inventory.unexpected.length === 0 &&
-        (options.gmControlUrl ? inventory.missing.length === 0 : hiddenOutsideDefaultDeny.length === 0),
+      "auth.status(bridge session advertises the discoverable registry)",
+      isCommandSuccess(authStatusRun) && inventory.passed,
       {
-        ...summarizeCommand(registryRun),
-        policy: registryRun.response?.policy || null,
+        ...summarizeCommand(authStatusRun),
         expectedCount: inventory.expected.length,
         actualCount: inventory.actual.length,
         missing: inventory.missing,
         unexpected: inventory.unexpected
       }
     );
+
+    policyHarness = await preparePolicyHarness(summary, options, policyCoverage);
+    if (!policyHarness.ready) {
+      return { options, summary };
+    }
 
     const actorFixtureOk = typeof options.actorId === "string" && options.actorId.length > 0;
     markAndPush(summary, "actor.fixture", actorFixtureOk, {
