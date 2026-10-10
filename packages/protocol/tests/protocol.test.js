@@ -6514,6 +6514,7 @@ describe("protocol contract", () => {
     const ACTOR_INCLUDE_ENUM = Object.freeze([
       "flags",
       "effects",
+      "items",
       "items.flags",
       "items.effects",
       "prepared"
@@ -6553,7 +6554,9 @@ describe("protocol contract", () => {
       }
     });
 
-    it("accepts the scoped-nested items.* values ONLY on actor.get; item-level reads reject them", () => {
+    it("accepts items and the scoped-nested items.* values ONLY on actor reads; item-level reads reject them", () => {
+      expectValid("actor.get", { actorId: "actor-1", include: ["items"] });
+      expectValid("actor.get-many", { ids: ["actor-1"], include: ["items"] });
       expectValid("actor.get", { actorId: "actor-1", include: ["items.flags"] });
       expectValid("actor.get", { actorId: "actor-1", include: ["items.effects"] });
       expectValid("actor.get", {
@@ -6578,6 +6581,7 @@ describe("protocol contract", () => {
           { ...base, include: ["items.flags"] },
           "$.params.include[0] must be one of flags"
         );
+        expectRejected(command, { ...base, include: ["items"] }, "$.params.include[0] must be one of flags");
       }
     });
 
@@ -6678,7 +6682,10 @@ describe("protocol contract", () => {
     it("carries include on actor/item get-many but NOT on journal/scene/macro/playlist/table get-many", () => {
       expect(COMMAND_DEFINITIONS["actor.get-many"].paramsSchema.properties.include).toEqual({
         type: "array",
-        items: { type: "string", enum: ["flags", "effects", "items.flags", "items.effects", "prepared"] }
+        items: {
+          type: "string",
+          enum: ["flags", "effects", "items", "items.flags", "items.effects", "prepared"]
+        }
       });
       expect(COMMAND_DEFINITIONS["item.get-many"].paramsSchema.properties.include).toEqual({
         type: "array",

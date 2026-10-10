@@ -321,7 +321,7 @@ var includeProperty = {
 var actorIncludeProperty = {
   include: {
     type: "array",
-    items: { type: "string", enum: ["flags", "effects", "items.flags", "items.effects", "prepared"] }
+    items: { type: "string", enum: ["flags", "effects", "items", "items.flags", "items.effects", "prepared"] }
   }
 };
 var batchIdsProperty = {

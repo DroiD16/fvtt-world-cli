@@ -2838,13 +2838,13 @@ command actor get
   aliases=[]
   summary=
   opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Actor id
-  opt --include <fields> | parser=parseActorIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (items.flags, items.effects, prepared add output; flags/effects are always present, so those two have no effect)
+  opt --include <fields> | parser=parseActorIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds derived data; flags/effects are always present, so those two have no effect)
 
 command actor get-many
   aliases=[]
   summary=
   opt --ids <list> | parser=parseIdList | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Comma-separated actor ids (atomic: all must exist)
-  opt --include <fields> | parser=parseActorIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (items.flags, items.effects, prepared add output; flags/effects are always present, so those two have no effect)
+  opt --include <fields> | parser=parseActorIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds derived data; flags/effects are always present, so those two have no effect)
 
 command actor create
   aliases=[]

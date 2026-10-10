@@ -1547,11 +1547,14 @@ export function serializeRegionSummary(region) {
 export function serializeActor(actor, { include, ownership = false } = {}) {
   const data = documentData(actor);
 
-  const withPrepared = Array.isArray(include) && include.includes("prepared");
+  const requested = Array.isArray(include) ? include : [];
+  const withPrepared = requested.includes("prepared");
 
   const nestedInclude = [];
-  if (Array.isArray(include) && include.includes("items.flags")) nestedInclude.push("flags");
-  if (Array.isArray(include) && include.includes("items.effects")) nestedInclude.push("effects");
+  if (requested.includes("items.flags")) nestedInclude.push("flags");
+  if (requested.includes("items.effects")) nestedInclude.push("effects");
+  const withItems = requested.includes("items") || nestedInclude.length > 0;
+  const items = actorItems(actor, data);
   return {
     ...identityFields(actor, data),
     name: worldDocumentName(actor, data),
@@ -1565,9 +1568,10 @@ export function serializeActor(actor, { include, ownership = false } = {}) {
 
     compendiumSource: compendiumSourceField(data),
 
-    items: actorItems(actor, data).map((item) =>
-      serializeItem(item, { include: nestedInclude, nested: true })
-    ),
+    itemCount: items.length,
+    ...(withItems
+      ? { items: items.map((item) => serializeItem(item, { include: nestedInclude, nested: true })) }
+      : {}),
 
     flags: cloneValue(data.flags ?? {}),
     effects: actorEffects(actor, data).map(serializeActiveEffect),

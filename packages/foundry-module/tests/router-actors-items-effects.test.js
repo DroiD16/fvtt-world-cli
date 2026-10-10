@@ -327,9 +327,15 @@ describe("command router", () => {
 
     const getResponse = await router.route(createRequest("actor.get", { actorId: "actor-1" }));
     expect(getResponse.ok).toBe(true);
-    expect(getResponse.result.actor.items).toHaveLength(1);
+    expect(getResponse.result.actor.itemCount).toBe(1);
+    expect(getResponse.result.actor).not.toHaveProperty("items");
 
-    expect(getResponse.result.actor.items[0].system).toEqual({ armor: 2 });
+    const withItems = await router.route(
+      createRequest("actor.get", { actorId: "actor-1", include: ["items"] })
+    );
+    expect(withItems.ok).toBe(true);
+    expect(withItems.result.actor.items).toHaveLength(1);
+    expect(withItems.result.actor.items[0].system).toEqual({ armor: 2 });
 
     const createResponse = await router.route(
       createRequest("actor.create", { data: { name: "Goblin", type: "npc" } })
@@ -343,6 +349,8 @@ describe("command router", () => {
     );
     expect(updateResponse.ok).toBe(true);
     expect(updateResponse.result.actor.name).toBe("Valeros the Bold");
+    expect(updateResponse.result.actor.itemCount).toBe(1);
+    expect(updateResponse.result.actor).not.toHaveProperty("items");
 
     const cloneResponse = await router.route(
       createRequest("actor.clone", { actorId: "actor-1", patch: { name: "Valeros Copy" } })
@@ -350,6 +358,23 @@ describe("command router", () => {
     expect(cloneResponse.ok).toBe(true);
     expect(cloneResponse.result.actor.id).toBe("actor-1-clone");
     expect(cloneResponse.result.actor.name).toBe("Valeros Copy");
+    expect(cloneResponse.result.actor.itemCount).toBe(1);
+    expect(cloneResponse.result.actor).not.toHaveProperty("items");
+  });
+
+  it("returns the full items of each actor from actor.get-many only when items are included", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+
+    const lean = await router.route(createRequest("actor.get-many", { ids: ["actor-1"] }));
+    expect(lean.ok).toBe(true);
+    expect(lean.result.actors[0].itemCount).toBe(1);
+    expect(lean.result.actors[0]).not.toHaveProperty("items");
+
+    const full = await router.route(
+      createRequest("actor.get-many", { ids: ["actor-1"], include: ["items"] })
+    );
+    expect(full.ok).toBe(true);
+    expect(full.result.actors[0].items).toHaveLength(1);
   });
 
   it("guards actor.delete when the actor is referenced by tokens", async () => {
@@ -499,10 +524,10 @@ describe("command router", () => {
       expect(Array.isArray(get.result.item.effects)).toBe(true);
     });
 
-    it("actor.get ALWAYS returns the actor's own flags + effects; nested items stay lean with effectCount", async () => {
+    it("actor.get ALWAYS returns the actor's own flags + effects; included items stay lean with effectCount", async () => {
       const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
-      const get = await router.route(createRequest("actor.get", { actorId: "actor-1" }));
+      const get = await router.route(createRequest("actor.get", { actorId: "actor-1", include: ["items"] }));
       expect(get.ok).toBe(true);
       expect(get.result.actor.flags).toEqual({ ActiveAuras: { radius: 10 } });
       expect(Array.isArray(get.result.actor.effects)).toBe(true);

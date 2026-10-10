@@ -85,7 +85,7 @@ export function addReservedIncludeOption(
 export function addActorIncludeOption(command: Command): Command {
   return command.option(
     "--include <fields>",
-    "Comma-separated extra fields (items.flags, items.effects, prepared add output; flags/effects are always present, so those two have no effect)",
+    "Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds derived data; flags/effects are always present, so those two have no effect)",
     parseActorIncludeFields
   );
 }

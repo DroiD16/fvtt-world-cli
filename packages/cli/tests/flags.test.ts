@@ -298,6 +298,16 @@ describe("fvtt-world-cli commands", () => {
       ],
 
       [
+        ["actor", "get", "--actor-id", "actor-1", "--include", "items"],
+        "actor.get",
+        { actorId: "actor-1", include: ["items"] }
+      ],
+      [
+        ["actor", "get-many", "--ids", "actor-1", "--include", "items"],
+        "actor.get-many",
+        { ids: ["actor-1"], include: ["items"] }
+      ],
+      [
         ["actor", "get", "--actor-id", "actor-1", "--include", "items.flags,items.effects"],
         "actor.get",
         { actorId: "actor-1", include: ["items.flags", "items.effects"] }
@@ -678,6 +688,32 @@ describe("fvtt-world-cli commands", () => {
 
       expect(withoutFlags.error).toBeNull();
       expect(withoutFlags.stdout).not.toContain("flags:");
+    });
+
+    it("renders the actor's item count when the result carries itemCount instead of items", async () => {
+      const result = await runCommand(
+        ["actor", "get", "--actor-id", "actor-1"],
+        vi.fn(async () => ({
+          protocolVersion: "1.0",
+          type: "command.response",
+          id: "req-1",
+          ok: true,
+          result: {
+            actor: {
+              id: "actor-1",
+              name: "Valeros",
+              type: "character",
+              system: {},
+              prototypeToken: null,
+              itemCount: 56
+            }
+          }
+        }))
+      );
+
+      expect(result.error).toBeNull();
+      expect(result.stdout).toContain("items: 56");
+      expect(result.stdout).not.toContain("item: ");
     });
 
     it("renders the actor's own flags line only when present, never for the embedded items", async () => {

@@ -1447,7 +1447,7 @@ describe("serializeActor", () => {
       }
     };
 
-    const result = serializeActor(actor);
+    const result = serializeActor(actor, { include: ["items"] });
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0].system).toEqual({ damage: "1d8" });
@@ -1510,7 +1510,7 @@ describe("serializeActor", () => {
       }
     };
 
-    const result = serializeActor(actor);
+    const result = serializeActor(actor, { include: ["items"] });
 
     expect(result.flags).toEqual({ ActiveAuras: { radius: 10 } });
 
@@ -1561,7 +1561,7 @@ describe("serializeActor", () => {
       }
     };
 
-    const result = serializeActor(actor);
+    const result = serializeActor(actor, { include: ["items"] });
 
     expect(result.effects).toHaveLength(1);
     expect(result.effects[0].name).toBe("Rage");
@@ -1650,11 +1650,36 @@ describe("serializeActor", () => {
     assertStructuredCloneable(result);
   });
 
-  it("leaves nested items on the default projection when no include is given", () => {
+  it("collapses embedded items to itemCount when no include is given", () => {
     const result = serializeActor(buildNestedActor());
+    expect(result.itemCount).toBe(1);
+    expect("items" in result).toBe(false);
+    expect(result.flags).toEqual({ ActiveAuras: { radius: 10 } });
+    expect(result.effects).toHaveLength(1);
+    assertStructuredCloneable(result);
+  });
+
+  it("returns embedded items on the default nested projection with include:['items']", () => {
+    const result = serializeActor(buildNestedActor(), { include: ["items"] });
+    expect(result.itemCount).toBe(1);
     expect(result.items).toHaveLength(1);
     expect("flags" in result.items[0]).toBe(false);
     expect("effects" in result.items[0]).toBe(false);
+    expect(result.items[0].effectCount).toBe(1);
+  });
+
+  it("returns embedded items when only items.flags or items.effects is requested", () => {
+    for (const include of [["items.flags"], ["items.effects"]]) {
+      const result = serializeActor(buildNestedActor(), { include });
+      expect(result.itemCount, include.join()).toBe(1);
+      expect(result.items, include.join()).toHaveLength(1);
+    }
+  });
+
+  it("keeps items collapsed when only the actor's own flags and effects are requested", () => {
+    const result = serializeActor(buildNestedActor(), { include: ["flags", "effects"] });
+    expect(result.itemCount).toBe(1);
+    expect("items" in result).toBe(false);
   });
 
   it("appends a derived prepared subtree only with include:['prepared']", () => {
@@ -4471,16 +4496,19 @@ describe("compendiumSource", () => {
       "a family carries compendiumSource on its FULL projection with no lean-row assertion: add it to LEAN"
     ).toEqual(FULL.map(([name]) => name).sort());
 
-    const actor = serializeActor({
-      id: "a1",
-      toObject: () => ({
-        _id: "a1",
-        name: "A",
-        type: "npc",
-        effects: [],
-        items: [{ _id: "i1", name: "I", type: "loot", effects: [], _stats: { compendiumSource: UUID } }]
-      })
-    });
+    const actor = serializeActor(
+      {
+        id: "a1",
+        toObject: () => ({
+          _id: "a1",
+          name: "A",
+          type: "npc",
+          effects: [],
+          items: [{ _id: "i1", name: "I", type: "loot", effects: [], _stats: { compendiumSource: UUID } }]
+        })
+      },
+      { include: ["items"] }
+    );
     expect(actor.compendiumSource).toBeNull();
     expect(Object.hasOwn(actor.items[0], "compendiumSource")).toBe(false);
   });

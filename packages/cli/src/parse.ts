@@ -259,7 +259,14 @@ export function parseWhisperIds(value: string) {
 }
 
 export function parseActorIncludeFields(value: string) {
-  return parseAllowedIncludeFields(value, ["flags", "effects", "items.flags", "items.effects", "prepared"]);
+  return parseAllowedIncludeFields(value, [
+    "flags",
+    "effects",
+    "items",
+    "items.flags",
+    "items.effects",
+    "prepared"
+  ]);
 }
 
 export function parseTokenIncludeFields(value: string) {
