@@ -198,7 +198,7 @@ export class BridgeSessionStore {
         ok: false,
         error: createProtocolError({
           code: ERROR_CODES.UNKNOWN_COMMAND,
-          message: `Bridge session does not advertise support for ${request.command}; details.supportedCommands lists the commands the connected bridge advertised, which \`fvtt-world-cli auth status\` also reports; the Foundry module may be older than this CLI, or the GM page may need a reload`,
+          message: `Bridge session does not advertise support for ${request.command}; details.supportedCommands lists the commands the connected bridge advertised, and \`fvtt-world-cli auth status\` reports them without the internal approval and policy commands; the Foundry module may be older than this CLI, or the GM page may need a reload`,
           details: {
             command: request.command,
             supportedCommands: this.activeSession.commands
