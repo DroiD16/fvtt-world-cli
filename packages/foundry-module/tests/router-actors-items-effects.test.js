@@ -362,6 +362,22 @@ describe("command router", () => {
     expect(cloneResponse.result.actor).not.toHaveProperty("items");
   });
 
+  it.each([
+    ["actor.ownership.set", { actorId: "actor-1", default: 2 }, 1],
+    ["actor.ownership.set", { actorId: "actor-1", default: 2, dryRun: true }, 1],
+    ["actor.update", { actorId: "actor-1", patch: { name: "Preview" }, dryRun: true }, 1],
+    ["actor.clone", { actorId: "actor-1", dryRun: true }, 1],
+    ["actor.import-from-compendium", { pack: "world.test-monsters", entryId: "arch1", dryRun: true }, 2]
+  ])("returns the actor from %s %j with itemCount and without items", async (command, params, itemCount) => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+
+    const response = await router.route(createRequest(command, params));
+
+    expect(response.ok).toBe(true);
+    expect(response.result.actor.itemCount).toBe(itemCount);
+    expect(response.result.actor).not.toHaveProperty("items");
+  });
+
   it("returns the full items of each actor from actor.get-many only when items are included", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
