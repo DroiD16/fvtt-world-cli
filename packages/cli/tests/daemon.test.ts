@@ -1078,6 +1078,43 @@ describe("authorization daemon", () => {
     expect(reported).not.toContain("policy.snapshot");
   });
 
+  it("refuses a command the bridge session does not advertise and points at the advertised inventory", async () => {
+    const credential = "b".repeat(43);
+    const config = createEmptyConfig();
+    addPairing(config, { pairingId: "pair-1", credential });
+    const daemon = createBridgeDaemon({
+      daemonUrl: `ws://127.0.0.1:${await freePort()}`,
+      config,
+      logger: pino({ level: "silent" })
+    });
+    daemons.push(daemon);
+    await daemon.start();
+    const advertised = COMMAND_NAMES.filter((name) => name !== "actor.get");
+    await connectBridge(daemon, { pairingId: "pair-1", credential, commands: advertised });
+    const cli = await connectCli(daemon, config.deviceCredential);
+
+    const response = next(cli);
+    cli.send(
+      JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_REQUEST,
+        id: "unadvertised-1",
+        command: "actor.get",
+        params: { actorId: "a1" }
+      })
+    );
+
+    expect(await response).toMatchObject({
+      id: "unadvertised-1",
+      ok: false,
+      error: {
+        code: ERROR_CODES.UNKNOWN_COMMAND,
+        details: { command: "actor.get", supportedCommands: advertised }
+      }
+    });
+    expect((await response).error.message).toContain("fvtt-world-cli auth status");
+  });
+
   it("revokes an active pairing without creating a lease and never discloses stored secrets", async () => {
     const firstCredential = "b".repeat(43);
     const secondCredential = "c".repeat(43);
