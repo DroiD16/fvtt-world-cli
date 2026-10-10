@@ -2293,7 +2293,7 @@ describe("fvtt-world-cli commands", () => {
     expect(result.stderr).toBe("");
   });
 
-  it("renders the installed module count for system.info in human-readable mode", async () => {
+  it("renders the installed and active module counts for system.info in human-readable mode", async () => {
     const result = await runCommand(
       ["system", "info"],
       vi.fn(async () => ({
@@ -2306,21 +2306,50 @@ describe("fvtt-world-cli commands", () => {
           world: { id: "world-1", title: "Automation Test World" },
           user: { id: "user-1", name: "GM", isGM: true },
           bridge: { status: "connected" },
-          modules: [
-            { id: "fvtt-world-cli", title: "World CLI for Foundry VTT", version: "0.1.0", active: true },
-            { id: "dae", title: "Dynamic Active Effects", version: "11.0.0", active: false }
-          ],
-          limits: { uploadBytes: 104857600, wsMaxPayloadBytes: 140858710, uploadSource: "config" },
-          commands: ["system.ping", "system.info"]
+          moduleCount: 58,
+          activeModuleCount: 54,
+          limits: { uploadBytes: 104857600, wsMaxPayloadBytes: 140858710, uploadSource: "config" }
         }
       }))
     );
 
     expect(result.error).toBeNull();
-    expect(result.stdout).toContain("modules: 2");
+    expect(result.stdout).toContain("modules: 58 installed, 54 active");
+    expect(result.stdout).not.toContain("commands:");
 
     expect(result.stdout).toContain("limits.uploadBytes: 104857600 (source: config)");
     expect(result.stdout).toContain("limits.wsMaxPayloadBytes: 140858710");
+    expect(result.stderr).toBe("");
+  });
+
+  it("lists each module under the counts when system.info returns the module list", async () => {
+    const result = await runCommand(
+      ["system", "info", "--include", "modules"],
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result: {
+          module: { id: "fvtt-world-cli", title: "World CLI for Foundry VTT", version: "0.1.0" },
+          world: { id: "world-1", title: "Automation Test World" },
+          user: { id: "user-1", name: "GM", isGM: true },
+          bridge: { status: "connected" },
+          moduleCount: 2,
+          activeModuleCount: 1,
+          modules: [
+            { id: "fvtt-world-cli", title: "World CLI for Foundry VTT", version: "0.1.0", active: true },
+            { id: "dae", title: "Dynamic Active Effects", version: "11.0.0", active: false }
+          ],
+          limits: { uploadBytes: 104857600, wsMaxPayloadBytes: 140858710, uploadSource: "config" }
+        }
+      }))
+    );
+
+    expect(result.error).toBeNull();
+    expect(result.stdout).toContain("modules: 2 installed, 1 active");
+    expect(result.stdout).toContain("  fvtt-world-cli 0.1.0 active");
+    expect(result.stdout).toContain("  dae 11.0.0 inactive");
     expect(result.stderr).toBe("");
   });
 

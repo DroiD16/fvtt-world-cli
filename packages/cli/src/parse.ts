@@ -266,6 +266,10 @@ export function parseTokenIncludeFields(value: string) {
   return parseAllowedIncludeFields(value, ["prepared"]);
 }
 
+export function parseSystemInfoIncludeFields(value: string) {
+  return parseAllowedIncludeFields(value, ["modules"]);
+}
+
 export function parseCompendiumIncludeFields(value: string) {
   return parseAllowedIncludeFields(value, ["effects"]);
 }

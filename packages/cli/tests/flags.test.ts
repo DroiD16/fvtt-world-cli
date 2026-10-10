@@ -551,6 +551,7 @@ describe("fvtt-world-cli commands", () => {
       [["item", "get", "--item-id", "item-1", "--include", "bogus"]],
       [["actor", "get", "--actor-id", "actor-1", "--include", "flags,bogus"]],
       [["actor", "get", "--actor-id", "actor-1", "--include", "items.items.flags"]],
+      [["system", "info", "--include", "commands"]],
       [["actor", "item", "get", "--actor-id", "actor-1", "--item-id", "item-1", "--include", "system"]],
       [["actor", "item", "list", "--actor-id", "actor-1", "--include", "bogus"]],
 

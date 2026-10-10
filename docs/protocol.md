@@ -368,8 +368,8 @@ The wait has two phases because the decision can outlast a normal request timeou
   policy can change before dispatch.
 
 The module supplies each opaque `approvalId`; callers do not construct one. Approval request schemas
-are closed. `approval.await`, `approval.cancel`, and `policy.snapshot` do not appear in `commands`,
-`system.info` command inventory, or bridge status. `schema <command>` still returns their schemas.
+are closed. `approval.await`, `approval.cancel`, and `policy.snapshot` do not appear in `commands` or
+bridge status. `schema <command>` still returns their schemas.
 The bridge handshake advertises them because the daemon must forward them.
 
 ## Delivery states and retries

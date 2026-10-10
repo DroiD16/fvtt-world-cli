@@ -6504,7 +6504,8 @@ describe("protocol contract", () => {
         patch: { name: "Renamed" }
       },
       "scene.token.get": { sceneId: "scene-1", tokenId: "token-1" },
-      "compendium.get": { pack: "world.x", entryId: "e-1" }
+      "compendium.get": { pack: "world.x", entryId: "e-1" },
+      "system.info": {}
     });
 
     const INCLUDE_COMMANDS = Object.freeze(Object.keys(INCLUDE_BASES));
@@ -6520,10 +6521,12 @@ describe("protocol contract", () => {
     const TOKEN_INCLUDE_ENUM = Object.freeze(["prepared"]);
 
     const COMPENDIUM_INCLUDE_ENUM = Object.freeze(["effects"]);
+    const SYSTEM_INFO_INCLUDE_ENUM = Object.freeze(["modules"]);
     const expectedIncludeEnum = (command) => {
       if (command === "actor.get" || command === "actor.get-many") return ACTOR_INCLUDE_ENUM;
       if (command === "scene.token.get") return TOKEN_INCLUDE_ENUM;
       if (command === "compendium.get") return COMPENDIUM_INCLUDE_ENUM;
+      if (command === "system.info") return SYSTEM_INFO_INCLUDE_ENUM;
       return BASE_INCLUDE_ENUM;
     };
 
@@ -6564,7 +6567,8 @@ describe("protocol contract", () => {
           command === "actor.get" ||
           command === "actor.get-many" ||
           command === "scene.token.get" ||
-          command === "compendium.get"
+          command === "compendium.get" ||
+          command === "system.info"
         ) {
           continue;
         }

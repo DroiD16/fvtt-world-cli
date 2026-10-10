@@ -205,10 +205,13 @@ export const RENDERERS = registerRenderers([
       `world: ${result.world?.title ?? "Unknown World"} [${result.world?.id ?? "unknown-world"}]`,
       `user: ${result.user?.name ?? "Unknown User"} [${result.user?.id ?? "unknown-user"}] GM=${String(Boolean(result.user?.isGM))}`,
       `bridge: ${result.bridge?.status ?? "unknown"}`,
-      `modules: ${(result.modules ?? []).length}`,
+      `modules: ${result.moduleCount ?? "unknown"} installed, ${result.activeModuleCount ?? "unknown"} active`,
+      ...(result.modules ?? []).map(
+        (module: any) =>
+          `  ${module.id} ${module.version ?? "unknown"} ${module.active ? "active" : "inactive"}`
+      ),
       `limits.uploadBytes: ${result.limits?.uploadBytes ?? "unknown"} (source: ${result.limits?.uploadSource ?? "unknown"})`,
-      `limits.wsMaxPayloadBytes: ${result.limits?.wsMaxPayloadBytes ?? "unknown"}`,
-      `commands: ${(result.commands ?? []).join(", ")}`
+      `limits.wsMaxPayloadBytes: ${result.limits?.wsMaxPayloadBytes ?? "unknown"}`
     ].join("\n")
   ),
   detailRenderer("game.pause", (result) =>

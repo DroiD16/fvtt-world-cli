@@ -142,6 +142,7 @@ command system ping
 command system info
   aliases=[]
   summary=
+  opt --include <fields> | parser=parseSystemInfoIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (modules adds the installed module list)
 
 command system reload
   aliases=[]

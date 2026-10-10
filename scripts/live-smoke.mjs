@@ -13847,14 +13847,12 @@ async function main() {
   try {
     const systemInfoRun = runFoundryctl(["system", "info"]);
     const systemInfoOk = isCommandSuccess(systemInfoRun);
-    const actualCommands = systemInfoRun.response?.result?.commands || [];
 
     markAndPush(summary, "system.info", systemInfoOk, {
       ...summarizeCommand(systemInfoRun),
       world: systemInfoRun.response?.result?.world || null,
       user: systemInfoRun.response?.result?.user || null,
-      bridge: systemInfoRun.response?.result?.bridge || null,
-      commands: actualCommands
+      bridge: systemInfoRun.response?.result?.bridge || null
     });
 
     if (!systemInfoOk) {
@@ -13868,18 +13866,36 @@ async function main() {
     const isV14 = typeof foundryGeneration === "number" && foundryGeneration >= 14;
     summary.environment.foundryGeneration = foundryGeneration;
 
-    const inventory = compareCommandInventory(actualCommands);
-    markAndPush(summary, "system.info(commands)", inventory.passed, {
-      expectedCount: inventory.expected.length,
-      actualCount: inventory.actual.length,
-      missing: inventory.missing,
-      unexpected: inventory.unexpected
-    });
-
     policyHarness = await preparePolicyHarness(summary, options, policyCoverage);
     if (!policyHarness.ready) {
       return { options, summary };
     }
+
+    const registryRun = runFoundryctl(["commands"]);
+    const inventory = compareCommandInventory(
+      (Array.isArray(registryRun.response?.result) ? registryRun.response.result : []).map(
+        (entry) => entry?.command
+      )
+    );
+    const hiddenOutsideDefaultDeny = inventory.missing.filter(
+      (command) => defaultProfile(command) !== "deny"
+    );
+    markAndPush(
+      summary,
+      "commands(discoverable registry under the bridge policy)",
+      registryRun.response?.ok === true &&
+        registryRun.response?.policy?.applied === true &&
+        inventory.unexpected.length === 0 &&
+        (options.gmControlUrl ? inventory.missing.length === 0 : hiddenOutsideDefaultDeny.length === 0),
+      {
+        ...summarizeCommand(registryRun),
+        policy: registryRun.response?.policy || null,
+        expectedCount: inventory.expected.length,
+        actualCount: inventory.actual.length,
+        missing: inventory.missing,
+        unexpected: inventory.unexpected
+      }
+    );
 
     const actorFixtureOk = typeof options.actorId === "string" && options.actorId.length > 0;
     markAndPush(summary, "actor.fixture", actorFixtureOk, {

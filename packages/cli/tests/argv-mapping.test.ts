@@ -10,6 +10,7 @@ describe("fvtt-world-cli commands", () => {
   it.each([
     [["system", "ping"], "system.ping", {}],
     [["system", "info"], "system.info", {}],
+    [["system", "info", "--include", "modules"], "system.info", { include: ["modules"] }],
     [["scene", "list"], "scene.list", {}],
     [["scene", "get", "--scene-id", "scene-1"], "scene.get", { sceneId: "scene-1" }],
     [
