@@ -44,6 +44,7 @@ for (const status of Object.values(BATCH_STATUS)) {
 }
 
 const BATCH_NO_WRITE_ASSURANCE = "Nothing was written.";
+const BATCH_NO_WRITE_ASSURANCE_PATTERN = /Nothing was written\.?$/;
 
 /**
  * @param {unknown[]} items
@@ -118,7 +119,7 @@ function stampBatchRefusalMessage(message, { command, index, id }) {
     : text
       ? `${coordinate}: ${text}`
       : `${coordinate} was refused.`;
-  if (!stamped.endsWith(BATCH_NO_WRITE_ASSURANCE)) {
+  if (!BATCH_NO_WRITE_ASSURANCE_PATTERN.test(stamped)) {
     stamped = `${/[.!?]$/.test(stamped) ? stamped : `${stamped}.`} ${BATCH_NO_WRITE_ASSURANCE}`;
   }
   return stamped;

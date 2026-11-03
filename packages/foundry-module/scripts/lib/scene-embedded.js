@@ -160,10 +160,10 @@ export function assertSceneLevelsFieldsSupported(data) {
 
 /**
  * @param {string} type
- * @param {Record<string, any> | null | undefined} data
+ * @param {Record<string, any>} data
  */
 function assertPlaceableLevelFieldsSupported(type, data) {
-  if (hasSceneLevels() || !data || typeof data !== "object") return;
+  if (hasSceneLevels()) return;
   const fields = [
     ...new Set(
       Object.keys(data)

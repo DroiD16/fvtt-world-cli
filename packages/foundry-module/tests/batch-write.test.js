@@ -8,6 +8,7 @@ import {
 } from "../scripts/lib/batch-guards.js";
 import {
   BATCH_STATUS,
+  annotateBatchElementFailure,
   assertBatchWithinLimit,
   assertNoDuplicateBatchIds,
   buildBatchResult,
@@ -130,6 +131,19 @@ describe("batch-write engine: shared gates", () => {
     ).toBe(false);
 
     expect(Object.keys(buildBatchResult({ outcomes: [] }))).toEqual(["complete", "outcomes"]);
+  });
+});
+
+describe("batch-write engine: refusal stamping", () => {
+  it("stamps the no-write assurance once on a refusal whose message omits the final period", () => {
+    const error = createBridgeError(
+      ERROR_CODES.UNSUPPORTED_OPERATION,
+      "Refused for a reason. Nothing was written"
+    );
+    const annotated = /** @type {Error} */ (
+      annotateBatchElementFailure(error, { command: "scene.wall.create-many", index: 2 })
+    );
+    expect(annotated.message.match(/Nothing was written/g)).toHaveLength(1);
   });
 });
 
