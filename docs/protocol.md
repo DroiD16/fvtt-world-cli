@@ -180,6 +180,25 @@ mirror may accompany it. List responses use smaller projections than single-docu
 filters apply before pagination. Previewed documents have no persistent identity, so an id
 observed during a preview must not be reused.
 
+Every world-actor result carries `itemCount`. The `items` array appears only when `actor.get`
+or `actor.get-many` receives `include: ["items"]`, or `items.flags` or `items.effects`, which
+imply it. Each returned item carries `effectCount`, and its own `flags` and `effects` only when
+those are included. Actor create, update, clone, import, and ownership results return the count
+without the items. `itemCount`, the included `items`, and each included item's `effectCount` and
+`effects` come from the stored actor source, so they also cover an item or effect that failed
+Foundry's validation. `actor.item.list`, `actor.item.get`, and the `actor.item.effect` reads return
+the loaded documents and omit such an item or effect. No `actor.item` or `actor.item.effect`
+command can read or write one either. Addressing such an item returns `ITEM_NOT_FOUND`, and
+addressing such an effect on a loaded item returns `EFFECT_NOT_FOUND`.
+`compendium.get` returns a pack entry as stored, so an Actor entry keeps its `items` and has no
+`itemCount`.
+
+`system.info` returns `moduleCount` and `activeModuleCount`. With `include: ["modules"]` it adds
+`modules`, one `{id, title, version, active}` entry per installed module. It carries no command
+inventory. The bridge handshake advertises the commands the Foundry module supports, and
+`auth status` reports that set as `bridge.session.commands`. `commands` lists this release's
+command registry under the world's policy, not the advertised set.
+
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.
 

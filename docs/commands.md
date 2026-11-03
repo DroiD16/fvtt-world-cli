@@ -168,6 +168,19 @@ List rows contain fewer fields than `get` results. Read the target with `get` be
 update. Reads return authored state; some commands accept `include` options for derived or expensive
 data. Check the command's help for available projections and filters.
 
+World actor results report `itemCount` instead of the owned items, because items make up most
+of a character's size. `actor get` and `actor get-many` return them with `--include items`;
+`items.flags` and `items.effects` imply `items`. Write, clone, import, and ownership results
+for actors carry only the count. The count, the included items, and each included item's
+`effectCount` and effects come from the stored actor source, so an item or effect that failed
+Foundry's validation appears there. `actor item list`, `actor item get`, and the
+`actor item effect` reads return the loaded documents and leave such an item or effect out. No
+`actor item` or `actor item effect` command can read or write one either. Addressing such an item
+returns `ITEM_NOT_FOUND`, and addressing such an effect on a loaded item returns
+`EFFECT_NOT_FOUND`. `compendium get` returns an Actor entry as stored, items included.
+`system info` reports `moduleCount` and `activeModuleCount`; `--include modules` adds the module
+list. The command inventory comes from `commands`, which also applies the world's policy.
+
 ### Updates and merge semantics
 
 Use JSON flags such as `--data-json` and `--patch-json` for structured values. Updates are patches:
@@ -244,7 +257,7 @@ inspect `auth pending`, then use `auth approve <code> --yes` for the selected re
 
 | Command | Effect |
 |---|---|
-| `auth status` | Show bridge state and public profile metadata |
+| `auth status` | Show bridge state, the commands the connected bridge advertised, and public profile metadata |
 | `auth pending` | List pending codes, expiry, and browser/world/GM identity |
 | `auth approve [code] [--yes]` | Approve a selected request; omit the code only when exactly one is pending |
 | `auth deny <code>` | Reject a pending request |

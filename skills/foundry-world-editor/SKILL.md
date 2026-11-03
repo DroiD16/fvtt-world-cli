@@ -146,7 +146,8 @@ details}}`, alongside `protocolVersion`, `type`, and the correlation `id` (echoi
 Documents live under a type-named key inside `result` that varies between commands but is stable
 for each one. `id` is the public identifier; a `_id` mirror may accompany it. Values requested
 through `include` flags may be derived or version-dependent. Write them back only when the
-update schema explicitly accepts them.
+update schema explicitly accepts them. Actor reads return `itemCount` in place of owned items; add
+`--include items` when the task needs them, or use `actor item list` and `actor item get`.
 
 ## Retry classification
 
