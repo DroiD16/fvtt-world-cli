@@ -1119,6 +1119,15 @@ export function serializeActorSummary(actor) {
 }
 
 /**
+ * @param {any} data
+ * @param {"level" | "levels"} field
+ */
+function levelMembership(data, field) {
+  if (!hasSceneLevels()) return {};
+  return field === "level" ? { level: data.level ?? null } : { levels: cloneValue(data.levels ?? []) };
+}
+
+/**
  * @param {any} token
  * @param {any} [data]
  * @returns {string|null}
@@ -1155,6 +1164,7 @@ export function serializeToken(token, { include } = {}) {
     x: data.x ?? token.x ?? 0,
     y: data.y ?? token.y ?? 0,
     elevation: data.elevation ?? token.elevation ?? 0,
+    ...levelMembership(data, "level"),
     rotation: data.rotation ?? token.rotation ?? 0,
     width: data.width ?? token.width ?? null,
     height: data.height ?? token.height ?? null,
@@ -1180,6 +1190,7 @@ export function serializeTokenSummary(token) {
     actorLink: data.actorLink ?? token.actorLink ?? false,
     x: data.x ?? token.x ?? 0,
     y: data.y ?? token.y ?? 0,
+    ...levelMembership(data, "level"),
     hidden: data.hidden ?? token.hidden ?? false
   };
 }
@@ -1195,6 +1206,7 @@ export function serializeTile(tile) {
     height: data.height ?? tile.height ?? null,
     rotation: data.rotation ?? tile.rotation ?? 0,
     elevation: data.elevation ?? tile.elevation ?? 0,
+    ...levelMembership(data, "levels"),
     sort: data.sort ?? tile.sort ?? 0,
     hidden: data.hidden ?? tile.hidden ?? false,
     locked: data.locked ?? tile.locked ?? false,
@@ -1210,6 +1222,7 @@ export function serializeTileSummary(tile) {
     y: data.y ?? tile.y ?? 0,
     width: data.width ?? tile.width ?? null,
     height: data.height ?? tile.height ?? null,
+    ...levelMembership(data, "levels"),
     hidden: data.hidden ?? tile.hidden ?? false
   };
 }
@@ -1223,6 +1236,7 @@ export function serializeSound(sound) {
     y: data.y ?? sound.y ?? 0,
     radius: data.radius ?? sound.radius ?? 0,
     elevation: data.elevation ?? sound.elevation ?? 0,
+    ...levelMembership(data, "levels"),
     volume: data.volume ?? sound.volume ?? null,
     walls: data.walls ?? sound.walls ?? false,
     easing: data.easing ?? sound.easing ?? false,
@@ -1241,6 +1255,7 @@ export function serializeSoundSummary(sound) {
     x: data.x ?? sound.x ?? 0,
     y: data.y ?? sound.y ?? 0,
     radius: data.radius ?? sound.radius ?? 0,
+    ...levelMembership(data, "levels"),
     hidden: data.hidden ?? sound.hidden ?? false
   };
 }
@@ -1250,6 +1265,7 @@ export function serializeWall(wall) {
   return {
     ...identityFields(wall, data),
     c: cloneValue(data.c ?? wall.c ?? null),
+    ...levelMembership(data, "levels"),
     light: data.light ?? wall.light ?? null,
     sight: data.sight ?? wall.sight ?? null,
     sound: data.sound ?? wall.sound ?? null,
@@ -1268,6 +1284,7 @@ export function serializeWallSummary(wall) {
   return {
     ...identityFields(wall, data),
     c: cloneValue(data.c ?? wall.c ?? null),
+    ...levelMembership(data, "levels"),
     door: data.door ?? wall.door ?? null,
     ds: data.ds ?? wall.ds ?? null,
     doorSound: data.doorSound ?? wall.doorSound ?? null
@@ -1283,6 +1300,7 @@ export function serializeNote(note) {
     x: data.x ?? note.x ?? 0,
     y: data.y ?? note.y ?? 0,
     elevation: data.elevation ?? note.elevation ?? 0,
+    ...levelMembership(data, "levels"),
     sort: data.sort ?? note.sort ?? 0,
     texture: cloneValue(data.texture ?? null),
     iconSize: data.iconSize ?? note.iconSize ?? null,
@@ -1304,6 +1322,7 @@ export function serializeNoteSummary(note) {
     text: data.text ?? note.text ?? null,
     x: data.x ?? note.x ?? 0,
     y: data.y ?? note.y ?? 0,
+    ...levelMembership(data, "levels"),
     entryId: data.entryId ?? note.entryId ?? null,
     texture: { src: texture?.src ?? null },
     iconSize: data.iconSize ?? note.iconSize ?? null
@@ -1321,6 +1340,7 @@ export function serializeDrawing(drawing) {
     x: data.x ?? drawing.x ?? 0,
     y: data.y ?? drawing.y ?? 0,
     elevation: data.elevation ?? drawing.elevation ?? 0,
+    ...levelMembership(data, "levels"),
     sort: data.sort ?? drawing.sort ?? 0,
     rotation: data.rotation ?? drawing.rotation ?? 0,
     bezierFactor: data.bezierFactor ?? drawing.bezierFactor ?? 0,
@@ -1352,6 +1372,7 @@ export function serializeDrawingSummary(drawing) {
     text: data.text ?? drawing.text ?? null,
     x: data.x ?? drawing.x ?? 0,
     y: data.y ?? drawing.y ?? 0,
+    ...levelMembership(data, "levels"),
     shape: { type: shape?.type ?? null },
     hidden: data.hidden ?? drawing.hidden ?? false
   };
@@ -1366,6 +1387,7 @@ export function serializeAmbientLight(light) {
     x: data.x ?? light.x ?? 0,
     y: data.y ?? light.y ?? 0,
     elevation: data.elevation ?? light.elevation ?? 0,
+    ...levelMembership(data, "levels"),
     rotation: data.rotation ?? light.rotation ?? 0,
     walls: data.walls ?? light.walls ?? false,
     vision: data.vision ?? light.vision ?? false,
@@ -1383,6 +1405,7 @@ export function serializeAmbientLightSummary(light) {
     name: placeableName(light, data),
     x: data.x ?? light.x ?? 0,
     y: data.y ?? light.y ?? 0,
+    ...levelMembership(data, "levels"),
     hidden: data.hidden ?? light.hidden ?? false,
     config: {
       dim: config?.dim ?? null,
@@ -1492,6 +1515,7 @@ export function serializeRegion(region, { knownBehaviorIds = null } = {}) {
     color: data.color ?? region.color ?? null,
     shapes: cloneValue(data.shapes ?? region.shapes ?? []),
     elevation: cloneValue(data.elevation ?? region.elevation ?? null),
+    ...levelMembership(data, "levels"),
     visibility: data.visibility ?? region.visibility ?? null,
     locked: data.locked ?? region.locked ?? false,
     behaviors: Array.isArray(behaviors)
@@ -1510,6 +1534,7 @@ export function serializeRegionSummary(region) {
     name: placeableName(region, data),
     color: data.color ?? region.color ?? null,
     visibility: data.visibility ?? region.visibility ?? null,
+    ...levelMembership(data, "levels"),
     shapesCount: Array.isArray(shapes) ? shapes.length : 0,
     behaviorsCount: Array.isArray(behaviors) ? behaviors.length : 0
   };

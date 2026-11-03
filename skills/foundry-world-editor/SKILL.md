@@ -81,10 +81,11 @@ real create's `levels` or from `scene.level.list` (preview ids are provisional),
 with `scene.level.*`. Change the initial level afterwards with `scene.update` `initialLevel`.
 Scene-level `background`/`foreground` fields return `UNSUPPORTED_OPERATION` on v14 and are the
 only map fields on v13, where `scene.level.*` is unavailable.
-Deleting a level cascades in Foundry: it deletes the level's tokens, its fog exploration, and every
-placeable whose `levels` holds only that level, and removes the level from placeables on several
-levels. Neither the dry run nor placeable reads show which placeables a level holds, so before
-deleting a level tell the user that its tokens and single-level placeables go with it.
+Deleting levels cascades in Foundry: it deletes their tokens, their fog exploration, and every
+placeable whose `levels` holds only levels being deleted, and strips the deleted levels from every
+other placeable's `levels`; an empty `levels` (all levels) is untouched. The dry run does not list
+these placeables, so before deleting a level read the scene's placeable lists (token `level`, other
+placeables' `levels`) and tell the user what the delete removes.
 `setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
 When a setting write returns `requiresReload: true`, the change needs a GM-client reload to take
 effect; `system.reload` performs it, drops the bridge, and requires a reconnect wait before the

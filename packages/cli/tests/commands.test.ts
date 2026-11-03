@@ -2503,6 +2503,46 @@ describe("fvtt-world-cli commands", () => {
     expect(list.stdout).toContain("lvl-a\tGround\televation=0..20\tsort=0");
   });
 
+  it("renders placeable level membership only when the result carries it", async () => {
+    const respond = (result: unknown) =>
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result
+      }));
+    const tile = { id: "tile-1", x: 0, y: 0, width: 100, height: 100, hidden: false };
+
+    const v14Token = await runCommand(
+      ["scene", "token", "get", "--scene-id", "scene-1", "--token-id", "tok-1"],
+      respond({ sceneId: "scene-1", token: { id: "tok-1", name: "Guard", level: "lvl-b" } })
+    );
+    expect(v14Token.stdout).toContain("level: lvl-b");
+
+    const v14Tiles = await runCommand(
+      ["scene", "tile", "list", "--scene-id", "scene-1"],
+      respond({
+        sceneId: "scene-1",
+        tiles: [
+          { ...tile, levels: ["lvl-a", "lvl-b"] },
+          { ...tile, id: "tile-2", levels: [] }
+        ],
+        total: 2,
+        hasMore: false
+      })
+    );
+    expect(v14Tiles.stdout).toContain("hidden=false\tlevels=lvl-a,lvl-b");
+    expect(v14Tiles.stdout).toContain("hidden=false\tlevels=(all)");
+
+    const v13Tile = await runCommand(
+      ["scene", "tile", "get", "--scene-id", "scene-1", "--tile-id", "tile-1"],
+      respond({ sceneId: "scene-1", tile })
+    );
+    expect(v13Tile.error).toBeNull();
+    expect(v13Tile.stdout).not.toMatch(/level/);
+  });
+
   it("renders file list output in human-readable mode", async () => {
     const result = await runCommand(
       ["file", "list", "--path", "worlds/world-1"],

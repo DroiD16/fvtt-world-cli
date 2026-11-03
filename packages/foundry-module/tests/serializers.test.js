@@ -369,6 +369,48 @@ describe("serializeScene", () => {
   });
 });
 
+describe("placeable level membership", () => {
+  const placeable = (source) => ({ id: source._id, toObject: () => structuredClone(source) });
+  /** @type {Array<[string, (document: any) => any, (document: any) => any, string, unknown]>} */
+  const families = [
+    ["token", serializeToken, serializeTokenSummary, "level", "lvlUpper000000000"],
+    ["tile", serializeTile, serializeTileSummary, "levels", ["lvlUpper000000000"]],
+    ["sound", serializeSound, serializeSoundSummary, "levels", ["lvlUpper000000000"]],
+    ["wall", serializeWall, serializeWallSummary, "levels", ["lvlUpper000000000"]],
+    ["note", serializeNote, serializeNoteSummary, "levels", ["lvlUpper000000000"]],
+    ["drawing", serializeDrawing, serializeDrawingSummary, "levels", []],
+    ["light", serializeAmbientLight, serializeAmbientLightSummary, "levels", ["a", "b"]],
+    ["region", serializeRegion, serializeRegionSummary, "levels", ["lvlUpper000000000"]]
+  ];
+
+  it.each(families)(
+    "%s full and summary reads carry the stored %s on Foundry v14",
+    (_family, serialize, serializeSummary, key, value) => {
+      vi.stubGlobal("game", { release: { generation: 14 } });
+      const document = placeable({ _id: "doc1", [key]: value });
+      for (const result of [serialize(document), serializeSummary(document)]) {
+        expect(result[key]).toEqual(value);
+        assertStructuredCloneable(result);
+      }
+    }
+  );
+
+  it.each(families)("%s reads carry no level key on Foundry v13", (_family, serialize, serializeSummary) => {
+    vi.stubGlobal("game", { release: { generation: 13 } });
+    const document = placeable({ _id: "doc1" });
+    for (const result of [serialize(document), serializeSummary(document)]) {
+      expect(result).not.toHaveProperty("level");
+      expect(result).not.toHaveProperty("levels");
+    }
+  });
+
+  it("reports an empty levels list when a v14 placeable has none stored", () => {
+    vi.stubGlobal("game", { release: { generation: 14 } });
+    expect(serializeTile(placeable({ _id: "tile1" })).levels).toEqual([]);
+    expect(serializeTokenSummary(placeable({ _id: "token1" })).level).toBeNull();
+  });
+});
+
 describe("serializeItem", () => {
   it("prefers the persisted source system from toObject() over the prepared live system", () => {
     const item = {

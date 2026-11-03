@@ -197,6 +197,11 @@ results keep those four fields and have no `levels` or `initialLevel`. `scene.ge
 `scene.get-many` `counts` list only the embedded collections the connected version has: `levels` on
 v14, `templates` on v13.
 
+On v14, token results and list rows carry the stored `level` id. Tile, wall, light, sound, note,
+drawing and region results and list rows carry the stored `levels` array of level ids; an empty
+array means the placeable is on every level. The same fields appear in write results and previews.
+v13 placeable results have neither key.
+
 `scene.level.list` rows carry `id`, `name`, `elevation` and `sort`. `scene.level.get`, `create`,
 `update` and `clone` return the full level under `level`; `scene.level.delete` and the batch verbs
 use the shared delete and batch result shapes. An `initialLevel` that names no level of
