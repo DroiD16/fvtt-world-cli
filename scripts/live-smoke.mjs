@@ -2121,6 +2121,379 @@ async function runSystemReloadBranch(summary, gmControlUrl) {
   );
 }
 
+function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created }) {
+  const folder = expectOk(
+    summary,
+    "scene.folder(create Scene folder)",
+    runFoundryctl(["folder", "create", "--name", `Smoke Scene Folder ${stamp}`, "--type", "Scene"])
+  );
+  const folderId = folder?.folder?.id ?? null;
+  if (folderId) created.folders.push(folderId);
+
+  if (!isV14) {
+    const background = {
+      src: `worlds/${worldId}/fvtt-world-cli/smoke/level bg.webp`,
+      anchorX: 0.25,
+      anchorY: 0.75,
+      fit: "cover",
+      alphaThreshold: 0.5
+    };
+    const v13Scene = expectOk(
+      summary,
+      "scene.create(v13: folder + full background texture)",
+      runFoundryctl([
+        "scene",
+        "create",
+        "--name",
+        `Smoke Background Scene ${stamp}`,
+        ...(folderId ? ["--folder", folderId] : []),
+        "--background-json",
+        JSON.stringify(background)
+      ])
+    )?.scene;
+    if (v13Scene?.id) created.scenes.push(v13Scene.id);
+    markAndPush(
+      summary,
+      "scene.create(v13: background fields and folder round-trip, no level fields)",
+      v13Scene?.folder === folderId &&
+        v13Scene?.background?.src === background.src.replace(" ", "%20") &&
+        v13Scene?.background?.anchorX === 0.25 &&
+        v13Scene?.background?.anchorY === 0.75 &&
+        v13Scene?.background?.fit === "cover" &&
+        v13Scene?.background?.alphaThreshold === 0.5 &&
+        !("levels" in (v13Scene ?? {})) &&
+        !("initialLevel" in (v13Scene ?? {})),
+      { scene: v13Scene ?? null }
+    );
+    if (v13Scene?.id) {
+      expectErr(
+        summary,
+        "scene.level.list(v13 gate)",
+        runFoundryctl(["scene", "level", "list", "--scene-id", v13Scene.id]),
+        ERROR_CODES.UNSUPPORTED_OPERATION
+      );
+      expectErr(
+        summary,
+        "scene.update(initialLevel v13 gate)",
+        runFoundryctl(["scene", "update", "--scene-id", v13Scene.id, "--initial-level", "defaultLevel0000"]),
+        ERROR_CODES.UNSUPPORTED_OPERATION
+      );
+      const cleared = expectOk(
+        summary,
+        "scene.update(clear folder)",
+        runFoundryctl(["scene", "update", "--scene-id", v13Scene.id, "--clear-folder"])
+      );
+      markAndPush(summary, "scene.update(folder cleared)", cleared?.scene?.folder === null, {
+        folder: cleared?.scene?.folder
+      });
+    }
+    expectErr(
+      summary,
+      "scene.create(levels v13 gate)",
+      runFoundryctl([
+        "--dry-run",
+        "scene",
+        "create",
+        "--name",
+        `Smoke Levels ${stamp}`,
+        "--levels-json",
+        JSON.stringify([{ name: "Ground" }])
+      ]),
+      ERROR_CODES.UNSUPPORTED_OPERATION
+    );
+    return;
+  }
+
+  const groundSrc = `worlds/${worldId}/fvtt-world-cli/smoke/ground floor.webp`;
+  const levelScene = expectOk(
+    summary,
+    "scene.create(v14: levels + folder)",
+    runFoundryctl([
+      "scene",
+      "create",
+      "--name",
+      `Smoke Level Scene ${stamp}`,
+      ...(folderId ? ["--folder", folderId] : []),
+      "--levels-json",
+      JSON.stringify([
+        { name: "Smoke Ground", background: { src: groundSrc, color: "#223344" } },
+        { name: "Smoke Roof", elevation: { bottom: 20, top: 40 } }
+      ])
+    ])
+  )?.scene;
+  const sceneId = levelScene?.id ?? null;
+  if (sceneId) created.scenes.push(sceneId);
+  const [ground, roof] = levelScene?.levels ?? [];
+  markAndPush(
+    summary,
+    "scene.create(v14: levels stored in order, canonical paths, folder, no legacy fields)",
+    levelScene?.levels?.length === 2 &&
+      ground?.name === "Smoke Ground" &&
+      ground?.background?.src === groundSrc.replace(" ", "%20") &&
+      ground?.background?.color === "#223344" &&
+      roof?.name === "Smoke Roof" &&
+      roof?.elevation?.bottom === 20 &&
+      roof?.elevation?.top === 40 &&
+      levelScene?.folder === folderId &&
+      levelScene?.initialLevel === null &&
+      !("background" in levelScene) &&
+      !("foreground" in levelScene),
+    { scene: levelScene ?? null }
+  );
+  if (!sceneId || !ground?.id || !roof?.id) return;
+
+  const levelList = expectOk(
+    summary,
+    "scene.level.list",
+    runFoundryctl(["scene", "level", "list", "--scene-id", sceneId])
+  );
+  markAndPush(
+    summary,
+    "scene.level.list(summary rows)",
+    levelList?.total === 2 &&
+      levelList?.levels?.[0]?.id === ground.id &&
+      "elevation" in (levelList?.levels?.[0] ?? {}),
+    { levels: levelList?.levels ?? null }
+  );
+  expectOk(
+    summary,
+    "scene.level.get",
+    runFoundryctl(["scene", "level", "get", "--scene-id", sceneId, "--level-id", ground.id])
+  );
+  expectErr(
+    summary,
+    "scene.level.get(missing → LEVEL_NOT_FOUND)",
+    runFoundryctl(["scene", "level", "get", "--scene-id", sceneId, "--level-id", "missingLevel0001"]),
+    ERROR_CODES.LEVEL_NOT_FOUND
+  );
+
+  const roofForeground = `worlds/${worldId}/fvtt-world-cli/smoke/roof.webp`;
+  const roofUpdate = expectOk(
+    summary,
+    "scene.level.update",
+    runFoundryctl([
+      "scene",
+      "level",
+      "update",
+      "--scene-id",
+      sceneId,
+      "--level-id",
+      roof.id,
+      "--patch-json",
+      JSON.stringify({ foreground: { src: roofForeground } })
+    ])
+  );
+  markAndPush(
+    summary,
+    "scene.level.update(foreground persisted)",
+    roofUpdate?.level?.foreground?.src === roofForeground,
+    { foreground: roofUpdate?.level?.foreground ?? null }
+  );
+
+  const previewCreate = expectOk(
+    summary,
+    "scene.level.create --dry-run",
+    runFoundryctl([
+      "--dry-run",
+      "scene",
+      "level",
+      "create",
+      "--scene-id",
+      sceneId,
+      "--data-json",
+      JSON.stringify({ name: "Smoke Preview" })
+    ])
+  );
+  markAndPush(summary, "scene.level.create --dry-run(nothing written)", previewCreate?.dryRun === true, {
+    dryRun: previewCreate?.dryRun ?? null
+  });
+
+  const attic = expectOk(
+    summary,
+    "scene.level.create",
+    runFoundryctl([
+      "scene",
+      "level",
+      "create",
+      "--scene-id",
+      sceneId,
+      "--data-json",
+      JSON.stringify({ name: "Smoke Attic", elevation: { bottom: 40, top: 60 } })
+    ])
+  )?.level;
+  const atticClone = attic?.id
+    ? expectOk(
+        summary,
+        "scene.level.clone",
+        runFoundryctl([
+          "scene",
+          "level",
+          "clone",
+          "--scene-id",
+          sceneId,
+          "--level-id",
+          attic.id,
+          "--patch-json",
+          JSON.stringify({ name: "Smoke Attic Copy" })
+        ])
+      )?.level
+    : null;
+  const bulkCreate = expectOk(
+    summary,
+    "scene.level.create-many",
+    runFoundryctl([
+      "scene",
+      "level",
+      "create-many",
+      "--scene-id",
+      sceneId,
+      "--data-json",
+      JSON.stringify([{ name: "Smoke Cellar" }])
+    ])
+  );
+  const cellarId = bulkCreate?.outcomes?.[0]?.id ?? null;
+  if (cellarId) {
+    expectOk(
+      summary,
+      "scene.level.update-many",
+      runFoundryctl([
+        "scene",
+        "level",
+        "update-many",
+        "--scene-id",
+        sceneId,
+        "--patches-json",
+        JSON.stringify([{ id: cellarId, patch: { name: "Smoke Cellar Renamed" } }])
+      ])
+    );
+  }
+  const extraIds = [atticClone?.id, cellarId].filter(Boolean);
+  if (extraIds.length) {
+    expectOk(
+      summary,
+      "scene.level.delete-many",
+      runFoundryctl(["scene", "level", "delete-many", "--scene-id", sceneId, "--ids", extraIds.join(",")])
+    );
+  }
+  if (attic?.id) {
+    expectOk(
+      summary,
+      "scene.level.delete",
+      runFoundryctl(["scene", "level", "delete", "--scene-id", sceneId, "--level-id", attic.id])
+    );
+  }
+
+  const initialSet = expectOk(
+    summary,
+    "scene.update(initialLevel)",
+    runFoundryctl(["scene", "update", "--scene-id", sceneId, "--initial-level", roof.id])
+  );
+  markAndPush(summary, "scene.update(initialLevel stored)", initialSet?.scene?.initialLevel === roof.id, {
+    initialLevel: initialSet?.scene?.initialLevel ?? null
+  });
+  expectErr(
+    summary,
+    "scene.update(initialLevel unknown → LEVEL_NOT_FOUND)",
+    runFoundryctl(["scene", "update", "--scene-id", sceneId, "--initial-level", "missingLevel0001"]),
+    ERROR_CODES.LEVEL_NOT_FOUND
+  );
+  const initialReset = expectOk(
+    summary,
+    "scene.update(initialLevel null)",
+    runFoundryctl([
+      "scene",
+      "update",
+      "--scene-id",
+      sceneId,
+      "--patch-json",
+      JSON.stringify({ initialLevel: null })
+    ])
+  );
+  markAndPush(summary, "scene.update(initialLevel reset)", initialReset?.scene?.initialLevel === null, {
+    initialLevel: initialReset?.scene?.initialLevel
+  });
+  expectErr(
+    summary,
+    "scene.create(initialLevel refused)",
+    runFoundryctl([
+      "--dry-run",
+      "scene",
+      "create",
+      "--name",
+      `Smoke Levels ${stamp}`,
+      "--levels-json",
+      JSON.stringify([{ name: "Ground" }]),
+      "--initial-level",
+      ground.id
+    ]),
+    ERROR_CODES.INVALID_PARAMS
+  );
+  expectErr(
+    summary,
+    "scene.create(background v14 gate)",
+    runFoundryctl([
+      "--dry-run",
+      "scene",
+      "create",
+      "--name",
+      `Smoke Levels ${stamp}`,
+      "--background-json",
+      JSON.stringify({ src: groundSrc })
+    ]),
+    ERROR_CODES.UNSUPPORTED_OPERATION
+  );
+
+  expectErr(
+    summary,
+    "scene.level.delete-many(every level refused)",
+    runFoundryctl([
+      "scene",
+      "level",
+      "delete-many",
+      "--scene-id",
+      sceneId,
+      "--ids",
+      `${ground.id},${roof.id}`
+    ]),
+    ERROR_CODES.DELETE_FORBIDDEN
+  );
+  expectOk(
+    summary,
+    "scene.level.delete(one of two)",
+    runFoundryctl(["scene", "level", "delete", "--scene-id", sceneId, "--level-id", ground.id])
+  );
+  for (const dryRun of [false, true]) {
+    expectErr(
+      summary,
+      `scene.level.delete(last level refused${dryRun ? ", dry-run" : ""})`,
+      runFoundryctl([
+        ...(dryRun ? ["--dry-run"] : []),
+        "scene",
+        "level",
+        "delete",
+        "--scene-id",
+        sceneId,
+        "--level-id",
+        roof.id
+      ]),
+      ERROR_CODES.DELETE_FORBIDDEN
+    );
+  }
+
+  const sceneClone = expectOk(
+    summary,
+    "scene.clone(v14: levels kept)",
+    runFoundryctl(["scene", "clone", "--scene-id", sceneId, "--name", `Smoke Level Scene Copy ${stamp}`])
+  )?.scene;
+  if (sceneClone?.id) created.scenes.push(sceneClone.id);
+  markAndPush(
+    summary,
+    "scene.clone(v14: level ids preserved)",
+    sceneClone?.levels?.length === 1 && sceneClone.levels[0].id === roof.id,
+    { levels: sceneClone?.levels ?? null }
+  );
+}
+
 function runExtendedCoverage(
   summary,
   { actorId, targetSceneId, targetSceneActive, gmUserId, stamp, worldId, isV14 = false }
@@ -2150,6 +2523,8 @@ function runExtendedCoverage(
   };
 
   try {
+    runSceneLevelCoverage(summary, { stamp, worldId, isV14, created });
+
     const sceneCreate = expectOk(
       summary,
       "scene.create",
