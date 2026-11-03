@@ -1124,7 +1124,7 @@ export function serializeActorSummary(actor) {
  */
 function levelMembership(data, field) {
   if (!hasSceneLevels()) return {};
-  return field === "level" ? { level: data.level ?? null } : { levels: cloneValue(data.levels ?? []) };
+  return field === "level" ? { level: data.level } : { levels: cloneValue(data.levels) };
 }
 
 /**

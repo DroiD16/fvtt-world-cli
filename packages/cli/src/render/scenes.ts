@@ -55,11 +55,9 @@ export function renderSceneDetails(scene: any) {
 }
 
 function levelMembership(placeable: any): [string, string] | null {
-  if (placeable && Object.hasOwn(placeable, "level")) return ["level", String(placeable.level ?? "")];
-  if (placeable && Object.hasOwn(placeable, "levels")) {
-    const levels = Array.isArray(placeable.levels) ? placeable.levels : [];
-    return ["levels", levels.join(",") || "(all)"];
-  }
+  if (placeable && Object.hasOwn(placeable, "level")) return ["level", String(placeable.level)];
+  if (placeable && Object.hasOwn(placeable, "levels"))
+    return ["levels", placeable.levels.join(",") || "(all)"];
   return null;
 }
 

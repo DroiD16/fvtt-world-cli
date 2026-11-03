@@ -403,12 +403,6 @@ describe("placeable level membership", () => {
       expect(result).not.toHaveProperty("levels");
     }
   });
-
-  it("reports an empty levels list when a v14 placeable has none stored", () => {
-    vi.stubGlobal("game", { release: { generation: 14 } });
-    expect(serializeTile(placeable({ _id: "tile1" })).levels).toEqual([]);
-    expect(serializeTokenSummary(placeable({ _id: "token1" })).level).toBeNull();
-  });
 });
 
 describe("serializeItem", () => {
