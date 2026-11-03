@@ -294,6 +294,44 @@ describe("world.audit-files", () => {
     ]);
   });
 
+  it("reports a missing level map once on v14, where the scene's own map fields mirror the first level", async () => {
+    const ground = {
+      _id: "lvl-a",
+      name: "Ground",
+      background: { src: "worlds/w/scenes/a-bg-missing.webp" },
+      foreground: { src: "worlds/w/scenes/a-fg-missing.webp" },
+      fog: { src: null }
+    };
+    const roof = { _id: "lvl-b", name: "Roof", background: { src: "worlds/w/scenes/b-bg-missing.webp" } };
+    const source = { _id: "scene-14", name: "Tower", levels: [ground, roof] };
+    Object.defineProperty(source, "background", {
+      get: () => ({ src: ground.background.src }),
+      enumerable: false
+    });
+    Object.defineProperty(source, "foreground", { get: () => ground.foreground.src, enumerable: false });
+    globalThis.game = { ready: true, release: { generation: 14 }, scenes: [makeDoc(source)] };
+    installFilePicker({ "worlds/w/scenes": [] });
+
+    const result = await runFileAudit({ scope: ["scene"] });
+
+    expect(result.broken.map((ref) => [ref.docType, ref.id, ref.field, ref.path])).toEqual([
+      ["Level", "lvl-a", "background.src", "worlds/w/scenes/a-bg-missing.webp"],
+      ["Level", "lvl-a", "foreground.src", "worlds/w/scenes/a-fg-missing.webp"],
+      ["Level", "lvl-b", "background.src", "worlds/w/scenes/b-bg-missing.webp"]
+    ]);
+  });
+
+  it("reports the scene's own map fields on v13", async () => {
+    globalThis.game = { ...globalThis.game, release: { generation: 13 } };
+
+    const result = await runFileAudit({ scope: ["scene"] });
+
+    expect(result.broken.map((ref) => [ref.docType, ref.id, ref.field, ref.path])).toEqual([
+      ["AmbientSound", "snd-1", "path", "worlds/w/audio/amb-missing.ogg"],
+      ["Scene", "scene-1", "background.src", "worlds/w/scenes/bg-missing.webp"]
+    ]);
+  });
+
   it("treats a core icons/** ref as public-or-external, not broken", async () => {
     const result = await runFileAudit({ scope: ["scene"] });
     const icon = result.skipped.find((s) => s.path === "icons/svg/mystery-man.svg");
