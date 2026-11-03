@@ -1662,6 +1662,41 @@ describe("authorization daemon", () => {
     expect(daemon.config.uploadLimitBytes).toBe(200 * 1024 * 1024);
   });
 
+  it("preserves a skillInstalls edit, including its removal, when the daemon persists its config", async () => {
+    const credential = "f".repeat(43);
+    const config = createEmptyConfig();
+    addPairing(config, { pairingId: "pair-1", credential });
+    let persisted = structuredClone(config);
+    const configStore = {
+      getConfigPath: () => "/tmp/fvtt-world-cli-test-config.json",
+      readConfig: () => structuredClone(persisted),
+      writeConfig: (value: unknown) => {
+        persisted = structuredClone(value as typeof persisted);
+      }
+    };
+    const daemon = createBridgeDaemon({
+      daemonUrl: `ws://127.0.0.1:${await freePort()}`,
+      config,
+      configStore,
+      logger: pino({ level: "silent" })
+    });
+    daemons.push(daemon);
+    await daemon.start();
+
+    configStore.writeConfig({ ...persisted, skillInstalls: ["/srv/skills-a", "/srv/skills-b"] });
+    await connectBridge(daemon, { pairingId: "pair-1", credential });
+    expect(persisted.skillInstalls).toEqual(["/srv/skills-a", "/srv/skills-b"]);
+    expect(daemon.config.skillInstalls).toEqual(["/srv/skills-a", "/srv/skills-b"]);
+
+    const { skillInstalls: _removed, ...withoutSkillInstalls } = persisted;
+    configStore.writeConfig(withoutSkillInstalls);
+    const cli = await connectCli(daemon, config.deviceCredential);
+    expect((await control(cli, "revoke-1", "auth.revoke", { pairingId: "pair-1" })).ok).toBe(true);
+    expect(persisted.skillInstalls).toBeUndefined();
+    expect(daemon.config.skillInstalls).toBeUndefined();
+    expect(persisted.pairings).toEqual([]);
+  });
+
   it("returns an error envelope for malformed daemon requests without closing the CLI connection", async () => {
     const config = createEmptyConfig();
     const daemon = createBridgeDaemon({

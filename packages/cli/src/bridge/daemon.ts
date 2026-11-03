@@ -59,6 +59,7 @@ import {
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
 const DEFAULT_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
+const DAEMON_OWNED_CONFIG_KEYS = ["version", "daemonUrl", "deviceCredential", "pairings"] as const;
 const ACCEPTED_BRIDGE_RESPONSE_TYPES: readonly string[] = Object.freeze([MESSAGE_TYPES.COMMAND_RESPONSE]);
 
 interface ConnectionState {
@@ -586,11 +587,12 @@ export class BridgeDaemon {
 
   persistConfig() {
     if (!this.configStore) return;
-    const persisted = this.configStore.readConfig();
-    this.config = PersistedCliConfigSchema.parse({
-      ...this.config,
-      ...(persisted?.uploadLimitBytes === undefined ? {} : { uploadLimitBytes: persisted.uploadLimitBytes })
-    });
+    const merged: Record<string, unknown> = { ...(this.configStore.readConfig() ?? this.config) };
+    for (const key of DAEMON_OWNED_CONFIG_KEYS) {
+      if (this.config[key] === undefined) delete merged[key];
+      else merged[key] = this.config[key];
+    }
+    this.config = PersistedCliConfigSchema.parse(merged);
     this.configStore.writeConfig(this.config);
   }
 
