@@ -1,4 +1,4 @@
-import { getFoundryGeneration } from "./foundry-capabilities.js";
+import { hasSceneLevels } from "./foundry-capabilities.js";
 export { paginate, filterByName, filterByPath } from "./pagination.js";
 
 export function cloneValue(value) {
@@ -851,8 +851,7 @@ export function serializeScene(
   { counts = false, ownership = false, flags = false, provenance = false, levels = false } = {}
 ) {
   const data = documentData(scene);
-  const generation = getFoundryGeneration();
-  const hasLevels = generation !== null && generation >= 14;
+  const hasLevels = hasSceneLevels();
   return {
     ...identityFields(scene, data),
     name: scene.name ?? data.name ?? null,
@@ -893,9 +892,7 @@ export function serializeScene(
     initial: cloneValue(data.initial ?? scene.initial ?? null),
     transition: cloneValue(data.transition ?? scene.transition ?? null),
 
-    ...(hasLevels && levels
-      ? { levels: Array.from(scene.levels ?? [], (level) => serializeLevel(level)) }
-      : {}),
+    ...(hasLevels && levels ? { levels: Array.from(scene.levels, serializeLevel) } : {}),
     ...(flags ? { flags: cloneValue(data.flags ?? {}) } : {}),
 
     ...(provenance ? { compendiumSource: compendiumSourceField(data) } : {}),

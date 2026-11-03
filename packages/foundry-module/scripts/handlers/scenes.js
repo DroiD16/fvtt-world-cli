@@ -21,7 +21,14 @@ import { filterByName, paginate, serializeScene } from "../lib/serializers.js";
 
 const SCENE_DETAIL = { flags: true, provenance: true, levels: true };
 
-const levelIdsOf = (scene) => Array.from(scene.levels ?? [], (level) => level.id);
+function assertScenePatch(scene, patch) {
+  assertSceneLevelsFieldsSupported(patch);
+  assertInitialLevelExists(
+    patch,
+    Array.from(scene.levels ?? [], (level) => level.id),
+    { sceneId: scene.id }
+  );
+}
 
 export function createSceneHandlers() {
   return {
@@ -76,22 +83,22 @@ export function createSceneHandlers() {
 
       const scene = await createScene(data);
       const result = serializeScene(scene, SCENE_DETAIL);
-      if (data.levels && result.levels?.length !== data.levels.length) {
-        throw createBridgeError(
-          ERROR_CODES.INTERNAL_ERROR,
-          `Scene ${result.id} was created with ${result.levels?.length ?? 0} levels instead of the ${data.levels.length} requested: a module hook or Foundry changed the level list. Inspect it with scene.level.list and fix it with scene.level.create or scene.level.delete`,
-          { sceneId: result.id, requested: data.levels.length, created: result.levels?.length ?? 0 }
-        );
+      if (data.levels) {
+        const createdCount = /** @type {unknown[]} */ (result.levels).length;
+        if (createdCount !== data.levels.length) {
+          throw createBridgeError(
+            ERROR_CODES.INTERNAL_ERROR,
+            `Scene ${result.id} was created with ${createdCount} levels instead of the ${data.levels.length} requested: a module hook or Foundry changed the level list. Inspect it with scene.level.list and fix it with scene.level.create or scene.level.delete`,
+            { sceneId: result.id, requested: data.levels.length, created: createdCount }
+          );
+        }
       }
       return { scene: result };
     },
 
     async "scene.update"(params) {
       const scene = getSceneById(params.sceneId);
-      assertSceneLevelsFieldsSupported(params.patch);
-      assertInitialLevelExists(params.patch, levelIdsOf(scene), `scene ${params.sceneId}`, {
-        sceneId: params.sceneId
-      });
+      assertScenePatch(scene, params.patch);
       const patch = canonicalizeFilePathFields(params.patch, "Scene");
       if (isDryRun(params)) {
         await assertRequestedWriteStorable({
@@ -119,11 +126,7 @@ export function createSceneHandlers() {
 
     async "scene.clone"(params) {
       const scene = getSceneById(params.sceneId);
-
-      assertSceneLevelsFieldsSupported(params.patch);
-      assertInitialLevelExists(params.patch, levelIdsOf(scene), `scene ${params.sceneId}`, {
-        sceneId: params.sceneId
-      });
+      assertScenePatch(scene, params.patch);
 
       const patch = canonicalizeFilePathFields({ active: false, ...(params.patch ?? {}) }, "Scene");
 

@@ -37,12 +37,6 @@ export function createScenePlaceableHandlers({
     return scene;
   };
 
-  const assertScene = (sceneId) => {
-    if (assertSupported) {
-      assertSupported(getSceneById(sceneId));
-    }
-  };
-
   const verbs = {
     async list(params) {
       const scene = resolveScene(params.sceneId);
@@ -58,7 +52,7 @@ export function createScenePlaceableHandlers({
     },
 
     async get(params) {
-      assertScene(params.sceneId);
+      resolveScene(params.sceneId);
       const { document } = getSceneEmbeddedById(params.sceneId, type, params[idField], notFoundCode, idField);
       return { sceneId: params.sceneId, [resultKey]: serialize(document) };
     },
@@ -75,7 +69,7 @@ export function createScenePlaceableHandlers({
     },
 
     async update(params) {
-      assertScene(params.sceneId);
+      resolveScene(params.sceneId);
       const document = await updateSceneEmbedded(
         params.sceneId,
         type,
@@ -94,7 +88,7 @@ export function createScenePlaceableHandlers({
     },
 
     async clone(params) {
-      assertScene(params.sceneId);
+      resolveScene(params.sceneId);
       const clone = await cloneSceneEmbedded(
         params.sceneId,
         type,

@@ -8,7 +8,7 @@ import {
   writeCommitted
 } from "./write-confirmation.js";
 
-import { getFoundryGeneration } from "./foundry-capabilities.js";
+import { hasSceneLevels } from "./foundry-capabilities.js";
 import { getActorById, getGame, getSceneById } from "./game-collections.js";
 import { AUTHOR_BEARING_EMBEDDED_TYPES, sanitizeEmbeddedData } from "./sanitize.js";
 import {
@@ -122,8 +122,7 @@ export function assertSceneTemplatesSupported(scene) {
 
 /** @param {Record<string, unknown>} details */
 export function assertLevelsSupported(details) {
-  const generation = getFoundryGeneration();
-  if (generation === null || generation < 14) {
+  if (!hasSceneLevels()) {
     throw createBridgeError(
       ERROR_CODES.UNSUPPORTED_OPERATION,
       "Scene levels exist only on Foundry v14 and later: this Foundry version has no Level document and no `initialLevel` field. On v13 a scene has one map, set through the scene's own `background`, `backgroundColor`, `foreground` and `foregroundElevation` fields",
@@ -150,8 +149,7 @@ export function assertSceneLevelsFieldsSupported(data) {
     supplied.push("fog.overlay");
   }
   if (supplied.length === 0) return;
-  const generation = getFoundryGeneration();
-  if (generation !== null && generation >= 14) {
+  if (hasSceneLevels()) {
     throw createBridgeError(
       ERROR_CODES.UNSUPPORTED_OPERATION,
       "Foundry v14 stores a scene's background, background color, foreground, foreground elevation and fog overlay on each of its levels, not on the scene, and ignores these scene fields when they are written. Set them on a level instead: through `levels` in scene.create data for a new scene, or with scene.level.update for an existing one (scene.level.list gives the level ids). `fog.mode` and `fog.colors` remain scene fields",
@@ -163,15 +161,14 @@ export function assertSceneLevelsFieldsSupported(data) {
 /**
  * @param {Record<string, any> | undefined} patch
  * @param {string[]} levelIds
- * @param {string} subject
  * @param {Record<string, unknown>} details
  */
-export function assertInitialLevelExists(patch, levelIds, subject, details) {
+export function assertInitialLevelExists(patch, levelIds, details) {
   const levelId = patch?.initialLevel;
   if (levelId === undefined || levelId === null || levelIds.includes(levelId)) return;
   throw createBridgeError(
     ERROR_CODES.LEVEL_NOT_FOUND,
-    `initialLevel ${levelId} is not a level of ${subject}; its levels are ${levelIds.join(", ")} (scene.level.list reports them with names). Pass null to make the first level the initial one. Nothing was written`,
+    `initialLevel ${levelId} is not a level of the target scene; its levels are ${levelIds.join(", ")} (scene.level.list reports them with names). To make the first level the initial one, send initialLevel as JSON null (on the CLI: --patch-json '{"initialLevel":null}'). Nothing was written`,
     { ...details, levelId }
   );
 }

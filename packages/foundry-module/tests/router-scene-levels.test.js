@@ -191,7 +191,7 @@ describe("scene levels", () => {
   });
 
   describe("scene.level commands", () => {
-    it("lists level summaries and reads one level", async () => {
+    it("lists level summaries and reports a missing level", async () => {
       const list = await router().route(createRequest("scene.level.list", { sceneId: "scene-1" }));
       expect(list.result.levels[0]).toEqual({
         id: "level-ground",

@@ -106,7 +106,9 @@ const PREVIEW_PARAM_OVERRIDES = {
   "user.delete": { userId: "player-2" },
   "user.create": { data: { name: "Scratch Player" } }
 };
-const PREVIEWS_THE_FAKE_WORLD_REFUSES = ["scene.fog.reset", "scene.level.delete", "scene.level.delete-many"];
+const V14_RELEASE = { version: "14.369", generation: 14 };
+const PREVIEW_RELEASES = { "scene.level.delete": V14_RELEASE, "scene.level.delete-many": V14_RELEASE };
+const PREVIEWS_THE_FAKE_WORLD_REFUSES = ["scene.fog.reset"];
 const PREVIEWS_NO_FOUNDRY_VERSION_SUPPORTS = ["file.delete", "file.move"];
 const PREVIEWS_WITHOUT_A_RESULT = new Set([
   ...PREVIEWS_THE_FAKE_WORLD_REFUSES,
@@ -379,6 +381,7 @@ describe("command policy gate", () => {
 
       for (const command of PREVIEWABLE_APPROVE_COMMANDS) {
         const params = { ...previewParams(command, seeded[command]), dryRun: true };
+        globalThis.game.release = PREVIEW_RELEASES[command];
 
         const response = await router().route(createRequest(command, params));
         if (!response.ok) {

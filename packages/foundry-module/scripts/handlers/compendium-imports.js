@@ -41,7 +41,6 @@ const IMPORT_FAMILIES = Object.freeze({
       assertInitialLevelExists(
         params.patch,
         (importData.levels ?? []).map((level) => level._id),
-        `compendium entry ${params.entryId} of ${params.pack}`,
         { pack: params.pack, entryId: params.entryId }
       );
       return { active: false, ...importData };

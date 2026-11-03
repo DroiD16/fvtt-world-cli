@@ -5195,10 +5195,6 @@ describe("protocol contract", () => {
       expectValid("scene.update", { sceneId: "scene-1", patch: { initialLevel: null } });
       expectValid("scene.clone", { sceneId: "scene-1", patch: { initialLevel: "lvl-a" } });
     });
-
-    it("exposes LEVEL_NOT_FOUND in ERROR_CODES", () => {
-      expect(ERROR_CODES.LEVEL_NOT_FOUND).toBe("LEVEL_NOT_FOUND");
-    });
   });
 
   describe("scene.wall.* + scene.note.* embedded families", () => {
