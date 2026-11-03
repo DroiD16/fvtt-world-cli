@@ -110,10 +110,10 @@ const SCENE_FIELDS: readonly FieldSpec[] = [
   { flag: "--shift-y <shiftY>", help: "Background Y shift", parser: parseNumber },
   { flag: "--nav-name <navName>", help: "Navigation label" },
   { flag: "--thumb <thumb>", help: "Thumbnail image path" },
-  { flag: "--foreground <foreground>", help: "Foreground image path" },
+  { flag: "--foreground <foreground>", help: "Foreground image path (Foundry v13)" },
   {
     flag: "--foreground-elevation <foregroundElevation>",
-    help: "Foreground image elevation",
+    help: "Foreground image elevation (Foundry v13)",
     parser: parseNumber
   },
   { flag: "--sort <sort>", help: "Sort order", parser: parseNumber },
@@ -137,9 +137,9 @@ const SCENE_FIELDS: readonly FieldSpec[] = [
   {
     flag: "--background-json <json>",
     help: {
-      create: "Scene background as JSON object",
-      update: "Scene background patch as JSON object",
-      clone: "Scene background override as JSON object"
+      create: "Scene background as JSON object (Foundry v13)",
+      update: "Scene background patch as JSON object (Foundry v13)",
+      clone: "Scene background override as JSON object (Foundry v13)"
     }
   }
 ];

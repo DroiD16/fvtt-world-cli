@@ -220,8 +220,8 @@ command scene update
   opt --shift-y <shiftY> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Background Y shift
   opt --nav-name <navName> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Navigation label
   opt --thumb <thumb> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Thumbnail image path
-  opt --foreground <foreground> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image path
-  opt --foreground-elevation <foregroundElevation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image elevation
+  opt --foreground <foreground> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image path (Foundry v13)
+  opt --foreground-elevation <foregroundElevation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image elevation (Foundry v13)
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort order
   opt --initial-level <initialLevel> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Initial level id (Foundry v14)
   opt --playlist <playlistId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked playlist id
@@ -233,7 +233,7 @@ command scene update
   opt --initial-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene initial view position as JSON object
   opt --transition-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene transition config as JSON object
   opt --grid-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene grid patch as JSON object
-  opt --background-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene background patch as JSON object
+  opt --background-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene background patch as JSON object (Foundry v13)
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra scene patch fields (e.g. flags) as a JSON object (merged last)
 
 command scene create
@@ -255,8 +255,8 @@ command scene create
   opt --shift-y <shiftY> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Background Y shift
   opt --nav-name <navName> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Navigation label
   opt --thumb <thumb> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Thumbnail image path
-  opt --foreground <foreground> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image path
-  opt --foreground-elevation <foregroundElevation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image elevation
+  opt --foreground <foreground> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image path (Foundry v13)
+  opt --foreground-elevation <foregroundElevation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image elevation (Foundry v13)
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort order
   opt --playlist <playlistId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked playlist id
   opt --playlist-sound <playlistSoundId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked playlist sound id
@@ -267,7 +267,7 @@ command scene create
   opt --initial-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene initial view position as JSON object
   opt --transition-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene transition config as JSON object
   opt --grid-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene grid as JSON object
-  opt --background-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene background as JSON object
+  opt --background-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene background as JSON object (Foundry v13)
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra scene fields (e.g. flags) as a JSON object (merged last)
 
 command scene clone
@@ -290,8 +290,8 @@ command scene clone
   opt --shift-y <shiftY> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Background Y shift
   opt --nav-name <navName> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Navigation label
   opt --thumb <thumb> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Thumbnail image path
-  opt --foreground <foreground> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image path
-  opt --foreground-elevation <foregroundElevation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image elevation
+  opt --foreground <foreground> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image path (Foundry v13)
+  opt --foreground-elevation <foregroundElevation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image elevation (Foundry v13)
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort order
   opt --initial-level <initialLevel> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Initial level id (Foundry v14)
   opt --playlist <playlistId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked playlist id
@@ -303,7 +303,7 @@ command scene clone
   opt --initial-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene initial view position as JSON object
   opt --transition-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene transition config as JSON object
   opt --grid-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene grid override as JSON object
-  opt --background-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene background override as JSON object
+  opt --background-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene background override as JSON object (Foundry v13)
 
 command scene delete
   aliases=[]
