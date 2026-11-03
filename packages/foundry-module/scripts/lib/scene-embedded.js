@@ -168,7 +168,7 @@ export function assertInitialLevelExists(patch, levelIds, details) {
   if (levelId === undefined || levelId === null || levelIds.includes(levelId)) return;
   throw createBridgeError(
     ERROR_CODES.LEVEL_NOT_FOUND,
-    `initialLevel ${levelId} is not a level of the target scene; its levels are ${levelIds.join(", ")} (scene.level.list reports them with names). To make the first level the initial one, send initialLevel as JSON null (on the CLI: --patch-json '{"initialLevel":null}'). Nothing was written`,
+    `initialLevel ${levelId} is not a level of the target scene; its levels are ${levelIds.join(", ")} (scene.level.list reports them with names). Pass one of these ids or omit initialLevel. To reset a scene to its first level, send initialLevel as JSON null through scene.update (on the CLI: scene update --patch-json '{"initialLevel":null}'). Nothing was written`,
     { ...details, levelId }
   );
 }
