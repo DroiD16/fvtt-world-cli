@@ -75,17 +75,11 @@ A macro that throws fails `macro.execute` with a partial outcome — read what i
 retrying — while a macro that catches its own errors still returns `null`, which proves nothing;
 verify effects with reads, and treat `MACRO_TIMEOUT` as indeterminate — the macro may still be
 running.
-On Foundry v14 a scene's maps live on its levels. Create a scene with its maps through `levels`
-in the `scene.create` data (the first level becomes the initial one), take the level ids from the
-real create's `levels` or from `scene.level.list` (preview ids are provisional), and edit floors
-with `scene.level.*`. Change the initial level afterwards with `scene.update` `initialLevel`.
-Scene-level `background`/`foreground` fields return `UNSUPPORTED_OPERATION` on v14 and are the
-only map fields on v13, where `scene.level.*` is unavailable.
-Deleting levels cascades in Foundry: it deletes their tokens, their fog exploration, and every
-placeable whose `levels` holds only levels being deleted, and strips the deleted levels from every
-other placeable's `levels`; an empty `levels` (all levels) is untouched. The dry run does not list
-these placeables, so before deleting a level read the scene's placeable lists (token `level`, other
-placeables' `levels`) and tell the user what the delete removes.
+On Foundry v14 maps live on levels: pass `levels` in `scene.create`, then use `scene.level.*`;
+level ids in a preview are provisional.
+Deleting a level also deletes its tokens and every placeable only on that level, and the dry run
+does not list them: read the scene's placeables (token `level`, others' `levels`) and tell the user
+what the delete removes before running it.
 `setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
 When a setting write returns `requiresReload: true`, the change needs a GM-client reload to take
 effect; `system.reload` performs it, drops the bridge, and requires a reconnect wait before the

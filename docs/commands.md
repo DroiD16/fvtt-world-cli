@@ -66,9 +66,7 @@ fvtt-world-cli scene token get --scene-id <sceneId> --token-id <tokenId> --json
 
 ### Build a scene with levels
 
-On Foundry v14 a scene's maps live on its levels. Each level has its own background, foreground,
-fog image and elevation range. Pass the levels when you create the scene, then use the ids in the
-result for later edits:
+On Foundry v14 a scene's maps live on its levels. Pass the levels when you create the scene:
 
 ```bash
 fvtt-world-cli scene create --name "Tower" --json \
@@ -79,24 +77,13 @@ fvtt-world-cli scene level update --scene-id <sceneId> --level-id <levelId> \
   --patch-json '{"foreground":{"src":"worlds/<worldId>/maps/roof.webp"}}' --json
 ```
 
-The first supplied level becomes the initial one. `scene create` has no `initialLevel`, because
-level ids exist only after creation. To start players on another level, run `scene update
---scene-id <sceneId> --initial-level <levelId>` with a level of that scene. To go back to the first
-level, send `null` through `--patch-json '{"initialLevel":null}'`. A scene keeps at least one level,
-so `scene level delete` and `delete-many` refuse to remove the last one.
+The first supplied level becomes the initial one. To start players on another level, run `scene
+update --scene-id <sceneId> --initial-level <levelId>`; `--patch-json '{"initialLevel":null}'` goes
+back to the first level. A scene keeps at least one level, so `scene level delete` and `delete-many`
+refuse to remove the last one.
 
-Deleting levels also deletes content on them. Foundry deletes every token on a deleted level, and
-every tile, wall, light, sound, note, drawing or region whose level list holds only levels being
-deleted. Any other placeable loses the deleted levels from its list. A placeable with an empty list
-appears on every level and stays untouched. Foundry also deletes the fog exploration saved for the
-deleted levels. A dry run of `scene level delete` or `delete-many` does not list these placeables.
-On v14 placeable reads show where each one sits: a token's `level`, and the `levels` list of every
-other placeable. On v13 a placeable write that sets `level` or `levels` fails with
-`UNSUPPORTED_OPERATION`, where Foundry would otherwise drop the field without a word.
-
-Scenes accept `folder`, and on v13 `background` also accepts `anchorX`, `anchorY`, `fit` and
-`alphaThreshold`. `grid.sizeX`, `grid.sizeY` and `grid.diagonals` fail with `INVALID_PARAMS`
-because Foundry never stored them.
+Deleting a level also deletes its tokens and every placeable that exists only on that level. A dry
+run does not list them, so read the scene's placeables before deleting a level.
 
 [Compatibility](compatibility.md) lists the scene map fields each Foundry version accepts.
 
@@ -168,18 +155,8 @@ List rows contain fewer fields than `get` results. Read the target with `get` be
 update. Reads return authored state; some commands accept `include` options for derived or expensive
 data. Check the command's help for available projections and filters.
 
-World actor results report `itemCount` instead of the owned items, because items make up most
-of a character's size. `actor get` and `actor get-many` return them with `--include items`;
-`items.flags` and `items.effects` imply `items`. Write, clone, import, and ownership results
-for actors carry only the count. The count, the included items, and each included item's
-`effectCount` and effects come from the stored actor source, so an item or effect that failed
-Foundry's validation appears there. `actor item list`, `actor item get`, and the
-`actor item effect` reads return the loaded documents and leave such an item or effect out. No
-`actor item` or `actor item effect` command can read or write one either. Addressing such an item
-returns `ITEM_NOT_FOUND`, and addressing such an effect on a loaded item returns
-`EFFECT_NOT_FOUND`. `compendium get` returns an Actor entry as stored, items included.
-`system info` reports `moduleCount` and `activeModuleCount`; `--include modules` adds the module
-list. The command inventory comes from `commands`, which also applies the world's policy.
+Actor results carry `itemCount` in place of the owned items; `actor get` and `actor get-many`
+return the items with `--include items`. `system info --include modules` lists installed modules.
 
 ### Updates and merge semantics
 

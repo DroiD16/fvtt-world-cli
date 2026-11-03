@@ -180,54 +180,48 @@ mirror may accompany it. List responses use smaller projections than single-docu
 filters apply before pagination. Previewed documents have no persistent identity, so an id
 observed during a preview must not be reused.
 
-Every world-actor result carries `itemCount`. The `items` array appears only when `actor.get`
-or `actor.get-many` receives `include: ["items"]`, or `items.flags` or `items.effects`, which
-imply it. Each returned item carries `effectCount`, and its own `flags` and `effects` only when
-those are included. Actor create, update, clone, import, and ownership results return the count
-without the items. `itemCount`, the included `items`, and each included item's `effectCount` and
-`effects` come from the stored actor source, so they also cover an item or effect that failed
-Foundry's validation. `actor.item.list`, `actor.item.get`, and the `actor.item.effect` reads return
-the loaded documents and omit such an item or effect. No `actor.item` or `actor.item.effect`
-command can read or write one either. Addressing such an item returns `ITEM_NOT_FOUND`, and
-addressing such an effect on a loaded item returns `EFFECT_NOT_FOUND`.
-`compendium.get` returns a pack entry as stored, so an Actor entry keeps its `items` and has no
-`itemCount`.
-
-`system.info` returns `moduleCount` and `activeModuleCount`. With `include: ["modules"]` it adds
-`modules`, one `{id, title, version, active}` entry per installed module. It carries no command
-inventory. The bridge handshake advertises the commands the Foundry module supports, and
-`auth status` reports that set as `bridge.session.commands`. `commands` lists this release's
-command registry under the world's policy, not the advertised set.
-
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.
 
+### Actor results
+
+Every world-actor result carries `itemCount`. The `items` array appears only when `actor.get` or
+`actor.get-many` receives `include: ["items"]`, or `items.flags` or `items.effects`, which imply it.
+Each returned item carries `effectCount`, and its own `flags` and `effects` only when those are
+included. Actor create, update, clone, import, and ownership results carry the count without the
+items. `compendium.get` returns a pack entry as stored, so an Actor entry keeps its `items` and has
+no `itemCount`. The count and the included items come from the stored actor source, so they can
+include an item or effect that failed Foundry's validation, which no `actor.item.*` command can
+address.
+
+### System info results
+
+`system.info` returns `moduleCount` and `activeModuleCount`; `include: ["modules"]` adds `modules`,
+one `{id, title, version, active}` entry per installed module. It has no command inventory:
+`auth status` reports the advertised set as `bridge.session.commands`, and `commands` lists the
+registry under the world's policy.
+
 ### Scene results
 
-On Foundry v14, `scene.get`, `scene.get-many` and the results and previews of `scene.create`,
-`scene.update`, `scene.clone`, `scene.import-from-compendium` and `scene.ownership.set` include
-`levels`: every stored level in stored order, each with `id`, `name`, `elevation`, `background`,
-`foreground`, `fog`, `textures`, `visibility`, `sort` and `flags`. `scene.list` rows omit them.
-`initialLevel` is the stored value, and `null` means Foundry uses the first level. Level ids in a
-`scene.create` preview are provisional: the real create assigns new ids, and a preview without
-`levels` shows none, although the real create adds Foundry's default level. v14 scene results omit
-`background`, `backgroundColor`, `foreground` and `foregroundElevation`, which Foundry stores per
-level. v13 results keep those four fields and have no `levels` or `initialLevel`. Scene results
-include `folder`, and on v13 `background` also carries `anchorX`, `anchorY`, `fit` and
-`alphaThreshold`. `scene.get` and `scene.get-many` `counts` list only the embedded collections the
-connected version has: `levels` on v14, `templates` on v13.
+On Foundry v14, every scene result and preview except `scene.list` rows includes `levels`: each
+stored level in order, with `id`, `name`, `elevation`, `background`, `foreground`, `fog`,
+`textures`, `visibility`, `sort` and `flags`. The scene's own `background`, `backgroundColor`,
+`foreground` and `foregroundElevation` are left out. An `initialLevel` of `null` means the first
+level. v13 results have no `levels` or `initialLevel` and keep the four map fields, with `anchorX`,
+`anchorY`, `fit` and `alphaThreshold` in `background`. Scene results include `folder`. `scene.get`
+and `scene.get-many` `counts` list `levels` on v14 and `templates` on v13. Level ids in a
+`scene.create` preview are provisional; a preview without `levels` shows none, although the real
+create adds Foundry's default level.
 
-On v14, token results and list rows carry the stored `level` id. Tile, wall, light, sound, note,
-drawing and region results and list rows carry the stored `levels` array of level ids; an empty
-array means the placeable is on every level. The same fields appear in write results and previews.
-v13 placeable results have neither key. On v13 a placeable create, update or clone, single or
-batch, whose data has a top-level `level` or `levels` key in any spelling fails with
-`UNSUPPORTED_OPERATION` and `details` `{ family, fields }`, and nothing is written.
+On v14, placeable results, list rows and previews carry the stored level: `level` for tokens and a
+`levels` array for the other families, where an empty array means every level. On v13 neither key
+appears, and a placeable write with a top-level `level` or `levels` key fails with
+`UNSUPPORTED_OPERATION` and `details` `{ family, fields }`, writing nothing.
 
 `scene.level.list` rows carry `id`, `name`, `elevation` and `sort`. `scene.level.get`, `create`,
-`update` and `clone` return the full level under `level`; `scene.level.delete` and the batch verbs
-use the shared delete and batch result shapes. An `initialLevel` that names no level of
-the scene, or of the packed scene for an import, fails with `LEVEL_NOT_FOUND` and `details.levelId`.
+`update` and `clone` return the full level under `level`; delete and batch verbs use the shared
+result shapes. An `initialLevel` that names no level of the scene, or of the packed scene for an
+import, fails with `LEVEL_NOT_FOUND` and `details.levelId`.
 
 ### Macro results
 
