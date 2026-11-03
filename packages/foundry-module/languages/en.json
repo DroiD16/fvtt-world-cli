@@ -112,6 +112,8 @@
       "DaemonUrlHint": "WebSocket URL for the local fvtt-world-cli bridge daemon.",
       "AutoConnectName": "Connect automatically",
       "AutoConnectHint": "Connect to the local daemon when the world loads. When disabled, the bridge starts only from the Connect button in the World CLI scene controls or the Authorization window.",
+      "WarnDaemonUnavailableName": "Warn when the daemon is unavailable at load",
+      "WarnDaemonUnavailableHint": "When disabled, a failed automatic connection at world load shows no warning, while a manual Connect still warns; this has no effect while Connect automatically is disabled.",
       "CredentialsName": "Browser pairing credentials",
       "ClientIdName": "Browser client identifier",
       "AuthorizationName": "Authorization",

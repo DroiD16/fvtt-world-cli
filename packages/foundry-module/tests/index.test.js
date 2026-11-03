@@ -218,10 +218,17 @@ describe("module settings registration", () => {
   });
 
   describe("settings visibility for the current user", () => {
-    const VISIBLE_KEYS = ["daemonUrl", "autoConnect", "approvalTimeoutMinutes", "approvalSound"];
+    const VISIBLE_KEYS = [
+      "daemonUrl",
+      "autoConnect",
+      "warnDaemonUnavailable",
+      "approvalTimeoutMinutes",
+      "approvalSound"
+    ];
     const ALL_KEYS = [
       "daemonUrl",
       "autoConnect",
+      "warnDaemonUnavailable",
       "credentials",
       "clientId",
       "commandPolicy",

@@ -48,7 +48,7 @@ function handleStatusChange(snapshot) {
   globalThis.Hooks?.callAll?.(`${MODULE_ID}.statusChanged`, snapshot);
 }
 
-function createBridgeRuntime(credential, clientId) {
+function createBridgeRuntime(credential, clientId, { warnDaemonUnavailable }) {
   const settings = getBridgeSettings();
 
   let bridgeClient = null;
@@ -76,6 +76,7 @@ function createBridgeRuntime(credential, clientId) {
     credential: credential.credential,
     clientId,
     router,
+    warnDaemonUnavailable,
     logger: log,
     onStatusChange: handleStatusChange,
     getSession: () => ({
@@ -112,6 +113,15 @@ function registerSettings() {
   globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.AUTO_CONNECT, {
     name: "FVTTWORLDCLI.Settings.AutoConnectName",
     hint: "FVTTWORLDCLI.Settings.AutoConnectHint",
+    scope: "client",
+    config: configurable,
+    type: Boolean,
+    default: true
+  });
+
+  globalThis.game.settings.register(MODULE_ID, MODULE_SETTING_KEYS.WARN_DAEMON_UNAVAILABLE, {
+    name: "FVTTWORLDCLI.Settings.WarnDaemonUnavailableName",
+    hint: "FVTTWORLDCLI.Settings.WarnDaemonUnavailableHint",
     scope: "client",
     config: configurable,
     type: Boolean,
@@ -203,7 +213,7 @@ async function deleteLegacyWorldSettings() {
 
 let bridgeStartGeneration = 0;
 
-async function startBridge(credential = getCurrentCredential()) {
+async function startBridge(credential = getCurrentCredential(), { warnDaemonUnavailable = true } = {}) {
   const generation = ++bridgeStartGeneration;
   globalThis.foundryCliBridge?.stop?.();
   if (!credential) return;
@@ -211,7 +221,7 @@ async function startBridge(credential = getCurrentCredential()) {
   // Only the newest start may install a client: an overtaken one is never stopped here, so
   // starting it anyway would leave two clients racing for the slot and publishing conflicting status.
   if (generation !== bridgeStartGeneration) return;
-  const bridgeClient = createBridgeRuntime(credential, clientId);
+  const bridgeClient = createBridgeRuntime(credential, clientId, { warnDaemonUnavailable });
   globalThis.foundryCliBridge = bridgeClient;
   bridgeClient.start();
 }
@@ -228,7 +238,8 @@ Hooks.once("ready", async () => {
   }
 
   await deleteLegacyWorldSettings();
-  if (!getBridgeSettings().autoConnect) {
+  const { autoConnect, warnDaemonUnavailable } = getBridgeSettings();
+  if (!autoConnect) {
     log("info", "Skipping bridge startup because auto-connect is disabled");
     return;
   }
@@ -241,7 +252,7 @@ Hooks.once("ready", async () => {
   }
 
   try {
-    await startBridge(credential);
+    await startBridge(credential, { warnDaemonUnavailable });
   } catch (error) {
     log("error", "Bridge startup failed", {
       message: error instanceof Error ? error.message : "Unknown error"
