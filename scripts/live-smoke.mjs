@@ -2280,6 +2280,20 @@ function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created, actorI
       runV13PlaceableLevelKeyCoverage(summary, { sceneId: v13Scene.id, actorId });
       expectErr(
         summary,
+        "scene.token.create(level v13 gate)",
+        runFoundryctl([
+          "scene",
+          "token",
+          "create",
+          "--scene-id",
+          v13Scene.id,
+          "--data-json",
+          JSON.stringify({ name: `Smoke Level Gate Token ${stamp}`, level: "defaultLevel0000" })
+        ]),
+        ERROR_CODES.UNSUPPORTED_OPERATION
+      );
+      expectErr(
+        summary,
         "scene.level.list(v13 gate)",
         runFoundryctl(["scene", "level", "list", "--scene-id", v13Scene.id]),
         ERROR_CODES.UNSUPPORTED_OPERATION

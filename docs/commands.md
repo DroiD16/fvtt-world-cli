@@ -91,7 +91,8 @@ deleted. Any other placeable loses the deleted levels from its list. A placeable
 appears on every level and stays untouched. Foundry also deletes the fog exploration saved for the
 deleted levels. A dry run of `scene level delete` or `delete-many` does not list these placeables.
 On v14 placeable reads show where each one sits: a token's `level`, and the `levels` list of every
-other placeable.
+other placeable. On v13 a placeable write that sets `level` or `levels` fails with
+`UNSUPPORTED_OPERATION`, where Foundry would otherwise drop the field without a word.
 
 Scenes accept `folder`, and on v13 `background` also accepts `anchorX`, `anchorY`, `fit` and
 `alphaThreshold`. `grid.sizeX`, `grid.sizeY` and `grid.diagonals` fail with `INVALID_PARAMS`

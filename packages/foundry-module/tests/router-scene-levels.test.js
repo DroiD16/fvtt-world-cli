@@ -82,6 +82,52 @@ describe("scene levels", () => {
       expect(response.result.scene).not.toHaveProperty("levels");
       expect(response.result.scene).not.toHaveProperty("initialLevel");
     });
+
+    const tile = { width: 100, height: 100 };
+    it.each([
+      ["scene.tile.create", { data: { ...tile, levels: ["level-upper"] } }, ["levels"]],
+      ["scene.tile.create-many", { data: [tile, { ...tile, levels: [] }] }, ["levels"]],
+      ["scene.tile.update", { tileId: "tile-a", patch: { "-=levels": null } }, ["levels"]],
+      [
+        "scene.tile.update-many",
+        { patches: [{ id: "tile-a", patch: { "levels.0": "level-upper" } }] },
+        ["levels"]
+      ],
+      ["scene.tile.clone", { tileId: "tile-a", patch: { "==levels": ["level-upper"] } }, ["levels"]],
+      ["scene.token.create", { data: { name: "Guard", level: "level-upper" } }, ["level"]],
+      ["scene.token.create", { data: { actorId: "actor-1", level: "level-upper" } }, ["level"]],
+      [
+        "scene.token.create-many",
+        { data: [{ actorId: "actor-1", level: "level-upper", levels: ["level-upper"] }] },
+        ["level", "levels"]
+      ],
+      ["scene.token.update", { tokenId: "token-a", patch: { level: "level-upper" } }, ["level"]],
+      [
+        "scene.token.update-many",
+        { patches: [{ id: "token-a", patch: { level: "level-upper" } }] },
+        ["level"]
+      ],
+      ["scene.token.clone", { tokenId: "token-a", patch: { level: "level-upper" } }, ["level"]]
+    ])("refuses placeable level membership in %s %j, real and dry-run", async (command, params, fields) => {
+      const actor = globalThis.game.actors.get("actor-1");
+      const sizes = () => [scene().tiles.size, scene().tokens.size];
+      const before = sizes();
+
+      for (const dryRun of [false, true]) {
+        const response = await router().route(
+          createRequest(command, { sceneId: "scene-1", ...params, dryRun })
+        );
+        expect(response.error?.code, `dryRun ${dryRun}`).toBe("UNSUPPORTED_OPERATION");
+        expect(response.error.details).toMatchObject({
+          family: command.split(".").slice(0, 2).join("."),
+          fields
+        });
+      }
+      expect(actor.getTokenDocument).not.toHaveBeenCalled();
+      expect(scene().createEmbeddedDocuments).not.toHaveBeenCalled();
+      expect(scene().updateEmbeddedDocuments).not.toHaveBeenCalled();
+      expect(sizes()).toEqual(before);
+    });
   });
 
   describe("scene results on v14", () => {

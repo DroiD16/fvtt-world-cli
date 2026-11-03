@@ -201,7 +201,9 @@ has: `levels` on v14, `templates` on v13.
 On v14, token results and list rows carry the stored `level` id. Tile, wall, light, sound, note,
 drawing and region results and list rows carry the stored `levels` array of level ids; an empty
 array means the placeable is on every level. The same fields appear in write results and previews.
-v13 placeable results have neither key.
+v13 placeable results have neither key. On v13 a placeable create, update or clone, single or
+batch, whose data has a top-level `level` or `levels` key in any spelling fails with
+`UNSUPPORTED_OPERATION` and `details` `{ family, fields }`, and nothing is written.
 
 `scene.level.list` rows carry `id`, `name`, `elevation` and `sort`. `scene.level.get`, `create`,
 `update` and `clone` return the full level under `level`; `scene.level.delete` and the batch verbs

@@ -10,7 +10,7 @@ import {
 
 import { hasSceneLevels } from "./foundry-capabilities.js";
 import { getActorById, getGame, getSceneById } from "./game-collections.js";
-import { AUTHOR_BEARING_EMBEDDED_TYPES, sanitizeEmbeddedData } from "./sanitize.js";
+import { AUTHOR_BEARING_EMBEDDED_TYPES, payloadKeyField, sanitizeEmbeddedData } from "./sanitize.js";
 import {
   assertRegionBehaviorsAllowed,
   assertRegionBehaviorsSuppliedAsArray
@@ -159,6 +159,27 @@ export function assertSceneLevelsFieldsSupported(data) {
 }
 
 /**
+ * @param {string} type
+ * @param {Record<string, any> | null | undefined} data
+ */
+function assertPlaceableLevelFieldsSupported(type, data) {
+  if (hasSceneLevels() || !data || typeof data !== "object") return;
+  const fields = [
+    ...new Set(
+      Object.keys(data)
+        .map(payloadKeyField)
+        .filter((field) => field === "level" || field === "levels")
+    )
+  ];
+  if (fields.length === 0) return;
+  throw createBridgeError(
+    ERROR_CODES.UNSUPPORTED_OPERATION,
+    `Placeable level membership exists only on Foundry v14 and later: ${type} documents on this Foundry version have no \`level\` or \`levels\` field, and Foundry would silently discard the value. Remove ${fields.join(" and ")} from the data; on v13 every placeable belongs to the scene's single map. Nothing was written`,
+    { family: SCENE_EMBEDDED_LIST_COMMANDS[type].slice(0, -".list".length), fields }
+  );
+}
+
+/**
  * @param {Record<string, any> | undefined} patch
  * @param {string[]} levelIds
  * @param {Record<string, unknown>} details
@@ -197,6 +218,7 @@ export function prepareSceneEmbeddedCreateData(type, data) {
     assertRegionBehaviorsSuppliedAsArray(data);
     assertRegionBehaviorsAllowed(data?.behaviors);
   }
+  assertPlaceableLevelFieldsSupported(type, data);
   return sanitizeEmbeddedData(canonicalizeFilePathFields(data, type));
 }
 
@@ -210,6 +232,7 @@ export function prepareSceneEmbeddedUpdateData(type, patch, existingDocument = n
     assertRegionBehaviorsSuppliedAsArray(patch);
     assertRegionBehaviorsAllowed(patch?.behaviors, existingDocument);
   }
+  assertPlaceableLevelFieldsSupported(type, patch);
   return sanitizeEmbeddedData(canonicalizeFilePathFields(patch, type), { preserveNestedBehaviorIds: true });
 }
 
@@ -308,6 +331,7 @@ export async function cloneSceneEmbedded(
 ) {
   const { document } = getSceneEmbeddedById(sceneId, type, embeddedId, notFoundCode, idField);
 
+  assertPlaceableLevelFieldsSupported(type, patch);
   const overrides = sanitizeEmbeddedData(canonicalizeFilePathFields(patch ?? {}, type));
 
   if (type === "Region") {
@@ -346,6 +370,7 @@ export async function buildTokenDataFromActor(actorId, overrides, scene) {
  * @param {any} scene
  */
 export async function resolveSceneTokenCreateData(data, scene) {
+  assertPlaceableLevelFieldsSupported("Token", data);
   const { actorId, ...overrides } = data ?? {};
   if (!actorId) {
     return overrides;
