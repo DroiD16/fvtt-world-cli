@@ -30,7 +30,7 @@ import pino, { type Logger } from "pino";
 import { WebSocketServer } from "ws";
 import type WebSocket from "ws";
 import type { CliConfigStore, PersistedCliConfig, PersistedCliConfigV3 } from "../config.js";
-import { PersistedCliConfigSchema, createEmptyConfig } from "../config.js";
+import { PersistedCliConfigSchema, createEmptyConfig, withDaemonOwnedKeys } from "../config.js";
 import {
   isCommandResponseEnvelope,
   normalizeIncomingData,
@@ -59,7 +59,6 @@ import {
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
 const DEFAULT_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
-const DAEMON_OWNED_CONFIG_KEYS = ["version", "daemonUrl", "deviceCredential", "pairings"] as const;
 const ACCEPTED_BRIDGE_RESPONSE_TYPES: readonly string[] = Object.freeze([MESSAGE_TYPES.COMMAND_RESPONSE]);
 
 interface ConnectionState {
@@ -587,12 +586,9 @@ export class BridgeDaemon {
 
   persistConfig() {
     if (!this.configStore) return;
-    const merged: Record<string, unknown> = { ...(this.configStore.readConfig() ?? this.config) };
-    for (const key of DAEMON_OWNED_CONFIG_KEYS) {
-      if (this.config[key] === undefined) delete merged[key];
-      else merged[key] = this.config[key];
-    }
-    this.config = PersistedCliConfigSchema.parse(merged);
+    this.config = PersistedCliConfigSchema.parse(
+      withDaemonOwnedKeys(this.configStore.readConfig() ?? this.config, this.config)
+    );
     this.configStore.writeConfig(this.config);
   }
 

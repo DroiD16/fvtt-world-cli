@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import { Command, CommanderError } from "commander";
 
-import { mergePersistedCliConfig } from "./config.js";
+import { writeCliConfigUpdate } from "./config.js";
 import { type CliDependencies, write } from "./deps.js";
 
 export const SKILL_NAME = "foundry-world-editor";
@@ -149,11 +149,10 @@ export function recordSkillInstalls(
       else current.add(root);
     }
     const skillInstalls = [...current].sort();
-    dependencies.configStore.writeConfig(
-      mergePersistedCliConfig(
-        existing,
-        skillInstalls.length > 0 ? { skillInstalls } : { skillInstalls: undefined }
-      )
+    writeCliConfigUpdate(
+      dependencies.configStore,
+      existing,
+      skillInstalls.length > 0 ? { skillInstalls } : { skillInstalls: undefined }
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

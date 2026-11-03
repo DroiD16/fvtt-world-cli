@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Writable } from "node:stream";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -19,6 +20,8 @@ import {
   parseUploadLimitBytes,
   resolveEffectiveUploadLimitBytes
 } from "../src/config.js";
+import { recordSkillInstalls } from "../src/skill.js";
+import { runCommandWithBaseArgs } from "./helpers/cli-harness.js";
 
 const tempDirectories: string[] = [];
 
@@ -288,6 +291,56 @@ describe("CLI config store", () => {
         env: { XDG_CONFIG_HOME: "/custom" }
       })
     ).toBe("/custom/fvtt-world-cli/config.json");
+  });
+});
+
+describe("CLI config writers", () => {
+  function storeWithDaemonRotation(path: string) {
+    const inner = createCliConfigStore(path);
+    const initial = createEmptyConfig();
+    inner.writeConfig(initial);
+    const rotated = { ...initial, deviceCredential: "r".repeat(43) };
+    let pending = true;
+    const store = {
+      ...inner,
+      readConfig() {
+        const config = inner.readConfig();
+        if (pending) {
+          pending = false;
+          inner.writeConfig(rotated);
+        }
+        return config;
+      }
+    };
+    return { inner, store, rotated };
+  }
+
+  it("keeps a credential the daemon rotates while config set-upload-limit is writing", async () => {
+    const { inner, store, rotated } = storeWithDaemonRotation(createTempConfigPath());
+
+    const result = await runCommandWithBaseArgs(
+      ["node", "fvtt-world-cli", "config", "set-upload-limit", "1234"],
+      undefined,
+      { configStore: store }
+    );
+
+    expect(result.error).toBeNull();
+    expect(inner.readConfig()).toMatchObject({
+      deviceCredential: rotated.deviceCredential,
+      uploadLimitBytes: 1234
+    });
+  });
+
+  it("keeps a credential the daemon rotates while a skill install is recorded", () => {
+    const { inner, store, rotated } = storeWithDaemonRotation(createTempConfigPath());
+    const stderr = new Writable({ write: (_chunk, _encoding, callback) => callback() });
+
+    recordSkillInstalls({ stderr, configStore: store }, ["/skills/b"]);
+
+    expect(inner.readConfig()).toMatchObject({
+      deviceCredential: rotated.deviceCredential,
+      skillInstalls: ["/skills/b"]
+    });
   });
 });
 

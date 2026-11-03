@@ -246,14 +246,28 @@ export function createCliConfigStore(configPath = getDefaultCliConfigPath()): Cl
   };
 }
 
-export function mergePersistedCliConfig(
+const DAEMON_OWNED_CONFIG_KEYS = ["version", "daemonUrl", "deviceCredential", "pairings"] as const;
+
+export function withDaemonOwnedKeys(config: PersistedCliConfig, owner: PersistedCliConfig) {
+  const merged: Record<string, unknown> = { ...config };
+  for (const key of DAEMON_OWNED_CONFIG_KEYS) {
+    if (owner[key] === undefined) delete merged[key];
+    else merged[key] = owner[key];
+  }
+  return merged;
+}
+
+export function writeCliConfigUpdate(
+  configStore: CliConfigStore,
   existingConfig: PersistedCliConfig | null,
   updates: PersistedCliConfig
 ) {
-  return PersistedCliConfigSchema.parse({
-    ...(existingConfig ?? createEmptyConfig()),
-    ...updates
-  });
+  configStore.writeConfig(
+    PersistedCliConfigSchema.parse({
+      ...(configStore.readConfig() ?? existingConfig ?? createEmptyConfig()),
+      ...updates
+    })
+  );
 }
 
 export function resolveRemoteCommandConfig({

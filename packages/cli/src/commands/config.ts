@@ -1,11 +1,10 @@
 import { join } from "node:path";
 
-import { DEFAULT_DAEMON_URL } from "@fvtt-world-cli/protocol";
 import { Command } from "commander";
 
 import type { RegistrationContext } from "./shared.js";
 import { getStoredConfig, maskConfigForOutput, renderConfigGetHumanOutput } from "../config-io.js";
-import { mergePersistedCliConfig, parseUploadLimitBytes } from "../config.js";
+import { parseUploadLimitBytes, writeCliConfigUpdate } from "../config.js";
 import { write } from "../deps.js";
 
 export function registerConfig({ program, dependencies }: RegistrationContext) {
@@ -37,12 +36,7 @@ export function registerConfig({ program, dependencies }: RegistrationContext) {
     .action(function setUploadLimit(this: Command, size: string) {
       const uploadLimitBytes = parseUploadLimitBytes(size);
       const persistedConfig = getStoredConfig(dependencies);
-      const nextConfig = mergePersistedCliConfig(persistedConfig, {
-        daemonUrl: persistedConfig?.daemonUrl ?? DEFAULT_DAEMON_URL,
-        uploadLimitBytes
-      });
-
-      dependencies.configStore.writeConfig(nextConfig);
+      writeCliConfigUpdate(dependencies.configStore, persistedConfig, { uploadLimitBytes });
 
       const payload = {
         configPath: dependencies.configStore.getConfigPath(),
