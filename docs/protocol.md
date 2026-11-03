@@ -189,12 +189,15 @@ On Foundry v14, `scene.get`, `scene.get-many` and the results and previews of `s
 `scene.update`, `scene.clone` and `scene.import-from-compendium` include `levels`: every stored level
 in stored order, each with `id`, `name`, `elevation`, `background`, `foreground`, `fog`, `textures`,
 `visibility`, `sort` and `flags`. `scene.list` rows omit them. `initialLevel` is the stored value,
-and `null` means Foundry uses the first level. v14 scene results omit `background`,
+and `null` means Foundry uses the first level. Level ids in a `scene.create` preview are
+provisional: the real create assigns new ids, and a preview without `levels` shows none, although
+the real create adds Foundry's default level. v14 scene results omit `background`,
 `backgroundColor`, `foreground` and `foregroundElevation`, which Foundry stores per level. v13
 results keep those four fields and have no `levels` or `initialLevel`.
 
-`scene.level.list` rows carry `id`, `name`, `elevation` and `sort`; `scene.level.get` and the
-level write commands return the full level under `level`. An `initialLevel` that names no level of
+`scene.level.list` rows carry `id`, `name`, `elevation` and `sort`. `scene.level.get`, `create`,
+`update` and `clone` return the full level under `level`; `scene.level.delete` and the batch verbs
+use the shared delete and batch result shapes. An `initialLevel` that names no level of
 the scene, or of the packed scene for an import, fails with `LEVEL_NOT_FOUND` and `details.levelId`.
 
 ### Macro results
