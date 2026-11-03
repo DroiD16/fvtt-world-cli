@@ -315,13 +315,16 @@ describe("CLI config writers", () => {
     return { inner, store, rotated };
   }
 
-  it("keeps a credential the daemon rotates while config set-upload-limit is writing", async () => {
-    const { inner, store, rotated } = storeWithDaemonRotation(createTempConfigPath());
+  it("keeps a credential the daemon rotated before config set-upload-limit writes", async () => {
+    const inner = createCliConfigStore(createTempConfigPath());
+    inner.writeConfig(createEmptyConfig());
+    const rotated = { ...createEmptyConfig(), deviceCredential: "r".repeat(43) };
+    inner.writeConfig(rotated);
 
     const result = await runCommandWithBaseArgs(
       ["node", "fvtt-world-cli", "config", "set-upload-limit", "1234"],
       undefined,
-      { configStore: store }
+      { configStore: inner }
     );
 
     expect(result.error).toBeNull();

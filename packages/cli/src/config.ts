@@ -257,14 +257,10 @@ export function withDaemonOwnedKeys(config: PersistedCliConfig, owner: Persisted
   return merged;
 }
 
-export function writeCliConfigUpdate(
-  configStore: CliConfigStore,
-  existingConfig: PersistedCliConfig | null,
-  updates: PersistedCliConfig
-) {
+export function writeCliConfigUpdate(configStore: CliConfigStore, updates: PersistedCliConfig) {
   configStore.writeConfig(
     PersistedCliConfigSchema.parse({
-      ...(configStore.readConfig() ?? existingConfig ?? createEmptyConfig()),
+      ...(configStore.readConfig() ?? createEmptyConfig()),
       ...updates
     })
   );

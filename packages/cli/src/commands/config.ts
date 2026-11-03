@@ -35,8 +35,7 @@ export function registerConfig({ program, dependencies }: RegistrationContext) {
     .argument("<size>", "Upload size limit as bytes or a size like 100MiB (max 512MiB)")
     .action(function setUploadLimit(this: Command, size: string) {
       const uploadLimitBytes = parseUploadLimitBytes(size);
-      const persistedConfig = getStoredConfig(dependencies);
-      writeCliConfigUpdate(dependencies.configStore, persistedConfig, { uploadLimitBytes });
+      writeCliConfigUpdate(dependencies.configStore, { uploadLimitBytes });
 
       const payload = {
         configPath: dependencies.configStore.getConfigPath(),

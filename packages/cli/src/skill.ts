@@ -151,7 +151,6 @@ export function recordSkillInstalls(
     const skillInstalls = [...current].sort();
     writeCliConfigUpdate(
       dependencies.configStore,
-      existing,
       skillInstalls.length > 0 ? { skillInstalls } : { skillInstalls: undefined }
     );
   } catch (error) {
