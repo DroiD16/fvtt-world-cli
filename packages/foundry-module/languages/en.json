@@ -6,7 +6,7 @@
       "Authorization": "Authorization",
       "Settings": "Module settings",
       "Connect": "Connect bridge",
-      "ConnectAfterDaemonStart": "Connect bridge. The local helper was not reachable when this world loaded; click here once it is running.",
+      "ConnectAfterDaemonStart": "Connect bridge. The local helper was not reachable; click here once it is running.",
       "Disconnect": "Disconnect bridge"
     },
     "BridgeStatus": {
@@ -69,7 +69,7 @@
       "ClientLabelEditable": "Names this browser in the pairing approval and in the daemon's pairing list. Edit it before pairing.",
       "ClientLabelFixed": "The label is fixed once this browser is paired. Unpair and pair again to change it.",
       "ClientLabelGMOnly": "Names this browser in the pairing approval and in the daemon's pairing list. Only a GM can edit it.",
-      "DaemonStartedLater": "The local helper was not reachable when this world loaded. Once it is running, click Connect."
+      "DaemonStartedLater": "The local helper was not reachable. Once it is running, click Connect."
     },
     "Notifications": {
       "ConnectUnpaired": "World CLI is not paired yet. Pair this browser with the local daemon first.",
@@ -97,7 +97,7 @@
       "RevokeFailed": "Pairing revocation failed"
     },
     "Startup": {
-      "DaemonUnavailable": "{module} stopped: the local helper was not reachable when this world loaded. Once it is running, click Connect in the World CLI scene controls or in Authorization.",
+      "DaemonUnavailable": "{module} stopped: the local helper was not reachable. Once it is running, click Connect in the World CLI scene controls or in Authorization.",
       "RejectedCredential": "{module} stopped: the pairing credential was rejected. Open Authorization and pair again.",
       "BridgeBusy": "{module} stopped: another pairing owns the daemon's active bridge slot. Release that bridge or use bridge release, then choose Connect in Authorization.",
       "ProtocolVersionSkewModule": "{module} stopped: the daemon and this module come from different releases, which is refused by design. This client speaks protocol {expected} and the daemon speaks {actual}, so this module is the older half. Update the module in Foundry, or ask your agent to update it, then reload the client.",
