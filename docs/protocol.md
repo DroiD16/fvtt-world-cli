@@ -178,7 +178,8 @@ The protocol package exports `REQUEST_SCHEMA` and `COMMAND_RESPONSE_SCHEMA` for 
 Document results use type-named keys and expose `id` as the public identifier. A source `_id`
 mirror may accompany it. List responses use smaller projections than single-document reads;
 filters apply before pagination. Previewed documents have no persistent identity, so an id
-observed during a preview must not be reused.
+observed during a preview must not be reused. Some result fields depend on the connected Foundry
+version; [Foundry compatibility](compatibility.md) lists them.
 
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.
@@ -341,8 +342,8 @@ The wait has two phases because the decision can outlast a normal request timeou
   policy can change before dispatch.
 
 The module supplies each opaque `approvalId`; callers do not construct one. Approval request schemas
-are closed. `approval.await`, `approval.cancel`, and `policy.snapshot` do not appear in `commands`,
-`system.info` command inventory, or bridge status. `schema <command>` still returns their schemas.
+are closed. `approval.await`, `approval.cancel`, and `policy.snapshot` do not appear in `commands` or
+bridge status. `schema <command>` still returns their schemas.
 The bridge handshake advertises them because the daemon must forward them.
 
 ## Delivery states and retries

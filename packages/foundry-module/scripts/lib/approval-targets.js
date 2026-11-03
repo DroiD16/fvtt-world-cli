@@ -121,6 +121,7 @@ export const APPROVAL_TARGET_NODES = Object.freeze({
   "scene.light": scenePlaceableNode("lightId", "AmbientLight"),
   "scene.template": scenePlaceableNode("templateId", "MeasuredTemplate"),
   "scene.region": scenePlaceableNode("regionId", "Region"),
+  "scene.level": scenePlaceableNode("levelId", "Level"),
   "scene.region.behavior": {
     idField: "behaviorId",
     type: "RegionBehavior",

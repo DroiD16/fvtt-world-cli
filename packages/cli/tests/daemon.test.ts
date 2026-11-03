@@ -27,7 +27,7 @@ import { createBridgeDaemon } from "../src/bridge/daemon.js";
 import { DEFAULT_CLIENT_TIMEOUT_MS } from "../src/bridge/session-store.js";
 import { AWAIT_CLIENT_TIMEOUT_FLOOR_MS, AWAIT_EMPTY_POLL_DELAY_MS } from "../src/commands/auth.js";
 import { createEmptyConfig } from "../src/config.js";
-import { createProgram, planCliErrorOutput } from "../src/index.js";
+import { createProgram, exitCodeForErrorCode, planCliErrorOutput } from "../src/index.js";
 import { DaemonTransportError } from "../src/transport-util.js";
 
 async function freePort() {
@@ -262,6 +262,7 @@ async function runAuthCli(
   { answer, isTTY = true }: { answer?: string | (() => Promise<string>); isTTY?: boolean } = {}
 ) {
   let output = "";
+  let errorOutput = "";
   const stdin = Readable.from(
     (async function* answerLines() {
       if (answer === undefined) return;
@@ -271,7 +272,7 @@ async function runAuthCli(
   stdin.isTTY = isTTY;
   const program = createProgram({
     stdout: { write: (chunk: string) => void (output += chunk) },
-    stderr: { write: () => {} },
+    stderr: { write: (chunk: string) => void (errorOutput += chunk) },
     stdin,
     configStore: {
       getConfigPath: () => "/tmp/fvtt-world-cli-daemon-test-config.json",
@@ -289,7 +290,7 @@ async function runAuthCli(
   } catch (thrown) {
     error = thrown;
   }
-  return { output, error };
+  return { output, errorOutput, error };
 }
 
 function closed(socket: WebSocket) {
@@ -1077,6 +1078,64 @@ describe("authorization daemon", () => {
     expect(reported).not.toContain("policy.snapshot");
   });
 
+  it("prints the bridge session's command inventory from auth status --json", async () => {
+    const credential = "b".repeat(43);
+    const config = createEmptyConfig();
+    addPairing(config, { pairingId: "pair-1", credential });
+    const daemonUrl = `ws://127.0.0.1:${await freePort()}`;
+    const daemon = createBridgeDaemon({ daemonUrl, config, logger: pino({ level: "silent" }) });
+    daemons.push(daemon);
+    await daemon.start();
+    await connectBridge(daemon, { pairingId: "pair-1", credential, commands: [...COMMAND_NAMES] });
+
+    const run = await runAuthCli({ daemonUrl, config }, ["--json", "auth", "status"]);
+
+    expect(run.error).toBeNull();
+    const envelope = JSON.parse(run.output) as {
+      ok: boolean;
+      result: { bridge: { connected: boolean; session: { commands: string[] } } };
+    };
+    expect(envelope).toMatchObject({ ok: true, result: { bridge: { connected: true } } });
+    expect(envelope.result.bridge.session.commands).toEqual([...DISCOVERABLE_COMMAND_NAMES]);
+  });
+
+  it("refuses a command the bridge session does not advertise and points at the advertised inventory", async () => {
+    const credential = "b".repeat(43);
+    const config = createEmptyConfig();
+    addPairing(config, { pairingId: "pair-1", credential });
+    const daemon = createBridgeDaemon({
+      daemonUrl: `ws://127.0.0.1:${await freePort()}`,
+      config,
+      logger: pino({ level: "silent" })
+    });
+    daemons.push(daemon);
+    await daemon.start();
+    const advertised = COMMAND_NAMES.filter((name) => name !== "actor.get");
+    await connectBridge(daemon, { pairingId: "pair-1", credential, commands: advertised });
+    const cli = await connectCli(daemon, config.deviceCredential);
+
+    const response = next(cli);
+    cli.send(
+      JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: MESSAGE_TYPES.COMMAND_REQUEST,
+        id: "unadvertised-1",
+        command: "actor.get",
+        params: { actorId: "a1" }
+      })
+    );
+
+    expect(await response).toMatchObject({
+      id: "unadvertised-1",
+      ok: false,
+      error: {
+        code: ERROR_CODES.UNKNOWN_COMMAND,
+        details: { command: "actor.get", supportedCommands: advertised }
+      }
+    });
+    expect((await response).error.message).toContain("fvtt-world-cli auth status");
+  });
+
   it("revokes an active pairing without creating a lease and never discloses stored secrets", async () => {
     const firstCredential = "b".repeat(43);
     const secondCredential = "c".repeat(43);
@@ -1660,6 +1719,41 @@ describe("authorization daemon", () => {
 
     expect(persisted.uploadLimitBytes).toBe(200 * 1024 * 1024);
     expect(daemon.config.uploadLimitBytes).toBe(200 * 1024 * 1024);
+  });
+
+  it("preserves a skillInstalls edit, including its removal, when the daemon persists its config", async () => {
+    const credential = "f".repeat(43);
+    const config = createEmptyConfig();
+    addPairing(config, { pairingId: "pair-1", credential });
+    let persisted = structuredClone(config);
+    const configStore = {
+      getConfigPath: () => "/tmp/fvtt-world-cli-test-config.json",
+      readConfig: () => structuredClone(persisted),
+      writeConfig: (value: unknown) => {
+        persisted = structuredClone(value as typeof persisted);
+      }
+    };
+    const daemon = createBridgeDaemon({
+      daemonUrl: `ws://127.0.0.1:${await freePort()}`,
+      config,
+      configStore,
+      logger: pino({ level: "silent" })
+    });
+    daemons.push(daemon);
+    await daemon.start();
+
+    configStore.writeConfig({ ...persisted, skillInstalls: ["/srv/skills-a", "/srv/skills-b"] });
+    await connectBridge(daemon, { pairingId: "pair-1", credential });
+    expect(persisted.skillInstalls).toEqual(["/srv/skills-a", "/srv/skills-b"]);
+    expect(daemon.config.skillInstalls).toEqual(["/srv/skills-a", "/srv/skills-b"]);
+
+    const { skillInstalls: _removed, ...withoutSkillInstalls } = persisted;
+    configStore.writeConfig(withoutSkillInstalls);
+    const cli = await connectCli(daemon, config.deviceCredential);
+    expect((await control(cli, "revoke-1", "auth.revoke", { pairingId: "pair-1" })).ok).toBe(true);
+    expect(persisted.skillInstalls).toBeUndefined();
+    expect(daemon.config.skillInstalls).toBeUndefined();
+    expect(persisted.pairings).toEqual([]);
   });
 
   it("returns an error envelope for malformed daemon requests without closing the CLI connection", async () => {
@@ -2669,6 +2763,24 @@ describe("authorization daemon", () => {
 
     expect((run.error as CommanderError).code).toBe("commander.excessArguments");
     expect(daemon.awaitWaiters.size).toBe(0);
+  });
+
+  it("renders a refused control operation and exits with its failure code in both output modes", async () => {
+    const daemon = await startPairingDaemon();
+
+    const json = await runAuthCli(daemon, ["auth", "deny", "ABCDEFGH", "--json"]);
+    const envelope = JSON.parse(json.output);
+    expect(envelope).toMatchObject({ ok: false, error: { code: expect.any(String) } });
+    expect(json.error).toBeInstanceOf(CommanderError);
+    expect((json.error as CommanderError).exitCode).toBe(exitCodeForErrorCode(envelope.error.code));
+    expect((json.error as CommanderError).exitCode).not.toBe(0);
+
+    const text = await runAuthCli(daemon, ["auth", "deny", "ABCDEFGH"]);
+    expect(text.output).toBe("");
+    expect(text.errorOutput).toContain(envelope.error.code);
+    expect(planCliErrorOutput(text.error, false, { commanderAlreadyPrinted: false }).exitCode).toBe(
+      exitCodeForErrorCode(envelope.error.code)
+    );
   });
 
   it("rejects a bridge hello whose client id does not match the stored pairing", async () => {

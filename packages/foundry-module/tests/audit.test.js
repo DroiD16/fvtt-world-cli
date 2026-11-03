@@ -262,6 +262,76 @@ describe("world.audit-files", () => {
     expect(result.broken.some((ref) => ref.path === "https://portraits.example/hero.png")).toBe(false);
   });
 
+  it("walks the background, foreground and fog images of every scene level", () => {
+    const scene = makeDoc({
+      _id: "scene-14",
+      name: "Tower",
+      levels: [
+        {
+          _id: "lvl-a",
+          name: "Ground",
+          background: { src: "worlds/w/a-bg.webp" },
+          foreground: { src: "worlds/w/a-fg.webp" },
+          fog: { src: null }
+        },
+        {
+          _id: "lvl-b",
+          name: "Roof",
+          background: { src: "worlds/w/b-bg.webp" },
+          foreground: { src: null },
+          fog: { src: "worlds/w/b-fog.webp" }
+        }
+      ]
+    });
+
+    const refs = collectAuditRefs({ scenes: [scene] }, new Set(["scene"]));
+
+    expect(refs.map((ref) => [ref.docType, ref.id, ref.parent, ref.field, ref.path])).toEqual([
+      ["Level", "lvl-a", "scene-14", "background.src", "worlds/w/a-bg.webp"],
+      ["Level", "lvl-a", "scene-14", "foreground.src", "worlds/w/a-fg.webp"],
+      ["Level", "lvl-b", "scene-14", "background.src", "worlds/w/b-bg.webp"],
+      ["Level", "lvl-b", "scene-14", "fog.src", "worlds/w/b-fog.webp"]
+    ]);
+  });
+
+  it("reports a missing level map once on v14, where the scene's own map fields mirror the first level", async () => {
+    const ground = {
+      _id: "lvl-a",
+      name: "Ground",
+      background: { src: "worlds/w/scenes/a-bg-missing.webp" },
+      foreground: { src: "worlds/w/scenes/a-fg-missing.webp" },
+      fog: { src: null }
+    };
+    const roof = { _id: "lvl-b", name: "Roof", background: { src: "worlds/w/scenes/b-bg-missing.webp" } };
+    const source = { _id: "scene-14", name: "Tower", levels: [ground, roof] };
+    Object.defineProperty(source, "background", {
+      get: () => ({ src: ground.background.src }),
+      enumerable: false
+    });
+    Object.defineProperty(source, "foreground", { get: () => ground.foreground.src, enumerable: false });
+    globalThis.game = { ready: true, release: { generation: 14 }, scenes: [makeDoc(source)] };
+    installFilePicker({ "worlds/w/scenes": [] });
+
+    const result = await runFileAudit({ scope: ["scene"] });
+
+    expect(result.broken.map((ref) => [ref.docType, ref.id, ref.field, ref.path])).toEqual([
+      ["Level", "lvl-a", "background.src", "worlds/w/scenes/a-bg-missing.webp"],
+      ["Level", "lvl-a", "foreground.src", "worlds/w/scenes/a-fg-missing.webp"],
+      ["Level", "lvl-b", "background.src", "worlds/w/scenes/b-bg-missing.webp"]
+    ]);
+  });
+
+  it("reports the scene's own map fields on v13", async () => {
+    globalThis.game = { ...globalThis.game, release: { generation: 13 } };
+
+    const result = await runFileAudit({ scope: ["scene"] });
+
+    expect(result.broken.map((ref) => [ref.docType, ref.id, ref.field, ref.path])).toEqual([
+      ["AmbientSound", "snd-1", "path", "worlds/w/audio/amb-missing.ogg"],
+      ["Scene", "scene-1", "background.src", "worlds/w/scenes/bg-missing.webp"]
+    ]);
+  });
+
   it("treats a core icons/** ref as public-or-external, not broken", async () => {
     const result = await runFileAudit({ scope: ["scene"] });
     const icon = result.skipped.find((s) => s.path === "icons/svg/mystery-man.svg");

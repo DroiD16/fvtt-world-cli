@@ -1,3 +1,4 @@
+import { hasSceneLevels } from "./foundry-capabilities.js";
 export { paginate, filterByName, filterByPath } from "./pagination.js";
 
 export function cloneValue(value) {
@@ -71,6 +72,10 @@ function normalizeSceneBackground(scene, data) {
     scaleX: source.scaleX ?? 1,
     scaleY: source.scaleY ?? 1,
     rotation: source.rotation ?? 0,
+    anchorX: source.anchorX ?? 0,
+    anchorY: source.anchorY ?? 0,
+    fit: source.fit ?? "fill",
+    alphaThreshold: source.alphaThreshold ?? 0,
 
     tint: source.tint ?? null
   };
@@ -839,16 +844,18 @@ export function serializeChatMessageSummary(message) {
 
 /**
  * @param {any} scene
- * @param {{ counts?: boolean, ownership?: boolean, flags?: boolean, provenance?: boolean }} [options]
+ * @param {{ counts?: boolean, ownership?: boolean, flags?: boolean, provenance?: boolean, levels?: boolean }} [options]
  */
 export function serializeScene(
   scene,
-  { counts = false, ownership = false, flags = false, provenance = false } = {}
+  { counts = false, ownership = false, flags = false, provenance = false, levels = false } = {}
 ) {
   const data = documentData(scene);
+  const hasLevels = hasSceneLevels();
   return {
     ...identityFields(scene, data),
     name: scene.name ?? data.name ?? null,
+    folder: scene.folder?.id ?? data.folder ?? null,
     active: scene.active ?? data.active ?? false,
     navigation: scene.navigation ?? data.navigation ?? false,
     navOrder: scene.navOrder ?? data.navOrder ?? 0,
@@ -856,9 +863,14 @@ export function serializeScene(
     height: scene.height ?? data.height ?? null,
 
     grid: cloneValue(data.grid ?? scene.grid ?? null),
-    background: normalizeSceneBackground(scene, data),
-
-    backgroundColor: data.backgroundColor ?? scene.backgroundColor ?? null,
+    ...(hasLevels
+      ? {}
+      : {
+          background: normalizeSceneBackground(scene, data),
+          backgroundColor: data.backgroundColor ?? scene.backgroundColor ?? null,
+          foreground: scene.foreground ?? data.foreground ?? null,
+          foregroundElevation: data.foregroundElevation ?? scene.foregroundElevation ?? null
+        }),
     tokenVision: scene.tokenVision ?? data.tokenVision ?? false,
     weather: scene.weather ?? data.weather ?? null,
     padding: scene.padding ?? data.padding ?? null,
@@ -867,10 +879,8 @@ export function serializeScene(
     navName: scene.navName ?? data.navName ?? null,
 
     thumb: data.thumb ?? scene.thumb ?? null,
-    foreground: scene.foreground ?? data.foreground ?? null,
-    foregroundElevation: data.foregroundElevation ?? scene.foregroundElevation ?? null,
     sort: scene.sort ?? data.sort ?? 0,
-    initialLevel: data.initialLevel ?? scene.initialLevel ?? null,
+    ...(hasLevels ? { initialLevel: data.initialLevel ?? null } : {}),
 
     playlist: scene.playlist?.id ?? data.playlist ?? null,
     playlistSound: scene.playlistSound?.id ?? data.playlistSound ?? null,
@@ -882,11 +892,38 @@ export function serializeScene(
     initial: cloneValue(data.initial ?? scene.initial ?? null),
     transition: cloneValue(data.transition ?? scene.transition ?? null),
 
+    ...(hasLevels && levels ? { levels: Array.from(scene.levels, serializeLevel) } : {}),
     ...(flags ? { flags: cloneValue(data.flags ?? {}) } : {}),
 
     ...(provenance ? { compendiumSource: compendiumSourceField(data) } : {}),
     ...(counts ? { counts: sceneEmbeddedCounts(scene, data) } : {}),
     ...(ownership ? { ownership: serializeOwnership(scene, data) } : {})
+  };
+}
+
+export function serializeLevel(level) {
+  const data = documentData(level);
+  return {
+    ...identityFields(level, data),
+    name: data.name ?? null,
+    elevation: cloneValue(data.elevation ?? null),
+    background: cloneValue(data.background ?? null),
+    foreground: cloneValue(data.foreground ?? null),
+    fog: cloneValue(data.fog ?? null),
+    textures: cloneValue(data.textures ?? null),
+    visibility: cloneValue(data.visibility ?? null),
+    sort: data.sort ?? 0,
+    flags: cloneValue(data.flags ?? {})
+  };
+}
+
+export function serializeLevelSummary(level) {
+  const data = documentData(level);
+  return {
+    ...identityFields(level, data),
+    name: data.name ?? null,
+    elevation: cloneValue(data.elevation ?? null),
+    sort: data.sort ?? 0
   };
 }
 
@@ -904,8 +941,10 @@ const SCENE_EMBEDDED_COLLECTION_NAMES = Object.freeze([
 ]);
 
 function sceneEmbeddedCounts(scene, data) {
+  const absent = hasSceneLevels() ? "templates" : "levels";
   const counts = {};
   for (const name of SCENE_EMBEDDED_COLLECTION_NAMES) {
+    if (name === absent) continue;
     const source = data?.[name];
     if (Array.isArray(source)) {
       counts[name] = source.length;
@@ -1037,11 +1076,11 @@ export function serializeAppliedEffectSummary(effect) {
 }
 
 function actorItems(actor, data) {
-  if (actor.items) {
-    return Array.from(actor.items);
+  if (Array.isArray(data.items)) {
+    return data.items;
   }
 
-  return Array.isArray(data.items) ? data.items : [];
+  return actor.items ? Array.from(actor.items) : [];
 }
 
 function itemEffects(item, data) {
@@ -1077,6 +1116,15 @@ export function serializeActorSummary(actor) {
     itemCount: actorItems(actor, data).length,
     effectCount: actorEffects(actor, data).length
   };
+}
+
+/**
+ * @param {any} data
+ * @param {"level" | "levels"} field
+ */
+function levelMembership(data, field) {
+  if (!hasSceneLevels()) return {};
+  return field === "level" ? { level: data.level } : { levels: cloneValue(data.levels) };
 }
 
 /**
@@ -1116,6 +1164,7 @@ export function serializeToken(token, { include } = {}) {
     x: data.x ?? token.x ?? 0,
     y: data.y ?? token.y ?? 0,
     elevation: data.elevation ?? token.elevation ?? 0,
+    ...levelMembership(data, "level"),
     rotation: data.rotation ?? token.rotation ?? 0,
     width: data.width ?? token.width ?? null,
     height: data.height ?? token.height ?? null,
@@ -1141,6 +1190,7 @@ export function serializeTokenSummary(token) {
     actorLink: data.actorLink ?? token.actorLink ?? false,
     x: data.x ?? token.x ?? 0,
     y: data.y ?? token.y ?? 0,
+    ...levelMembership(data, "level"),
     hidden: data.hidden ?? token.hidden ?? false
   };
 }
@@ -1156,6 +1206,7 @@ export function serializeTile(tile) {
     height: data.height ?? tile.height ?? null,
     rotation: data.rotation ?? tile.rotation ?? 0,
     elevation: data.elevation ?? tile.elevation ?? 0,
+    ...levelMembership(data, "levels"),
     sort: data.sort ?? tile.sort ?? 0,
     hidden: data.hidden ?? tile.hidden ?? false,
     locked: data.locked ?? tile.locked ?? false,
@@ -1171,6 +1222,7 @@ export function serializeTileSummary(tile) {
     y: data.y ?? tile.y ?? 0,
     width: data.width ?? tile.width ?? null,
     height: data.height ?? tile.height ?? null,
+    ...levelMembership(data, "levels"),
     hidden: data.hidden ?? tile.hidden ?? false
   };
 }
@@ -1184,6 +1236,7 @@ export function serializeSound(sound) {
     y: data.y ?? sound.y ?? 0,
     radius: data.radius ?? sound.radius ?? 0,
     elevation: data.elevation ?? sound.elevation ?? 0,
+    ...levelMembership(data, "levels"),
     volume: data.volume ?? sound.volume ?? null,
     walls: data.walls ?? sound.walls ?? false,
     easing: data.easing ?? sound.easing ?? false,
@@ -1202,6 +1255,7 @@ export function serializeSoundSummary(sound) {
     x: data.x ?? sound.x ?? 0,
     y: data.y ?? sound.y ?? 0,
     radius: data.radius ?? sound.radius ?? 0,
+    ...levelMembership(data, "levels"),
     hidden: data.hidden ?? sound.hidden ?? false
   };
 }
@@ -1211,6 +1265,7 @@ export function serializeWall(wall) {
   return {
     ...identityFields(wall, data),
     c: cloneValue(data.c ?? wall.c ?? null),
+    ...levelMembership(data, "levels"),
     light: data.light ?? wall.light ?? null,
     sight: data.sight ?? wall.sight ?? null,
     sound: data.sound ?? wall.sound ?? null,
@@ -1229,6 +1284,7 @@ export function serializeWallSummary(wall) {
   return {
     ...identityFields(wall, data),
     c: cloneValue(data.c ?? wall.c ?? null),
+    ...levelMembership(data, "levels"),
     door: data.door ?? wall.door ?? null,
     ds: data.ds ?? wall.ds ?? null,
     doorSound: data.doorSound ?? wall.doorSound ?? null
@@ -1244,6 +1300,7 @@ export function serializeNote(note) {
     x: data.x ?? note.x ?? 0,
     y: data.y ?? note.y ?? 0,
     elevation: data.elevation ?? note.elevation ?? 0,
+    ...levelMembership(data, "levels"),
     sort: data.sort ?? note.sort ?? 0,
     texture: cloneValue(data.texture ?? null),
     iconSize: data.iconSize ?? note.iconSize ?? null,
@@ -1265,6 +1322,7 @@ export function serializeNoteSummary(note) {
     text: data.text ?? note.text ?? null,
     x: data.x ?? note.x ?? 0,
     y: data.y ?? note.y ?? 0,
+    ...levelMembership(data, "levels"),
     entryId: data.entryId ?? note.entryId ?? null,
     texture: { src: texture?.src ?? null },
     iconSize: data.iconSize ?? note.iconSize ?? null
@@ -1282,6 +1340,7 @@ export function serializeDrawing(drawing) {
     x: data.x ?? drawing.x ?? 0,
     y: data.y ?? drawing.y ?? 0,
     elevation: data.elevation ?? drawing.elevation ?? 0,
+    ...levelMembership(data, "levels"),
     sort: data.sort ?? drawing.sort ?? 0,
     rotation: data.rotation ?? drawing.rotation ?? 0,
     bezierFactor: data.bezierFactor ?? drawing.bezierFactor ?? 0,
@@ -1313,6 +1372,7 @@ export function serializeDrawingSummary(drawing) {
     text: data.text ?? drawing.text ?? null,
     x: data.x ?? drawing.x ?? 0,
     y: data.y ?? drawing.y ?? 0,
+    ...levelMembership(data, "levels"),
     shape: { type: shape?.type ?? null },
     hidden: data.hidden ?? drawing.hidden ?? false
   };
@@ -1327,6 +1387,7 @@ export function serializeAmbientLight(light) {
     x: data.x ?? light.x ?? 0,
     y: data.y ?? light.y ?? 0,
     elevation: data.elevation ?? light.elevation ?? 0,
+    ...levelMembership(data, "levels"),
     rotation: data.rotation ?? light.rotation ?? 0,
     walls: data.walls ?? light.walls ?? false,
     vision: data.vision ?? light.vision ?? false,
@@ -1344,6 +1405,7 @@ export function serializeAmbientLightSummary(light) {
     name: placeableName(light, data),
     x: data.x ?? light.x ?? 0,
     y: data.y ?? light.y ?? 0,
+    ...levelMembership(data, "levels"),
     hidden: data.hidden ?? light.hidden ?? false,
     config: {
       dim: config?.dim ?? null,
@@ -1453,6 +1515,7 @@ export function serializeRegion(region, { knownBehaviorIds = null } = {}) {
     color: data.color ?? region.color ?? null,
     shapes: cloneValue(data.shapes ?? region.shapes ?? []),
     elevation: cloneValue(data.elevation ?? region.elevation ?? null),
+    ...levelMembership(data, "levels"),
     visibility: data.visibility ?? region.visibility ?? null,
     locked: data.locked ?? region.locked ?? false,
     behaviors: Array.isArray(behaviors)
@@ -1471,6 +1534,7 @@ export function serializeRegionSummary(region) {
     name: placeableName(region, data),
     color: data.color ?? region.color ?? null,
     visibility: data.visibility ?? region.visibility ?? null,
+    ...levelMembership(data, "levels"),
     shapesCount: Array.isArray(shapes) ? shapes.length : 0,
     behaviorsCount: Array.isArray(behaviors) ? behaviors.length : 0
   };
@@ -1483,11 +1547,14 @@ export function serializeRegionSummary(region) {
 export function serializeActor(actor, { include, ownership = false } = {}) {
   const data = documentData(actor);
 
-  const withPrepared = Array.isArray(include) && include.includes("prepared");
+  const requested = Array.isArray(include) ? include : [];
+  const withPrepared = requested.includes("prepared");
 
   const nestedInclude = [];
-  if (Array.isArray(include) && include.includes("items.flags")) nestedInclude.push("flags");
-  if (Array.isArray(include) && include.includes("items.effects")) nestedInclude.push("effects");
+  if (requested.includes("items.flags")) nestedInclude.push("flags");
+  if (requested.includes("items.effects")) nestedInclude.push("effects");
+  const withItems = requested.includes("items") || nestedInclude.length > 0;
+  const items = actorItems(actor, data);
   return {
     ...identityFields(actor, data),
     name: worldDocumentName(actor, data),
@@ -1501,9 +1568,10 @@ export function serializeActor(actor, { include, ownership = false } = {}) {
 
     compendiumSource: compendiumSourceField(data),
 
-    items: actorItems(actor, data).map((item) =>
-      serializeItem(item, { include: nestedInclude, nested: true })
-    ),
+    itemCount: items.length,
+    ...(withItems
+      ? { items: items.map((item) => serializeItem(item, { include: nestedInclude, nested: true })) }
+      : {}),
 
     flags: cloneValue(data.flags ?? {}),
     effects: actorEffects(actor, data).map(serializeActiveEffect),

@@ -75,6 +75,11 @@ A macro that throws fails `macro.execute` with a partial outcome — read what i
 retrying — while a macro that catches its own errors still returns `null`, which proves nothing;
 verify effects with reads, and treat `MACRO_TIMEOUT` as indeterminate — the macro may still be
 running.
+On Foundry v14 maps live on levels: pass `levels` in `scene.create`, then use `scene.level.*`;
+level ids in a preview are provisional.
+Deleting a level also deletes its tokens and every placeable only on that level, and the dry run
+does not list them: read the scene's placeables (token `level`, others' `levels`) and tell the user
+what the delete removes before running it.
 `setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
 When a setting write returns `requiresReload: true`, the change needs a GM-client reload to take
 effect; `system.reload` performs it, drops the bridge, and requires a reconnect wait before the
@@ -135,7 +140,8 @@ details}}`, alongside `protocolVersion`, `type`, and the correlation `id` (echoi
 Documents live under a type-named key inside `result` that varies between commands but is stable
 for each one. `id` is the public identifier; a `_id` mirror may accompany it. Values requested
 through `include` flags may be derived or version-dependent. Write them back only when the
-update schema explicitly accepts them.
+update schema explicitly accepts them. Actor reads return `itemCount` in place of owned items; add
+`--include items` when the task needs them, or use `actor item list` and `actor item get`.
 
 ## Retry classification
 

@@ -3,10 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCommandRouter } from "../scripts/command-router.js";
 
 import {
-  COMMAND_NAMES,
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
-  DISCOVERABLE_COMMAND_NAMES,
   ERROR_CODES,
   PROTOCOL_VERSION
 } from "../scripts/generated/protocol.js";
@@ -26,7 +24,7 @@ describe("command router", () => {
     installFakeFoundry();
   });
 
-  it("returns module and bridge status for system.info", async () => {
+  it("returns module and bridge status for system.info with module counts instead of the module list", async () => {
     const router = createCommandRouter({
       bridgeClient: {
         getStatus: () => ({ status: "connected" })
@@ -39,23 +37,48 @@ describe("command router", () => {
     expect(response.result.module.version).toBe("0.1.0");
     expect(response.result.bridge.status).toBe("connected");
 
-    expect(response.result.modules).toEqual([
-      { id: "fvtt-world-cli", title: "World CLI for Foundry VTT", version: "0.1.0", active: true },
-      { id: "dae", title: "Dynamic Active Effects", version: "11.0.0", active: false }
-    ]);
-    expect(response.result.commands).toContain("journal.update");
-    expect(response.result.commands).toContain("actor.item.update");
-
-    expect(response.result.commands).toEqual([...DISCOVERABLE_COMMAND_NAMES]);
-    for (const hidden of COMMAND_NAMES.filter((name) => !DISCOVERABLE_COMMAND_NAMES.includes(name))) {
-      expect(response.result.commands, `${hidden} must not be discoverable`).not.toContain(hidden);
-    }
+    expect(response.result.moduleCount).toBe(2);
+    expect(response.result.activeModuleCount).toBe(1);
+    expect(response.result).not.toHaveProperty("modules");
+    expect(response.result).not.toHaveProperty("commands");
 
     expect(response.result.limits).toEqual({
       uploadBytes: DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
       wsMaxPayloadBytes: DEFAULT_WS_MAX_PAYLOAD_BYTES,
       uploadSource: "default"
     });
+  });
+
+  it("returns the full module list for system.info only when modules are included", async () => {
+    const router = createCommandRouter({
+      bridgeClient: {
+        getStatus: () => ({ status: "connected" })
+      }
+    });
+
+    const response = await router.route(createRequest("system.info", { include: ["modules"] }));
+
+    expect(response.ok).toBe(true);
+    expect(response.result.modules).toEqual([
+      { id: "fvtt-world-cli", title: "World CLI for Foundry VTT", version: "0.1.0", active: true },
+      { id: "dae", title: "Dynamic Active Effects", version: "11.0.0", active: false }
+    ]);
+    expect(response.result.moduleCount).toBe(2);
+    expect(response.result.activeModuleCount).toBe(1);
+    expect(response.result).not.toHaveProperty("commands");
+  });
+
+  it("rejects an unknown system.info include value at the protocol layer", async () => {
+    const router = createCommandRouter({
+      bridgeClient: {
+        getStatus: () => ({ status: "connected" })
+      }
+    });
+
+    const response = await router.route(createRequest("system.info", { include: ["commands"] }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
   });
 
   it("rejects a request from a daemon on another release and names the older component", async () => {

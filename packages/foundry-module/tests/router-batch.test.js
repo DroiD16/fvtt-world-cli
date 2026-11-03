@@ -17,6 +17,8 @@ import {
   makeDataModelValidationError
 } from "./helpers/fake-foundry.js";
 
+const V14_RELEASE = { version: "14.369", generation: 14 };
+
 describe("command router", () => {
   beforeEach(() => {
     installFakeFoundry();
@@ -351,12 +353,28 @@ describe("command router", () => {
       readPatched: (doc) => doc.name,
       patchedValue: "Renamed Zone",
       notFound: "REGION_NOT_FOUND"
+    },
+    "scene.level": {
+      type: "Level",
+      release: V14_RELEASE,
+      closed: true,
+      collection: (scene) => scene.levels,
+      existingId: "level-ground",
+      idField: "levelId",
+      getKey: "level",
+      summarized: true,
+      create: [{ name: "Cellar" }, { name: "Attic", elevation: { bottom: 40, top: 60 } }],
+      patch: { name: "Renamed Floor" },
+      readPatched: (doc) => doc.name,
+      patchedValue: "Renamed Floor",
+      notFound: "LEVEL_NOT_FOUND"
     }
   };
 
   it("covers every batched placeable family the protocol declares with a fixture (derived)", () => {
     expect(declaredPlaceableBatchFamilies()).toEqual([
       "scene.drawing",
+      "scene.level",
       "scene.light",
       "scene.note",
       "scene.region",
@@ -405,6 +423,7 @@ describe("command router", () => {
 
     "scene.template": { 13.351: false, 14.365: null },
     "scene.region": { 13.351: true, 14.365: true },
+    "scene.level": { 13.351: null, 14.365: true },
 
     "actor.effect": { 13.351: true, 14.365: true },
     "item.effect": { 13.351: true, 14.365: true },
@@ -486,6 +505,7 @@ describe("command router", () => {
 
   it("carries `name` in a batch outcome exactly when the family's own `get` projection has one", async () => {
     for (const [family, fixture] of Object.entries(BATCH_NAME_PARITY_FIXTURES)) {
+      globalThis.game.release = fixture.release;
       const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
       const read = await router.route(
@@ -520,154 +540,165 @@ describe("command router", () => {
   });
 
   for (const [family, fixture] of Object.entries(BATCH_FAMILY_FIXTURES)) {
-    it(`${family}.create-many creates every element in ONE keepId call`, async () => {
-      const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
-      const scene = globalThis.game.scenes.get("scene-1");
-      const before = fixture.collection(scene).size;
+    describe(family, () => {
+      beforeEach(() => {
+        globalThis.game.release = fixture.release;
+      });
 
-      const response = await router.route(
-        createRequest(`${family}.create-many`, { sceneId: "scene-1", data: fixture.create })
-      );
+      it(`${family}.create-many creates every element in ONE keepId call`, async () => {
+        const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+        const scene = globalThis.game.scenes.get("scene-1");
+        const before = fixture.collection(scene).size;
 
-      expect(response.ok).toBe(true);
-      expect(response.result.sceneId).toBe("scene-1");
-      expect(response.result.complete).toBe(true);
-      expect(response.result.outcomes.map((outcome) => [outcome.index, outcome.status])).toEqual([
-        [0, "created"],
-        [1, "created"]
-      ]);
-      const calls = scene.createEmbeddedDocuments.mock.calls.filter((call) => call[0] === fixture.type);
-      expect(calls).toHaveLength(1);
-      expect(calls[0][1]).toHaveLength(2);
-      expect(calls[0][2]).toEqual({ keepId: true, render: true });
+        const response = await router.route(
+          createRequest(`${family}.create-many`, { sceneId: "scene-1", data: fixture.create })
+        );
 
-      for (const outcome of response.result.outcomes) {
-        expect(fixture.collection(scene).get(outcome.id)).toBeTruthy();
-      }
-      expect(fixture.collection(scene).size).toBe(before + 2);
-    });
+        expect(response.ok).toBe(true);
+        expect(response.result.sceneId).toBe("scene-1");
+        expect(response.result.complete).toBe(true);
+        expect(response.result.outcomes.map((outcome) => [outcome.index, outcome.status])).toEqual([
+          [0, "created"],
+          [1, "created"]
+        ]);
+        const calls = scene.createEmbeddedDocuments.mock.calls.filter((call) => call[0] === fixture.type);
+        expect(calls).toHaveLength(1);
+        expect(calls[0][1]).toHaveLength(2);
+        expect(calls[0][2]).toEqual({ keepId: true, render: true });
 
-    it(`${family}.create-many strips a CALLER _id and mints the bridge's own`, async () => {
-      const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
-      const scene = globalThis.game.scenes.get("scene-1");
+        for (const outcome of response.result.outcomes) {
+          expect(fixture.collection(scene).get(outcome.id)).toBeTruthy();
+        }
+        expect(fixture.collection(scene).size).toBe(before + 2);
+      });
 
-      const response = await router.route(
-        createRequest(`${family}.create-many`, {
-          sceneId: "scene-1",
-          data: [
-            {
-              ...fixture.create[0],
-              _id: "spoofedid00000001",
-              _stats: { createdTime: 1 },
-              ownership: { default: 3 }
-            }
-          ]
-        })
-      );
+      it(`${family}.create-many strips a CALLER _id and mints the bridge's own`, async () => {
+        const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+        const scene = globalThis.game.scenes.get("scene-1");
 
-      expect(response.ok).toBe(true);
-      expect(response.result.outcomes[0].id).not.toBe("spoofedid00000001");
-      expect(fixture.collection(scene).get("spoofedid00000001")).toBeFalsy();
-    });
+        const response = await router.route(
+          createRequest(`${family}.create-many`, {
+            sceneId: "scene-1",
+            data: [
+              {
+                ...fixture.create[0],
+                _id: "spoofedid00000001",
+                _stats: { createdTime: 1 },
+                ownership: { default: 3 }
+              }
+            ]
+          })
+        );
 
-    it(`${family}.create-many --dry-run mints NO id and writes nothing`, async () => {
-      const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
-      const scene = globalThis.game.scenes.get("scene-1");
-      const before = fixture.collection(scene).size;
+        if (fixture.closed) {
+          expect(response.ok).toBe(false);
+          expect(response.error.code).toBe("INVALID_PARAMS");
+        } else {
+          expect(response.ok).toBe(true);
+          expect(response.result.outcomes[0].id).not.toBe("spoofedid00000001");
+        }
+        expect(fixture.collection(scene).get("spoofedid00000001")).toBeFalsy();
+      });
 
-      const response = await router.route(
-        createRequest(`${family}.create-many`, { sceneId: "scene-1", data: fixture.create, dryRun: true })
-      );
+      it(`${family}.create-many --dry-run mints NO id and writes nothing`, async () => {
+        const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+        const scene = globalThis.game.scenes.get("scene-1");
+        const before = fixture.collection(scene).size;
 
-      expect(response.ok).toBe(true);
-      expect(response.result.dryRun).toBe(true);
-      expect(response.result.complete).toBe(true);
+        const response = await router.route(
+          createRequest(`${family}.create-many`, { sceneId: "scene-1", data: fixture.create, dryRun: true })
+        );
 
-      const summary = fixture.summarized ? { name: null } : {};
-      expect(response.result.outcomes).toEqual([
-        { index: 0, id: null, status: "created", ...summary },
-        { index: 1, id: null, status: "created", ...summary }
-      ]);
-      expect(scene.createEmbeddedDocuments).not.toHaveBeenCalledWith(
-        fixture.type,
-        expect.anything(),
-        expect.anything()
-      );
-      expect(fixture.collection(scene).size).toBe(before);
-    });
+        expect(response.ok).toBe(true);
+        expect(response.result.dryRun).toBe(true);
+        expect(response.result.complete).toBe(true);
 
-    it(`${family}.update-many patches in ONE diff:true call and reports input order`, async () => {
-      const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
-      const scene = globalThis.game.scenes.get("scene-1");
+        const summary = fixture.summarized ? { name: null } : {};
+        expect(response.result.outcomes).toEqual([
+          { index: 0, id: null, status: "created", ...summary },
+          { index: 1, id: null, status: "created", ...summary }
+        ]);
+        expect(scene.createEmbeddedDocuments).not.toHaveBeenCalledWith(
+          fixture.type,
+          expect.anything(),
+          expect.anything()
+        );
+        expect(fixture.collection(scene).size).toBe(before);
+      });
 
-      const response = await router.route(
-        createRequest(`${family}.update-many`, {
-          sceneId: "scene-1",
-          patches: [{ id: fixture.existingId, patch: fixture.patch }]
-        })
-      );
+      it(`${family}.update-many patches in ONE diff:true call and reports input order`, async () => {
+        const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+        const scene = globalThis.game.scenes.get("scene-1");
 
-      expect(response.ok).toBe(true);
-      expect(response.result.complete).toBe(true);
+        const response = await router.route(
+          createRequest(`${family}.update-many`, {
+            sceneId: "scene-1",
+            patches: [{ id: fixture.existingId, patch: fixture.patch }]
+          })
+        );
 
-      const summary = fixture.summarized
-        ? { name: fixture.collection(scene).get(fixture.existingId).name ?? null }
-        : {};
-      expect(response.result.outcomes).toEqual([
-        { index: 0, id: fixture.existingId, status: "updated", ...summary }
-      ]);
-      const calls = scene.updateEmbeddedDocuments.mock.calls.filter((call) => call[0] === fixture.type);
-      expect(calls).toHaveLength(1);
-      expect(calls[0][2]).toEqual({ diff: true, render: true });
-      expect(fixture.readPatched(fixture.collection(scene).get(fixture.existingId))).toEqual(
-        fixture.patchedValue
-      );
-    });
+        expect(response.ok).toBe(true);
+        expect(response.result.complete).toBe(true);
 
-    it(`${family}.update-many reports ${fixture.notFound} naming the INDEX and writes nothing`, async () => {
-      const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
-      const scene = globalThis.game.scenes.get("scene-1");
+        const summary = fixture.summarized
+          ? { name: fixture.collection(scene).get(fixture.existingId).name ?? null }
+          : {};
+        expect(response.result.outcomes).toEqual([
+          { index: 0, id: fixture.existingId, status: "updated", ...summary }
+        ]);
+        const calls = scene.updateEmbeddedDocuments.mock.calls.filter((call) => call[0] === fixture.type);
+        expect(calls).toHaveLength(1);
+        expect(calls[0][2]).toEqual({ diff: true, render: true });
+        expect(fixture.readPatched(fixture.collection(scene).get(fixture.existingId))).toEqual(
+          fixture.patchedValue
+        );
+      });
 
-      const response = await router.route(
-        createRequest(`${family}.update-many`, {
-          sceneId: "scene-1",
-          patches: [
-            { id: fixture.existingId, patch: fixture.patch },
-            { id: "missingid00000001", patch: fixture.patch }
-          ]
-        })
-      );
+      it(`${family}.update-many reports ${fixture.notFound} naming the INDEX and writes nothing`, async () => {
+        const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+        const scene = globalThis.game.scenes.get("scene-1");
 
-      expect(response.ok).toBe(false);
-      expect(response.error.code).toBe(fixture.notFound);
-      expect(response.error.details.index).toBe(1);
-      expect(
-        scene.updateEmbeddedDocuments.mock.calls.filter((call) => call[0] === fixture.type)
-      ).toHaveLength(0);
-    });
+        const response = await router.route(
+          createRequest(`${family}.update-many`, {
+            sceneId: "scene-1",
+            patches: [
+              { id: fixture.existingId, patch: fixture.patch },
+              { id: "missingid00000001", patch: fixture.patch }
+            ]
+          })
+        );
 
-    it(`${family}.delete-many deletes in ONE call and converges on a missing id`, async () => {
-      const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
-      const scene = globalThis.game.scenes.get("scene-1");
+        expect(response.ok).toBe(false);
+        expect(response.error.code).toBe(fixture.notFound);
+        expect(response.error.details.index).toBe(1);
+        expect(
+          scene.updateEmbeddedDocuments.mock.calls.filter((call) => call[0] === fixture.type)
+        ).toHaveLength(0);
+      });
 
-      const response = await router.route(
-        createRequest(`${family}.delete-many`, {
-          sceneId: "scene-1",
-          ids: ["goneid0000000001", fixture.existingId]
-        })
-      );
+      it(`${family}.delete-many deletes in ONE call and converges on a missing id`, async () => {
+        const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+        const scene = globalThis.game.scenes.get("scene-1");
 
-      expect(response.ok).toBe(true);
-      expect(response.result.complete).toBe(true);
-      expect(response.result.outcomes).toEqual([
-        { index: 0, id: "goneid0000000001", status: "alreadyDeleted" },
-        { index: 1, id: fixture.existingId, status: "deleted" }
-      ]);
+        const response = await router.route(
+          createRequest(`${family}.delete-many`, {
+            sceneId: "scene-1",
+            ids: ["goneid0000000001", fixture.existingId]
+          })
+        );
 
-      const calls = scene.deleteEmbeddedDocuments.mock.calls.filter((call) => call[0] === fixture.type);
-      expect(calls).toHaveLength(1);
-      expect(calls[0][1]).toEqual([fixture.existingId]);
-      expect(fixture.collection(scene).get(fixture.existingId)).toBeFalsy();
+        expect(response.ok).toBe(true);
+        expect(response.result.complete).toBe(true);
+        expect(response.result.outcomes).toEqual([
+          { index: 0, id: "goneid0000000001", status: "alreadyDeleted" },
+          { index: 1, id: fixture.existingId, status: "deleted" }
+        ]);
+
+        const calls = scene.deleteEmbeddedDocuments.mock.calls.filter((call) => call[0] === fixture.type);
+        expect(calls).toHaveLength(1);
+        expect(calls[0][1]).toEqual([fixture.existingId]);
+        expect(fixture.collection(scene).get(fixture.existingId)).toBeFalsy();
+      });
     });
   }
 
@@ -1209,12 +1240,18 @@ describe("command router", () => {
           shapes: [{ type: "rectangle", x: 0, y: 0, width: 5, height: 5 }],
           behaviors: [{ type: "pauseGame", name: "Pause" }]
         }
+      },
+      "scene.level": {
+        type: "Level",
+        release: V14_RELEASE,
+        data: { name: "Cellar", background: { src: "worlds/world-1/maps/cellar 1.webp" } }
       }
     };
 
     expect(Object.keys(families).sort()).toEqual(declaredPlaceableBatchFamilies());
 
-    for (const [family, { type, data }] of Object.entries(families)) {
+    for (const [family, { type, data, release }] of Object.entries(families)) {
+      globalThis.game.release = release;
       const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
       const scene = globalThis.game.scenes.get("scene-1");
       const payloadsFor = (mock) => mock.calls.filter((call) => call[0] === type).flatMap((call) => call[1]);

@@ -49,7 +49,7 @@ describe("bridge startup warnings", () => {
     [
       "an unavailable daemon",
       () => getDaemonUnavailableWarningMessage(),
-      "World CLI for Foundry VTT stopped: the configured daemon is unavailable. Start the local daemon and reload the client."
+      expect.stringContaining("the local helper was not reachable.")
     ],
     [
       "a rejected credential",
@@ -107,6 +107,6 @@ describe("bridge startup warnings", () => {
       "World CLI for Foundry VTT is not paired. Open Authorization from the World CLI scene-controls group, or from Configure Settings → Module Settings → Authorization."
     ]
   ])("tells the GM about %s and what to do next", (_reason, build, expected) => {
-    expect(build()).toBe(expected);
+    expect(build()).toEqual(expected);
   });
 });

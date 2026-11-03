@@ -30,7 +30,7 @@ export function renderActorDetails(actor: any) {
     lines.push(`prepared: ${Object.keys(actor.prepared ?? {}).join(", ")} (use --json for values)`);
   }
 
-  lines.push(`items: ${items.length}`);
+  lines.push(`items: ${actor?.itemCount ?? items.length}`);
 
   items.forEach((item: any) => {
     lines.push(`item: ${renderItemSummaryLine(item)}`);

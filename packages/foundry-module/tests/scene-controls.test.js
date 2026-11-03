@@ -422,6 +422,23 @@ describe("World CLI scene control group", () => {
     expect(disconnectButton.hasAttribute("disabled")).toBe(true);
   });
 
+  it("explains Connect in the toolbar hint only after the daemon was unreachable at load", () => {
+    const { element, connectButton } = fakeSceneControlsElement();
+    addedGroup();
+    stubBridge({ status: "stopped", helloAcknowledged: false, terminalStopReason: "DAEMON_UNAVAILABLE" });
+
+    sceneControls.applyStatusIndicator(null, element);
+    expect(connectButton.getAttribute("aria-label")).toBe(
+      localizeEnglish("FVTTWORLDCLI.Controls.ConnectAfterDaemonStart")
+    );
+    expect(connectButton.getAttribute("aria-label")).toContain("click");
+
+    stubBridge({ status: "stopped", helloAcknowledged: false, terminalStopReason: "UNAUTHORIZED" });
+    sceneControls.handleStatusChange();
+    sceneControls.applyStatusIndicator(null, element);
+    expect(connectButton.getAttribute("aria-label")).toBe(localizeEnglish("FVTTWORLDCLI.Controls.Connect"));
+  });
+
   it("leaves the gated buttons alone while another control group is active", () => {
     globalThis.ui.controls.control = { name: "tokens" };
     const { element, connectButton, disconnectButton } = fakeSceneControlsElement();

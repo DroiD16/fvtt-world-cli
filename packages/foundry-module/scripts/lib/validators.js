@@ -13,6 +13,7 @@ export const MODULE_SETTING_KEYS = Object.freeze({
   CREDENTIALS: "credentials",
   CLIENT_ID: "clientId",
   AUTO_CONNECT: "autoConnect",
+  WARN_DAEMON_UNAVAILABLE: "warnDaemonUnavailable",
   COMMAND_POLICY: "commandPolicy",
   APPROVAL_TIMEOUT_MINUTES: "approvalTimeoutMinutes",
   APPROVAL_SOUND: "approvalSound"
@@ -130,7 +131,8 @@ export function getBridgeSettings() {
     daemonUrl: game.settings.get(MODULE_ID, MODULE_SETTING_KEYS.DAEMON_URL) || DEFAULT_DAEMON_URL,
     credentials: game.settings.get(MODULE_ID, MODULE_SETTING_KEYS.CREDENTIALS) || {},
     clientId: game.settings.get(MODULE_ID, MODULE_SETTING_KEYS.CLIENT_ID) || "",
-    autoConnect: game.settings.get(MODULE_ID, MODULE_SETTING_KEYS.AUTO_CONNECT) !== false
+    autoConnect: game.settings.get(MODULE_ID, MODULE_SETTING_KEYS.AUTO_CONNECT) !== false,
+    warnDaemonUnavailable: game.settings.get(MODULE_ID, MODULE_SETTING_KEYS.WARN_DAEMON_UNAVAILABLE) !== false
   };
 }
 

@@ -140,76 +140,10 @@ export function createItemUpdateParams(options: {
   };
 }
 
-export function createSceneUpdateParams(options: {
-  sceneId: string;
-  name?: string;
-  active?: boolean;
-  navigation?: boolean;
-  navOrder?: number;
-  width?: number;
-  height?: number;
-  gridJson?: string;
-  backgroundJson?: string;
-  tokenVision?: boolean;
-  weather?: string;
-  padding?: number;
-  shiftX?: number;
-  shiftY?: number;
-  navName?: string;
-  thumb?: string;
-  foreground?: string;
-  foregroundElevation?: number;
-  sort?: number;
-  initialLevel?: string;
-  playlist?: string;
-  playlistSound?: string;
-  journal?: string;
-  journalEntryPage?: string;
-  environmentJson?: string;
-  fogJson?: string;
-  initialJson?: string;
-  transitionJson?: string;
-  patchJson?: string;
-}) {
-  return {
-    sceneId: options.sceneId,
-
-    patch: assertNonEmptyPatch({
-      ...stringField("name", options.name),
-      ...booleanField("active", options.active),
-      ...booleanField("navigation", options.navigation),
-      ...numberField("navOrder", options.navOrder),
-      ...numberField("width", options.width),
-      ...numberField("height", options.height),
-      ...jsonObjectField("grid", options.gridJson, "--grid-json"),
-      ...jsonObjectField("background", options.backgroundJson, "--background-json"),
-
-      ...booleanField("tokenVision", options.tokenVision),
-      ...truthyStringField("weather", options.weather),
-      ...numberField("padding", options.padding),
-      ...numberField("shiftX", options.shiftX),
-      ...numberField("shiftY", options.shiftY),
-      ...truthyStringField("navName", options.navName),
-      ...truthyStringField("thumb", options.thumb),
-      ...truthyStringField("foreground", options.foreground),
-      ...numberField("foregroundElevation", options.foregroundElevation),
-      ...numberField("sort", options.sort),
-      ...truthyStringField("initialLevel", options.initialLevel),
-      ...truthyStringField("playlist", options.playlist),
-      ...truthyStringField("playlistSound", options.playlistSound),
-      ...truthyStringField("journal", options.journal),
-      ...truthyStringField("journalEntryPage", options.journalEntryPage),
-      ...jsonObjectField("environment", options.environmentJson, "--environment-json"),
-      ...jsonObjectField("fog", options.fogJson, "--fog-json"),
-      ...jsonObjectField("initial", options.initialJson, "--initial-json"),
-      ...jsonObjectField("transition", options.transitionJson, "--transition-json"),
-      ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
-    })
-  };
-}
-
 export interface SceneFieldOptions {
   name?: string;
+  folder?: string;
+  clearFolder?: boolean;
   active?: boolean;
   navigation?: boolean;
   navOrder?: number;
@@ -241,6 +175,7 @@ export interface SceneFieldOptions {
 function buildScenePatch(options: SceneFieldOptions) {
   return {
     ...stringField("name", options.name),
+    ...folderField(options),
     ...booleanField("active", options.active),
     ...booleanField("navigation", options.navigation),
     ...numberField("navOrder", options.navOrder),
@@ -268,6 +203,18 @@ function buildScenePatch(options: SceneFieldOptions) {
     ...jsonObjectField("fog", options.fogJson, "--fog-json"),
     ...jsonObjectField("initial", options.initialJson, "--initial-json"),
     ...jsonObjectField("transition", options.transitionJson, "--transition-json")
+  };
+}
+
+export function createSceneUpdateParams(
+  options: SceneFieldOptions & { sceneId: string; patchJson?: string }
+) {
+  return {
+    sceneId: options.sceneId,
+    patch: assertNonEmptyPatch({
+      ...buildScenePatch(options),
+      ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+    })
   };
 }
 
@@ -1558,6 +1505,34 @@ export function createSceneWallCloneParams(options: { sceneId: string; wallId: s
   return {
     sceneId: options.sceneId,
     wallId: options.wallId,
+    ...optionalPatch(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+  };
+}
+
+export function createSceneLevelCreateParams(options: { sceneId: string; dataJson?: string }) {
+  return { sceneId: options.sceneId, data: optionalJsonObject(options.dataJson, "--data-json") ?? {} };
+}
+
+export function createSceneLevelUpdateParams(options: {
+  sceneId: string;
+  levelId: string;
+  patchJson?: string;
+}) {
+  return {
+    sceneId: options.sceneId,
+    levelId: options.levelId,
+    patch: assertNonEmptyPatch(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+  };
+}
+
+export function createSceneLevelCloneParams(options: {
+  sceneId: string;
+  levelId: string;
+  patchJson?: string;
+}) {
+  return {
+    sceneId: options.sceneId,
+    levelId: options.levelId,
     ...optionalPatch(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
   };
 }

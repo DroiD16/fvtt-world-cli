@@ -29,6 +29,7 @@ Use these families to narrow your search, then check their help for supported op
 | Edit world content | `actor`, `item`, `journal`, `scene`, `macro`, `playlist`, `table`, `cards` |
 | Edit embedded content | Nested families such as `actor.item`, `playlist.sound`, `table.result`, and `*.effect` |
 | Edit scene placeables | `scene.token`, `scene.wall`, `scene.region`, and related families |
+| Edit scene levels (v14) | `scene.level` |
 | Manage encounters | `combat`, `combat.combatant`, `combat.group` |
 | Organize content and access | `folder`, `*.ownership.set`, `user` |
 | Manage chat and settings | `chat`, `setting` |
@@ -62,6 +63,29 @@ Supply the complete parent ID chain. Read the parent to find missing IDs:
 fvtt-world-cli scene token list --scene-id <sceneId> --json
 fvtt-world-cli scene token get --scene-id <sceneId> --token-id <tokenId> --json
 ```
+
+### Build a scene with levels
+
+On Foundry v14 a scene's maps live on its levels. Pass the levels when you create the scene:
+
+```bash
+fvtt-world-cli scene create --name "Tower" --json \
+  --data-json '{"levels":[{"name":"Ground","background":{"src":"worlds/<worldId>/maps/ground.webp"}},
+                          {"name":"Roof","elevation":{"bottom":20,"top":40}}]}'
+fvtt-world-cli scene level list --scene-id <sceneId> --json
+fvtt-world-cli scene level update --scene-id <sceneId> --level-id <levelId> \
+  --patch-json '{"foreground":{"src":"worlds/<worldId>/maps/roof.webp"}}' --json
+```
+
+The first supplied level becomes the initial one. To start players on another level, run `scene
+update --scene-id <sceneId> --initial-level <levelId>`; `--patch-json '{"initialLevel":null}'` goes
+back to the first level. A scene keeps at least one level, so `scene level delete` and `delete-many`
+refuse to remove the last one.
+
+Deleting a level also deletes its tokens and every placeable that exists only on that level. A dry
+run does not list them, so read the scene's placeables before deleting a level.
+
+[Compatibility](compatibility.md) lists the scene map fields each Foundry version accepts.
 
 ### Send a batch of commands
 
@@ -130,6 +154,9 @@ Paginated commands accept `--limit` and `--offset`. Continue until the response'
 List rows contain fewer fields than `get` results. Read the target with `get` before preparing an
 update. Reads return authored state; some commands accept `include` options for derived or expensive
 data. Check the command's help for available projections and filters.
+
+Actor results carry `itemCount` in place of the owned items; `actor get` and `actor get-many`
+return the items with `--include items`. `system info --include modules` lists installed modules.
 
 ### Updates and merge semantics
 
@@ -207,7 +234,7 @@ inspect `auth pending`, then use `auth approve <code> --yes` for the selected re
 
 | Command | Effect |
 |---|---|
-| `auth status` | Show bridge state and public profile metadata |
+| `auth status` | Show bridge state, the commands the connected bridge advertised, and public profile metadata |
 | `auth pending` | List pending codes, expiry, and browser/world/GM identity |
 | `auth approve [code] [--yes]` | Approve a selected request; omit the code only when exactly one is pending |
 | `auth deny <code>` | Reject a pending request |

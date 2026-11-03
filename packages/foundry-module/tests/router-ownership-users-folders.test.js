@@ -165,7 +165,9 @@ describe("user + ownership axis", () => {
   });
 
   it("actor.get / item.get / scene.get / macro.get / playlist.get surface ownership", async () => {
-    const actorResult = (await router.route(createRequest("actor.get", { actorId: "actor-own" }))).result;
+    const actorResult = (
+      await router.route(createRequest("actor.get", { actorId: "actor-own", include: ["items"] }))
+    ).result;
     expect(actorResult.actor.ownership).toEqual({ default: 0, "player-1": 2 });
 
     expect(actorResult.actor.items[0]).not.toHaveProperty("ownership");

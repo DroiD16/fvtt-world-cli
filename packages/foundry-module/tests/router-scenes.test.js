@@ -71,7 +71,7 @@ describe("command router", () => {
       );
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe("UNSUPPORTED_OPERATION");
-      expect(response.error.message).toContain("v13 only");
+      expect(response.error.message).toContain("scene.level.update");
       expect(response.error.details.fields).toEqual(["foreground"]);
     });
 
@@ -1405,6 +1405,43 @@ describe("command router", () => {
     expect(response.result.scene.name).toBe("New Scene");
   });
 
+  it("files a scene into a folder on create and update and reports the folder", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+
+    const created = await router.route(
+      createRequest("scene.create", { data: { name: "Filed Scene", folder: "folder-scenes" } })
+    );
+    expect(created.ok).toBe(true);
+    expect(globalThis.Scene.create.mock.calls.at(-1)[0].folder).toBe("folder-scenes");
+    expect(created.result.scene.folder).toBe("folder-scenes");
+
+    const cleared = await router.route(
+      createRequest("scene.update", { sceneId: "scene-1", patch: { folder: null } })
+    );
+    expect(cleared.ok).toBe(true);
+    expect(cleared.result.scene.folder).toBeNull();
+  });
+
+  it("round-trips the full v13 background texture on scene.update", async () => {
+    globalThis.game.release = { version: "13.351", generation: 13 };
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+
+    const response = await router.route(
+      createRequest("scene.update", {
+        sceneId: "scene-1",
+        patch: { background: { anchorX: 0.25, anchorY: 0.75, fit: "cover", alphaThreshold: 0.5 } }
+      })
+    );
+    expect(response.ok).toBe(true);
+    expect(response.result.scene.background).toMatchObject({
+      src: "worlds/world-1/maps/dungeon.webp",
+      anchorX: 0.25,
+      anchorY: 0.75,
+      fit: "cover",
+      alphaThreshold: 0.5
+    });
+  });
+
   it("clones scenes with an optional patch", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
@@ -1455,7 +1492,11 @@ describe("command router", () => {
     expect(response.result.scene.active).toBe(false);
   });
 
-  it("scene.get exposes embedded-collection counts for all v13/v14 placeable collections", async () => {
+  it.each([
+    [13, { templates: 2 }],
+    [14, { levels: 2 }]
+  ])("scene.get counts only the embedded collections Foundry v%i has", async (generation, versionCounts) => {
+    globalThis.game.release = { version: `${generation}.0`, generation };
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
     const getResponse = await router.route(createRequest("scene.get", { sceneId: "scene-1" }));
@@ -1470,9 +1511,8 @@ describe("command router", () => {
       notes: 2,
       drawings: 2,
       lights: 1,
-      templates: 2,
-      levels: 0,
-      regions: 2
+      regions: 2,
+      ...versionCounts
     });
 
     expect(getResponse.result.scene).toHaveProperty("flags");

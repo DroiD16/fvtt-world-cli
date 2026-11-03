@@ -119,7 +119,8 @@ describe("command router", () => {
     expect(a.id).toBe("actor-created");
     expect(a._id).toBe("actor-created");
 
-    expect(a.items.map((i) => i.name)).toEqual(["Fireball", "Magic Resistance"]);
+    expect(a.itemCount).toBe(2);
+    expect(a).not.toHaveProperty("items");
     expect(a.compendiumSource).toBe("Compendium.world.test-monsters.Actor.arch1");
 
     expect(a.img).toBe("compendium/dragon.png");
@@ -245,9 +246,6 @@ describe("command router", () => {
       entryId: "scn-src",
       createSpy: () => globalThis.Scene.create,
       collection: () => globalThis.game.scenes,
-
-      folderReadable: false,
-      patchFolderSupported: false,
 
       foundryRejectedPatch: { thumb: "notes.txt" }
     },

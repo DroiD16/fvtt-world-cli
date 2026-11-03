@@ -1,5 +1,6 @@
 import { SCENE_THUMBNAIL_MAX_DIMENSION, SCENE_THUMBNAIL_MIN_DIMENSION } from "../constants.js";
 import { ownershipLevelSchema, ownershipSetSchema } from "./ownership-users.js";
+import { levelCreateSchema } from "./scene-embedded.js";
 import {
   batchIdsProperty,
   cmd,
@@ -32,6 +33,10 @@ const sceneBackgroundSchema = {
     scaleX: { type: "number" },
     scaleY: { type: "number" },
     rotation: { type: "number" },
+    anchorX: { type: "number" },
+    anchorY: { type: "number" },
+    fit: { type: "string", minLength: 1 },
+    alphaThreshold: { type: "number" },
 
     tint: { type: "string", minLength: 1 }
   },
@@ -45,15 +50,12 @@ const sceneGridSchema = {
   properties: {
     type: { type: "number" },
     size: { type: "number" },
-    sizeX: { type: "number" },
-    sizeY: { type: "number" },
     distance: { type: "number" },
     units: { type: "string" },
     style: { type: "string" },
     thickness: { type: "number" },
     color: { type: "string", minLength: 1 },
-    alpha: { type: "number" },
-    diagonals: { type: "number" }
+    alpha: { type: "number" }
   },
   additionalProperties: false,
   minProperties: 1
@@ -64,6 +66,7 @@ const sceneCreateSchema = {
   required: ["name"],
   properties: {
     name: { type: "string", minLength: 1 },
+    folder: nullableStringSchema,
     active: { type: "boolean" },
     navigation: { type: "boolean" },
     navOrder: { type: "number" },
@@ -80,7 +83,7 @@ const sceneCreateSchema = {
     navName: nullableStringSchema,
     thumb: nullableStringSchema,
     sort: { type: "number" },
-    initialLevel: nullableStringSchema,
+    levels: { type: "array", minItems: 1, items: levelCreateSchema },
 
     playlist: nullableStringSchema,
     playlistSound: nullableStringSchema,
@@ -99,7 +102,10 @@ const sceneCreateSchema = {
   additionalProperties: false
 };
 
-const scenePatchSchema = patchFrom(sceneCreateSchema);
+const scenePatchSchema = patchFrom(sceneCreateSchema, {
+  omit: ["levels"],
+  prepend: { initialLevel: nullableStringSchema }
+});
 
 export const sceneCommands = {
   "scene.list": cmd(nameFilteredListSchema),

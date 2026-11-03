@@ -85,12 +85,19 @@ export function addReservedIncludeOption(
 export function addActorIncludeOption(command: Command): Command {
   return command.option(
     "--include <fields>",
-    "Comma-separated extra fields (items.flags, items.effects, prepared add output; flags/effects are always present, so those two have no effect)",
+    "Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds derived data; flags/effects are always present, so those two have no effect)",
     parseActorIncludeFields
   );
 }
 
+const INITIAL_LEVEL_FIELD: FieldSpec = {
+  flag: "--initial-level <initialLevel>",
+  help: "Initial level id (Foundry v14)"
+};
+
 const SCENE_FIELDS: readonly FieldSpec[] = [
+  FOLDER_ID_FIELD,
+  CLEAR_FOLDER_FIELD,
   { flag: "--active <active>", help: "Scene active state", parser: parseBoolean },
   { flag: "--navigation <navigation>", help: "Scene navigation visibility", parser: parseBoolean },
   { flag: "--nav-order <navOrder>", help: "Scene navigation order", parser: parseNumber },
@@ -103,14 +110,14 @@ const SCENE_FIELDS: readonly FieldSpec[] = [
   { flag: "--shift-y <shiftY>", help: "Background Y shift", parser: parseNumber },
   { flag: "--nav-name <navName>", help: "Navigation label" },
   { flag: "--thumb <thumb>", help: "Thumbnail image path" },
-  { flag: "--foreground <foreground>", help: "Foreground image path" },
+  { flag: "--foreground <foreground>", help: "Foreground image path (Foundry v13)" },
   {
     flag: "--foreground-elevation <foregroundElevation>",
-    help: "Foreground image elevation",
+    help: "Foreground image elevation (Foundry v13)",
     parser: parseNumber
   },
   { flag: "--sort <sort>", help: "Sort order", parser: parseNumber },
-  { flag: "--initial-level <initialLevel>", help: "Initial elevation level id" },
+  INITIAL_LEVEL_FIELD,
   { flag: "--playlist <playlistId>", help: "Linked playlist id" },
   { flag: "--playlist-sound <playlistSoundId>", help: "Linked playlist sound id" },
   { flag: "--journal <journalId>", help: "Linked journal id" },
@@ -130,15 +137,17 @@ const SCENE_FIELDS: readonly FieldSpec[] = [
   {
     flag: "--background-json <json>",
     help: {
-      create: "Scene background as JSON object",
-      update: "Scene background patch as JSON object",
-      clone: "Scene background override as JSON object"
+      create: "Scene background as JSON object (Foundry v13)",
+      update: "Scene background patch as JSON object (Foundry v13)",
+      clone: "Scene background override as JSON object (Foundry v13)"
     }
   }
 ];
 
 export function addSceneFieldOptions(command: Command, verb: FieldVerb): Command {
-  return addFieldOptions(command, verb, SCENE_FIELDS);
+  const specs =
+    verb === "create" ? SCENE_FIELDS.filter((spec) => spec !== INITIAL_LEVEL_FIELD) : SCENE_FIELDS;
+  return addFieldOptions(command, verb, specs);
 }
 
 const TOKEN_NAME_FIELD: FieldSpec = {

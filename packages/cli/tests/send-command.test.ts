@@ -381,6 +381,34 @@ describe("one-shot sendCommand transport", () => {
       });
     });
 
+    it("reports a persistent handshake answered by something other than a hello ack as an invalid message", async () => {
+      const garbage = await startScriptedServer((socket) =>
+        afterHello(socket, () => socket.send("{not json"))
+      );
+      const invalidJson = await expectTransportRejection(
+        connectDaemonClient({ daemonUrl: garbage.url, deviceCredential: CREDENTIAL, timeoutMs: 2_000 })
+      );
+      expect(invalidJson.code).toBe(ERROR_CODES.INVALID_MESSAGE);
+      expect(invalidJson.details?.reason).toBe("invalid_json");
+
+      const foreign = await startScriptedServer((socket) =>
+        afterHello(socket, () => socket.send(commandResponse("unrelated")))
+      );
+      const unexpected = await expectTransportRejection(
+        connectDaemonClient({ daemonUrl: foreign.url, deviceCredential: CREDENTIAL, timeoutMs: 2_000 })
+      );
+      expect(unexpected.code).toBe(ERROR_CODES.INVALID_MESSAGE);
+      expect(unexpected.details).toEqual({ reason: "unexpected_type" });
+    });
+
+    it("keeps the socket error of a refused persistent connection as its cause", async () => {
+      const error = await expectTransportRejection(
+        connectDaemonClient({ daemonUrl: await unusedUrl(), deviceCredential: CREDENTIAL, timeoutMs: 2_000 })
+      );
+      expect(error.details).toEqual({ reason: "connect_error" });
+      expect((error.cause as NodeJS.ErrnoException).code).toBe("ECONNREFUSED");
+    });
+
     it("rejects a malformed hello ack as an invalid transport message", async () => {
       const server = await startScriptedServer((socket) => {
         afterHello(socket, () => socket.send(helloAck({})));

@@ -30,7 +30,7 @@ import pino, { type Logger } from "pino";
 import { WebSocketServer } from "ws";
 import type WebSocket from "ws";
 import type { CliConfigStore, PersistedCliConfig, PersistedCliConfigV3 } from "../config.js";
-import { PersistedCliConfigSchema, createEmptyConfig } from "../config.js";
+import { PersistedCliConfigSchema, createEmptyConfig, withDaemonOwnedKeys } from "../config.js";
 import {
   isCommandResponseEnvelope,
   normalizeIncomingData,
@@ -586,11 +586,9 @@ export class BridgeDaemon {
 
   persistConfig() {
     if (!this.configStore) return;
-    const persisted = this.configStore.readConfig();
-    this.config = PersistedCliConfigSchema.parse({
-      ...this.config,
-      ...(persisted?.uploadLimitBytes === undefined ? {} : { uploadLimitBytes: persisted.uploadLimitBytes })
-    });
+    this.config = PersistedCliConfigSchema.parse(
+      withDaemonOwnedKeys(this.configStore.readConfig() ?? this.config, this.config)
+    );
     this.configStore.writeConfig(this.config);
   }
 

@@ -13,7 +13,7 @@ import { paginate } from "../lib/serializers.js";
 import { createSceneEmbeddedBatchHandlers } from "./scene-embedded-batch.js";
 
 /**
- * @param {{ type: string, prefix: string, idField: string, resultKey: string, pluralKey: string, notFoundCode: string, serialize: (document: any) => any, serializeSummary: (document: any) => any, listFilter?: (rows: any[], params: any) => any[], omitVerbs?: string[], prepareCreate?: (data: Record<string, any>, scene: any) => any, assertSupported?: (scene: any) => void, summarize?: (document: any) => Record<string, unknown> }} config
+ * @param {{ type: string, prefix: string, idField: string, resultKey: string, pluralKey: string, notFoundCode: string, serialize: (document: any) => any, serializeSummary: (document: any) => any, listFilter?: (rows: any[], params: any) => any[], omitVerbs?: string[], prepareCreate?: (data: Record<string, any>, scene: any) => any, assertSupported?: (scene: any) => void, assertDeleteAllowed?: (scene: any, ids: string[]) => void, summarize?: (document: any) => Record<string, unknown> }} config
  */
 export function createScenePlaceableHandlers({
   type,
@@ -28,18 +28,13 @@ export function createScenePlaceableHandlers({
   omitVerbs = [],
   prepareCreate,
   assertSupported,
+  assertDeleteAllowed,
   summarize
 }) {
   const resolveScene = (sceneId) => {
     const scene = getSceneById(sceneId);
     assertSupported?.(scene);
     return scene;
-  };
-
-  const assertScene = (sceneId) => {
-    if (assertSupported) {
-      assertSupported(getSceneById(sceneId));
-    }
   };
 
   const verbs = {
@@ -57,7 +52,7 @@ export function createScenePlaceableHandlers({
     },
 
     async get(params) {
-      assertScene(params.sceneId);
+      resolveScene(params.sceneId);
       const { document } = getSceneEmbeddedById(params.sceneId, type, params[idField], notFoundCode, idField);
       return { sceneId: params.sceneId, [resultKey]: serialize(document) };
     },
@@ -74,7 +69,7 @@ export function createScenePlaceableHandlers({
     },
 
     async update(params) {
-      assertScene(params.sceneId);
+      resolveScene(params.sceneId);
       const document = await updateSceneEmbedded(
         params.sceneId,
         type,
@@ -93,7 +88,7 @@ export function createScenePlaceableHandlers({
     },
 
     async clone(params) {
-      assertScene(params.sceneId);
+      resolveScene(params.sceneId);
       const clone = await cloneSceneEmbedded(
         params.sceneId,
         type,
@@ -108,7 +103,8 @@ export function createScenePlaceableHandlers({
     },
 
     async delete(params) {
-      assertScene(params.sceneId);
+      const scene = resolveScene(params.sceneId);
+      assertDeleteAllowed?.(scene, [params[idField]]);
       await deleteSceneEmbedded(params.sceneId, type, params[idField], notFoundCode, idField, {
         dryRun: isDryRun(params)
       });
@@ -126,6 +122,7 @@ export function createScenePlaceableHandlers({
       listCommand: `${prefix}.list`,
       prepareCreate,
       assertSupported,
+      assertDeleteAllowed,
       summarize
     })
   });

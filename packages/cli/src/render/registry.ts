@@ -61,6 +61,9 @@ import {
   renderTileDetails,
   renderTokenDetails,
   renderWallDetails,
+  renderLevelDetails,
+  renderLevelRow,
+  levelMembershipCell,
   tokenItemEffectPrefix,
   tokenItemPrefix
 } from "./scenes.js";
@@ -202,10 +205,13 @@ export const RENDERERS = registerRenderers([
       `world: ${result.world?.title ?? "Unknown World"} [${result.world?.id ?? "unknown-world"}]`,
       `user: ${result.user?.name ?? "Unknown User"} [${result.user?.id ?? "unknown-user"}] GM=${String(Boolean(result.user?.isGM))}`,
       `bridge: ${result.bridge?.status ?? "unknown"}`,
-      `modules: ${(result.modules ?? []).length}`,
+      `modules: ${result.moduleCount ?? "unknown"} installed, ${result.activeModuleCount ?? "unknown"} active`,
+      ...(result.modules ?? []).map(
+        (module: any) =>
+          `  ${module.id} ${module.version ?? "unknown"} ${module.active ? "active" : "inactive"}`
+      ),
       `limits.uploadBytes: ${result.limits?.uploadBytes ?? "unknown"} (source: ${result.limits?.uploadSource ?? "unknown"})`,
-      `limits.wsMaxPayloadBytes: ${result.limits?.wsMaxPayloadBytes ?? "unknown"}`,
-      `commands: ${(result.commands ?? []).join(", ")}`
+      `limits.wsMaxPayloadBytes: ${result.limits?.wsMaxPayloadBytes ?? "unknown"}`
     ].join("\n")
   ),
   detailRenderer("game.pause", (result) =>
@@ -1071,7 +1077,7 @@ export const RENDERERS = registerRenderers([
     heading: "Tokens",
     prefix: scenePrefix,
     row: (token) =>
-      `${token.id}\t${token.name}\tactor=${token.actorId ?? "-"}\tlinked=${String(Boolean(token.actorLink))}\t(${token.x},${token.y})`
+      `${token.id}\t${token.name}\tactor=${token.actorId ?? "-"}\tlinked=${String(Boolean(token.actorLink))}\t(${token.x},${token.y})${levelMembershipCell(token)}`
   }),
   detailRenderer(
     ["scene.token.get", "scene.token.create", "scene.token.update", "scene.token.clone"],
@@ -1097,7 +1103,7 @@ export const RENDERERS = registerRenderers([
     heading: "Tiles",
     prefix: scenePrefix,
     row: (tile) =>
-      `${tile.id}\t(${tile.x},${tile.y})\t${tile.width}x${tile.height}\thidden=${String(Boolean(tile.hidden))}`
+      `${tile.id}\t(${tile.x},${tile.y})\t${tile.width}x${tile.height}\thidden=${String(Boolean(tile.hidden))}${levelMembershipCell(tile)}`
   }),
   detailRenderer(["scene.tile.get", "scene.tile.create", "scene.tile.update", "scene.tile.clone"], (result) =>
     renderTileDetails(result.sceneId, result.tile)
@@ -1110,7 +1116,7 @@ export const RENDERERS = registerRenderers([
     heading: "Sounds",
     prefix: scenePrefix,
     row: (sound) =>
-      `${sound.id}\t${sound.path ?? ""}\t(${sound.x},${sound.y})\tr=${sound.radius}\thidden=${String(Boolean(sound.hidden))}`
+      `${sound.id}\t${sound.path ?? ""}\t(${sound.x},${sound.y})\tr=${sound.radius}\thidden=${String(Boolean(sound.hidden))}${levelMembershipCell(sound)}`
   }),
   detailRenderer(
     ["scene.sound.get", "scene.sound.create", "scene.sound.update", "scene.sound.clone"],
@@ -1124,12 +1130,25 @@ export const RENDERERS = registerRenderers([
     heading: "Walls",
     prefix: scenePrefix,
     row: (wall) =>
-      `${wall.id}\t${wall.door ?? 0}/${wall.ds ?? 0}/${wall.doorSound ?? ""}\tc=[${(wall.c ?? []).join(",")}]`
+      `${wall.id}\t${wall.door ?? 0}/${wall.ds ?? 0}/${wall.doorSound ?? ""}\tc=[${(wall.c ?? []).join(",")}]${levelMembershipCell(wall)}`
   }),
   detailRenderer(["scene.wall.get", "scene.wall.create", "scene.wall.update", "scene.wall.clone"], (result) =>
     renderWallDetails(result.sceneId, result.wall)
   ),
   deleteRenderer("scene.wall.delete", "wall", { suffix: sceneSuffix }),
+
+  listRenderer("scene.level.list", {
+    key: "levels",
+    empty: "No levels found.",
+    heading: "Levels",
+    prefix: scenePrefix,
+    row: (level) => renderLevelRow(level)
+  }),
+  detailRenderer(
+    ["scene.level.get", "scene.level.create", "scene.level.update", "scene.level.clone"],
+    (result) => renderLevelDetails(result.sceneId, result.level)
+  ),
+  deleteRenderer("scene.level.delete", "level", { suffix: sceneSuffix }),
 
   detailRenderer(BATCH_WRITE_COMMANDS, (result, command) => renderBatchWriteResult(command, result)),
 
@@ -1139,7 +1158,7 @@ export const RENDERERS = registerRenderers([
     heading: "Notes",
     prefix: scenePrefix,
     row: (note) =>
-      `${note.id}\t${note.text ?? ""}\t(${note.x},${note.y})\t${note.texture?.src ?? ""}\t${note.iconSize ?? ""}`
+      `${note.id}\t${note.text ?? ""}\t(${note.x},${note.y})\t${note.texture?.src ?? ""}\t${note.iconSize ?? ""}${levelMembershipCell(note)}`
   }),
   detailRenderer(["scene.note.get", "scene.note.create", "scene.note.update", "scene.note.clone"], (result) =>
     renderNoteDetails(result.sceneId, result.note)
@@ -1152,7 +1171,7 @@ export const RENDERERS = registerRenderers([
     heading: "Drawings",
     prefix: scenePrefix,
     row: (drawing) =>
-      `${drawing.id}\t${drawing.text ?? ""}\t(${drawing.x},${drawing.y})\t${drawing.shape?.type ?? ""}\t${String(Boolean(drawing.hidden))}\t${drawing.name ?? "(no name)"}`
+      `${drawing.id}\t${drawing.text ?? ""}\t(${drawing.x},${drawing.y})\t${drawing.shape?.type ?? ""}\t${String(Boolean(drawing.hidden))}\t${drawing.name ?? "(no name)"}${levelMembershipCell(drawing)}`
   }),
   detailRenderer(
     ["scene.drawing.get", "scene.drawing.create", "scene.drawing.update", "scene.drawing.clone"],
@@ -1166,7 +1185,7 @@ export const RENDERERS = registerRenderers([
     heading: "Lights",
     prefix: scenePrefix,
     row: (light) =>
-      `${light.id}\t(${light.x},${light.y})\t${light.config?.dim ?? ""}/${light.config?.bright ?? ""}\t${String(Boolean(light.hidden))}\t${light.name ?? "(no name)"}`
+      `${light.id}\t(${light.x},${light.y})\t${light.config?.dim ?? ""}/${light.config?.bright ?? ""}\t${String(Boolean(light.hidden))}\t${light.name ?? "(no name)"}${levelMembershipCell(light)}`
   }),
   detailRenderer(
     ["scene.light.get", "scene.light.create", "scene.light.update", "scene.light.clone"],
@@ -1194,7 +1213,7 @@ export const RENDERERS = registerRenderers([
     heading: "Regions",
     prefix: scenePrefix,
     row: (region) =>
-      `${region.id}\t${region.name ?? ""}\t${region.visibility ?? ""}\tshapes=${region.shapesCount ?? 0}\tbehaviors=${region.behaviorsCount ?? 0}`
+      `${region.id}\t${region.name ?? ""}\t${region.visibility ?? ""}\tshapes=${region.shapesCount ?? 0}\tbehaviors=${region.behaviorsCount ?? 0}${levelMembershipCell(region)}`
   }),
   detailRenderer(
     ["scene.region.get", "scene.region.create", "scene.region.update", "scene.region.clone"],

@@ -2293,7 +2293,7 @@ describe("fvtt-world-cli commands", () => {
     expect(result.stderr).toBe("");
   });
 
-  it("renders the installed module count for system.info in human-readable mode", async () => {
+  it("renders the installed and active module counts for system.info in human-readable mode", async () => {
     const result = await runCommand(
       ["system", "info"],
       vi.fn(async () => ({
@@ -2306,21 +2306,50 @@ describe("fvtt-world-cli commands", () => {
           world: { id: "world-1", title: "Automation Test World" },
           user: { id: "user-1", name: "GM", isGM: true },
           bridge: { status: "connected" },
-          modules: [
-            { id: "fvtt-world-cli", title: "World CLI for Foundry VTT", version: "0.1.0", active: true },
-            { id: "dae", title: "Dynamic Active Effects", version: "11.0.0", active: false }
-          ],
-          limits: { uploadBytes: 104857600, wsMaxPayloadBytes: 140858710, uploadSource: "config" },
-          commands: ["system.ping", "system.info"]
+          moduleCount: 58,
+          activeModuleCount: 54,
+          limits: { uploadBytes: 104857600, wsMaxPayloadBytes: 140858710, uploadSource: "config" }
         }
       }))
     );
 
     expect(result.error).toBeNull();
-    expect(result.stdout).toContain("modules: 2");
+    expect(result.stdout).toContain("modules: 58 installed, 54 active");
+    expect(result.stdout).not.toContain("commands:");
 
     expect(result.stdout).toContain("limits.uploadBytes: 104857600 (source: config)");
     expect(result.stdout).toContain("limits.wsMaxPayloadBytes: 140858710");
+    expect(result.stderr).toBe("");
+  });
+
+  it("lists each module under the counts when system.info returns the module list", async () => {
+    const result = await runCommand(
+      ["system", "info", "--include", "modules"],
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result: {
+          module: { id: "fvtt-world-cli", title: "World CLI for Foundry VTT", version: "0.1.0" },
+          world: { id: "world-1", title: "Automation Test World" },
+          user: { id: "user-1", name: "GM", isGM: true },
+          bridge: { status: "connected" },
+          moduleCount: 2,
+          activeModuleCount: 1,
+          modules: [
+            { id: "fvtt-world-cli", title: "World CLI for Foundry VTT", version: "0.1.0", active: true },
+            { id: "dae", title: "Dynamic Active Effects", version: "11.0.0", active: false }
+          ],
+          limits: { uploadBytes: 104857600, wsMaxPayloadBytes: 140858710, uploadSource: "config" }
+        }
+      }))
+    );
+
+    expect(result.error).toBeNull();
+    expect(result.stdout).toContain("modules: 2 installed, 1 active");
+    expect(result.stdout).toContain("  fvtt-world-cli 0.1.0 active");
+    expect(result.stdout).toContain("  dae 11.0.0 inactive");
     expect(result.stderr).toBe("");
   });
 
@@ -2469,6 +2498,78 @@ describe("fvtt-world-cli commands", () => {
     expect(result.error).toBeNull();
     expect(result.stdout).toContain("name: Dungeon Level 2");
     expect(result.stdout).toContain('background: {"src":"worlds/world-1/maps/level-2.webp"}');
+  });
+
+  it("renders a v14 scene with its levels and a level list in human-readable mode", async () => {
+    const levels = [
+      { id: "lvl-a", name: "Ground", elevation: { bottom: 0, top: 20 }, sort: 0 },
+      { id: "lvl-b", name: "Roof", elevation: { bottom: 20, top: null }, sort: 1 }
+    ];
+    const respond = (result: unknown) =>
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result
+      }));
+
+    const scene = await runCommand(
+      ["scene", "get", "--scene-id", "scene-1"],
+      respond({ scene: { id: "scene-1", name: "Tower", folder: "fold-1", initialLevel: null, levels } })
+    );
+    expect(scene.error).toBeNull();
+    expect(scene.stdout).toContain("folder: fold-1");
+    expect(scene.stdout).toContain("initial level: (first level)");
+    expect(scene.stdout).toContain("level: lvl-b\tRoof\televation=20..+inf\tsort=1");
+    expect(scene.stdout).not.toContain("background:");
+
+    const list = await runCommand(
+      ["scene", "level", "list", "--scene-id", "scene-1"],
+      respond({ sceneId: "scene-1", levels, total: 2, hasMore: false })
+    );
+    expect(list.error).toBeNull();
+    expect(list.stdout).toContain("lvl-a\tGround\televation=0..20\tsort=0");
+  });
+
+  it("renders placeable level membership only when the result carries it", async () => {
+    const respond = (result: unknown) =>
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result
+      }));
+    const tile = { id: "tile-1", x: 0, y: 0, width: 100, height: 100, hidden: false };
+
+    const v14Token = await runCommand(
+      ["scene", "token", "get", "--scene-id", "scene-1", "--token-id", "tok-1"],
+      respond({ sceneId: "scene-1", token: { id: "tok-1", name: "Guard", level: "lvl-b" } })
+    );
+    expect(v14Token.stdout).toContain("level: lvl-b");
+
+    const v14Tiles = await runCommand(
+      ["scene", "tile", "list", "--scene-id", "scene-1"],
+      respond({
+        sceneId: "scene-1",
+        tiles: [
+          { ...tile, levels: ["lvl-a", "lvl-b"] },
+          { ...tile, id: "tile-2", levels: [] }
+        ],
+        total: 2,
+        hasMore: false
+      })
+    );
+    expect(v14Tiles.stdout).toContain("hidden=false\tlevels=lvl-a,lvl-b");
+    expect(v14Tiles.stdout).toContain("hidden=false\tlevels=(all)");
+
+    const v13Tile = await runCommand(
+      ["scene", "tile", "get", "--scene-id", "scene-1", "--tile-id", "tile-1"],
+      respond({ sceneId: "scene-1", tile })
+    );
+    expect(v13Tile.error).toBeNull();
+    expect(v13Tile.stdout).not.toMatch(/level/);
   });
 
   it("renders file list output in human-readable mode", async () => {

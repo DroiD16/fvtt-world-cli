@@ -13,7 +13,7 @@ import { executeBatchCreate, executeBatchDelete, executeBatchUpdate } from "../l
 import { createBridgeError } from "../lib/errors.js";
 import { isDryRun } from "../lib/dry-run.js";
 
-/** @param {{ type: string, prefix: string, idField: string, notFoundCode: string, listCommand: string, prepareCreate?: (data: Record<string, any>, scene: any) => any, assertSupported?: (scene: any) => void, summarize?: (document: any) => Record<string, unknown> }} config */
+/** @param {{ type: string, prefix: string, idField: string, notFoundCode: string, listCommand: string, prepareCreate?: (data: Record<string, any>, scene: any) => any, assertSupported?: (scene: any) => void, assertDeleteAllowed?: (scene: any, ids: string[]) => void, summarize?: (document: any) => Record<string, unknown> }} config */
 export function createSceneEmbeddedBatchHandlers({
   type,
   prefix,
@@ -22,6 +22,7 @@ export function createSceneEmbeddedBatchHandlers({
   listCommand,
   prepareCreate,
   assertSupported,
+  assertDeleteAllowed,
   summarize
 }) {
   const createCommand = `${prefix}.create-many`;
@@ -89,6 +90,7 @@ export function createSceneEmbeddedBatchHandlers({
 
     async [deleteCommand](params) {
       const scene = resolveScene(params.sceneId);
+      assertDeleteAllowed?.(scene, params.ids);
       const collection = collectionOf(scene);
       const result = await executeBatchDelete({
         command: deleteCommand,

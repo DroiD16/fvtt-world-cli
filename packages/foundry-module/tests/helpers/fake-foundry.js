@@ -2981,6 +2981,7 @@ function createSceneDocument(id, data) {
     lights = [],
     templates = [],
     regions = [],
+    levels = [],
     ...rest
   } = data;
   const scene = createDocument(id, rest);
@@ -2996,7 +2997,8 @@ function createSceneDocument(id, data) {
     ["Drawing", "drawing", drawings],
     ["AmbientLight", "light", lights],
     ["MeasuredTemplate", "template", templates],
-    ["Region", "region", regions]
+    ["Region", "region", regions],
+    ["Level", "level", levels]
   ]) {
     const collection = createCollection(
       [],
@@ -3116,6 +3118,7 @@ function createSceneDocument(id, data) {
   scene.lights = collections.AmbientLight;
   scene.templates = collections.MeasuredTemplate;
   scene.regions = collections.Region;
+  scene.levels = collections.Level;
 
   scene.createEmbeddedDocuments = vi.fn(async (type, entries) =>
     entries.map((entry, index) => {
@@ -3286,6 +3289,16 @@ export function installFakeFoundry() {
     background: {
       src: "worlds/world-1/maps/dungeon.webp"
     },
+    levels: [
+      {
+        id: "level-ground",
+        name: "Ground Floor",
+        elevation: { bottom: 0, top: 20 },
+        background: { src: "worlds/world-1/maps/dungeon.webp" },
+        sort: 0
+      },
+      { id: "level-upper", name: "Upper Floor", elevation: { bottom: 20, top: 40 }, sort: 1 }
+    ],
     tokens: [
       {
         id: "token-a",
@@ -3855,6 +3868,7 @@ export function installFakeFoundry() {
       "scn-src": {
         _id: "scn-src",
         name: "Sunken Temple",
+        levels: [{ _id: "lvl-src-1", name: "Temple Floor" }],
         folder: "pack-folder-scenes",
         sort: 900,
 

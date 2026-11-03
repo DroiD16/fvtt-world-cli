@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   serializeActiveEffect,
@@ -86,6 +86,10 @@ class PreparedSystem {
 function assertStructuredCloneable(value) {
   expect(() => structuredClone(value)).not.toThrow();
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("serializeScene", () => {
   it("prefers the plain source grid from toObject() over a runtime grid object", () => {
@@ -202,6 +206,10 @@ describe("serializeScene", () => {
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
+      anchorX: 0,
+      anchorY: 0,
+      fit: "fill",
+      alphaThreshold: 0,
       tint: "#8080ff"
     });
     expect("color" in background).toBe(false);
@@ -289,7 +297,11 @@ describe("serializeScene", () => {
     expect(serializeScene(scene, { flags: true }).flags).toEqual({});
   });
 
-  it("reads embedded-collection counts from live collection sizes for all v13/v14 collections", () => {
+  it.each([
+    [13, { templates: 0 }],
+    [14, { levels: 2 }]
+  ])("counts only the embedded collections Foundry v%i has, from live sizes", (generation, versionCounts) => {
+    vi.stubGlobal("game", { release: { generation } });
     const collection = (size) => ({ size });
     const scene = {
       id: "scene-3",
@@ -301,8 +313,10 @@ describe("serializeScene", () => {
       notes: collection(5),
       drawings: collection(1),
       lights: collection(6),
-      templates: collection(0),
-
+      get templates() {
+        if (generation >= 14) throw new Error("Scene#templates is deprecated");
+        return collection(0);
+      },
       levels: collection(2),
       regions: collection(2),
       toObject() {
@@ -319,9 +333,8 @@ describe("serializeScene", () => {
       notes: 5,
       drawings: 1,
       lights: 6,
-      templates: 0,
-      levels: 2,
-      regions: 2
+      regions: 2,
+      ...versionCounts
     });
     assertStructuredCloneable(result);
   });
@@ -351,9 +364,44 @@ describe("serializeScene", () => {
       drawings: 0,
       lights: 0,
       templates: 0,
-      levels: 0,
       regions: 0
     });
+  });
+});
+
+describe("placeable level membership", () => {
+  const placeable = (source) => ({ id: source._id, toObject: () => structuredClone(source) });
+  /** @type {Array<[string, (document: any) => any, (document: any) => any, string, unknown]>} */
+  const families = [
+    ["token", serializeToken, serializeTokenSummary, "level", "lvlUpper000000000"],
+    ["tile", serializeTile, serializeTileSummary, "levels", ["lvlUpper000000000"]],
+    ["sound", serializeSound, serializeSoundSummary, "levels", ["lvlUpper000000000"]],
+    ["wall", serializeWall, serializeWallSummary, "levels", ["lvlUpper000000000"]],
+    ["note", serializeNote, serializeNoteSummary, "levels", ["lvlUpper000000000"]],
+    ["drawing", serializeDrawing, serializeDrawingSummary, "levels", []],
+    ["light", serializeAmbientLight, serializeAmbientLightSummary, "levels", ["a", "b"]],
+    ["region", serializeRegion, serializeRegionSummary, "levels", ["lvlUpper000000000"]]
+  ];
+
+  it.each(families)(
+    "%s full and summary reads carry the stored %s on Foundry v14",
+    (_family, serialize, serializeSummary, key, value) => {
+      vi.stubGlobal("game", { release: { generation: 14 } });
+      const document = placeable({ _id: "doc1", [key]: value });
+      for (const result of [serialize(document), serializeSummary(document)]) {
+        expect(result[key]).toEqual(value);
+        assertStructuredCloneable(result);
+      }
+    }
+  );
+
+  it.each(families)("%s reads carry no level key on Foundry v13", (_family, serialize, serializeSummary) => {
+    vi.stubGlobal("game", { release: { generation: 13 } });
+    const document = placeable({ _id: "doc1" });
+    for (const result of [serialize(document), serializeSummary(document)]) {
+      expect(result).not.toHaveProperty("level");
+      expect(result).not.toHaveProperty("levels");
+    }
   });
 });
 
@@ -1399,7 +1447,7 @@ describe("serializeActor", () => {
       }
     };
 
-    const result = serializeActor(actor);
+    const result = serializeActor(actor, { include: ["items"] });
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0].system).toEqual({ damage: "1d8" });
@@ -1462,7 +1510,7 @@ describe("serializeActor", () => {
       }
     };
 
-    const result = serializeActor(actor);
+    const result = serializeActor(actor, { include: ["items"] });
 
     expect(result.flags).toEqual({ ActiveAuras: { radius: 10 } });
 
@@ -1513,7 +1561,7 @@ describe("serializeActor", () => {
       }
     };
 
-    const result = serializeActor(actor);
+    const result = serializeActor(actor, { include: ["items"] });
 
     expect(result.effects).toHaveLength(1);
     expect(result.effects[0].name).toBe("Rage");
@@ -1602,11 +1650,80 @@ describe("serializeActor", () => {
     assertStructuredCloneable(result);
   });
 
-  it("leaves nested items on the default projection when no include is given", () => {
+  it("collapses embedded items to itemCount when no include is given", () => {
     const result = serializeActor(buildNestedActor());
+    expect(result.itemCount).toBe(1);
+    expect("items" in result).toBe(false);
+    expect(result.flags).toEqual({ ActiveAuras: { radius: 10 } });
+    expect(result.effects).toHaveLength(1);
+    assertStructuredCloneable(result);
+  });
+
+  it("returns embedded items on the default nested projection with include:['items']", () => {
+    const result = serializeActor(buildNestedActor(), { include: ["items"] });
+    expect(result.itemCount).toBe(1);
     expect(result.items).toHaveLength(1);
     expect("flags" in result.items[0]).toBe(false);
     expect("effects" in result.items[0]).toBe(false);
+    expect(result.items[0].effectCount).toBe(1);
+  });
+
+  it("returns embedded items when only items.flags or items.effects is requested", () => {
+    for (const include of [["items.flags"], ["items.effects"]]) {
+      const result = serializeActor(buildNestedActor(), { include });
+      expect(result.itemCount, include.join()).toBe(1);
+      expect(result.items, include.join()).toHaveLength(1);
+    }
+  });
+
+  it("keeps items collapsed when only the actor's own flags and effects are requested", () => {
+    const result = serializeActor(buildNestedActor(), { include: ["flags", "effects"] });
+    expect(result.itemCount).toBe(1);
+    expect("items" in result).toBe(false);
+  });
+
+  it("counts and returns stored items that Foundry left out of the collection for failing validation", () => {
+    const storedEffects = [
+      { _id: "ieffect-1", name: "Flaming", changes: [], system: {}, flags: {} },
+      { _id: "ieffect-2", name: "Broken", type: "unregistered", changes: [], system: {}, flags: {} }
+    ];
+    const storedItems = [
+      { _id: "item-1", name: "Sword", type: "weapon", system: {}, flags: {}, effects: storedEffects },
+      { _id: "item-2", name: "Relic", type: "unregistered", system: {}, flags: {}, effects: [] }
+    ];
+    const initializedSword = {
+      id: "item-1",
+      name: "Sword",
+      type: "weapon",
+      effects: [storedEffects[0]],
+      toObject: () => structuredClone(storedItems[0])
+    };
+    const actor = {
+      id: "actor-1",
+      name: "Valeros",
+      type: "character",
+      items: [initializedSword],
+      effects: [],
+      toObject: () => ({
+        _id: "actor-1",
+        name: "Valeros",
+        type: "character",
+        system: {},
+        items: structuredClone(storedItems)
+      })
+    };
+
+    const collapsed = serializeActor(actor);
+    expect(collapsed.itemCount).toBe(2);
+    expect("items" in collapsed).toBe(false);
+
+    const included = serializeActor(actor, { include: ["items", "items.effects"] });
+    expect(included.itemCount).toBe(included.items.length);
+    expect(included.items.map((item) => item.id)).toEqual(["item-1", "item-2"]);
+    expect(included.items[0].effectCount).toBe(2);
+    expect(included.items[0].effects.map((effect) => effect.id)).toEqual(["ieffect-1", "ieffect-2"]);
+
+    expect(serializeActorSummary(actor).itemCount).toBe(2);
   });
 
   it("appends a derived prepared subtree only with include:['prepared']", () => {
@@ -4423,16 +4540,19 @@ describe("compendiumSource", () => {
       "a family carries compendiumSource on its FULL projection with no lean-row assertion: add it to LEAN"
     ).toEqual(FULL.map(([name]) => name).sort());
 
-    const actor = serializeActor({
-      id: "a1",
-      toObject: () => ({
-        _id: "a1",
-        name: "A",
-        type: "npc",
-        effects: [],
-        items: [{ _id: "i1", name: "I", type: "loot", effects: [], _stats: { compendiumSource: UUID } }]
-      })
-    });
+    const actor = serializeActor(
+      {
+        id: "a1",
+        toObject: () => ({
+          _id: "a1",
+          name: "A",
+          type: "npc",
+          effects: [],
+          items: [{ _id: "i1", name: "I", type: "loot", effects: [], _stats: { compendiumSource: UUID } }]
+        })
+      },
+      { include: ["items"] }
+    );
     expect(actor.compendiumSource).toBeNull();
     expect(Object.hasOwn(actor.items[0], "compendiumSource")).toBe(false);
   });

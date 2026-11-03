@@ -10,6 +10,7 @@ describe("fvtt-world-cli commands", () => {
   it.each([
     [["system", "ping"], "system.ping", {}],
     [["system", "info"], "system.info", {}],
+    [["system", "info", "--include", "modules"], "system.info", { include: ["modules"] }],
     [["scene", "list"], "scene.list", {}],
     [["scene", "get", "--scene-id", "scene-1"], "scene.get", { sceneId: "scene-1" }],
     [
@@ -228,6 +229,16 @@ describe("fvtt-world-cli commands", () => {
       ["scene", "create", "--name", "New Scene", "--width", "1000", "--height", "800"],
       "scene.create",
       { data: { name: "New Scene", width: 1000, height: 800 } }
+    ],
+    [
+      ["scene", "create", "--name", "Crypt", "--folder", "folder-1"],
+      "scene.create",
+      { data: { name: "Crypt", folder: "folder-1" } }
+    ],
+    [
+      ["scene", "update", "--scene-id", "scene-1", "--clear-folder"],
+      "scene.update",
+      { sceneId: "scene-1", patch: { folder: null } }
     ],
     [
       ["scene", "clone", "--scene-id", "scene-1", "--name", "Dungeon Copy"],
@@ -1825,6 +1836,42 @@ describe("fvtt-world-cli commands", () => {
       ["scene", "sound", "delete", "--scene-id", "scene-1", "--sound-id", "sound-a"],
       "scene.sound.delete",
       { sceneId: "scene-1", soundId: "sound-a" }
+    ],
+    [["scene", "level", "list", "--scene-id", "scene-1"], "scene.level.list", { sceneId: "scene-1" }],
+    [
+      ["scene", "level", "get", "--scene-id", "scene-1", "--level-id", "lvl-a"],
+      "scene.level.get",
+      { sceneId: "scene-1", levelId: "lvl-a" }
+    ],
+    [
+      ["scene", "level", "create", "--scene-id", "scene-1", "--data-json", '{"name":"Attic"}'],
+      "scene.level.create",
+      { sceneId: "scene-1", data: { name: "Attic" } }
+    ],
+    [
+      [
+        "scene",
+        "level",
+        "update",
+        "--scene-id",
+        "scene-1",
+        "--level-id",
+        "lvl-a",
+        "--patch-json",
+        '{"background":{"src":"worlds/w/a.webp"}}'
+      ],
+      "scene.level.update",
+      { sceneId: "scene-1", levelId: "lvl-a", patch: { background: { src: "worlds/w/a.webp" } } }
+    ],
+    [
+      ["scene", "level", "clone", "--scene-id", "scene-1", "--level-id", "lvl-a"],
+      "scene.level.clone",
+      { sceneId: "scene-1", levelId: "lvl-a" }
+    ],
+    [
+      ["scene", "level", "delete", "--scene-id", "scene-1", "--level-id", "lvl-a"],
+      "scene.level.delete",
+      { sceneId: "scene-1", levelId: "lvl-a" }
     ],
     [["scene", "wall", "list", "--scene-id", "scene-1"], "scene.wall.list", { sceneId: "scene-1" }],
     [

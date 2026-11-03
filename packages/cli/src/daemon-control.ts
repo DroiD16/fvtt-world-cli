@@ -3,7 +3,7 @@ import { Command, CommanderError } from "commander";
 import { connectDaemonClient } from "./client/send-command.js";
 import { clientMaxPayloadOption, getCommandConfig } from "./config-io.js";
 import { type CliDependencies, write } from "./deps.js";
-import { exitCodeForErrorCode } from "./errors.js";
+import { exitCodeForErrorCode, renderProtocolError } from "./errors.js";
 
 function clientTimeoutOption(command: Command) {
   const { timeoutMs } = command.optsWithGlobals() as { timeoutMs?: number };
@@ -37,7 +37,8 @@ export function createDaemonControlRunner(dependencies: CliDependencies) {
     if (Boolean(command.optsWithGlobals().json))
       write(dependencies.stdout, `${JSON.stringify(response, null, 2)}\n`);
     else if (response.ok) write(dependencies.stdout, `${JSON.stringify(response.result, null, 2)}\n`);
-    else
+    else write(dependencies.stderr, `${renderProtocolError(response.error)}\n`);
+    if (!response.ok)
       throw new CommanderError(
         exitCodeForErrorCode(response.error?.code),
         "fvtt-world-cli.remoteError",

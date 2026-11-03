@@ -37,6 +37,7 @@ import { createOwnershipHandlers } from "./handlers/ownership.js";
 import { createPlaylistHandlers } from "./handlers/playlists.js";
 import { createUserHandlers } from "./handlers/users.js";
 import { createSceneSoundHandlers } from "./handlers/scene-sounds.js";
+import { createSceneLevelHandlers } from "./handlers/scene-levels.js";
 import { createSceneTileHandlers } from "./handlers/scene-tiles.js";
 import { createSceneWallHandlers } from "./handlers/scene-walls.js";
 import { createSceneNoteHandlers } from "./handlers/scene-notes.js";
@@ -172,6 +173,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {}, o
     ...createSceneTokenItemEffectHandlers(),
     ...createSceneTileHandlers(),
     ...createSceneWallHandlers(),
+    ...createSceneLevelHandlers(),
     ...createSceneNoteHandlers(),
     ...createSceneDrawingHandlers(),
     ...createSceneLightHandlers(),

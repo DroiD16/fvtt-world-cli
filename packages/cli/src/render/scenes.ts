@@ -21,16 +21,25 @@ export function renderSceneDetails(scene: any) {
   const lines = [
     `id: ${scene?.id}`,
     `name: ${scene?.name}`,
+    `folder: ${scene?.folder ?? ""}`,
     `active: ${String(Boolean(scene?.active))}`,
     `navigation: ${String(Boolean(scene?.navigation))}`,
     `nav order: ${scene?.navOrder ?? 0}`,
     `size: ${scene?.width}x${scene?.height}`,
     `grid: ${JSON.stringify(scene?.grid ?? null)}`,
-    `background: ${JSON.stringify(scene?.background ?? null)}`,
+    ...(scene && Object.hasOwn(scene, "background")
+      ? [`background: ${JSON.stringify(scene.background ?? null)}`]
+      : []),
     `token vision: ${String(Boolean(scene?.tokenVision))}`,
     `weather: ${scene?.weather ?? ""}`,
     `playlist: ${scene?.playlist ?? ""}`
   ];
+  if (scene && Object.hasOwn(scene, "initialLevel")) {
+    lines.push(`initial level: ${scene.initialLevel ?? "(first level)"}`);
+  }
+  for (const level of Array.isArray(scene?.levels) ? scene.levels : []) {
+    lines.push(`level: ${renderLevelRow(level)}`);
+  }
   lines.push(...renderCompendiumSourceLines(scene));
 
   if (scene && Object.hasOwn(scene, "ownership")) {
@@ -45,6 +54,23 @@ export function renderSceneDetails(scene: any) {
   return lines.join("\n");
 }
 
+function levelMembership(placeable: any): [string, string] | null {
+  if (placeable && Object.hasOwn(placeable, "level")) return ["level", String(placeable.level)];
+  if (placeable && Object.hasOwn(placeable, "levels"))
+    return ["levels", placeable.levels.join(",") || "(all)"];
+  return null;
+}
+
+function levelMembershipLines(placeable: any): string[] {
+  const membership = levelMembership(placeable);
+  return membership ? [`${membership[0]}: ${membership[1]}`] : [];
+}
+
+export function levelMembershipCell(placeable: any): string {
+  const membership = levelMembership(placeable);
+  return membership ? `\t${membership[0]}=${membership[1]}` : "";
+}
+
 export function renderTokenDetails(sceneId: string, token: any) {
   const lines = [
     `scene: ${sceneId}`,
@@ -54,6 +80,7 @@ export function renderTokenDetails(sceneId: string, token: any) {
     `actorLink: ${String(Boolean(token?.actorLink))}`,
     `position: (${token?.x ?? 0}, ${token?.y ?? 0})`,
     `elevation: ${token?.elevation ?? 0}`,
+    ...levelMembershipLines(token),
     `rotation: ${token?.rotation ?? 0}`,
     `hidden: ${String(Boolean(token?.hidden))}`,
     `disposition: ${token?.disposition ?? ""}`,
@@ -107,6 +134,7 @@ export function renderTileDetails(sceneId: string, tile: any) {
     `size: ${tile?.width}x${tile?.height}`,
     `rotation: ${tile?.rotation ?? 0}`,
     `elevation: ${tile?.elevation ?? 0}`,
+    ...levelMembershipLines(tile),
     `sort: ${tile?.sort ?? 0}`,
     `hidden: ${String(Boolean(tile?.hidden))}`,
     `locked: ${String(Boolean(tile?.locked))}`,
@@ -121,6 +149,7 @@ export function renderSoundDetails(sceneId: string, sound: any) {
     `path: ${sound?.path ?? ""}`,
     `position: (${sound?.x ?? 0}, ${sound?.y ?? 0})`,
     `radius: ${sound?.radius ?? 0}`,
+    ...levelMembershipLines(sound),
     `volume: ${sound?.volume ?? ""}`,
     `walls: ${String(Boolean(sound?.walls))}`,
     `easing: ${String(Boolean(sound?.easing))}`,
@@ -129,11 +158,32 @@ export function renderSoundDetails(sceneId: string, sound: any) {
   ].join("\n");
 }
 
+export function renderLevelRow(level: any) {
+  const elevation = level?.elevation ?? {};
+  return `${level?.id}\t${level?.name ?? ""}\televation=${elevation.bottom ?? "-inf"}..${elevation.top ?? "+inf"}\tsort=${level?.sort ?? 0}`;
+}
+
+export function renderLevelDetails(sceneId: string, level: any) {
+  return [
+    `scene: ${sceneId}`,
+    `id: ${level?.id}`,
+    `name: ${level?.name ?? ""}`,
+    `elevation: ${JSON.stringify(level?.elevation ?? null)}`,
+    `sort: ${level?.sort ?? 0}`,
+    `background: ${JSON.stringify(level?.background ?? null)}`,
+    `foreground: ${JSON.stringify(level?.foreground ?? null)}`,
+    `fog: ${JSON.stringify(level?.fog ?? null)}`,
+    `textures: ${JSON.stringify(level?.textures ?? null)}`,
+    `visibility: ${JSON.stringify(level?.visibility ?? null)}`
+  ].join("\n");
+}
+
 export function renderWallDetails(sceneId: string, wall: any) {
   return [
     `scene: ${sceneId}`,
     `id: ${wall?.id}`,
     `c: ${JSON.stringify(wall?.c ?? null)}`,
+    ...levelMembershipLines(wall),
     `door: ${wall?.door ?? 0}`,
     `ds: ${wall?.ds ?? 0}`,
     `doorSound: ${wall?.doorSound ?? ""}`,
@@ -157,6 +207,7 @@ export function renderNoteDetails(sceneId: string, note: any) {
     `texture: ${JSON.stringify(note?.texture ?? null)}`,
     `iconSize: ${note?.iconSize ?? ""}`,
     `elevation: ${note?.elevation ?? 0}`,
+    ...levelMembershipLines(note),
     `sort: ${note?.sort ?? 0}`,
     `global: ${String(Boolean(note?.global))}`
   ].join("\n");
@@ -174,6 +225,7 @@ export function renderDrawingDetails(sceneId: string, drawing: any) {
     `shape: ${JSON.stringify(drawing?.shape ?? null)}`,
     `rotation: ${drawing?.rotation ?? 0}`,
     `elevation: ${drawing?.elevation ?? 0}`,
+    ...levelMembershipLines(drawing),
     `sort: ${drawing?.sort ?? 0}`,
     `fillColor: ${drawing?.fillColor ?? ""}`,
     `strokeColor: ${drawing?.strokeColor ?? ""}`,
@@ -190,6 +242,7 @@ export function renderLightDetails(sceneId: string, light: any) {
     `name: ${light?.name ?? ""}`,
     `position: (${light?.x ?? 0}, ${light?.y ?? 0})`,
     `elevation: ${light?.elevation ?? 0}`,
+    ...levelMembershipLines(light),
     `rotation: ${light?.rotation ?? 0}`,
     `walls: ${String(Boolean(light?.walls))}`,
     `vision: ${String(Boolean(light?.vision))}`,
@@ -222,6 +275,7 @@ export function renderRegionDetails(sceneId: string, region: any) {
     `color: ${region?.color ?? ""}`,
     `visibility: ${region?.visibility ?? ""}`,
     `elevation: ${JSON.stringify(region?.elevation ?? null)}`,
+    ...levelMembershipLines(region),
     `shapes: ${JSON.stringify(region?.shapes ?? [])}`,
     `behaviors: ${JSON.stringify(region?.behaviors ?? [])}`,
     `locked: ${String(Boolean(region?.locked))}`

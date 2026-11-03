@@ -2,6 +2,7 @@ import {
   CLIENT_LABEL_CHARACTER_PATTERN,
   CLIENT_LABEL_MAX_LENGTH,
   CLIENT_LABEL_PATTERN,
+  ERROR_CODES,
   MESSAGE_TYPES,
   MODULE_ID,
   MODULE_TITLE,
@@ -89,6 +90,12 @@ export function getDefaultClientLabel() {
 
 export function sanitizeClientLabel(value) {
   return toWireLabel(value) || getDefaultClientLabel();
+}
+
+function describeDaemonStartedLater(paired, bridgeStatus) {
+  return paired && bridgeStatus?.terminalStopReason === ERROR_CODES.DAEMON_UNAVAILABLE
+    ? localize("FVTTWORLDCLI.Authorization.DaemonStartedLater")
+    : "";
 }
 
 export const CLIENT_LABEL_FIELD_SELECTOR = 'input[name="clientLabel"]';
@@ -345,7 +352,8 @@ export function createAuthorizationApplication({ connect }) {
         connectionLabel: describeConnection(displayState, bridgeStatus?.status),
         connectionAction,
         connectionActionGlyph: connectionAction ? CONNECTION_ACTION_GLYPHS[connectionAction] : "",
-        connectionActionLabel: connectionAction ? CONNECTION_ACTION_LABELS[connectionAction] : ""
+        connectionActionLabel: connectionAction ? CONNECTION_ACTION_LABELS[connectionAction] : "",
+        daemonStartedLaterHint: describeDaemonStartedLater(paired, bridgeStatus)
       };
     }
   };

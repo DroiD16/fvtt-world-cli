@@ -5,6 +5,7 @@ import {
   isExternalFileRef,
   splitFilePathQuery
 } from "./file-access.js";
+import { hasSceneLevels } from "./foundry-capabilities.js";
 import { paginate } from "./pagination.js";
 import { getGame } from "./validators.js";
 
@@ -31,7 +32,8 @@ const AUDIT_FIELD_TABLE = Object.freeze({
       { collection: "sounds", docType: "AmbientSound", fields: ["path"] },
       { collection: "notes", docType: "Note", fields: ["texture.src"] },
       { collection: "drawings", docType: "Drawing", fields: ["texture"] },
-      { collection: "templates", docType: "MeasuredTemplate", fields: ["texture"] }
+      { collection: "templates", docType: "MeasuredTemplate", fields: ["texture"] },
+      { collection: "levels", docType: "Level", fields: ["background.src", "foreground.src", "fog.src"] }
     ]
   },
   actor: {
@@ -137,6 +139,7 @@ export function collectAuditRefs(game, scopeSet) {
       continue;
     }
     const spec = AUDIT_FIELD_TABLE[scope];
+    const selfSpec = scope === "scene" && hasSceneLevels() ? null : spec.self;
     const collectionName = SCOPE_COLLECTIONS[scope];
     const documents = Array.from(game?.[collectionName] ?? []);
 
@@ -145,9 +148,9 @@ export function collectAuditRefs(game, scopeSet) {
       const docId = document?.id ?? source?._id ?? null;
       const docName = document?.name ?? source?.name ?? null;
 
-      if (spec.self) {
-        collectFieldRefs(records, source, spec.self.fields, {
-          docType: spec.self.docType,
+      if (selfSpec) {
+        collectFieldRefs(records, source, selfSpec.fields, {
+          docType: selfSpec.docType,
           id: docId,
           name: docName
         });

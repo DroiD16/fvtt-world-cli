@@ -3,7 +3,6 @@ import { ERROR_CODES } from "../generated/protocol.js";
 import {
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   DEFAULT_WS_MAX_PAYLOAD_BYTES,
-  DISCOVERABLE_COMMAND_NAMES,
   MODULE_ID,
   MODULE_TITLE
 } from "../generated/protocol.js";
@@ -18,9 +17,11 @@ export function createSystemHandlers({ bridgeClient }) {
       };
     },
 
-    async "system.info"() {
+    async "system.info"(params) {
       const game = globalThis.game;
       const manifest = game.modules?.get?.(MODULE_ID);
+      const modules = game.modules?.contents ?? [];
+      const withModules = Array.isArray(params.include) && params.include.includes("modules");
       return {
         module: {
           id: MODULE_ID,
@@ -38,13 +39,18 @@ export function createSystemHandlers({ bridgeClient }) {
           version: game.system?.version ?? "unknown"
         },
 
-        modules:
-          game.modules?.contents?.map((m) => ({
-            id: m.id,
-            title: m.title,
-            version: m.version,
-            active: m.active
-          })) ?? [],
+        moduleCount: modules.length,
+        activeModuleCount: modules.filter((m) => m.active).length,
+        ...(withModules
+          ? {
+              modules: modules.map((m) => ({
+                id: m.id,
+                title: m.title,
+                version: m.version,
+                active: m.active
+              }))
+            }
+          : {}),
         world: {
           id: game.world?.id ?? "unknown-world",
           title: game.world?.title ?? "Unknown World"
@@ -60,8 +66,7 @@ export function createSystemHandlers({ bridgeClient }) {
           uploadBytes: DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
           wsMaxPayloadBytes: DEFAULT_WS_MAX_PAYLOAD_BYTES,
           uploadSource: "default"
-        },
-        commands: DISCOVERABLE_COMMAND_NAMES
+        }
       };
     },
 

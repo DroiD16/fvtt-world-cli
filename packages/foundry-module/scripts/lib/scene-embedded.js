@@ -8,9 +8,9 @@ import {
   writeCommitted
 } from "./write-confirmation.js";
 
-import { getFoundryGeneration } from "./foundry-capabilities.js";
+import { hasSceneLevels } from "./foundry-capabilities.js";
 import { getActorById, getGame, getSceneById } from "./game-collections.js";
-import { AUTHOR_BEARING_EMBEDDED_TYPES, sanitizeEmbeddedData } from "./sanitize.js";
+import { AUTHOR_BEARING_EMBEDDED_TYPES, payloadKeyField, sanitizeEmbeddedData } from "./sanitize.js";
 import {
   assertRegionBehaviorsAllowed,
   assertRegionBehaviorsSuppliedAsArray
@@ -87,7 +87,8 @@ const SCENE_EMBEDDED_COLLECTIONS = Object.freeze({
   Drawing: "drawings",
   AmbientLight: "lights",
   MeasuredTemplate: "templates",
-  Region: "regions"
+  Region: "regions",
+  Level: "levels"
 });
 
 const SCENE_EMBEDDED_LIST_COMMANDS = Object.freeze({
@@ -99,7 +100,8 @@ const SCENE_EMBEDDED_LIST_COMMANDS = Object.freeze({
   Drawing: "scene.drawing.list",
   AmbientLight: "scene.light.list",
   MeasuredTemplate: "scene.template.list",
-  Region: "scene.region.list"
+  Region: "scene.region.list",
+  Level: "scene.level.list"
 });
 
 function sceneEmbeddedCollection(scene, type) {
@@ -118,15 +120,26 @@ export function assertSceneTemplatesSupported(scene) {
   }
 }
 
+/** @param {Record<string, unknown>} details */
+export function assertLevelsSupported(details) {
+  if (!hasSceneLevels()) {
+    throw createBridgeError(
+      ERROR_CODES.UNSUPPORTED_OPERATION,
+      "Scene levels exist only on Foundry v14 and later: this Foundry version has no Level document and no `initialLevel` field. On v13 a scene has one map, set through the scene's own `background`, `backgroundColor`, `foreground` and `foregroundElevation` fields",
+      details
+    );
+  }
+}
+
 export function assertSceneLevelsFieldsSupported(data) {
   if (!data || typeof data !== "object") return;
   const has = (key) => Object.prototype.hasOwnProperty.call(data, key);
-  const supplied = [];
-  if (has("foreground")) supplied.push("foreground");
-  if (has("foregroundElevation")) supplied.push("foregroundElevation");
-  if (has("background")) supplied.push("background");
-  if (has("backgroundColor")) supplied.push("backgroundColor");
+  const levelFields = ["levels", "initialLevel"].filter(has);
+  if (levelFields.length > 0) {
+    assertLevelsSupported({ family: "scene", fields: levelFields });
+  }
 
+  const supplied = ["foreground", "foregroundElevation", "background", "backgroundColor"].filter(has);
   if (
     data.fog &&
     typeof data.fog === "object" &&
@@ -136,14 +149,49 @@ export function assertSceneLevelsFieldsSupported(data) {
     supplied.push("fog.overlay");
   }
   if (supplied.length === 0) return;
-  const generation = getFoundryGeneration();
-  if (generation !== null && generation >= 14) {
+  if (hasSceneLevels()) {
     throw createBridgeError(
       ERROR_CODES.UNSUPPORTED_OPERATION,
-      "Scene `foreground`/`foregroundElevation`/`background`/`backgroundColor`/`fog.overlay` are not top-level Scene fields in this Foundry version (v14 moved them into the per-level `levels[]` collection; its top-level compatibility shim is partial on create and discards the mapped delta entirely on update, so a supplied value is not guaranteed to land). They are supported on v13 only — on v14 set the background/foreground/fog-overlay through the per-level `levels[]` config in the Foundry UI instead (`fog.mode`/`fog.colors` remain top-level and are unaffected)",
+      "Foundry v14 stores a scene's background, background color, foreground, foreground elevation and fog overlay on each of its levels, not on the scene, and ignores these scene fields when they are written. Set them on a level instead: through `levels` in scene.create data for a new scene, or with scene.level.update for an existing one (scene.level.list gives the level ids). `fog.mode` and `fog.colors` remain scene fields",
       { family: "scene", fields: supplied }
     );
   }
+}
+
+/**
+ * @param {string} type
+ * @param {Record<string, any>} data
+ */
+function assertPlaceableLevelFieldsSupported(type, data) {
+  if (hasSceneLevels()) return;
+  const fields = [
+    ...new Set(
+      Object.keys(data)
+        .map(payloadKeyField)
+        .filter((field) => field === "level" || field === "levels")
+    )
+  ];
+  if (fields.length === 0) return;
+  throw createBridgeError(
+    ERROR_CODES.UNSUPPORTED_OPERATION,
+    `Placeable level membership exists only on Foundry v14 and later: ${type} documents on this Foundry version have no \`level\` or \`levels\` field, and Foundry would silently discard the value. Remove ${fields.join(" and ")} from the data; on v13 every placeable belongs to the scene's single map. Nothing was written`,
+    { family: SCENE_EMBEDDED_LIST_COMMANDS[type].slice(0, -".list".length), fields }
+  );
+}
+
+/**
+ * @param {Record<string, any> | undefined} patch
+ * @param {string[]} levelIds
+ * @param {Record<string, unknown>} details
+ */
+export function assertInitialLevelExists(patch, levelIds, details) {
+  const levelId = patch?.initialLevel;
+  if (levelId === undefined || levelId === null || levelIds.includes(levelId)) return;
+  throw createBridgeError(
+    ERROR_CODES.LEVEL_NOT_FOUND,
+    `initialLevel ${levelId} is not a level of the target scene; its levels are ${levelIds.join(", ")} (scene.level.list reports them with names). Pass one of these ids or omit initialLevel. To reset a scene to its first level, send initialLevel as JSON null through scene.update (on the CLI: scene update --patch-json '{"initialLevel":null}'). Nothing was written`,
+    { ...details, levelId }
+  );
 }
 
 export function getSceneEmbeddedById(sceneId, type, embeddedId, notFoundCode, idField) {
@@ -170,6 +218,7 @@ export function prepareSceneEmbeddedCreateData(type, data) {
     assertRegionBehaviorsSuppliedAsArray(data);
     assertRegionBehaviorsAllowed(data?.behaviors);
   }
+  assertPlaceableLevelFieldsSupported(type, data);
   return sanitizeEmbeddedData(canonicalizeFilePathFields(data, type));
 }
 
@@ -183,6 +232,7 @@ export function prepareSceneEmbeddedUpdateData(type, patch, existingDocument = n
     assertRegionBehaviorsSuppliedAsArray(patch);
     assertRegionBehaviorsAllowed(patch?.behaviors, existingDocument);
   }
+  assertPlaceableLevelFieldsSupported(type, patch);
   return sanitizeEmbeddedData(canonicalizeFilePathFields(patch, type), { preserveNestedBehaviorIds: true });
 }
 
@@ -281,6 +331,7 @@ export async function cloneSceneEmbedded(
 ) {
   const { document } = getSceneEmbeddedById(sceneId, type, embeddedId, notFoundCode, idField);
 
+  assertPlaceableLevelFieldsSupported(type, patch);
   const overrides = sanitizeEmbeddedData(canonicalizeFilePathFields(patch ?? {}, type));
 
   if (type === "Region") {
@@ -319,6 +370,7 @@ export async function buildTokenDataFromActor(actorId, overrides, scene) {
  * @param {any} scene
  */
 export async function resolveSceneTokenCreateData(data, scene) {
+  assertPlaceableLevelFieldsSupported("Token", data);
   const { actorId, ...overrides } = data ?? {};
   if (!actorId) {
     return overrides;

@@ -105,6 +105,7 @@ export class BridgeClient {
       getSession,
       logger = defaultLogger,
       onStatusChange = null,
+      warnDaemonUnavailable = true,
       maxResponseBytes = DEFAULT_WS_MAX_PAYLOAD_BYTES
     } = options;
     this.#onStatusChange = onStatusChange;
@@ -115,6 +116,7 @@ export class BridgeClient {
     this.router = router;
     this.getSession = getSession;
     this.logger = logger;
+    this.warnDaemonUnavailable = warnDaemonUnavailable;
 
     this.maxResponseBytes = maxResponseBytes;
 
@@ -451,7 +453,7 @@ export class BridgeClient {
     }
   }
 
-  /** @param {{ code: string, message: string, warn?: { message: string, details: Record<string, any> } }} reason */
+  /** @param {{ code: string, message: string, warn?: { message: string, details: Record<string, any>, notify?: boolean } }} reason */
   stopTerminally({ code, message, warn }) {
     this.terminalStopReason = { code, message };
     this.shouldReconnect = false;
@@ -461,7 +463,8 @@ export class BridgeClient {
 
     if (warn && !this.hasWarnedTerminalStop) {
       this.hasWarnedTerminalStop = true;
-      warnBridgeDisabled(this.logger, warn.message, warn.details);
+      if (warn.notify === false) this.logger("warn", warn.message, warn.details);
+      else warnBridgeDisabled(this.logger, warn.message, warn.details);
     }
   }
 
@@ -524,7 +527,8 @@ export class BridgeClient {
       message: "Initial bridge connection failed because the daemon was unavailable",
       warn: {
         message: getDaemonUnavailableWarningMessage(),
-        details: { ...details, url: this.url }
+        details: { ...details, url: this.url },
+        notify: this.warnDaemonUnavailable
       }
     });
   }
