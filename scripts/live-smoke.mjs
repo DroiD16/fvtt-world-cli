@@ -2130,19 +2130,25 @@ function sameIds(left, right) {
   return Array.isArray(left) && JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
 }
 
-function runV13PlaceableLevelKeyCoverage(summary, { sceneId, actorId }) {
+function runV13PlaceableLevelKeyCoverage(summary, { sceneId, stamp }) {
   const tile = expectOk(
     summary,
     "scene.tile.create(v13 level-key check)",
     runFoundryctl(["scene", "tile", "create", "--scene-id", sceneId, "--width", "100", "--height", "100"])
   )?.tile;
-  const token = actorId
-    ? expectOk(
-        summary,
-        "scene.token.create(v13 level-key check)",
-        runFoundryctl(["scene", "token", "create", "--scene-id", sceneId, "--actor-id", actorId])
-      )?.token
-    : null;
+  const token = expectOk(
+    summary,
+    "scene.token.create(v13 level-key check)",
+    runFoundryctl([
+      "scene",
+      "token",
+      "create",
+      "--scene-id",
+      sceneId,
+      "--data-json",
+      JSON.stringify({ name: `Smoke Level Key Token ${stamp}` })
+    ])
+  )?.token;
   const tileGet = tile?.id
     ? expectOk(
         summary,
@@ -2161,7 +2167,7 @@ function runV13PlaceableLevelKeyCoverage(summary, { sceneId, actorId }) {
   markAndPush(
     summary,
     "scene placeables(v13: no level or levels keys)",
-    [tile, tileGet, ...(actorId ? [token, tokenRow] : [])].every(
+    [tile, tileGet, token, tokenRow].every(
       (result) => result && !("level" in result) && !("levels" in result)
     ),
     { tile: tileGet ?? null, token: token ?? null, tokenRow }
@@ -2277,7 +2283,7 @@ function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created, actorI
       { scene: v13Scene ?? null }
     );
     if (v13Scene?.id) {
-      runV13PlaceableLevelKeyCoverage(summary, { sceneId: v13Scene.id, actorId });
+      runV13PlaceableLevelKeyCoverage(summary, { sceneId: v13Scene.id, stamp });
       expectErr(
         summary,
         "scene.token.create(level v13 gate)",
