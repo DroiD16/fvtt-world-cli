@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createCommandRouter } from "../scripts/command-router.js";
+import { COMMAND_DEFINITIONS, COMMAND_NAMES } from "../scripts/generated/protocol.js";
 import { createDocument, createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
 
 const V13 = { version: "13.351", generation: 13 };
@@ -26,15 +27,33 @@ describe("scene levels", () => {
     });
 
     it("refuses every scene.level command", async () => {
-      for (const [command, params] of Object.entries({
-        "scene.level.list": { sceneId: "scene-1" },
-        "scene.level.get": { sceneId: "scene-1", levelId: "level-ground" },
-        "scene.level.create": { sceneId: "scene-1", data: { name: "Attic" } },
-        "scene.level.delete-many": { sceneId: "scene-1", ids: ["level-ground"], dryRun: true }
-      })) {
-        const response = await router().route(createRequest(command, params));
-        expect(response.error?.code, command).toBe("UNSUPPORTED_OPERATION");
-        expect(response.error.details.family).toBe("scene.level");
+      const levelId = "level-ground";
+      const paramsByVerb = {
+        list: {},
+        get: { levelId },
+        create: { data: { name: "Attic" } },
+        update: { levelId, patch: { name: "Attic" } },
+        delete: { levelId },
+        clone: { levelId },
+        "create-many": { data: [{ name: "Attic" }] },
+        "update-many": { patches: [{ id: levelId, patch: { name: "Attic" } }] },
+        "delete-many": { ids: [levelId] }
+      };
+      const commands = COMMAND_NAMES.filter((command) => command.startsWith("scene.level."));
+      expect(commands.map((command) => command.slice("scene.level.".length)).sort()).toEqual(
+        Object.keys(paramsByVerb).sort()
+      );
+
+      for (const command of commands) {
+        const params = { sceneId: "scene-1", ...paramsByVerb[command.slice("scene.level.".length)] };
+        const variants = COMMAND_DEFINITIONS[command].mutation
+          ? [params, { ...params, dryRun: true }]
+          : [params];
+        for (const variant of variants) {
+          const response = await router().route(createRequest(command, variant));
+          expect(response.error?.code, `${command} ${JSON.stringify(variant)}`).toBe("UNSUPPORTED_OPERATION");
+          expect(response.error.details.family).toBe("scene.level");
+        }
       }
     });
 
@@ -140,13 +159,19 @@ describe("scene levels", () => {
   });
 
   describe("initialLevel on existing scenes", () => {
-    it("accepts a level of the scene and null", async () => {
-      for (const initialLevel of ["level-upper", null]) {
-        const response = await router().route(
-          createRequest("scene.update", { sceneId: "scene-1", patch: { initialLevel } })
-        );
-        expect(response.ok, JSON.stringify(response.error ?? null)).toBe(true);
-        expect(response.result.scene.initialLevel).toBe(initialLevel);
+    it("accepts a level of the scene and null on update and clone", async () => {
+      for (const command of ["scene.update", "scene.clone"]) {
+        for (const initialLevel of ["level-upper", null]) {
+          const response = await router().route(
+            createRequest(command, { sceneId: "scene-1", patch: { initialLevel } })
+          );
+          expect(response.ok, JSON.stringify(response.error ?? null)).toBe(true);
+          expect(response.result.scene.initialLevel).toBe(initialLevel);
+          expect(response.result.scene.levels.map((level) => level.id)).toEqual([
+            "level-ground",
+            "level-upper"
+          ]);
+        }
       }
     });
 
@@ -187,6 +212,15 @@ describe("scene levels", () => {
         expect(response.ok, JSON.stringify(response.error ?? null)).toBe(true);
       }
       expect(globalThis.Scene.create).not.toHaveBeenCalled();
+
+      const imported = await router().route(
+        createRequest("scene.import-from-compendium", {
+          ...importParams,
+          patch: { initialLevel: "lvl-src-1" }
+        })
+      );
+      expect(imported.ok, JSON.stringify(imported.error ?? null)).toBe(true);
+      expect(imported.result.scene.levels.map((level) => level.id)).toEqual(["lvl-src-1"]);
     });
   });
 
