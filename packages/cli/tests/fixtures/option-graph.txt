@@ -223,7 +223,7 @@ command scene update
   opt --foreground <foreground> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image path
   opt --foreground-elevation <foregroundElevation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image elevation
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort order
-  opt --initial-level <initialLevel> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Initial elevation level id
+  opt --initial-level <initialLevel> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Initial level id (Foundry v14)
   opt --playlist <playlistId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked playlist id
   opt --playlist-sound <playlistSoundId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked playlist sound id
   opt --journal <journalId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked journal id
@@ -258,7 +258,7 @@ command scene create
   opt --foreground <foreground> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image path
   opt --foreground-elevation <foregroundElevation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image elevation
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort order
-  opt --initial-level <initialLevel> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Initial elevation level id
+  opt --initial-level <initialLevel> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Initial level id (Foundry v14)
   opt --playlist <playlistId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked playlist id
   opt --playlist-sound <playlistSoundId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked playlist sound id
   opt --journal <journalId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked journal id
@@ -269,6 +269,7 @@ command scene create
   opt --transition-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene transition config as JSON object
   opt --grid-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene grid as JSON object
   opt --background-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene background as JSON object
+  opt --levels-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene levels (Foundry v14) as a JSON array of level objects; the first becomes the initial level
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra scene fields (e.g. flags) as a JSON object (merged last)
 
 command scene clone
@@ -294,7 +295,7 @@ command scene clone
   opt --foreground <foreground> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image path
   opt --foreground-elevation <foregroundElevation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image elevation
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort order
-  opt --initial-level <initialLevel> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Initial elevation level id
+  opt --initial-level <initialLevel> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Initial level id (Foundry v14)
   opt --playlist <playlistId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked playlist id
   opt --playlist-sound <playlistSoundId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked playlist sound id
   opt --journal <journalId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked journal id
@@ -939,6 +940,72 @@ command scene wall delete-many
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
   opt --ids <list> | parser=parseIdList | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Comma-separated wall ids
+
+command scene level
+  aliases=[]
+  summary=Scene level commands (Foundry v14)
+
+command scene level list
+  aliases=[]
+  summary=
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
+  opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
+
+command scene level get
+  aliases=[]
+  summary=
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --level-id <levelId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Level id
+
+command scene level create
+  aliases=[]
+  summary=
+  opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Level data as a JSON object (name is required; e.g. elevation/background)
+
+command scene level update
+  aliases=[]
+  summary=
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --level-id <levelId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Level id
+  opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Level patch as a JSON object (e.g. background/foreground/elevation)
+
+command scene level clone
+  aliases=[]
+  summary=
+  opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --level-id <levelId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Source level id
+  opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Override fields for the clone as a JSON object
+
+command scene level delete
+  aliases=[]
+  summary=
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --level-id <levelId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Level id
+
+command scene level create-many
+  aliases=[]
+  summary=Create many levels in ONE call (per-element outcomes; nothing is written if any element is invalid)
+  opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --data-json <json> | parser=<anonymous> | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Level data as a JSON ARRAY of objects
+
+command scene level update-many
+  aliases=[]
+  summary=Patch many levels in ONE call (a no-op element reports `unchanged`)
+  opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --patches-json <json> | parser=<anonymous> | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Level patches as a JSON ARRAY of {"id","patch"} objects
+
+command scene level delete-many
+  aliases=[]
+  summary=Delete many levels in ONE call (an already-gone id reports `alreadyDeleted`)
+  opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --ids <list> | parser=parseIdList | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Comma-separated level ids
 
 command scene note
   aliases=[]

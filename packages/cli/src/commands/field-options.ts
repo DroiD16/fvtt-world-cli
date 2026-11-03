@@ -112,7 +112,7 @@ const SCENE_FIELDS: readonly FieldSpec[] = [
     parser: parseNumber
   },
   { flag: "--sort <sort>", help: "Sort order", parser: parseNumber },
-  { flag: "--initial-level <initialLevel>", help: "Initial elevation level id" },
+  { flag: "--initial-level <initialLevel>", help: "Initial level id (Foundry v14)" },
   { flag: "--playlist <playlistId>", help: "Linked playlist id" },
   { flag: "--playlist-sound <playlistSoundId>", help: "Linked playlist sound id" },
   { flag: "--journal <journalId>", help: "Linked journal id" },

@@ -15,6 +15,9 @@ import {
   createSceneDrawingCloneParams,
   createSceneDrawingCreateParams,
   createSceneDrawingUpdateParams,
+  createSceneLevelCloneParams,
+  createSceneLevelCreateParams,
+  createSceneLevelUpdateParams,
   createSceneLightCloneParams,
   createSceneLightCreateParams,
   createSceneLightUpdateParams,
@@ -146,9 +149,13 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     addIdempotencyKeyOption(scene.command("create")).requiredOption("--name <name>", "Scene name"),
     "create"
   )
+    .option(
+      "--levels-json <json>",
+      "Scene levels (Foundry v14) as a JSON array of level objects; the first becomes the initial level"
+    )
     .option("--data-json <json>", "Extra scene fields (e.g. flags) as a JSON object (merged last)")
     .action(async function createSceneCommand(
-      options: SceneFieldOptions & { name: string; dataJson?: string }
+      options: SceneFieldOptions & { name: string; levelsJson?: string; dataJson?: string }
     ) {
       await executeRemoteCommand({
         commandName: "scene.create",
@@ -952,6 +959,88 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
 
   registerBatchWriteCommands(sceneWall, { prefix: "scene.wall", noun: "wall" });
+
+  const sceneLevel = scene.command("level").description("Scene level commands (Foundry v14)");
+  addPaginationOptions(sceneLevel.command("list").requiredOption("--scene-id <sceneId>", "Scene id")).action(
+    async function listSceneLevels(options: { sceneId: string; limit?: number; offset?: number }) {
+      await executeRemoteCommand({
+        commandName: "scene.level.list",
+        params: { sceneId: options.sceneId, ...paginationParams(options) },
+        command: this,
+        dependencies
+      });
+    }
+  );
+  sceneLevel
+    .command("get")
+    .requiredOption("--scene-id <sceneId>", "Scene id")
+    .requiredOption("--level-id <levelId>", "Level id")
+    .action(async function getSceneLevel(options: { sceneId: string; levelId: string }) {
+      await executeRemoteCommand({
+        commandName: "scene.level.get",
+        params: { sceneId: options.sceneId, levelId: options.levelId },
+        command: this,
+        dependencies
+      });
+    });
+  addIdempotencyKeyOption(sceneLevel.command("create"))
+    .requiredOption("--scene-id <sceneId>", "Scene id")
+    .option("--data-json <json>", "Level data as a JSON object (name is required; e.g. elevation/background)")
+    .action(async function createSceneLevel(options: { sceneId: string; dataJson?: string }) {
+      await executeRemoteCommand({
+        commandName: "scene.level.create",
+        params: createSceneLevelCreateParams(options),
+        command: this,
+        dependencies
+      });
+    });
+  sceneLevel
+    .command("update")
+    .requiredOption("--scene-id <sceneId>", "Scene id")
+    .requiredOption("--level-id <levelId>", "Level id")
+    .option("--patch-json <json>", "Level patch as a JSON object (e.g. background/foreground/elevation)")
+    .action(async function updateSceneLevel(options: {
+      sceneId: string;
+      levelId: string;
+      patchJson?: string;
+    }) {
+      await executeRemoteCommand({
+        commandName: "scene.level.update",
+        params: createSceneLevelUpdateParams(options),
+        command: this,
+        dependencies
+      });
+    });
+  addIdempotencyKeyOption(sceneLevel.command("clone"))
+    .requiredOption("--scene-id <sceneId>", "Scene id")
+    .requiredOption("--level-id <levelId>", "Source level id")
+    .option("--patch-json <json>", "Override fields for the clone as a JSON object")
+    .action(async function cloneSceneLevel(options: {
+      sceneId: string;
+      levelId: string;
+      patchJson?: string;
+    }) {
+      await executeRemoteCommand({
+        commandName: "scene.level.clone",
+        params: createSceneLevelCloneParams(options),
+        command: this,
+        dependencies
+      });
+    });
+  sceneLevel
+    .command("delete")
+    .requiredOption("--scene-id <sceneId>", "Scene id")
+    .requiredOption("--level-id <levelId>", "Level id")
+    .action(async function deleteSceneLevel(options: { sceneId: string; levelId: string }) {
+      await executeRemoteCommand({
+        commandName: "scene.level.delete",
+        params: { sceneId: options.sceneId, levelId: options.levelId },
+        command: this,
+        dependencies
+      });
+    });
+
+  registerBatchWriteCommands(sceneLevel, { prefix: "scene.level", noun: "level" });
 
   const sceneNote = scene.command("note").description("Scene-embedded note (map pin) commands");
   addPaginationOptions(sceneNote.command("list").requiredOption("--scene-id <sceneId>", "Scene id")).action(

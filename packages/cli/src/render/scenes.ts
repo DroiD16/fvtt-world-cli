@@ -27,11 +27,19 @@ export function renderSceneDetails(scene: any) {
     `nav order: ${scene?.navOrder ?? 0}`,
     `size: ${scene?.width}x${scene?.height}`,
     `grid: ${JSON.stringify(scene?.grid ?? null)}`,
-    `background: ${JSON.stringify(scene?.background ?? null)}`,
+    ...(scene && Object.hasOwn(scene, "background")
+      ? [`background: ${JSON.stringify(scene.background ?? null)}`]
+      : []),
     `token vision: ${String(Boolean(scene?.tokenVision))}`,
     `weather: ${scene?.weather ?? ""}`,
     `playlist: ${scene?.playlist ?? ""}`
   ];
+  if (scene && Object.hasOwn(scene, "initialLevel")) {
+    lines.push(`initial level: ${scene.initialLevel ?? "(first level)"}`);
+  }
+  for (const level of Array.isArray(scene?.levels) ? scene.levels : []) {
+    lines.push(`level: ${renderLevelRow(level)}`);
+  }
   lines.push(...renderCompendiumSourceLines(scene));
 
   if (scene && Object.hasOwn(scene, "ownership")) {
@@ -127,6 +135,26 @@ export function renderSoundDetails(sceneId: string, sound: any) {
     `easing: ${String(Boolean(sound?.easing))}`,
     `repeat: ${String(Boolean(sound?.repeat))}`,
     `hidden: ${String(Boolean(sound?.hidden))}`
+  ].join("\n");
+}
+
+export function renderLevelRow(level: any) {
+  const elevation = level?.elevation ?? {};
+  return `${level?.id}\t${level?.name ?? ""}\televation=${elevation.bottom ?? "-inf"}..${elevation.top ?? "+inf"}\tsort=${level?.sort ?? 0}`;
+}
+
+export function renderLevelDetails(sceneId: string, level: any) {
+  return [
+    `scene: ${sceneId}`,
+    `id: ${level?.id}`,
+    `name: ${level?.name ?? ""}`,
+    `elevation: ${JSON.stringify(level?.elevation ?? null)}`,
+    `sort: ${level?.sort ?? 0}`,
+    `background: ${JSON.stringify(level?.background ?? null)}`,
+    `foreground: ${JSON.stringify(level?.foreground ?? null)}`,
+    `fog: ${JSON.stringify(level?.fog ?? null)}`,
+    `textures: ${JSON.stringify(level?.textures ?? null)}`,
+    `visibility: ${JSON.stringify(level?.visibility ?? null)}`
   ].join("\n");
 }
 

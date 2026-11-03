@@ -1836,6 +1836,47 @@ describe("fvtt-world-cli commands", () => {
       "scene.sound.delete",
       { sceneId: "scene-1", soundId: "sound-a" }
     ],
+    [
+      ["scene", "create", "--name", "Tower", "--levels-json", '[{"name":"Ground"},{"name":"Roof"}]'],
+      "scene.create",
+      { data: { name: "Tower", levels: [{ name: "Ground" }, { name: "Roof" }] } }
+    ],
+    [["scene", "level", "list", "--scene-id", "scene-1"], "scene.level.list", { sceneId: "scene-1" }],
+    [
+      ["scene", "level", "get", "--scene-id", "scene-1", "--level-id", "lvl-a"],
+      "scene.level.get",
+      { sceneId: "scene-1", levelId: "lvl-a" }
+    ],
+    [
+      ["scene", "level", "create", "--scene-id", "scene-1", "--data-json", '{"name":"Attic"}'],
+      "scene.level.create",
+      { sceneId: "scene-1", data: { name: "Attic" } }
+    ],
+    [
+      [
+        "scene",
+        "level",
+        "update",
+        "--scene-id",
+        "scene-1",
+        "--level-id",
+        "lvl-a",
+        "--patch-json",
+        '{"background":{"src":"worlds/w/a.webp"}}'
+      ],
+      "scene.level.update",
+      { sceneId: "scene-1", levelId: "lvl-a", patch: { background: { src: "worlds/w/a.webp" } } }
+    ],
+    [
+      ["scene", "level", "clone", "--scene-id", "scene-1", "--level-id", "lvl-a"],
+      "scene.level.clone",
+      { sceneId: "scene-1", levelId: "lvl-a" }
+    ],
+    [
+      ["scene", "level", "delete", "--scene-id", "scene-1", "--level-id", "lvl-a"],
+      "scene.level.delete",
+      { sceneId: "scene-1", levelId: "lvl-a" }
+    ],
     [["scene", "wall", "list", "--scene-id", "scene-1"], "scene.wall.list", { sceneId: "scene-1" }],
     [
       ["scene", "wall", "list", "--scene-id", "scene-1", "--door"],

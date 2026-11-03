@@ -13,7 +13,7 @@ import { paginate } from "../lib/serializers.js";
 import { createSceneEmbeddedBatchHandlers } from "./scene-embedded-batch.js";
 
 /**
- * @param {{ type: string, prefix: string, idField: string, resultKey: string, pluralKey: string, notFoundCode: string, serialize: (document: any) => any, serializeSummary: (document: any) => any, listFilter?: (rows: any[], params: any) => any[], omitVerbs?: string[], prepareCreate?: (data: Record<string, any>, scene: any) => any, assertSupported?: (scene: any) => void, summarize?: (document: any) => Record<string, unknown> }} config
+ * @param {{ type: string, prefix: string, idField: string, resultKey: string, pluralKey: string, notFoundCode: string, serialize: (document: any) => any, serializeSummary: (document: any) => any, listFilter?: (rows: any[], params: any) => any[], omitVerbs?: string[], prepareCreate?: (data: Record<string, any>, scene: any) => any, assertSupported?: (scene: any) => void, assertDeleteAllowed?: (scene: any, ids: string[]) => void, summarize?: (document: any) => Record<string, unknown> }} config
  */
 export function createScenePlaceableHandlers({
   type,
@@ -28,6 +28,7 @@ export function createScenePlaceableHandlers({
   omitVerbs = [],
   prepareCreate,
   assertSupported,
+  assertDeleteAllowed,
   summarize
 }) {
   const resolveScene = (sceneId) => {
@@ -108,7 +109,8 @@ export function createScenePlaceableHandlers({
     },
 
     async delete(params) {
-      assertScene(params.sceneId);
+      const scene = resolveScene(params.sceneId);
+      assertDeleteAllowed?.(scene, [params[idField]]);
       await deleteSceneEmbedded(params.sceneId, type, params[idField], notFoundCode, idField, {
         dryRun: isDryRun(params)
       });
@@ -126,6 +128,7 @@ export function createScenePlaceableHandlers({
       listCommand: `${prefix}.list`,
       prepareCreate,
       assertSupported,
+      assertDeleteAllowed,
       summarize
     })
   });

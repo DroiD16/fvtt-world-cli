@@ -61,6 +61,8 @@ import {
   renderTileDetails,
   renderTokenDetails,
   renderWallDetails,
+  renderLevelDetails,
+  renderLevelRow,
   tokenItemEffectPrefix,
   tokenItemPrefix
 } from "./scenes.js";
@@ -1130,6 +1132,19 @@ export const RENDERERS = registerRenderers([
     renderWallDetails(result.sceneId, result.wall)
   ),
   deleteRenderer("scene.wall.delete", "wall", { suffix: sceneSuffix }),
+
+  listRenderer("scene.level.list", {
+    key: "levels",
+    empty: "No levels found.",
+    heading: "Levels",
+    prefix: scenePrefix,
+    row: (level) => renderLevelRow(level)
+  }),
+  detailRenderer(
+    ["scene.level.get", "scene.level.create", "scene.level.update", "scene.level.clone"],
+    (result) => renderLevelDetails(result.sceneId, result.level)
+  ),
+  deleteRenderer("scene.level.delete", "level", { suffix: sceneSuffix }),
 
   detailRenderer(BATCH_WRITE_COMMANDS, (result, command) => renderBatchWriteResult(command, result)),
 

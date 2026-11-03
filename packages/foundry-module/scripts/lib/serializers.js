@@ -1,3 +1,4 @@
+import { getFoundryGeneration } from "./foundry-capabilities.js";
 export { paginate, filterByName, filterByPath } from "./pagination.js";
 
 export function cloneValue(value) {
@@ -843,13 +844,15 @@ export function serializeChatMessageSummary(message) {
 
 /**
  * @param {any} scene
- * @param {{ counts?: boolean, ownership?: boolean, flags?: boolean, provenance?: boolean }} [options]
+ * @param {{ counts?: boolean, ownership?: boolean, flags?: boolean, provenance?: boolean, levels?: boolean }} [options]
  */
 export function serializeScene(
   scene,
-  { counts = false, ownership = false, flags = false, provenance = false } = {}
+  { counts = false, ownership = false, flags = false, provenance = false, levels = false } = {}
 ) {
   const data = documentData(scene);
+  const generation = getFoundryGeneration();
+  const hasLevels = generation !== null && generation >= 14;
   return {
     ...identityFields(scene, data),
     name: scene.name ?? data.name ?? null,
@@ -861,9 +864,14 @@ export function serializeScene(
     height: scene.height ?? data.height ?? null,
 
     grid: cloneValue(data.grid ?? scene.grid ?? null),
-    background: normalizeSceneBackground(scene, data),
-
-    backgroundColor: data.backgroundColor ?? scene.backgroundColor ?? null,
+    ...(hasLevels
+      ? {}
+      : {
+          background: normalizeSceneBackground(scene, data),
+          backgroundColor: data.backgroundColor ?? scene.backgroundColor ?? null,
+          foreground: scene.foreground ?? data.foreground ?? null,
+          foregroundElevation: data.foregroundElevation ?? scene.foregroundElevation ?? null
+        }),
     tokenVision: scene.tokenVision ?? data.tokenVision ?? false,
     weather: scene.weather ?? data.weather ?? null,
     padding: scene.padding ?? data.padding ?? null,
@@ -872,10 +880,8 @@ export function serializeScene(
     navName: scene.navName ?? data.navName ?? null,
 
     thumb: data.thumb ?? scene.thumb ?? null,
-    foreground: scene.foreground ?? data.foreground ?? null,
-    foregroundElevation: data.foregroundElevation ?? scene.foregroundElevation ?? null,
     sort: scene.sort ?? data.sort ?? 0,
-    initialLevel: data.initialLevel ?? scene.initialLevel ?? null,
+    ...(hasLevels ? { initialLevel: data.initialLevel ?? null } : {}),
 
     playlist: scene.playlist?.id ?? data.playlist ?? null,
     playlistSound: scene.playlistSound?.id ?? data.playlistSound ?? null,
@@ -887,11 +893,40 @@ export function serializeScene(
     initial: cloneValue(data.initial ?? scene.initial ?? null),
     transition: cloneValue(data.transition ?? scene.transition ?? null),
 
+    ...(hasLevels && levels
+      ? { levels: Array.from(scene.levels ?? [], (level) => serializeLevel(level)) }
+      : {}),
     ...(flags ? { flags: cloneValue(data.flags ?? {}) } : {}),
 
     ...(provenance ? { compendiumSource: compendiumSourceField(data) } : {}),
     ...(counts ? { counts: sceneEmbeddedCounts(scene, data) } : {}),
     ...(ownership ? { ownership: serializeOwnership(scene, data) } : {})
+  };
+}
+
+export function serializeLevel(level) {
+  const data = documentData(level);
+  return {
+    ...identityFields(level, data),
+    name: data.name ?? null,
+    elevation: cloneValue(data.elevation ?? null),
+    background: cloneValue(data.background ?? null),
+    foreground: cloneValue(data.foreground ?? null),
+    fog: cloneValue(data.fog ?? null),
+    textures: cloneValue(data.textures ?? null),
+    visibility: cloneValue(data.visibility ?? null),
+    sort: data.sort ?? 0,
+    flags: cloneValue(data.flags ?? {})
+  };
+}
+
+export function serializeLevelSummary(level) {
+  const data = documentData(level);
+  return {
+    ...identityFields(level, data),
+    name: data.name ?? null,
+    elevation: cloneValue(data.elevation ?? null),
+    sort: data.sort ?? 0
   };
 }
 

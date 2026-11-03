@@ -510,6 +510,7 @@ const FILE_PATH_FIELDS_BY_TYPE = Object.freeze({
     "prototypeToken.turnMarker.src"
   ],
   Scene: ["background.src", "foreground", "thumb", "fog.overlay"],
+  Level: ["background.src", "foreground.src", "fog.src"],
   Token: ["texture.src", "ring.subject.texture", "turnMarker.src"],
   Tile: ["texture.src"],
   Note: ["texture.src"],

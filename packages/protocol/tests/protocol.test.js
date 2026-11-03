@@ -146,6 +146,7 @@ const BATCH_SCOPE_KEYS = Object.freeze({
   "scene.tile": ["sceneId"],
   "scene.token": ["sceneId"],
   "scene.wall": ["sceneId"],
+  "scene.level": ["sceneId"],
   "actor.effect": ["actorId"],
   "item.effect": ["itemId"],
   "actor.item.effect": ["actorId", "itemId"],
@@ -264,6 +265,11 @@ const EXPECTED_CLOSED_PAYLOADS = Object.freeze([
   "scene.clone.patch",
   "scene.create.data",
   "scene.import-from-compendium.patch",
+  "scene.level.clone.patch",
+  "scene.level.create-many.data[]",
+  "scene.level.create.data",
+  "scene.level.update-many.patches[].patch",
+  "scene.level.update.patch",
   "scene.token.item.clone.patch",
   "scene.token.item.create.data",
   "scene.token.item.update.patch",
@@ -442,6 +448,7 @@ const EXPECTED_FAMILY_FIELDS = Object.freeze({
   "scene.create.data": [
     "active",
     "folder",
+    "levels",
     "background",
     "backgroundColor",
     "environment",
@@ -470,6 +477,28 @@ const EXPECTED_FAMILY_FIELDS = Object.freeze({
     "transition",
     "weather",
     "width"
+  ],
+  "scene.level.create.data": [
+    "background",
+    "elevation",
+    "flags",
+    "fog",
+    "foreground",
+    "name",
+    "sort",
+    "textures",
+    "visibility"
+  ],
+  "scene.level.update.patch": [
+    "background",
+    "elevation",
+    "flags",
+    "fog",
+    "foreground",
+    "name",
+    "sort",
+    "textures",
+    "visibility"
   ],
   "scene.token.item.create.data": ["effects", "flags", "folder", "img", "name", "sort", "system", "type"],
   "scene.token.item.update.patch": ["flags", "folder", "img", "name", "sort", "system"],
@@ -683,6 +712,13 @@ const MUTATION_BASES = Object.freeze({
   "scene.wall.create-many": { sceneId: "scene-1", data: [{ c: [0, 0, 100, 0] }] },
   "scene.wall.update-many": { sceneId: "scene-1", patches: [{ id: "wall-1", patch: { door: 1 } }] },
   "scene.wall.delete-many": { sceneId: "scene-1", ids: ["wall-1"] },
+  "scene.level.create": { sceneId: "scene-1", data: { name: "Upstairs" } },
+  "scene.level.update": { sceneId: "scene-1", levelId: "level-1", patch: { name: "Attic" } },
+  "scene.level.delete": { sceneId: "scene-1", levelId: "level-1" },
+  "scene.level.clone": { sceneId: "scene-1", levelId: "level-1" },
+  "scene.level.create-many": { sceneId: "scene-1", data: [{ name: "Upstairs" }] },
+  "scene.level.update-many": { sceneId: "scene-1", patches: [{ id: "level-1", patch: { name: "Attic" } }] },
+  "scene.level.delete-many": { sceneId: "scene-1", ids: ["level-1"] },
   "scene.token.create-many": { sceneId: "scene-1", data: [{ actorId: "actor-1", x: 10, y: 20 }] },
   "scene.token.update-many": { sceneId: "scene-1", patches: [{ id: "tok-1", patch: { x: 5 } }] },
   "scene.token.delete-many": { sceneId: "scene-1", ids: ["tok-1"] },
@@ -2481,7 +2517,7 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 58 approve-listed, 8 denied and 269 self-running commands in a registry of 335", () => {
+    it("counts 60 approve-listed, 8 denied and 276 self-running commands in a registry of 344", () => {
       const bucket = (behavior) =>
         COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
@@ -2493,10 +2529,10 @@ describe("protocol contract", () => {
           allow: bucket("allow")
         },
         "the totals moved: re-check the default-policy prose in docs/commands.md and docs/security.md (they name the buckets, not the counts) in the same change"
-      ).toEqual({ commands: 335, approve: 58, deny: 8, allow: 269 });
+      ).toEqual({ commands: 344, approve: 60, deny: 8, allow: 276 });
     });
 
-    it("leaves 330 governed commands in 19 top-level groups once the exempt ones are removed", () => {
+    it("leaves 339 governed commands in 19 top-level groups once the exempt ones are removed", () => {
       const exempt = new Set(POLICY_EXEMPT_COMMANDS);
       const governed = COMMAND_NAMES.filter((command) => !exempt.has(command));
 
@@ -2506,7 +2542,7 @@ describe("protocol contract", () => {
           groups: new Set(governed.map((command) => command.split(".")[0])).size
         },
         "the window totals moved: the permissions window renders one section per top-level group, so re-check its rendering assumptions in the same change"
-      ).toEqual({ governed: 330, groups: 19 });
+      ).toEqual({ governed: 339, groups: 19 });
     });
 
     it("cannot be mutated in place", () => {
@@ -5084,6 +5120,83 @@ describe("protocol contract", () => {
     });
   });
 
+  describe("scene levels", () => {
+    it("accepts a full level and requires a name on create", () => {
+      expectValid("scene.level.create", {
+        sceneId: "scene-1",
+        data: {
+          name: "Ground",
+          elevation: { bottom: null, top: 20 },
+          background: { color: "#999999", src: "worlds/w/g.webp", tint: "#ffffff", alphaThreshold: 0.75 },
+          foreground: { src: null },
+          fog: { src: "worlds/w/fog.webp" },
+          textures: {
+            anchorX: 0.5,
+            anchorY: 0.5,
+            offsetX: 0,
+            offsetY: 0,
+            fit: "fill",
+            scaleX: 1,
+            scaleY: 1,
+            rotation: 0
+          },
+          visibility: { levels: ["lvl-b"] },
+          sort: 0,
+          flags: { mod: { key: 1 } }
+        }
+      });
+      expectRejected("scene.level.create", { sceneId: "scene-1", data: { sort: 1 } }, "name");
+      expectValid("scene.level.update", { sceneId: "scene-1", levelId: "lvl-a", patch: { sort: 1 } });
+    });
+
+    it("closes every fixed nested level object", () => {
+      for (const [field, value] of Object.entries({
+        elevation: { middle: 1 },
+        background: { offsetX: 1 },
+        foreground: { color: "#000000" },
+        fog: { overlay: "x.webp" },
+        textures: { tint: "#ffffff" },
+        visibility: { tokens: [] }
+      })) {
+        expectRejected("scene.level.update", {
+          sceneId: "scene-1",
+          levelId: "lvl-a",
+          patch: { [field]: value }
+        });
+      }
+      expectRejected("scene.level.update", {
+        sceneId: "scene-1",
+        levelId: "lvl-a",
+        patch: { textures: { offsetX: 1.5 } }
+      });
+    });
+
+    it("accepts levels only on scene.create", () => {
+      expectValid("scene.create", { data: { name: "Tower", levels: [{ name: "Ground" }] } });
+      expectRejected("scene.create", { data: { name: "Tower", levels: [] } });
+      expectRejected(
+        "scene.update",
+        { sceneId: "scene-1", patch: { levels: [{ name: "Ground" }] } },
+        "levels"
+      );
+      expectRejected(
+        "scene.clone",
+        { sceneId: "scene-1", patch: { levels: [{ name: "Ground" }] } },
+        "levels"
+      );
+      expectRejected(
+        "scene.import-from-compendium",
+        { pack: "world.scenes", entryId: "s1", patch: { levels: [{ name: "Ground" }] } },
+        "levels"
+      );
+      expectValid("scene.update", { sceneId: "scene-1", patch: { initialLevel: null } });
+    });
+
+    it("exposes LEVEL_NOT_FOUND in ERROR_CODES", () => {
+      expect(ERROR_CODES.LEVEL_NOT_FOUND).toBe("LEVEL_NOT_FOUND");
+    });
+  });
+
   describe("scene.wall.* + scene.note.* embedded families", () => {
     const WALL_COMMANDS = [
       "scene.wall.list",
@@ -5205,6 +5318,7 @@ describe("protocol contract", () => {
         "actor.item.effect",
         "item.effect",
         "scene.drawing",
+        "scene.level",
         "scene.light",
         "scene.note",
         "scene.region",
@@ -5702,6 +5816,7 @@ describe("protocol contract", () => {
       "scene.tile.list",
       "scene.sound.list",
       "scene.wall.list",
+      "scene.level.list",
       "scene.note.list",
       "scene.drawing.list",
       "scene.light.list",
@@ -6031,6 +6146,14 @@ describe("protocol contract", () => {
       "scene.tile.clone": { sceneId: "scene-1", tileId: "tile-1" },
       "scene.sound.clone": { sceneId: "scene-1", soundId: "sound-1" },
       "scene.wall.clone": { sceneId: "scene-1", wallId: "wall-1" },
+      "scene.level.create": { sceneId: "scene-1", data: { name: "Upstairs" } },
+      "scene.level.clone": { sceneId: "scene-1", levelId: "level-1" },
+      "scene.level.create-many": { sceneId: "scene-1", data: [{ name: "Upstairs" }] },
+      "scene.level.update-many": {
+        sceneId: "scene-1",
+        patches: [{ id: "level-1", patch: { name: "Attic" } }]
+      },
+      "scene.level.delete-many": { sceneId: "scene-1", ids: ["level-1"] },
 
       "scene.wall.create-many": { sceneId: "scene-1", data: [{ c: [0, 0, 100, 0] }] },
       "scene.wall.update-many": { sceneId: "scene-1", patches: [{ id: "wall-1", patch: { door: 1 } }] },
@@ -6241,6 +6364,9 @@ describe("protocol contract", () => {
         "scene.drawing.delete-many",
         "scene.drawing.update-many",
         "scene.import-from-compendium",
+        "scene.level.create-many",
+        "scene.level.delete-many",
+        "scene.level.update-many",
         "scene.light.create-many",
         "scene.light.delete-many",
         "scene.light.update-many",
@@ -6608,6 +6734,13 @@ describe("protocol contract", () => {
       "scene.wall.update",
       "scene.wall.delete",
       "scene.wall.clone",
+      "scene.level.create",
+      "scene.level.update",
+      "scene.level.delete",
+      "scene.level.clone",
+      "scene.level.create-many",
+      "scene.level.update-many",
+      "scene.level.delete-many",
 
       "scene.wall.create-many",
       "scene.wall.update-many",

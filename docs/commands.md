@@ -29,6 +29,7 @@ Use these families to narrow your search, then check their help for supported op
 | Edit world content | `actor`, `item`, `journal`, `scene`, `macro`, `playlist`, `table`, `cards` |
 | Edit embedded content | Nested families such as `actor.item`, `playlist.sound`, `table.result`, and `*.effect` |
 | Edit scene placeables | `scene.token`, `scene.wall`, `scene.region`, and related families |
+| Edit scene levels (v14) | `scene.level` |
 | Manage encounters | `combat`, `combat.combatant`, `combat.group` |
 | Organize content and access | `folder`, `*.ownership.set`, `user` |
 | Manage chat and settings | `chat`, `setting` |
@@ -62,6 +63,31 @@ Supply the complete parent ID chain. Read the parent to find missing IDs:
 fvtt-world-cli scene token list --scene-id <sceneId> --json
 fvtt-world-cli scene token get --scene-id <sceneId> --token-id <tokenId> --json
 ```
+
+### Build a scene with levels
+
+On Foundry v14 a scene's maps live on its levels. Each level has its own background, foreground,
+fog image and elevation range. Pass the levels when you create the scene, then use the ids in the
+result for later edits:
+
+```bash
+fvtt-world-cli scene create --name "Tower" --json \
+  --levels-json '[{"name":"Ground","background":{"src":"worlds/<worldId>/maps/ground.webp"}},
+                  {"name":"Roof","elevation":{"bottom":20,"top":40}}]'
+fvtt-world-cli scene level list --scene-id <sceneId> --json
+fvtt-world-cli scene level update --scene-id <sceneId> --level-id <levelId> \
+  --patch-json '{"foreground":{"src":"worlds/<worldId>/maps/roof.webp"}}' --json
+```
+
+The first level becomes the initial one. `scene create` refuses `initialLevel`, because level ids
+exist only after creation. To start players on another level, run `scene update --initial-level
+<levelId>` with an id of that scene, or pass `null` to go back to the first level. A scene keeps at
+least one level, so `scene level delete` and `delete-many` refuse to remove the last one.
+
+On v14 the scene-level `background`, `backgroundColor`, `foreground`, `foregroundElevation` and
+`fog.overlay` fields return `UNSUPPORTED_OPERATION`, because Foundry ignores them there. On v13
+those fields are the scene's single map, and `scene.level` commands, `levels` and `initialLevel`
+return `UNSUPPORTED_OPERATION`.
 
 ### Send a batch of commands
 

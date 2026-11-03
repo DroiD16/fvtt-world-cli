@@ -75,6 +75,12 @@ A macro that throws fails `macro.execute` with a partial outcome — read what i
 retrying — while a macro that catches its own errors still returns `null`, which proves nothing;
 verify effects with reads, and treat `MACRO_TIMEOUT` as indeterminate — the macro may still be
 running.
+On Foundry v14 a scene's maps live on its levels. Create a scene with its maps through `levels`
+in the `scene.create` data (the first level becomes the initial one), take the level ids from the
+result's `levels` or from `scene.level.list`, and edit floors with `scene.level.*`. Change the
+initial level afterwards with `scene.update` `initialLevel`. Scene-level `background`/`foreground`
+fields return `UNSUPPORTED_OPERATION` on v14 and are the only map fields on v13, where
+`scene.level.*` is unavailable.
 `setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
 When a setting write returns `requiresReload: true`, the change needs a GM-client reload to take
 effect; `system.reload` performs it, drops the bridge, and requires a reconnect wait before the

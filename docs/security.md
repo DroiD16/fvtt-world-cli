@@ -45,7 +45,9 @@ Compendium commands cannot edit packs; imports create world documents.
 ### Validation and protected metadata
 
 Closed document schemas enumerate writable fields. Open schemas allow system and module data but
-sanitize protected metadata on every write and preview. Identity, statistics, authorship, and raw
+sanitize protected metadata on every write and preview. Scene placeables and active effects use
+open schemas; scene levels are the exception among scene-embedded documents and use a closed one,
+including their nested objects. Identity, statistics, authorship, and raw
 ownership cannot be set through ordinary content payloads. Foundry also applies its own DataModel
 and permission checks.
 

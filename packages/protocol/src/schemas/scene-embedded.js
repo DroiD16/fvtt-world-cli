@@ -10,6 +10,7 @@ import {
   nameFilterProperty,
   nullableStringSchema,
   paginationProperties,
+  patchFrom,
   sceneScopeProperties,
   sceneTokenItemScopeProperties,
   sceneTokenScopeProperties,
@@ -359,6 +360,72 @@ const executableBehaviorPatchSchema = {
   additionalProperties: true,
   minProperties: 1
 };
+
+const nullableNumberSchema = { type: ["number", "null"] };
+
+const levelImageProperties = {
+  src: nullableStringSchema,
+  tint: { type: "string", minLength: 1 },
+  alphaThreshold: { type: "number" }
+};
+
+export const levelCreateSchema = {
+  type: "object",
+  required: ["name"],
+  properties: {
+    name: { type: "string", minLength: 1 },
+    elevation: {
+      type: "object",
+      required: [],
+      properties: { bottom: nullableNumberSchema, top: nullableNumberSchema },
+      additionalProperties: false
+    },
+    background: {
+      type: "object",
+      required: [],
+      properties: { color: { type: "string", minLength: 1 }, ...levelImageProperties },
+      additionalProperties: false
+    },
+    foreground: {
+      type: "object",
+      required: [],
+      properties: levelImageProperties,
+      additionalProperties: false
+    },
+    fog: {
+      type: "object",
+      required: [],
+      properties: { src: nullableStringSchema },
+      additionalProperties: false
+    },
+    textures: {
+      type: "object",
+      required: [],
+      properties: {
+        anchorX: { type: "number" },
+        anchorY: { type: "number" },
+        offsetX: { type: "integer" },
+        offsetY: { type: "integer" },
+        fit: { type: "string", minLength: 1 },
+        scaleX: { type: "number" },
+        scaleY: { type: "number" },
+        rotation: { type: "number" }
+      },
+      additionalProperties: false
+    },
+    visibility: {
+      type: "object",
+      required: [],
+      properties: { levels: { type: "array", items: { type: "string", minLength: 1 } } },
+      additionalProperties: false
+    },
+    sort: { type: "integer" },
+    flags: freeformObjectSchema
+  },
+  additionalProperties: false
+};
+
+const levelPatchSchema = patchFrom(levelCreateSchema);
 
 export const sceneEmbeddedCommands = {
   "scene.token.list": cmd({
@@ -951,6 +1018,85 @@ export const sceneEmbeddedCommands = {
     scopeProperties: sceneScopeProperties,
     createSchema: wallCreateSchema,
     patchSchema: wallPatchSchema
+  }),
+  "scene.level.list": cmd({
+    type: "object",
+    required: ["sceneId"],
+    properties: {
+      sceneId: { type: "string", minLength: 1 },
+      ...paginationProperties
+    },
+    additionalProperties: false
+  }),
+  "scene.level.get": cmd({
+    type: "object",
+    required: ["sceneId", "levelId"],
+    properties: {
+      sceneId: { type: "string", minLength: 1 },
+      levelId: { type: "string", minLength: 1 }
+    },
+    additionalProperties: false
+  }),
+  "scene.level.create": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "data"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        data: levelCreateSchema,
+        ...dryRunProperty,
+        ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "scene.level.update": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "levelId", "patch"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        levelId: { type: "string", minLength: 1 },
+        patch: levelPatchSchema,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "scene.level.delete": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "levelId"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        levelId: { type: "string", minLength: 1 },
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "scene.level.clone": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "levelId"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        levelId: { type: "string", minLength: 1 },
+        patch: levelPatchSchema,
+        ...dryRunProperty,
+        ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  ...batchWriteCommands("scene.level", {
+    scopeProperties: sceneScopeProperties,
+    createSchema: levelCreateSchema,
+    patchSchema: levelPatchSchema
   }),
   "scene.note.list": cmd({
     type: "object",

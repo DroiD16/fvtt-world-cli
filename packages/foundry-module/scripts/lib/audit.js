@@ -31,7 +31,8 @@ const AUDIT_FIELD_TABLE = Object.freeze({
       { collection: "sounds", docType: "AmbientSound", fields: ["path"] },
       { collection: "notes", docType: "Note", fields: ["texture.src"] },
       { collection: "drawings", docType: "Drawing", fields: ["texture"] },
-      { collection: "templates", docType: "MeasuredTemplate", fields: ["texture"] }
+      { collection: "templates", docType: "MeasuredTemplate", fields: ["texture"] },
+      { collection: "levels", docType: "Level", fields: ["background.src", "foreground.src", "fog.src"] }
     ]
   },
   actor: {

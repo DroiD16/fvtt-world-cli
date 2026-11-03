@@ -79,6 +79,7 @@ const PREVIEW_FIXTURES = {
   lightId: "light-torch",
   templateId: "template-fireball",
   regionId: "region-lava",
+  levelId: "level-ground",
   behaviorId: "behavior-darkness",
   soundId: "sound-a",
   categoryId: "cat-lore",
@@ -105,7 +106,7 @@ const PREVIEW_PARAM_OVERRIDES = {
   "user.delete": { userId: "player-2" },
   "user.create": { data: { name: "Scratch Player" } }
 };
-const PREVIEWS_THE_FAKE_WORLD_REFUSES = ["scene.fog.reset"];
+const PREVIEWS_THE_FAKE_WORLD_REFUSES = ["scene.fog.reset", "scene.level.delete", "scene.level.delete-many"];
 const PREVIEWS_NO_FOUNDRY_VERSION_SUPPORTS = ["file.delete", "file.move"];
 const PREVIEWS_WITHOUT_A_RESULT = new Set([
   ...PREVIEWS_THE_FAKE_WORLD_REFUSES,

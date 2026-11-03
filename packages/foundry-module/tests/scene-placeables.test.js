@@ -3,6 +3,7 @@ import { COMMAND_NAMES } from "../scripts/generated/protocol.js";
 import { installFakeFoundry } from "./helpers/fake-foundry.js";
 import { createScenePlaceableHandlers } from "../scripts/handlers/scene-placeables.js";
 import { createSceneDrawingHandlers } from "../scripts/handlers/scene-drawings.js";
+import { createSceneLevelHandlers } from "../scripts/handlers/scene-levels.js";
 import { createSceneLightHandlers } from "../scripts/handlers/scene-lights.js";
 import { createSceneNoteHandlers } from "../scripts/handlers/scene-notes.js";
 import { createSceneRegionHandlers } from "../scripts/handlers/scene-regions.js";
@@ -14,6 +15,7 @@ import { createSceneWallHandlers } from "../scripts/handlers/scene-walls.js";
 
 const FAMILY_FACTORIES = {
   "scene.drawing": createSceneDrawingHandlers,
+  "scene.level": createSceneLevelHandlers,
   "scene.light": createSceneLightHandlers,
   "scene.note": createSceneNoteHandlers,
   "scene.region": createSceneRegionHandlers,

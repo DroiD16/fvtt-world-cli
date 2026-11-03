@@ -277,11 +277,14 @@ function buildScenePatch(options: SceneFieldOptions) {
   };
 }
 
-export function createSceneCreateParams(options: SceneFieldOptions & { name: string; dataJson?: string }) {
+export function createSceneCreateParams(
+  options: SceneFieldOptions & { name: string; levelsJson?: string; dataJson?: string }
+) {
   return {
     data: {
       name: options.name,
       ...buildScenePatch({ ...options, name: undefined }),
+      ...jsonArrayField("levels", options.levelsJson, "--levels-json"),
       ...(optionalJsonObject(options.dataJson, "--data-json") ?? {})
     }
   };
@@ -1564,6 +1567,34 @@ export function createSceneWallCloneParams(options: { sceneId: string; wallId: s
   return {
     sceneId: options.sceneId,
     wallId: options.wallId,
+    ...optionalPatch(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+  };
+}
+
+export function createSceneLevelCreateParams(options: { sceneId: string; dataJson?: string }) {
+  return { sceneId: options.sceneId, data: optionalJsonObject(options.dataJson, "--data-json") ?? {} };
+}
+
+export function createSceneLevelUpdateParams(options: {
+  sceneId: string;
+  levelId: string;
+  patchJson?: string;
+}) {
+  return {
+    sceneId: options.sceneId,
+    levelId: options.levelId,
+    patch: assertNonEmptyPatch(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+  };
+}
+
+export function createSceneLevelCloneParams(options: {
+  sceneId: string;
+  levelId: string;
+  patchJson?: string;
+}) {
+  return {
+    sceneId: options.sceneId,
+    levelId: options.levelId,
     ...optionalPatch(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
   };
 }

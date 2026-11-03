@@ -183,6 +183,20 @@ observed during a preview must not be reused.
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.
 
+### Scene results
+
+On Foundry v14, `scene.get`, `scene.get-many` and the results and previews of `scene.create`,
+`scene.update`, `scene.clone` and `scene.import-from-compendium` include `levels`: every stored level
+in stored order, each with `id`, `name`, `elevation`, `background`, `foreground`, `fog`, `textures`,
+`visibility`, `sort` and `flags`. `scene.list` rows omit them. `initialLevel` is the stored value,
+and `null` means Foundry uses the first level. v14 scene results omit `background`,
+`backgroundColor`, `foreground` and `foregroundElevation`, which Foundry stores per level. v13
+results keep those four fields and have no `levels` or `initialLevel`.
+
+`scene.level.list` rows carry `id`, `name`, `elevation` and `sort`; `scene.level.get` and the
+level write commands return the full level under `level`. An `initialLevel` that names no level of
+the scene, or of the packed scene for an import, fails with `LEVEL_NOT_FOUND` and `details.levelId`.
+
 ### Macro results
 
 `macro.execute` returns the macro's value and observed chat messages. `chatCapture` describes the

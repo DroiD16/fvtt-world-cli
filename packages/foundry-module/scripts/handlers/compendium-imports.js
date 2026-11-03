@@ -2,7 +2,7 @@ import {
   assertImportFolderChannelUnambiguous,
   importWorldDocumentFromCompendium
 } from "../lib/compendium.js";
-import { assertSceneLevelsFieldsSupported } from "../lib/scene-embedded.js";
+import { assertInitialLevelExists, assertSceneLevelsFieldsSupported } from "../lib/scene-embedded.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import {
   normalizePreviewCards,
@@ -35,9 +35,17 @@ const IMPORT_FAMILIES = Object.freeze({
   "scene.import-from-compendium": Object.freeze({
     documentName: "Scene",
     resultKey: "scene",
-    serialize: (document) => serializeScene(document, { flags: true, provenance: true }),
+    serialize: (document) => serializeScene(document, { flags: true, provenance: true, levels: true }),
     assertSupplied: (params) => assertSceneLevelsFieldsSupported(params.patch),
-    normalizeSource: (importData) => ({ active: false, ...importData })
+    normalizeSource: (importData, params) => {
+      assertInitialLevelExists(
+        params.patch,
+        (importData.levels ?? []).map((level) => level._id),
+        `compendium entry ${params.entryId} of ${params.pack}`,
+        { pack: params.pack, entryId: params.entryId }
+      );
+      return { active: false, ...importData };
+    }
   }),
   "macro.import-from-compendium": Object.freeze({
     documentName: "Macro",
@@ -71,7 +79,7 @@ async function handleWorldImport(command, family, params) {
   const dryRun = isDryRun(params);
   const document = await importWorldDocumentFromCompendium(family.documentName, params.pack, params.entryId, {
     folder: params.folder,
-    normalizeSource: family.normalizeSource,
+    normalizeSource: family.normalizeSource && ((importData) => family.normalizeSource(importData, params)),
 
     folderProvided: Object.prototype.hasOwnProperty.call(params, "folder"),
     patch: params.patch,

@@ -1,5 +1,6 @@
 import { SCENE_THUMBNAIL_MAX_DIMENSION, SCENE_THUMBNAIL_MIN_DIMENSION } from "../constants.js";
 import { ownershipLevelSchema, ownershipSetSchema } from "./ownership-users.js";
+import { levelCreateSchema } from "./scene-embedded.js";
 import {
   batchIdsProperty,
   cmd,
@@ -83,6 +84,7 @@ const sceneCreateSchema = {
     thumb: nullableStringSchema,
     sort: { type: "number" },
     initialLevel: nullableStringSchema,
+    levels: { type: "array", minItems: 1, items: levelCreateSchema },
 
     playlist: nullableStringSchema,
     playlistSound: nullableStringSchema,
@@ -101,7 +103,7 @@ const sceneCreateSchema = {
   additionalProperties: false
 };
 
-const scenePatchSchema = patchFrom(sceneCreateSchema);
+const scenePatchSchema = patchFrom(sceneCreateSchema, { omit: ["levels"] });
 
 export const sceneCommands = {
   "scene.list": cmd(nameFilteredListSchema),

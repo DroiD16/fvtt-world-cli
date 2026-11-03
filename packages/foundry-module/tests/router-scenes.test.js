@@ -71,7 +71,7 @@ describe("command router", () => {
       );
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe("UNSUPPORTED_OPERATION");
-      expect(response.error.message).toContain("v13 only");
+      expect(response.error.message).toContain("scene.level.update");
       expect(response.error.details.fields).toEqual(["foreground"]);
     });
 
@@ -1508,7 +1508,7 @@ describe("command router", () => {
       drawings: 2,
       lights: 1,
       templates: 2,
-      levels: 0,
+      levels: 2,
       regions: 2
     });
 

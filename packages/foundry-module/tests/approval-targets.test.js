@@ -178,6 +178,7 @@ const NODE_FIXTURE_IDS = {
   "scene.light": ["scene-1", "light-torch"],
   "scene.template": ["scene-1", "template-fireball"],
   "scene.region": ["scene-1", "region-lava"],
+  "scene.level": ["scene-1", "level-ground"],
   "scene.region.behavior": ["scene-1", "region-lava", "region-lava-behavior-1"],
   "scene.token.item": ["scene-1", "token-a", "delta-item-1"],
   "scene.token.item.effect": ["scene-1", "token-a", "delta-item-1", "delta-item-effect-1"],
@@ -368,6 +369,31 @@ describe("approval target resolution", () => {
     ]);
     expect(summary.targets[0].parents).toEqual([
       { type: "Scene", id: "scene-1", name: "Dungeon Level 1", state: "resolved" }
+    ]);
+  });
+
+  it("names the level a level deletion addresses under its scene", () => {
+    const single = resolveApprovalTargets("scene.level.delete", {
+      sceneId: "scene-1",
+      levelId: "level-ground"
+    });
+    expect(single.targets[1]).toEqual({
+      role: "levelId",
+      type: "Level",
+      id: "level-ground",
+      name: "Ground Floor",
+      state: "resolved",
+      parents: [{ type: "Scene", id: "scene-1", name: "Dungeon Level 1", state: "resolved" }]
+    });
+
+    const bulk = resolveApprovalTargets("scene.level.delete-many", {
+      sceneId: "scene-1",
+      ids: ["level-upper", "level-gone"]
+    });
+    expect(bulk.collection).toBe("Level");
+    expect(bulk.targets.map((target) => [target.id, target.name, target.state])).toEqual([
+      ["level-upper", "Upper Floor", "resolved"],
+      ["level-gone", null, "not-found"]
     ]);
   });
 

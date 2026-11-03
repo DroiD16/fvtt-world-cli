@@ -2471,6 +2471,38 @@ describe("fvtt-world-cli commands", () => {
     expect(result.stdout).toContain('background: {"src":"worlds/world-1/maps/level-2.webp"}');
   });
 
+  it("renders a v14 scene with its levels and a level list in human-readable mode", async () => {
+    const levels = [
+      { id: "lvl-a", name: "Ground", elevation: { bottom: 0, top: 20 }, sort: 0 },
+      { id: "lvl-b", name: "Roof", elevation: { bottom: 20, top: null }, sort: 1 }
+    ];
+    const respond = (result: unknown) =>
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result
+      }));
+
+    const scene = await runCommand(
+      ["scene", "get", "--scene-id", "scene-1"],
+      respond({ scene: { id: "scene-1", name: "Tower", folder: "fold-1", initialLevel: null, levels } })
+    );
+    expect(scene.error).toBeNull();
+    expect(scene.stdout).toContain("folder: fold-1");
+    expect(scene.stdout).toContain("initial level: (first level)");
+    expect(scene.stdout).toContain("level: lvl-b\tRoof\televation=20..+inf\tsort=1");
+    expect(scene.stdout).not.toContain("background:");
+
+    const list = await runCommand(
+      ["scene", "level", "list", "--scene-id", "scene-1"],
+      respond({ sceneId: "scene-1", levels, total: 2, hasMore: false })
+    );
+    expect(list.error).toBeNull();
+    expect(list.stdout).toContain("lvl-a\tGround\televation=0..20\tsort=0");
+  });
+
   it("renders file list output in human-readable mode", async () => {
     const result = await runCommand(
       ["file", "list", "--path", "worlds/world-1"],
