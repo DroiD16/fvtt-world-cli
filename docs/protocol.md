@@ -186,8 +186,8 @@ The active/inactive split is included where knowable.
 ### Scene results
 
 On Foundry v14, `scene.get`, `scene.get-many` and the results and previews of `scene.create`,
-`scene.update`, `scene.clone` and `scene.import-from-compendium` include `levels`: every stored level
-in stored order, each with `id`, `name`, `elevation`, `background`, `foreground`, `fog`, `textures`,
+`scene.update`, `scene.clone`, `scene.import-from-compendium` and `scene.ownership.set` include
+`levels`: every stored level in stored order, each with `id`, `name`, `elevation`, `background`, `foreground`, `fog`, `textures`,
 `visibility`, `sort` and `flags`. `scene.list` rows omit them. `initialLevel` is the stored value,
 and `null` means Foundry uses the first level. Level ids in a `scene.create` preview are
 provisional: the real create assigns new ids, and a preview without `levels` shows none, although

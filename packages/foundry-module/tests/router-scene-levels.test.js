@@ -146,6 +146,19 @@ describe("scene levels", () => {
       }
     });
 
+    it.each([
+      ["a real write", { default: 2 }],
+      ["a dry run", { users: { "player-1": 3 }, dryRun: true }]
+    ])("carry the levels next to initialLevel in scene.ownership.set for %s", async (_mode, params) => {
+      const response = await router().route(
+        createRequest("scene.ownership.set", { sceneId: "scene-1", ...params })
+      );
+
+      expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
+      expect(response.result.scene.initialLevel).toBeNull();
+      expect(response.result.scene.levels.map((level) => level.id)).toEqual(["level-ground", "level-upper"]);
+    });
+
     it("leave levels out of scene.list rows", async () => {
       const response = await router().route(createRequest("scene.list", {}));
       expect(response.result.scenes[0]).not.toHaveProperty("levels");

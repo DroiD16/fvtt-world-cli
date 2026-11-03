@@ -91,7 +91,7 @@ export function createOwnershipHandlers() {
     "scene.ownership.set": makeOwnershipSetHandler({
       idField: "sceneId",
       getDoc: getSceneById,
-      serialize: serializeScene,
+      serialize: (scene, options) => serializeScene(scene, { ...options, levels: true }),
       resultKey: "scene",
       documentName: "Scene",
       hookName: "preUpdateScene"
