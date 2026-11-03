@@ -1564,7 +1564,7 @@ describe("protocol contract", () => {
     });
 
     it("pins the protocol version the daemon and module must share exactly", () => {
-      expect(PROTOCOL_VERSION).toBe("1.1.2");
+      expect(PROTOCOL_VERSION).toBe("1.2.0");
     });
   });
 

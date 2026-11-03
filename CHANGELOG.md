@@ -2,6 +2,50 @@
 
 All notable user-visible changes to fvtt-world-cli will be recorded in this file.
 
+## [1.2.0] - 2026-11-03
+
+Foundry v14 moved scene maps onto levels, and until now a scene created through the CLI there could
+not get a map at all. This release adds levels, and common commands return less by default so they
+take up less of an agent's context.
+
+### Scene levels on Foundry v14
+
+- A scene can be created together with its levels and their maps, and the new `scene level`
+  commands manage the levels of an existing scene.
+- Scene results show the levels. Tokens, tiles, walls and other placeables show which levels they
+  are on.
+- Deleting a level also deletes the tokens and other content that exist only on it. A dry run does
+  not list them, so check the scene first.
+- The file audit checks the maps of every level.
+
+### Other changes
+
+- Scenes can be put into folders. On v13 the scene background accepts the anchor, fit and alpha
+  threshold options.
+- `system info` and actor reads leave out optional details by default, which keeps them small. The
+  module list and an actor's items come on request with `--include modules` and `--include items`.
+- A GM can turn off the warning shown when the daemon is unavailable at world load. A manual
+  Connect still warns.
+
+### Fixes
+
+- The daemon no longer overwrites config changes the CLI made while it was running, and saving the
+  config no longer brings back an old credential.
+- When another program answers on the daemon's address, the CLI says so instead of asking you to
+  pair again.
+- If the daemon was not running when the world loaded, Foundry now tells the GM to click Connect
+  once it is, instead of reloading.
+
+### Before updating
+
+- Update the CLI and the Foundry module together. 1.2.0 refuses to connect to components from
+  other releases.
+- Scripts that read the following need adjusting:
+  - the command list from `system info`, now available from `commands`;
+  - actor `items`, now replaced by `itemCount` unless items are requested;
+  - on v14, the scene-wide map fields, which have moved into `levels`.
+- In `--json` mode, a refused `auth` or `bridge release` now exits with a non-zero code.
+
 ## [1.1.2] - 2026-09-07
 
 - Improved result reporting for partially successful changes.
