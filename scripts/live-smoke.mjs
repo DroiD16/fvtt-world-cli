@@ -738,7 +738,8 @@ async function evaluateInGmPage(gmControlUrl, script) {
   try {
     response = await fetch(gmControlUrl, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      // A pooled socket idles across long synchronous CLI stretches, and the server closes it.
+      headers: { "content-type": "application/json", connection: "close" },
       body: JSON.stringify({ script }),
       signal: AbortSignal.timeout(GM_CONTROL_TIMEOUT_MS)
     });
