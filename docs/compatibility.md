@@ -6,7 +6,7 @@ The bridge supports Foundry VTT v13 and v14. Check your connected version with
 | Area | v13 | v14 | What to do |
 |---|---|---|---|
 | Measured templates | Available | Removed from core | Use `scene.template` commands on v13. They are unavailable on v14. |
-| Scene maps | One map per scene: `background`, `backgroundColor`, `foreground`, `foregroundElevation` on the scene | Each level has its own map; the scene has `levels` and `initialLevel` | On v14, set maps through `levels` in `scene.create` or with `scene.level` commands. The scene-level map fields are refused on v14, and `scene.level`, `levels` and `initialLevel` are refused on v13. |
+| Scene maps | One map per scene: `background`, `backgroundColor`, `foreground`, `foregroundElevation` and `fog.overlay` on the scene | Each level has its own map; the scene has `levels` and `initialLevel` | On v14, set maps through `levels` in `scene.create` or with `scene.level` commands. The scene-level map fields, including `fog.overlay`, are refused on v14, and `scene.level`, `levels` and `initialLevel` are refused on v13. |
 | Scene thumbnail rendering | Renders the scene | Renders the scene's initial level by default | On v14, expect the initial level in the thumbnail. Check the returned dimensions and image. |
 | Scene thumbnail files | Uses a stable scene-based filename | Uses a filename based on the image content | Use the returned path. On v14, a changed image can leave an older thumbnail file behind. |
 | User permission names | `TEMPLATE_CREATE` | `REGION_CREATE` | Use the permission keys reported by the connected Foundry version when calling `user.permissions.set`. |

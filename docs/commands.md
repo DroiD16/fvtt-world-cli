@@ -85,6 +85,17 @@ level ids exist only after creation. To start players on another level, run `sce
 level, send `null` through `--patch-json '{"initialLevel":null}'`. A scene keeps at least one level,
 so `scene level delete` and `delete-many` refuse to remove the last one.
 
+Deleting a level also deletes content on it. Foundry deletes every token on that level, and every
+tile, wall, light, sound, note, drawing or region whose level list contains only that level. A
+placeable listed on several levels loses that level from its list. A placeable with an empty list
+appears on every level and stays. Foundry also deletes the fog exploration saved for that level. A
+dry run of `scene level delete` or `delete-many` does not list these placeables. The placeable `get`
+commands show each one's `level` or `levels`.
+
+Scenes accept `folder`, and on v13 `background` also accepts `anchorX`, `anchorY`, `fit` and
+`alphaThreshold`. `grid.sizeX`, `grid.sizeY` and `grid.diagonals` fail with `INVALID_PARAMS`
+because Foundry never stored them.
+
 [Compatibility](compatibility.md) lists the scene map fields each Foundry version accepts.
 
 ### Send a batch of commands
