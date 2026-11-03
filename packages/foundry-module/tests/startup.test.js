@@ -49,7 +49,7 @@ describe("bridge startup warnings", () => {
     [
       "an unavailable daemon",
       () => getDaemonUnavailableWarningMessage(),
-      "World CLI for Foundry VTT stopped: the configured daemon is unavailable. Start the local daemon and reload the client."
+      "World CLI for Foundry VTT stopped: the local helper was not reachable when this world loaded. Once it is running, click Connect in the World CLI scene controls or in Authorization."
     ],
     [
       "a rejected credential",

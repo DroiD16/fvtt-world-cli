@@ -1,4 +1,4 @@
-import { MODULE_ID } from "./generated/protocol.js";
+import { ERROR_CODES, MODULE_ID } from "./generated/protocol.js";
 import { getCurrentCredential } from "./authorization.js";
 import {
   BRIDGE_ACTION_AVAILABILITY,
@@ -207,6 +207,20 @@ export function createSceneControls({ AuthorizationApplication, BridgeStatusAppl
       applyStatusClasses(statusButton, displayState);
       for (const glyph of DISPLAY_STATE_GLYPH_NAMES) statusButton.classList.remove(glyph);
       statusButton.classList.add(DISPLAY_STATE_GLYPHS[displayState]);
+    }
+
+    const connectButton = element?.querySelector?.('button.tool[data-tool="connect"]');
+    if (connectButton) {
+      const daemonStartedLater =
+        globalThis.foundryCliBridge?.getStatus?.()?.terminalStopReason === ERROR_CODES.DAEMON_UNAVAILABLE;
+      connectButton.setAttribute(
+        "aria-label",
+        localize(
+          daemonStartedLater
+            ? "FVTTWORLDCLI.Controls.ConnectAfterDaemonStart"
+            : "FVTTWORLDCLI.Controls.Connect"
+        )
+      );
     }
 
     for (const [name, enabled] of Object.entries(BRIDGE_ACTION_AVAILABILITY[displayState])) {

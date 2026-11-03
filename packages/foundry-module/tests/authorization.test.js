@@ -146,7 +146,8 @@ describe("Authorization application", () => {
       connectionLabel: "Connecting (Awaiting handshake)",
       connectionAction: "disconnect",
       connectionActionGlyph: "fa-plug-circle-minus",
-      connectionActionLabel: "FVTTWORLDCLI.Authorization.Disconnect"
+      connectionActionLabel: "FVTTWORLDCLI.Authorization.Disconnect",
+      daemonStartedLaterHint: ""
     });
   });
 
@@ -416,6 +417,21 @@ describe("Authorization application", () => {
       });
     }
   );
+
+  it.each([
+    ["DAEMON_UNAVAILABLE", true],
+    ["UNAUTHORIZED", false],
+    [null, false]
+  ])("explains Connect for terminal stop %s only when the daemon was unreachable", async (reason, shown) => {
+    globalThis.foundryCliBridge = {
+      getStatus: () => ({ status: "stopped", helloAcknowledged: false, terminalStopReason: reason })
+    };
+    const { app } = application();
+
+    expect((await app._prepareContext()).daemonStartedLaterHint).toBe(
+      shown ? localizeEnglish("FVTTWORLDCLI.Authorization.DaemonStartedLater") : ""
+    );
+  });
 
   it("reports Pair failures in the Foundry UI instead of rejecting the click handler", async () => {
     PairingSocket.instances = [];

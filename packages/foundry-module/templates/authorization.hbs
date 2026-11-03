@@ -22,6 +22,7 @@
         {{#unless clientLabelEditable}}readonly{{/unless}} />
     </div>
   </div>
+  {{#if daemonStartedLaterHint}}<p class="hint">{{daemonStartedLaterHint}}</p>{{/if}}
   {{#if isGM}}
   <footer class="form-footer">
     {{#unless paired}}<button type="button" data-action="pair"><i class="fa-solid fa-link"></i> {{localize
