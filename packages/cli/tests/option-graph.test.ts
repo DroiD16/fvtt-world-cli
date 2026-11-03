@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import type { Argument, Command, Option } from "commander";
@@ -105,8 +106,7 @@ describe("declared CLI option graph", () => {
 
   it("stays free of machine-specific paths", () => {
     const serialized = serializeOptionGraph(createProgram({}));
-    const home = process.env.HOME;
-    for (const forbidden of home ? [process.cwd(), home] : [process.cwd()]) {
+    for (const forbidden of [process.cwd(), userInfo().homedir]) {
       expect(serialized).not.toContain(forbidden);
     }
   });

@@ -17,7 +17,8 @@
     "packages/**/*.js",
     "packages/**/*.ts",
     "packages/**/*.json",
-    "vitest.config.js"
+    "vitest.config.js",
+    "vitest.setup.js"
   ],
   "exclude": ["node_modules", "packages/*/dist"]
 }
