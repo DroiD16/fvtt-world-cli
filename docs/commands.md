@@ -89,8 +89,8 @@ Deleting a level also deletes content on it. Foundry deletes every token on that
 tile, wall, light, sound, note, drawing or region whose level list contains only that level. A
 placeable listed on several levels loses that level from its list. A placeable with an empty list
 appears on every level and stays. Foundry also deletes the fog exploration saved for that level. A
-dry run of `scene level delete` or `delete-many` does not list these placeables. The placeable `get`
-commands show each one's `level` or `levels`.
+dry run of `scene level delete` or `delete-many` does not list these placeables, and placeable reads
+do not report which level a placeable belongs to.
 
 Scenes accept `folder`, and on v13 `background` also accepts `anchorX`, `anchorY`, `fit` and
 `alphaThreshold`. `grid.sizeX`, `grid.sizeY` and `grid.diagonals` fail with `INVALID_PARAMS`
