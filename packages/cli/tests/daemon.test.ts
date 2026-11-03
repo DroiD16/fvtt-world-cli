@@ -27,7 +27,7 @@ import { createBridgeDaemon } from "../src/bridge/daemon.js";
 import { DEFAULT_CLIENT_TIMEOUT_MS } from "../src/bridge/session-store.js";
 import { AWAIT_CLIENT_TIMEOUT_FLOOR_MS, AWAIT_EMPTY_POLL_DELAY_MS } from "../src/commands/auth.js";
 import { createEmptyConfig } from "../src/config.js";
-import { createProgram, planCliErrorOutput } from "../src/index.js";
+import { createProgram, exitCodeForErrorCode, planCliErrorOutput } from "../src/index.js";
 import { DaemonTransportError } from "../src/transport-util.js";
 
 async function freePort() {
@@ -262,6 +262,7 @@ async function runAuthCli(
   { answer, isTTY = true }: { answer?: string | (() => Promise<string>); isTTY?: boolean } = {}
 ) {
   let output = "";
+  let errorOutput = "";
   const stdin = Readable.from(
     (async function* answerLines() {
       if (answer === undefined) return;
@@ -271,7 +272,7 @@ async function runAuthCli(
   stdin.isTTY = isTTY;
   const program = createProgram({
     stdout: { write: (chunk: string) => void (output += chunk) },
-    stderr: { write: () => {} },
+    stderr: { write: (chunk: string) => void (errorOutput += chunk) },
     stdin,
     configStore: {
       getConfigPath: () => "/tmp/fvtt-world-cli-daemon-test-config.json",
@@ -289,7 +290,7 @@ async function runAuthCli(
   } catch (thrown) {
     error = thrown;
   }
-  return { output, error };
+  return { output, errorOutput, error };
 }
 
 function closed(socket: WebSocket) {
@@ -2704,6 +2705,24 @@ describe("authorization daemon", () => {
 
     expect((run.error as CommanderError).code).toBe("commander.excessArguments");
     expect(daemon.awaitWaiters.size).toBe(0);
+  });
+
+  it("renders a refused control operation and exits with its failure code in both output modes", async () => {
+    const daemon = await startPairingDaemon();
+
+    const json = await runAuthCli(daemon, ["auth", "deny", "ABCDEFGH", "--json"]);
+    const envelope = JSON.parse(json.output);
+    expect(envelope).toMatchObject({ ok: false, error: { code: expect.any(String) } });
+    expect(json.error).toBeInstanceOf(CommanderError);
+    expect((json.error as CommanderError).exitCode).toBe(exitCodeForErrorCode(envelope.error.code));
+    expect((json.error as CommanderError).exitCode).not.toBe(0);
+
+    const text = await runAuthCli(daemon, ["auth", "deny", "ABCDEFGH"]);
+    expect(text.output).toBe("");
+    expect(text.errorOutput).toContain(envelope.error.code);
+    expect(planCliErrorOutput(text.error, false, { commanderAlreadyPrinted: false }).exitCode).toBe(
+      exitCodeForErrorCode(envelope.error.code)
+    );
   });
 
   it("rejects a bridge hello whose client id does not match the stored pairing", async () => {
