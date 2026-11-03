@@ -13859,6 +13859,39 @@ async function main() {
       return { options, summary };
     }
 
+    const systemInfo = systemInfoRun.response.result;
+    markAndPush(
+      summary,
+      "system.info(module counts by default, no module or command list)",
+      Number.isInteger(systemInfo.moduleCount) &&
+        Number.isInteger(systemInfo.activeModuleCount) &&
+        systemInfo.activeModuleCount <= systemInfo.moduleCount &&
+        !Object.hasOwn(systemInfo, "modules") &&
+        !Object.hasOwn(systemInfo, "commands"),
+      {
+        moduleCount: systemInfo.moduleCount ?? null,
+        activeModuleCount: systemInfo.activeModuleCount ?? null,
+        keys: Object.keys(systemInfo)
+      }
+    );
+
+    const systemInfoModulesRun = runFoundryctl(["system", "info", "--include", "modules"]);
+    const listedModules = systemInfoModulesRun.response?.result?.modules;
+    markAndPush(
+      summary,
+      "system.info(--include modules returns the module list matching the counts)",
+      isCommandSuccess(systemInfoModulesRun) &&
+        Array.isArray(listedModules) &&
+        listedModules.length === systemInfo.moduleCount &&
+        listedModules.filter((module) => module?.active === true).length === systemInfo.activeModuleCount &&
+        listedModules.some((module) => module?.id === MODULE_ID && module.active === true),
+      {
+        ...summarizeCommand(systemInfoModulesRun),
+        listed: Array.isArray(listedModules) ? listedModules.length : null,
+        moduleCount: systemInfo.moduleCount ?? null
+      }
+    );
+
     const worldId = systemInfoRun.response.result.world.id;
     summary.environment.worldId = worldId;
 
@@ -13897,6 +13930,44 @@ async function main() {
     if (!actorFixtureOk) {
       return { options, summary };
     }
+
+    const fixtureGetRun = runFoundryctl(["actor", "get", "--actor-id", options.actorId]);
+    const fixtureActor = fixtureGetRun.response?.result?.actor || null;
+    markAndPush(
+      summary,
+      "actor.get(itemCount by default, no items)",
+      isCommandSuccess(fixtureGetRun) &&
+        fixtureActor?.id === options.actorId &&
+        Number.isInteger(fixtureActor.itemCount) &&
+        !Object.hasOwn(fixtureActor, "items"),
+      {
+        ...summarizeCommand(fixtureGetRun),
+        itemCount: fixtureActor?.itemCount ?? null,
+        hasItems: fixtureActor ? Object.hasOwn(fixtureActor, "items") : null
+      }
+    );
+    const fixtureItemsRun = runFoundryctl([
+      "actor",
+      "get",
+      "--actor-id",
+      options.actorId,
+      "--include",
+      "items"
+    ]);
+    const fixtureWithItems = fixtureItemsRun.response?.result?.actor || null;
+    markAndPush(
+      summary,
+      "actor.get(--include items returns every owned item)",
+      isCommandSuccess(fixtureItemsRun) &&
+        Array.isArray(fixtureWithItems?.items) &&
+        fixtureWithItems.items.length === fixtureWithItems.itemCount &&
+        fixtureWithItems.itemCount === fixtureActor?.itemCount,
+      {
+        ...summarizeCommand(fixtureItemsRun),
+        itemCount: fixtureWithItems?.itemCount ?? null,
+        items: Array.isArray(fixtureWithItems?.items) ? fixtureWithItems.items.length : null
+      }
+    );
 
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const sceneUpdatedNameSuffix = ` [smoke ${stamp}]`;
