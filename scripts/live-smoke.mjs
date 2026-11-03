@@ -2122,7 +2122,117 @@ async function runSystemReloadBranch(summary, gmControlUrl) {
   );
 }
 
-function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created }) {
+function placeableRow(rows, id) {
+  return Array.isArray(rows) ? (rows.find((row) => row?.id === id) ?? null) : null;
+}
+
+function sameIds(left, right) {
+  return Array.isArray(left) && JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
+}
+
+function runV13PlaceableLevelKeyCoverage(summary, { sceneId, actorId }) {
+  const tile = expectOk(
+    summary,
+    "scene.tile.create(v13 level-key check)",
+    runFoundryctl(["scene", "tile", "create", "--scene-id", sceneId, "--width", "100", "--height", "100"])
+  )?.tile;
+  const token = actorId
+    ? expectOk(
+        summary,
+        "scene.token.create(v13 level-key check)",
+        runFoundryctl(["scene", "token", "create", "--scene-id", sceneId, "--actor-id", actorId])
+      )?.token
+    : null;
+  const tileGet = tile?.id
+    ? expectOk(
+        summary,
+        "scene.tile.get(v13 level-key check)",
+        runFoundryctl(["scene", "tile", "get", "--scene-id", sceneId, "--tile-id", tile.id])
+      )?.tile
+    : null;
+  const tokenRow = placeableRow(
+    expectOk(
+      summary,
+      "scene.token.list(v13)",
+      runFoundryctl(["scene", "token", "list", "--scene-id", sceneId])
+    )?.tokens,
+    token?.id
+  );
+  markAndPush(
+    summary,
+    "scene placeables(v13: no level or levels keys)",
+    [tile, tileGet, ...(actorId ? [token, tokenRow] : [])].every(
+      (result) => result && !("level" in result) && !("levels" in result)
+    ),
+    { tile: tileGet ?? null, token: token ?? null, tokenRow }
+  );
+}
+
+function runV14PlaceableLevelCoverage(summary, { sceneId, ground, roof, actorId, stamp }) {
+  const token = expectOk(
+    summary,
+    "scene.token.create(v14: on the second level)",
+    runFoundryctl([
+      "scene",
+      "token",
+      "create",
+      "--scene-id",
+      sceneId,
+      ...(actorId ? ["--actor-id", actorId] : []),
+      "--data-json",
+      JSON.stringify({ name: `Smoke Roof Token ${stamp}`, level: roof.id })
+    ])
+  )?.token;
+  const tile = expectOk(
+    summary,
+    "scene.tile.create(v14: on both levels)",
+    runFoundryctl([
+      "scene",
+      "tile",
+      "create",
+      "--scene-id",
+      sceneId,
+      "--width",
+      "100",
+      "--height",
+      "100",
+      "--data-json",
+      JSON.stringify({ levels: [ground.id, roof.id] })
+    ])
+  )?.tile;
+  const tokenRow = placeableRow(
+    expectOk(
+      summary,
+      "scene.token.list(v14 level scene)",
+      runFoundryctl(["scene", "token", "list", "--scene-id", sceneId])
+    )?.tokens,
+    token?.id
+  );
+  const tileGet = tile?.id
+    ? expectOk(
+        summary,
+        "scene.tile.get(v14 level tile)",
+        runFoundryctl(["scene", "tile", "get", "--scene-id", sceneId, "--tile-id", tile.id])
+      )?.tile
+    : null;
+  markAndPush(
+    summary,
+    "scene placeables(v14: token level and tile levels round-trip)",
+    token?.level === roof.id &&
+      tokenRow?.level === roof.id &&
+      sameIds(tile?.levels, [ground.id, roof.id]) &&
+      sameIds(tileGet?.levels, [ground.id, roof.id]),
+    {
+      roof: roof.id,
+      ground: ground.id,
+      token: token?.level ?? null,
+      tokenRow: tokenRow?.level ?? null,
+      tile: tileGet?.levels ?? null
+    }
+  );
+}
+
+function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created, actorId }) {
   const folder = expectOk(
     summary,
     "scene.folder(create Scene folder)",
@@ -2167,6 +2277,7 @@ function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created }) {
       { scene: v13Scene ?? null }
     );
     if (v13Scene?.id) {
+      runV13PlaceableLevelKeyCoverage(summary, { sceneId: v13Scene.id, actorId });
       expectErr(
         summary,
         "scene.level.list(v13 gate)",
@@ -2269,6 +2380,8 @@ function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created }) {
     runFoundryctl(["scene", "level", "get", "--scene-id", sceneId, "--level-id", "missingLevel0001"]),
     ERROR_CODES.LEVEL_NOT_FOUND
   );
+
+  runV14PlaceableLevelCoverage(summary, { sceneId, ground, roof, actorId, stamp });
 
   const roofForeground = `worlds/${worldId}/fvtt-world-cli/smoke/roof.webp`;
   const roofUpdate = expectOk(
@@ -2510,7 +2623,7 @@ function runExtendedCoverage(
   };
 
   try {
-    runSceneLevelCoverage(summary, { stamp, worldId, isV14, created });
+    runSceneLevelCoverage(summary, { stamp, worldId, isV14, created, actorId });
 
     const sceneCreate = expectOk(
       summary,
@@ -7819,14 +7932,15 @@ function runExtendedCoverage(
         "notes",
         "drawings",
         "lights",
-        "templates",
-        "levels",
+        isV14 ? "levels" : "templates",
         "regions"
       ];
       markAndPush(
         summary,
-        "scene.get(counts has all ten keys)",
-        counts !== null && countKeys.every((key) => typeof counts[key] === "number"),
+        "scene.get(counts has exactly the version's nine keys)",
+        counts !== null &&
+          Object.keys(counts).length === countKeys.length &&
+          countKeys.every((key) => typeof counts[key] === "number"),
         { observed: counts }
       );
       markAndPush(
@@ -7842,15 +7956,13 @@ function runExtendedCoverage(
         counts !== null &&
           counts.drawings >= 1 &&
           counts.lights >= 1 &&
-          (isV14 ? typeof counts.templates === "number" : counts.templates >= 1) &&
+          (isV14 ? !("templates" in counts) : counts.templates >= 1) &&
           counts.regions >= 1,
         {
           drawings: counts?.drawings,
           lights: counts?.lights,
           templates: counts?.templates,
-          templatesExpectation: isV14
-            ? "number (v14: not pinned — may be synthesized from migrated MeasuredTemplate regions)"
-            : ">= 1 (v13)",
+          templatesExpectation: isV14 ? "absent (v14 has no templates collection)" : ">= 1 (v13)",
           regions: counts?.regions
         }
       );
