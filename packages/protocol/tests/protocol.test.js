@@ -441,6 +441,7 @@ const EXPECTED_FAMILY_FIELDS = Object.freeze({
   ],
   "scene.create.data": [
     "active",
+    "folder",
     "background",
     "backgroundColor",
     "environment",
@@ -474,6 +475,7 @@ const EXPECTED_FAMILY_FIELDS = Object.freeze({
   "scene.token.item.update.patch": ["flags", "folder", "img", "name", "sort", "system"],
   "scene.update.patch": [
     "active",
+    "folder",
     "background",
     "backgroundColor",
     "environment",
@@ -2096,6 +2098,29 @@ describe("protocol contract", () => {
     });
 
     expect(result).toEqual({ ok: true, errors: [] });
+  });
+
+  it("accepts the full v13 scene background texture and a scene folder", () => {
+    expectValid("scene.create", {
+      data: {
+        name: "Crypt",
+        folder: "folder-1",
+        background: {
+          src: "worlds/w/crypt.webp",
+          anchorX: 0.5,
+          anchorY: 0.5,
+          fit: "contain",
+          alphaThreshold: 0.2
+        }
+      }
+    });
+    expectValid("scene.update", { sceneId: "scene-1", patch: { folder: null } });
+  });
+
+  it("rejects the grid fields no supported Foundry version has", () => {
+    for (const field of ["sizeX", "sizeY", "diagonals"]) {
+      expectRejected("scene.update", { sceneId: "scene-1", patch: { grid: { [field]: 1 } } }, field);
+    }
   });
 
   it("rejects a scene background `-=key` deletion form (closed sub-schema, additionalProperties:false)", () => {

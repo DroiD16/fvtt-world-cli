@@ -246,9 +246,6 @@ describe("command router", () => {
       createSpy: () => globalThis.Scene.create,
       collection: () => globalThis.game.scenes,
 
-      folderReadable: false,
-      patchFolderSupported: false,
-
       foundryRejectedPatch: { thumb: "notes.txt" }
     },
     "macro.import-from-compendium": {

@@ -206,6 +206,8 @@ command scene update
   summary=
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
   opt --name <name> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New scene name
+  opt --folder <folder> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New folder id
+  opt --clear-folder | parser=- | conflicts=["folder"] | choices=- | required=false | hidden=false | default=- | help=Explicitly set folder to null
   opt --active <active> | parser=parseBoolean | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene active state
   opt --navigation <navigation> | parser=parseBoolean | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene navigation visibility
   opt --nav-order <navOrder> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene navigation order
@@ -239,6 +241,8 @@ command scene create
   summary=
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --name <name> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene name
+  opt --folder <folder> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Folder id
+  opt --clear-folder | parser=- | conflicts=["folder"] | choices=- | required=false | hidden=false | default=- | help=Explicitly set folder to null
   opt --active <active> | parser=parseBoolean | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene active state
   opt --navigation <navigation> | parser=parseBoolean | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene navigation visibility
   opt --nav-order <navOrder> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene navigation order
@@ -273,6 +277,8 @@ command scene clone
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Source scene id
   opt --name <name> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Name override for the clone
+  opt --folder <folder> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Folder id override
+  opt --clear-folder | parser=- | conflicts=["folder"] | choices=- | required=false | hidden=false | default=- | help=Explicitly set folder to null
   opt --active <active> | parser=parseBoolean | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene active state
   opt --navigation <navigation> | parser=parseBoolean | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene navigation visibility
   opt --nav-order <navOrder> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene navigation order

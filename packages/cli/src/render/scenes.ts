@@ -21,6 +21,7 @@ export function renderSceneDetails(scene: any) {
   const lines = [
     `id: ${scene?.id}`,
     `name: ${scene?.name}`,
+    `folder: ${scene?.folder ?? ""}`,
     `active: ${String(Boolean(scene?.active))}`,
     `navigation: ${String(Boolean(scene?.navigation))}`,
     `nav order: ${scene?.navOrder ?? 0}`,

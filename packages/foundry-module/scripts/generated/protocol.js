@@ -4309,6 +4309,10 @@ var sceneBackgroundSchema = {
     scaleX: { type: "number" },
     scaleY: { type: "number" },
     rotation: { type: "number" },
+    anchorX: { type: "number" },
+    anchorY: { type: "number" },
+    fit: { type: "string", minLength: 1 },
+    alphaThreshold: { type: "number" },
     tint: { type: "string", minLength: 1 }
   },
   additionalProperties: false,
@@ -4320,15 +4324,12 @@ var sceneGridSchema = {
   properties: {
     type: { type: "number" },
     size: { type: "number" },
-    sizeX: { type: "number" },
-    sizeY: { type: "number" },
     distance: { type: "number" },
     units: { type: "string" },
     style: { type: "string" },
     thickness: { type: "number" },
     color: { type: "string", minLength: 1 },
-    alpha: { type: "number" },
-    diagonals: { type: "number" }
+    alpha: { type: "number" }
   },
   additionalProperties: false,
   minProperties: 1
@@ -4338,6 +4339,7 @@ var sceneCreateSchema = {
   required: ["name"],
   properties: {
     name: { type: "string", minLength: 1 },
+    folder: nullableStringSchema,
     active: { type: "boolean" },
     navigation: { type: "boolean" },
     navOrder: { type: "number" },

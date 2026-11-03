@@ -143,6 +143,8 @@ export function createItemUpdateParams(options: {
 export function createSceneUpdateParams(options: {
   sceneId: string;
   name?: string;
+  folder?: string;
+  clearFolder?: boolean;
   active?: boolean;
   navigation?: boolean;
   navOrder?: number;
@@ -176,6 +178,7 @@ export function createSceneUpdateParams(options: {
 
     patch: assertNonEmptyPatch({
       ...stringField("name", options.name),
+      ...folderField(options),
       ...booleanField("active", options.active),
       ...booleanField("navigation", options.navigation),
       ...numberField("navOrder", options.navOrder),
@@ -210,6 +213,8 @@ export function createSceneUpdateParams(options: {
 
 export interface SceneFieldOptions {
   name?: string;
+  folder?: string;
+  clearFolder?: boolean;
   active?: boolean;
   navigation?: boolean;
   navOrder?: number;
@@ -241,6 +246,7 @@ export interface SceneFieldOptions {
 function buildScenePatch(options: SceneFieldOptions) {
   return {
     ...stringField("name", options.name),
+    ...folderField(options),
     ...booleanField("active", options.active),
     ...booleanField("navigation", options.navigation),
     ...numberField("navOrder", options.navOrder),

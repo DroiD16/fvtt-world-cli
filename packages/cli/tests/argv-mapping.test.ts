@@ -230,6 +230,16 @@ describe("fvtt-world-cli commands", () => {
       { data: { name: "New Scene", width: 1000, height: 800 } }
     ],
     [
+      ["scene", "create", "--name", "Crypt", "--folder", "folder-1"],
+      "scene.create",
+      { data: { name: "Crypt", folder: "folder-1" } }
+    ],
+    [
+      ["scene", "update", "--scene-id", "scene-1", "--clear-folder"],
+      "scene.update",
+      { sceneId: "scene-1", patch: { folder: null } }
+    ],
+    [
       ["scene", "clone", "--scene-id", "scene-1", "--name", "Dungeon Copy"],
       "scene.clone",
       { sceneId: "scene-1", patch: { name: "Dungeon Copy" } }

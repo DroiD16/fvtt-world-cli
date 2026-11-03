@@ -91,6 +91,8 @@ export function addActorIncludeOption(command: Command): Command {
 }
 
 const SCENE_FIELDS: readonly FieldSpec[] = [
+  FOLDER_ID_FIELD,
+  CLEAR_FOLDER_FIELD,
   { flag: "--active <active>", help: "Scene active state", parser: parseBoolean },
   { flag: "--navigation <navigation>", help: "Scene navigation visibility", parser: parseBoolean },
   { flag: "--nav-order <navOrder>", help: "Scene navigation order", parser: parseNumber },

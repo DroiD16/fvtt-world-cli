@@ -71,6 +71,10 @@ function normalizeSceneBackground(scene, data) {
     scaleX: source.scaleX ?? 1,
     scaleY: source.scaleY ?? 1,
     rotation: source.rotation ?? 0,
+    anchorX: source.anchorX ?? 0,
+    anchorY: source.anchorY ?? 0,
+    fit: source.fit ?? "fill",
+    alphaThreshold: source.alphaThreshold ?? 0,
 
     tint: source.tint ?? null
   };
@@ -849,6 +853,7 @@ export function serializeScene(
   return {
     ...identityFields(scene, data),
     name: scene.name ?? data.name ?? null,
+    folder: scene.folder?.id ?? data.folder ?? null,
     active: scene.active ?? data.active ?? false,
     navigation: scene.navigation ?? data.navigation ?? false,
     navOrder: scene.navOrder ?? data.navOrder ?? 0,

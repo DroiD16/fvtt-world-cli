@@ -202,6 +202,10 @@ describe("serializeScene", () => {
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
+      anchorX: 0,
+      anchorY: 0,
+      fit: "fill",
+      alphaThreshold: 0,
       tint: "#8080ff"
     });
     expect("color" in background).toBe(false);
