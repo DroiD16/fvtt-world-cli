@@ -1492,7 +1492,11 @@ describe("command router", () => {
     expect(response.result.scene.active).toBe(false);
   });
 
-  it("scene.get exposes embedded-collection counts for all v13/v14 placeable collections", async () => {
+  it.each([
+    [13, { templates: 2 }],
+    [14, { levels: 2 }]
+  ])("scene.get counts only the embedded collections Foundry v%i has", async (generation, versionCounts) => {
+    globalThis.game.release = { version: `${generation}.0`, generation };
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
     const getResponse = await router.route(createRequest("scene.get", { sceneId: "scene-1" }));
@@ -1507,9 +1511,8 @@ describe("command router", () => {
       notes: 2,
       drawings: 2,
       lights: 1,
-      templates: 2,
-      levels: 2,
-      regions: 2
+      regions: 2,
+      ...versionCounts
     });
 
     expect(getResponse.result.scene).toHaveProperty("flags");

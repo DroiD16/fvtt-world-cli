@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   serializeActiveEffect,
@@ -86,6 +86,10 @@ class PreparedSystem {
 function assertStructuredCloneable(value) {
   expect(() => structuredClone(value)).not.toThrow();
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("serializeScene", () => {
   it("prefers the plain source grid from toObject() over a runtime grid object", () => {
@@ -293,7 +297,11 @@ describe("serializeScene", () => {
     expect(serializeScene(scene, { flags: true }).flags).toEqual({});
   });
 
-  it("reads embedded-collection counts from live collection sizes for all v13/v14 collections", () => {
+  it.each([
+    [13, { templates: 0 }],
+    [14, { levels: 2 }]
+  ])("counts only the embedded collections Foundry v%i has, from live sizes", (generation, versionCounts) => {
+    vi.stubGlobal("game", { release: { generation } });
     const collection = (size) => ({ size });
     const scene = {
       id: "scene-3",
@@ -305,8 +313,10 @@ describe("serializeScene", () => {
       notes: collection(5),
       drawings: collection(1),
       lights: collection(6),
-      templates: collection(0),
-
+      get templates() {
+        if (generation >= 14) throw new Error("Scene#templates is deprecated");
+        return collection(0);
+      },
       levels: collection(2),
       regions: collection(2),
       toObject() {
@@ -323,9 +333,8 @@ describe("serializeScene", () => {
       notes: 5,
       drawings: 1,
       lights: 6,
-      templates: 0,
-      levels: 2,
-      regions: 2
+      regions: 2,
+      ...versionCounts
     });
     assertStructuredCloneable(result);
   });
@@ -355,7 +364,6 @@ describe("serializeScene", () => {
       drawings: 0,
       lights: 0,
       templates: 0,
-      levels: 0,
       regions: 0
     });
   });

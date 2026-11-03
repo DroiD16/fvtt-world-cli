@@ -941,8 +941,10 @@ const SCENE_EMBEDDED_COLLECTION_NAMES = Object.freeze([
 ]);
 
 function sceneEmbeddedCounts(scene, data) {
+  const absent = hasSceneLevels() ? "templates" : "levels";
   const counts = {};
   for (const name of SCENE_EMBEDDED_COLLECTION_NAMES) {
+    if (name === absent) continue;
     const source = data?.[name];
     if (Array.isArray(source)) {
       counts[name] = source.length;

@@ -193,7 +193,9 @@ and `null` means Foundry uses the first level. Level ids in a `scene.create` pre
 provisional: the real create assigns new ids, and a preview without `levels` shows none, although
 the real create adds Foundry's default level. v14 scene results omit `background`,
 `backgroundColor`, `foreground` and `foregroundElevation`, which Foundry stores per level. v13
-results keep those four fields and have no `levels` or `initialLevel`.
+results keep those four fields and have no `levels` or `initialLevel`. `scene.get` and
+`scene.get-many` `counts` list only the embedded collections the connected version has: `levels` on
+v14, `templates` on v13.
 
 `scene.level.list` rows carry `id`, `name`, `elevation` and `sort`. `scene.level.get`, `create`,
 `update` and `clone` return the full level under `level`; `scene.level.delete` and the batch verbs
