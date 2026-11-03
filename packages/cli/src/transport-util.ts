@@ -63,8 +63,8 @@ export class DaemonTransportError extends Error {
   readonly code: string;
   readonly details?: Record<string, unknown>;
 
-  constructor(code: string, message: string, details?: Record<string, unknown>) {
-    super(message);
+  constructor(code: string, message: string, details?: Record<string, unknown>, options?: ErrorOptions) {
+    super(message, options);
     this.name = "DaemonTransportError";
     this.code = code;
     this.details = details;

@@ -8,10 +8,8 @@ import {
   PROTOCOL_VERSION,
   createProtocolError,
   createClientHello,
-  parseBridgeMessage,
   validateCommandRequest,
-  validateDaemonRequest,
-  validateTransportMessage
+  validateDaemonRequest
 } from "@fvtt-world-cli/protocol";
 import WebSocket from "ws";
 
@@ -20,8 +18,6 @@ import {
   DaemonTransportError,
   decodeTransportFrame,
   isCommandResponseEnvelope,
-  normalizeIncomingData,
-  protocolVersionSkewError,
   type CommandResponseEnvelope
 } from "../transport-util.js";
 
@@ -350,30 +346,39 @@ export async function connectDaemonClient({
       socket.send(JSON.stringify(createClientHello({ credential: deviceCredential ?? "" })));
     });
     socket.once("message", (data) => {
-      const parsed = parseBridgeMessage(normalizeIncomingData(data));
-      const skew = parsed.ok ? protocolVersionSkewError(parsed.value) : null;
-      if (skew) {
+      const decoded = decodeTransportFrame(data);
+      if (!decoded.ok) {
         clearTimeout(timer);
-        reject(skew);
+        reject(decoded.error);
         socket.close();
         return;
       }
-      const validation = parsed.ok ? validateTransportMessage(parsed.value) : { ok: false };
-      const message =
-        parsed.ok && validation.ok
-          ? (parsed.value as {
-              type?: string;
-              ok?: boolean;
-              error?: { code?: string; message?: string; details?: Record<string, unknown> };
-            })
-          : null;
-      if (!message || message.type !== MESSAGE_TYPES.CLIENT_HELLO_ACK || !message.ok) {
+      const message = decoded.value as {
+        type?: string;
+        ok?: boolean;
+        error?: { code?: string; message?: string; details?: Record<string, unknown> };
+      };
+      if (message.type !== MESSAGE_TYPES.CLIENT_HELLO_ACK) {
         clearTimeout(timer);
         reject(
           new DaemonTransportError(
-            message?.error?.code ?? ERROR_CODES.UNAUTHORIZED,
-            message?.error?.message ?? "Daemon rejected client authentication",
-            message?.error?.details
+            ERROR_CODES.INVALID_MESSAGE,
+            "Daemon returned an unexpected message type",
+            {
+              reason: "unexpected_type"
+            }
+          )
+        );
+        socket.close();
+        return;
+      }
+      if (!message.ok) {
+        clearTimeout(timer);
+        reject(
+          new DaemonTransportError(
+            message.error?.code ?? ERROR_CODES.UNAUTHORIZED,
+            message.error?.message ?? "Daemon rejected client authentication",
+            message.error?.details
           )
         );
         socket.close();
@@ -388,7 +393,8 @@ export async function connectDaemonClient({
         new DaemonTransportError(
           ERROR_CODES.DAEMON_UNAVAILABLE,
           error instanceof Error ? error.message : String(error),
-          { reason: "connect_error" }
+          { reason: "connect_error" },
+          { cause: error }
         )
       );
     });
