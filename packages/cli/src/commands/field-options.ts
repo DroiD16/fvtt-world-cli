@@ -90,6 +90,11 @@ export function addActorIncludeOption(command: Command): Command {
   );
 }
 
+const INITIAL_LEVEL_FIELD: FieldSpec = {
+  flag: "--initial-level <initialLevel>",
+  help: "Initial level id (Foundry v14)"
+};
+
 const SCENE_FIELDS: readonly FieldSpec[] = [
   FOLDER_ID_FIELD,
   CLEAR_FOLDER_FIELD,
@@ -112,7 +117,7 @@ const SCENE_FIELDS: readonly FieldSpec[] = [
     parser: parseNumber
   },
   { flag: "--sort <sort>", help: "Sort order", parser: parseNumber },
-  { flag: "--initial-level <initialLevel>", help: "Initial level id (Foundry v14)" },
+  INITIAL_LEVEL_FIELD,
   { flag: "--playlist <playlistId>", help: "Linked playlist id" },
   { flag: "--playlist-sound <playlistSoundId>", help: "Linked playlist sound id" },
   { flag: "--journal <journalId>", help: "Linked journal id" },
@@ -140,7 +145,9 @@ const SCENE_FIELDS: readonly FieldSpec[] = [
 ];
 
 export function addSceneFieldOptions(command: Command, verb: FieldVerb): Command {
-  return addFieldOptions(command, verb, SCENE_FIELDS);
+  const specs =
+    verb === "create" ? SCENE_FIELDS.filter((spec) => spec !== INITIAL_LEVEL_FIELD) : SCENE_FIELDS;
+  return addFieldOptions(command, verb, specs);
 }
 
 const TOKEN_NAME_FIELD: FieldSpec = {

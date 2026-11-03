@@ -4498,7 +4498,6 @@ var sceneCreateSchema = {
     navName: nullableStringSchema,
     thumb: nullableStringSchema,
     sort: { type: "number" },
-    initialLevel: nullableStringSchema,
     levels: { type: "array", minItems: 1, items: levelCreateSchema },
     playlist: nullableStringSchema,
     playlistSound: nullableStringSchema,
@@ -4514,7 +4513,10 @@ var sceneCreateSchema = {
   },
   additionalProperties: false
 };
-var scenePatchSchema = patchFrom(sceneCreateSchema, { omit: ["levels"] });
+var scenePatchSchema = patchFrom(sceneCreateSchema, {
+  omit: ["levels"],
+  prepend: { initialLevel: nullableStringSchema }
+});
 var sceneCommands = {
   "scene.list": cmd(nameFilteredListSchema),
   "scene.get": cmd(sceneIdSchema),

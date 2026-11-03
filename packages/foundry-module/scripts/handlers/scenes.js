@@ -60,13 +60,6 @@ export function createSceneHandlers() {
 
     async "scene.create"(params) {
       assertSceneLevelsFieldsSupported(params.data);
-      if (Object.hasOwn(params.data, "initialLevel")) {
-        throw createBridgeError(
-          ERROR_CODES.INVALID_PARAMS,
-          "scene.create does not accept initialLevel: level ids exist only once the scene is created. The first entry of `levels` becomes the initial level; to pick another one, run scene.update with initialLevel after creation",
-          { field: "initialLevel" }
-        );
-      }
 
       const canonical = canonicalizeFilePathFields(params.data, "Scene");
       const data = canonical.levels

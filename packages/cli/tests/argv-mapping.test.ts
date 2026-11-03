@@ -1836,11 +1836,6 @@ describe("fvtt-world-cli commands", () => {
       "scene.sound.delete",
       { sceneId: "scene-1", soundId: "sound-a" }
     ],
-    [
-      ["scene", "create", "--name", "Tower", "--levels-json", '[{"name":"Ground"},{"name":"Roof"}]'],
-      "scene.create",
-      { data: { name: "Tower", levels: [{ name: "Ground" }, { name: "Roof" }] } }
-    ],
     [["scene", "level", "list", "--scene-id", "scene-1"], "scene.level.list", { sceneId: "scene-1" }],
     [
       ["scene", "level", "get", "--scene-id", "scene-1", "--level-id", "lvl-a"],

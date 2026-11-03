@@ -83,7 +83,6 @@ const sceneCreateSchema = {
     navName: nullableStringSchema,
     thumb: nullableStringSchema,
     sort: { type: "number" },
-    initialLevel: nullableStringSchema,
     levels: { type: "array", minItems: 1, items: levelCreateSchema },
 
     playlist: nullableStringSchema,
@@ -103,7 +102,10 @@ const sceneCreateSchema = {
   additionalProperties: false
 };
 
-const scenePatchSchema = patchFrom(sceneCreateSchema, { omit: ["levels"] });
+const scenePatchSchema = patchFrom(sceneCreateSchema, {
+  omit: ["levels"],
+  prepend: { initialLevel: nullableStringSchema }
+});
 
 export const sceneCommands = {
   "scene.list": cmd(nameFilteredListSchema),

@@ -459,7 +459,6 @@ const EXPECTED_FAMILY_FIELDS = Object.freeze({
     "grid",
     "height",
     "initial",
-    "initialLevel",
     "journal",
     "journalEntryPage",
     "name",
@@ -5189,7 +5188,12 @@ describe("protocol contract", () => {
         { pack: "world.scenes", entryId: "s1", patch: { levels: [{ name: "Ground" }] } },
         "levels"
       );
+    });
+
+    it("accepts initialLevel only on scene patches", () => {
+      expectRejected("scene.create", { data: { name: "Tower", initialLevel: "lvl-a" } }, "initialLevel");
       expectValid("scene.update", { sceneId: "scene-1", patch: { initialLevel: null } });
+      expectValid("scene.clone", { sceneId: "scene-1", patch: { initialLevel: "lvl-a" } });
     });
 
     it("exposes LEVEL_NOT_FOUND in ERROR_CODES", () => {

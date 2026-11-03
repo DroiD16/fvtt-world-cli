@@ -258,7 +258,6 @@ command scene create
   opt --foreground <foreground> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image path
   opt --foreground-elevation <foregroundElevation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Foreground image elevation
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort order
-  opt --initial-level <initialLevel> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Initial level id (Foundry v14)
   opt --playlist <playlistId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked playlist id
   opt --playlist-sound <playlistSoundId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked playlist sound id
   opt --journal <journalId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Linked journal id
@@ -269,7 +268,6 @@ command scene create
   opt --transition-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene transition config as JSON object
   opt --grid-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene grid as JSON object
   opt --background-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene background as JSON object
-  opt --levels-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene levels (Foundry v14) as a JSON array of level objects; the first becomes the initial level
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra scene fields (e.g. flags) as a JSON object (merged last)
 
 command scene clone

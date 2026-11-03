@@ -72,22 +72,20 @@ result for later edits:
 
 ```bash
 fvtt-world-cli scene create --name "Tower" --json \
-  --levels-json '[{"name":"Ground","background":{"src":"worlds/<worldId>/maps/ground.webp"}},
-                  {"name":"Roof","elevation":{"bottom":20,"top":40}}]'
+  --data-json '{"levels":[{"name":"Ground","background":{"src":"worlds/<worldId>/maps/ground.webp"}},
+                          {"name":"Roof","elevation":{"bottom":20,"top":40}}]}'
 fvtt-world-cli scene level list --scene-id <sceneId> --json
 fvtt-world-cli scene level update --scene-id <sceneId> --level-id <levelId> \
   --patch-json '{"foreground":{"src":"worlds/<worldId>/maps/roof.webp"}}' --json
 ```
 
-The first level becomes the initial one. `scene create` refuses `initialLevel`, because level ids
-exist only after creation. To start players on another level, run `scene update --initial-level
-<levelId>` with an id of that scene, or pass `null` to go back to the first level. A scene keeps at
-least one level, so `scene level delete` and `delete-many` refuse to remove the last one.
+The first supplied level becomes the initial one. `scene create` has no `initialLevel`, because
+level ids exist only after creation. To start players on another level, run `scene update
+--scene-id <sceneId> --initial-level <levelId>` with a level of that scene. To go back to the first
+level, send `null` through `--patch-json '{"initialLevel":null}'`. A scene keeps at least one level,
+so `scene level delete` and `delete-many` refuse to remove the last one.
 
-On v14 the scene-level `background`, `backgroundColor`, `foreground`, `foregroundElevation` and
-`fog.overlay` fields return `UNSUPPORTED_OPERATION`, because Foundry ignores them there. On v13
-those fields are the scene's single map, and `scene.level` commands, `levels` and `initialLevel`
-return `UNSUPPORTED_OPERATION`.
+[Compatibility](compatibility.md) lists the scene map fields each Foundry version accepts.
 
 ### Send a batch of commands
 

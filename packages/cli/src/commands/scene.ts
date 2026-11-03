@@ -149,13 +149,9 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     addIdempotencyKeyOption(scene.command("create")).requiredOption("--name <name>", "Scene name"),
     "create"
   )
-    .option(
-      "--levels-json <json>",
-      "Scene levels (Foundry v14) as a JSON array of level objects; the first becomes the initial level"
-    )
     .option("--data-json <json>", "Extra scene fields (e.g. flags) as a JSON object (merged last)")
     .action(async function createSceneCommand(
-      options: SceneFieldOptions & { name: string; levelsJson?: string; dataJson?: string }
+      options: SceneFieldOptions & { name: string; dataJson?: string }
     ) {
       await executeRemoteCommand({
         commandName: "scene.create",

@@ -277,14 +277,11 @@ function buildScenePatch(options: SceneFieldOptions) {
   };
 }
 
-export function createSceneCreateParams(
-  options: SceneFieldOptions & { name: string; levelsJson?: string; dataJson?: string }
-) {
+export function createSceneCreateParams(options: SceneFieldOptions & { name: string; dataJson?: string }) {
   return {
     data: {
       name: options.name,
       ...buildScenePatch({ ...options, name: undefined }),
-      ...jsonArrayField("levels", options.levelsJson, "--levels-json"),
       ...(optionalJsonObject(options.dataJson, "--data-json") ?? {})
     }
   };

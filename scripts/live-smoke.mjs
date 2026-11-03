@@ -2196,8 +2196,8 @@ function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created }) {
         "create",
         "--name",
         `Smoke Levels ${stamp}`,
-        "--levels-json",
-        JSON.stringify([{ name: "Ground" }])
+        "--data-json",
+        JSON.stringify({ levels: [{ name: "Ground" }] })
       ]),
       ERROR_CODES.UNSUPPORTED_OPERATION
     );
@@ -2214,11 +2214,13 @@ function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created }) {
       "--name",
       `Smoke Level Scene ${stamp}`,
       ...(folderId ? ["--folder", folderId] : []),
-      "--levels-json",
-      JSON.stringify([
-        { name: "Smoke Ground", background: { src: groundSrc, color: "#223344" } },
-        { name: "Smoke Roof", elevation: { bottom: 20, top: 40 } }
-      ])
+      "--data-json",
+      JSON.stringify({
+        levels: [
+          { name: "Smoke Ground", background: { src: groundSrc, color: "#223344" } },
+          { name: "Smoke Roof", elevation: { bottom: 20, top: 40 } }
+        ]
+      })
     ])
   )?.scene;
   const sceneId = levelScene?.id ?? null;
@@ -2412,22 +2414,6 @@ function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created }) {
   markAndPush(summary, "scene.update(initialLevel reset)", initialReset?.scene?.initialLevel === null, {
     initialLevel: initialReset?.scene?.initialLevel
   });
-  expectErr(
-    summary,
-    "scene.create(initialLevel refused)",
-    runFoundryctl([
-      "--dry-run",
-      "scene",
-      "create",
-      "--name",
-      `Smoke Levels ${stamp}`,
-      "--levels-json",
-      JSON.stringify([{ name: "Ground" }]),
-      "--initial-level",
-      ground.id
-    ]),
-    ERROR_CODES.INVALID_PARAMS
-  );
   expectErr(
     summary,
     "scene.create(background v14 gate)",

@@ -137,20 +137,6 @@ describe("scene levels", () => {
       expect(response.result.scene.levels.map((level) => level.name)).toEqual(["Ground"]);
       expect(globalThis.Scene.create).not.toHaveBeenCalled();
     });
-
-    it("refuses initialLevel, real and dry-run", async () => {
-      for (const extra of [{}, { dryRun: true }]) {
-        const response = await router().route(
-          createRequest("scene.create", {
-            data: { name: "Tower", levels: [{ name: "Ground" }], initialLevel: null },
-            ...extra
-          })
-        );
-        expect(response.error.code).toBe("INVALID_PARAMS");
-        expect(response.error.details).toEqual({ field: "initialLevel" });
-      }
-      expect(globalThis.Scene.create).not.toHaveBeenCalled();
-    });
   });
 
   describe("initialLevel on existing scenes", () => {
