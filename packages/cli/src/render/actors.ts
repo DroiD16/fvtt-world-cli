@@ -1,4 +1,4 @@
-import { renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
+import { renderProvenanceLines, renderOwnershipLines } from "./common.js";
 import { renderItemSummaryLine } from "./items.js";
 
 export function renderActorDetails(actor: any) {
@@ -20,7 +20,7 @@ export function renderActorDetails(actor: any) {
   if (actor && Object.hasOwn(actor, "effects")) {
     lines.push(`effects: ${JSON.stringify(actor.effects ?? [], null, 2)}`);
   }
-  lines.push(...renderCompendiumSourceLines(actor));
+  lines.push(...renderProvenanceLines(actor));
 
   if (actor && Object.hasOwn(actor, "ownership")) {
     lines.push(...renderOwnershipLines(actor.ownership));

@@ -1,4 +1,4 @@
-import { renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
+import { renderProvenanceLines, renderOwnershipLines } from "./common.js";
 
 function renderCardLine(card: any) {
   return [
@@ -32,7 +32,7 @@ export function renderCardsDetails(cards: any) {
     `cards: ${rows.length}`,
     ...rows.map((card: any) => `  ${renderCardLine(card)}`)
   ];
-  lines.push(...renderCompendiumSourceLines(cards));
+  lines.push(...renderProvenanceLines(cards));
 
   if (cards && Object.hasOwn(cards, "ownership")) {
     lines.push(...renderOwnershipLines(cards.ownership));

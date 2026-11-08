@@ -590,7 +590,8 @@ describe("serializeMacro", () => {
       scope: "global",
       flags: { "midi-qol": { onUseMacroName: "heal" } },
 
-      compendiumSource: null
+      compendiumSource: null,
+      duplicateSource: null
     });
     assertStructuredCloneable(result);
   });
@@ -4459,8 +4460,9 @@ describe("serializeCardSummary / storedCardName", () => {
   });
 });
 
-describe("compendiumSource", () => {
+describe("provenance: compendiumSource and duplicateSource", () => {
   const UUID = "Compendium.dnd5e.items.Item.abcdefghij123456";
+  const DUPLICATE_UUID = "Item.abcdefghij654321";
 
   /** @type {[string, (document: any, options?: any) => any, any][]} */
   const FULL = [
@@ -4476,13 +4478,17 @@ describe("compendiumSource", () => {
   ];
 
   it.each(FULL)(
-    "%s FULL projection reports the stored compendiumSource and never raw _stats",
+    "%s FULL projection reports the stored compendiumSource and duplicateSource and never raw _stats",
     (_name, serialize, source) => {
       const imported = serialize({
         id: source._id,
-        toObject: () => ({ ...source, _stats: { compendiumSource: UUID, coreVersion: "13.351" } })
+        toObject: () => ({
+          ...source,
+          _stats: { compendiumSource: UUID, duplicateSource: DUPLICATE_UUID, coreVersion: "13.351" }
+        })
       });
       expect(imported.compendiumSource).toBe(UUID);
+      expect(imported.duplicateSource).toBe(DUPLICATE_UUID);
 
       expect(imported._stats).toBeUndefined();
       expect(imported.coreVersion).toBeUndefined();
@@ -4499,13 +4505,15 @@ describe("compendiumSource", () => {
 
       expect(Object.hasOwn(authored, "compendiumSource")).toBe(true);
       expect(authored.compendiumSource).toBeNull();
+      expect(Object.hasOwn(authored, "duplicateSource")).toBe(true);
+      expect(authored.duplicateSource).toBeNull();
     }
   );
 
   it("stays OFF the lean list projections and OFF actor.get's nested items[] rows", () => {
     const withStats = (source) => ({
       id: source._id,
-      toObject: () => ({ ...source, _stats: { compendiumSource: UUID } })
+      toObject: () => ({ ...source, _stats: { compendiumSource: UUID, duplicateSource: DUPLICATE_UUID } })
     });
     /** @type {{ name: string, summary: (document: any) => any, source: any }[]} */
     const LEAN = [
@@ -4532,7 +4540,9 @@ describe("compendiumSource", () => {
       { name: "scene", summary: (document) => serializeScene(document), source: { _id: "s1", name: "S" } }
     ];
     for (const { name, summary, source } of LEAN) {
-      expect(Object.hasOwn(summary(withStats(source)), "compendiumSource"), `${name} list row`).toBe(false);
+      const row = summary(withStats(source));
+      expect(Object.hasOwn(row, "compendiumSource"), `${name} list row`).toBe(false);
+      expect(Object.hasOwn(row, "duplicateSource"), `${name} list row`).toBe(false);
     }
 
     expect(
@@ -4548,13 +4558,22 @@ describe("compendiumSource", () => {
           name: "A",
           type: "npc",
           effects: [],
-          items: [{ _id: "i1", name: "I", type: "loot", effects: [], _stats: { compendiumSource: UUID } }]
+          items: [
+            {
+              _id: "i1",
+              name: "I",
+              type: "loot",
+              effects: [],
+              _stats: { compendiumSource: UUID, duplicateSource: DUPLICATE_UUID }
+            }
+          ]
         })
       },
       { include: ["items"] }
     );
     expect(actor.compendiumSource).toBeNull();
     expect(Object.hasOwn(actor.items[0], "compendiumSource")).toBe(false);
+    expect(Object.hasOwn(actor.items[0], "duplicateSource")).toBe(false);
   });
 });
 

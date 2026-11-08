@@ -2554,6 +2554,32 @@ describe("fvtt-world-cli commands", () => {
     expect(overriding.stdout).toContain("delta: overrides name, items");
   });
 
+  it("renders duplicateSource next to compendiumSource in human-readable document output", async () => {
+    const respond = (result: Record<string, unknown>) =>
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result
+      }));
+
+    const provenance = await runCommand(
+      ["item", "get", "--item-id", "item-1"],
+      respond({
+        item: {
+          id: "item-1",
+          name: "Copy",
+          type: "loot",
+          system: {},
+          compendiumSource: null,
+          duplicateSource: "Item.abcdefghij654321"
+        }
+      })
+    );
+    expect(provenance.stdout).toContain("duplicateSource: Item.abcdefghij654321");
+  });
+
   it("renders scene update output in human-readable mode", async () => {
     const result = await runCommand(
       [

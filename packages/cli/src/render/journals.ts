@@ -1,4 +1,4 @@
-import { renderBroadcastLines, renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
+import { renderBroadcastLines, renderProvenanceLines, renderOwnershipLines } from "./common.js";
 
 export function renderJournalShowResult(result: any) {
   return [
@@ -19,7 +19,7 @@ export function renderJournalDetails(journal: any) {
     `pages: ${pages.length}`
   ];
 
-  lines.push(...renderCompendiumSourceLines(journal));
+  lines.push(...renderProvenanceLines(journal));
 
   if (journal && Object.hasOwn(journal, "ownership")) {
     lines.push(...renderOwnershipLines(journal.ownership));

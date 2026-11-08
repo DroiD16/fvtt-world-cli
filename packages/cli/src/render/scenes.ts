@@ -1,6 +1,6 @@
 import { summarizeTokenDelta } from "@fvtt-world-cli/protocol";
 
-import { renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
+import { renderProvenanceLines, renderOwnershipLines } from "./common.js";
 
 export function renderSceneActivateResult(result: any) {
   return [
@@ -42,7 +42,7 @@ export function renderSceneDetails(scene: any) {
   for (const level of Array.isArray(scene?.levels) ? scene.levels : []) {
     lines.push(`level: ${renderLevelRow(level)}`);
   }
-  lines.push(...renderCompendiumSourceLines(scene));
+  lines.push(...renderProvenanceLines(scene));
 
   if (scene && Object.hasOwn(scene, "ownership")) {
     lines.push(...renderOwnershipLines(scene.ownership));

@@ -51,8 +51,11 @@ function identityFields(document, data) {
   return { id, _id: id };
 }
 
-function compendiumSourceField(data) {
-  return data?._stats?.compendiumSource ?? null;
+export function provenanceFields(data) {
+  return {
+    compendiumSource: data?._stats?.compendiumSource ?? null,
+    duplicateSource: data?._stats?.duplicateSource ?? null
+  };
 }
 
 function serializeOwnership(document, data) {
@@ -215,7 +218,7 @@ export function serializeJournal(journal, { ownership = false } = {}) {
 
     flags: cloneValue(data.flags ?? {}),
 
-    compendiumSource: compendiumSourceField(data),
+    ...provenanceFields(data),
     ...(ownership ? { ownership: serializeOwnership(journal, data) } : {})
   };
 }
@@ -254,7 +257,7 @@ export function serializeMacro(macro, { ownership = false } = {}) {
     scope: macro.scope ?? data.scope ?? null,
     flags: cloneValue(data.flags ?? {}),
 
-    compendiumSource: compendiumSourceField(data),
+    ...provenanceFields(data),
     ...(ownership ? { ownership: serializeOwnership(macro, data) } : {})
   };
 }
@@ -338,7 +341,7 @@ export function serializePlaylist(playlist, { ownership = false } = {}) {
     sort: playlist.sort ?? data.sort ?? 0,
     flags: cloneValue(data.flags ?? {}),
 
-    compendiumSource: compendiumSourceField(data),
+    ...provenanceFields(data),
 
     sounds: sounds.map((s) => serializePlaylistSound(s)),
     ...(ownership ? { ownership: serializeOwnership(playlist, data) } : {})
@@ -437,7 +440,7 @@ export function serializeTable(table, { ownership = false } = {}) {
     sort: table.sort ?? data.sort ?? 0,
     flags: cloneValue(data.flags ?? {}),
 
-    compendiumSource: compendiumSourceField(data),
+    ...provenanceFields(data),
     results: results.map((result) => serializeTableResult(result)),
     ...(ownership ? { ownership: serializeOwnership(table, data) } : {})
   };
@@ -746,7 +749,7 @@ export function serializeCards(cards, { ownership = false } = {}) {
     system: cloneValue(data.system ?? {}),
     flags: cloneValue(data.flags ?? {}),
 
-    compendiumSource: compendiumSourceField(data),
+    ...provenanceFields(data),
     cards: rows.map((card) => serializeCard(card)),
     ...(ownership ? { ownership: serializeOwnership(cards, data) } : {})
   };
@@ -896,7 +899,7 @@ export function serializeScene(
     ...(hasLevels && levels ? { levels: Array.from(scene.levels, serializeLevel) } : {}),
     ...(flags ? { flags: cloneValue(data.flags ?? {}) } : {}),
 
-    ...(provenance ? { compendiumSource: compendiumSourceField(data) } : {}),
+    ...(provenance ? provenanceFields(data) : {}),
     ...(counts ? { counts: sceneEmbeddedCounts(scene, data) } : {}),
     ...(ownership ? { ownership: serializeOwnership(scene, data) } : {})
   };
@@ -981,7 +984,7 @@ export function serializeItem(item, { include, ownership = false, nested = false
 
     ...(nested ? { effectCount: effects.length } : {}),
 
-    ...(nested ? {} : { compendiumSource: compendiumSourceField(data) }),
+    ...(nested ? {} : provenanceFields(data)),
     ...(ownership ? { ownership: serializeOwnership(item, data) } : {})
   };
 }
@@ -1586,7 +1589,7 @@ export function serializeActor(actor, { include, ownership = false } = {}) {
     system: cloneValue(data.system ?? actor.system ?? {}),
     prototypeToken: normalizePrototypeToken(data),
 
-    compendiumSource: compendiumSourceField(data),
+    ...provenanceFields(data),
 
     itemCount: items.length,
     ...(withItems
