@@ -191,8 +191,8 @@ function assertBatchPersistedSomething({ command, outcomes }) {
           `only through the Foundry notifications area) — or, on an update, a hook stripped or rewrote the requested ` +
           `change while letting another one through, so a write for that id may still have landed. Stored state was ` +
           `re-read to confirm that none of the requested writes is present. Outcomes: ${tally}. ` +
-          `Check the GM client's console/notifications for the cause, or disable the module that vetoes these writes, ` +
-          `then RE-READ the targets and retry with a NEW idempotency key.`,
+          `The GM client's console and notifications show the cause; a module that vetoes these writes is one ` +
+          `possible cause. RE-READ the targets and retry with a NEW idempotency key.`,
     { command, outcomes }
   );
 }

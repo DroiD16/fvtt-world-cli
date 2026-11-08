@@ -13,7 +13,7 @@ import {
 import { getSceneEmbeddedById } from "./scene-embedded.js";
 
 export const REGION_BEHAVIOR_VETO_REMEDY =
-  "There is no force flag for a world-side veto — disable the module that locks this region (or make the change from the Foundry UI) and retry.";
+  "One possible cause is a module that locks this region; there is no force flag to override that, and the change can also be made from the Foundry UI.";
 
 /** @param {Record<string, any>} data */
 export function sanitizeRegionBehaviorData(data) {

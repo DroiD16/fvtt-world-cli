@@ -2077,7 +2077,7 @@ describe("command router", () => {
       );
       expect(vetoed.ok).toBe(false);
       expect(vetoed.error.message).toContain("preUpdateCombatant");
-      expect(vetoed.error.message).toContain("disable the module");
+      expect(vetoed.error.message).not.toContain("disable the module");
       expect(row._source.hidden).toBe(false);
     });
 

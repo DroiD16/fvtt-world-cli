@@ -149,7 +149,7 @@ export function createSceneThumbnailHandlers() {
       const notPersisted = (/** @type {string} */ observation, /** @type {any} */ extra = {}) =>
         createBridgeError(
           ERROR_CODES.INTERNAL_ERROR,
-          `The thumbnail for scene ${scene.id ?? params.sceneId} was generated but not persisted: ${observation} The likely cause is a module's preUpdateScene hook (or a core _preUpdate) refusing the write, a client-side validation error Foundry only surfaced as a UI notification, or — when the write was REJECTED — the server refusing to extract the base64 body (it requires FILES_UPLOAD, which can be revoked between this command's pre-check and the write) or failing to write the extracted file; see details.message for Foundry's own message when there is one, then disable the module that locks this scene (or generate the thumbnail from the Foundry UI) and retry.`,
+          `The thumbnail for scene ${scene.id ?? params.sceneId} was generated but not persisted: ${observation} The likely cause is a module's preUpdateScene hook (or a core _preUpdate) refusing the write, a client-side validation error Foundry only surfaced as a UI notification, or — when the write was REJECTED — the server refusing to extract the base64 body (it requires FILES_UPLOAD, which can be revoked between this command's pre-check and the write) or failing to write the extracted file; see details.message for Foundry's own message when there is one. A module that locks this scene is one possible cause; the thumbnail can also be generated from the Foundry UI.`,
           {
             sceneId: scene.id ?? params.sceneId,
             sizeBytes,

@@ -1349,7 +1349,7 @@ export function createCardsHandlers() {
         if (!confirmation.confirmed && progress.remaining > 0) {
           throw createBridgeError(
             ERROR_CODES.INTERNAL_ERROR,
-            `cards.reset on Cards ${cardsId} resolved, but a re-read of STORED state does not show the recall's writes (${progress.remaining} of ${progress.expected} expected change(s) missing). Foundry drops a refused row of a batch silently and resolves, a returnCards hook veto (hand/pile only) returns BEFORE any write with no error and no chat message, and a concurrent writer can remove a planned origin row. details.recall.unconfirmed names the stacks and card ids whose rows are missing or still hold the old state. Re-read them with cards.get / cards.card.list before retrying; disable a vetoing module or stop concurrent Cards mutations as applicable. There is no force flag for this write.`,
+            `cards.reset on Cards ${cardsId} resolved, but a re-read of STORED state does not show the recall's writes (${progress.remaining} of ${progress.expected} expected change(s) missing). Foundry drops a refused row of a batch silently and resolves, a returnCards hook veto (hand/pile only) returns BEFORE any write with no error and no chat message, and a concurrent writer can remove a planned origin row. details.recall.unconfirmed names the stacks and card ids whose rows are missing or still hold the old state. Re-read them with cards.get / cards.card.list before retrying. ${CARDS_VETO_REMEDY} A concurrent Cards mutation is another possible cause.`,
             {
               cardsId,
               ...actionMarkers(nothingLanded ? "unknown" : "partial", "confirmed"),

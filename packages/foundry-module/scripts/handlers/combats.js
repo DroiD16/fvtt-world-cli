@@ -331,7 +331,7 @@ export function createCombatHandlers() {
               after.turn ?? "null"
             }, but the encounter still stores round ${
               after.round
-            } — startCombat() issues \`update({round:1, turn:0})\`, so a module's preUpdateCombat hook (or a core _preUpdate) rewrote the update rather than refusing it outright. Re-read with combat.get. ${COMBAT_VETO_REMEDY}`,
+            } — startCombat() issues \`update({round:1, turn:0})\`. The bridge cannot verify whether Foundry core, the game system or a module normalized the round, or whether a preUpdateCombat hook rewrote or dropped it. Re-read with combat.get. ${COMBAT_VETO_REMEDY}`,
             { combatId, round: after.round, turn: after.turn }
           );
         }

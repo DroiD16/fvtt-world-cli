@@ -315,7 +315,7 @@ export async function deleteJournalPages(journalId, pageIds) {
 }
 
 export const JOURNAL_CATEGORY_VETO_REMEDY =
-  "There is no force flag for a world-side veto — disable the module that locks this journal (or make the change from the Foundry UI) and retry.";
+  "One possible cause is a module that locks this journal; there is no force flag to override that, and the change can also be made from the Foundry UI.";
 
 /**
  * @param {string} journalId

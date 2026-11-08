@@ -36,7 +36,7 @@ function assertOwnershipPatchPresent(params) {
 }
 
 const OWNERSHIP_VETO_REMEDY =
-  "There is no override for a world-side ownership veto — ownership.set takes no force flag, and force would not help: disable the module that locks this document (or edit its ownership from the Foundry UI) and retry.";
+  "One possible cause is a module that locks this document's ownership; ownership.set has no force flag to override that, and ownership can also be edited from the Foundry UI.";
 
 function makeOwnershipSetHandler({ idField, getDoc, serialize, resultKey, documentName, hookName }) {
   return async (params) => {

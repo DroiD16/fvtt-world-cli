@@ -17,7 +17,7 @@ import {
 import { computeDocumentUpdateDiff, previewDocumentUpdate } from "./world-docs.js";
 
 export const WORLD_VETO_REMEDY =
-  "There is no force flag for a world-side veto — disable the module that blocks this write (or make the change from the Foundry UI) and retry.";
+  "One possible cause is a module that blocks or rewrites this write; there is no force flag to override that, and the same change can also be made from the Foundry UI.";
 
 /**
  * @param {unknown} result
