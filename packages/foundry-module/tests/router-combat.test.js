@@ -4502,7 +4502,7 @@ describe("command router", () => {
       expect(response.result).toMatchObject({ initiativeBefore: 5, initiative: 5, changed: false });
     });
 
-    it("combat.set-initiative reports the STORED value when a system ADJUSTED it, and does not error", async () => {
+    it("combat.set-initiative reports a mismatch when a system stored a different value", async () => {
       const combat = seedCombat("cbt-set-adjusted", { round: 1, turn: 0, systemAdjustsInitiativeBy: 1 });
       const response = await router().route(
         createRequest("combat.set-initiative", {
@@ -4511,9 +4511,14 @@ describe("command router", () => {
           initiative: 12
         })
       );
-      expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
-      expect(response.result.initiative).toBe(13);
-      expect(response.result.changed).toBe(true);
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+      expect(response.error.message).toContain("cannot verify");
+      expect(response.error.details).toMatchObject({
+        paths: [{ path: "initiative", requested: 12, stored: 13 }],
+        changedFields: ["initiative"],
+        partial: true
+      });
       expect(combat.combatants.get("cbt-set-adjusted-a")._source.initiative).toBe(13);
     });
 
@@ -4529,6 +4534,12 @@ describe("command router", () => {
       );
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+      expect(response.error.details).toMatchObject({
+        combatantId: "cbt-set-veto-a",
+        fields: ["initiative"],
+        paths: [{ path: "initiative", requested: 3, stored: null }],
+        changedFields: []
+      });
       expect(combat.combatants.get("cbt-set-veto-a")._source.initiative).toBeNull();
     });
 

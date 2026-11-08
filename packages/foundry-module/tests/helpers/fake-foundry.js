@@ -1,3 +1,4 @@
+import { fakeSettingDocument, fakeSettingStorage } from "./fake-settings.js";
 import { expect, vi } from "vitest";
 
 import {
@@ -4003,17 +4004,16 @@ export function installFakeFoundry() {
         settingRegistrations.set(id, { ...config, namespace, key, id });
       }),
       registerMenu: vi.fn(),
-      get: vi.fn((namespace, key) => {
+      get: vi.fn((namespace, key, options) => {
         const id = `${namespace}.${key}`;
-        if (settingValues.has(id)) {
-          return copySettingValue(settingValues.get(id));
-        }
-
         const registration = settingRegistrations.get(id);
+        if (options?.document) return fakeSettingDocument(settingValues, id, registration?.default ?? null);
+        if (settingValues.has(id)) return copySettingValue(settingValues.get(id));
         return registration && registration.default !== undefined
           ? copySettingValue(registration.default)
           : "";
       }),
+      storage: fakeSettingStorage(settingValues),
       set: vi.fn(async (namespace, key, value) => {
         const stored = copySettingValue(value);
         settingValues.set(`${namespace}.${key}`, stored);

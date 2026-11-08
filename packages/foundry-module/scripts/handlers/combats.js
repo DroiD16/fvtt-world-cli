@@ -782,14 +782,17 @@ export function createCombatHandlers() {
         const updated = parent?.combatants?.get?.(params.combatantId) ?? combatant;
         const initiativeAfter = combatantStoredInitiative(updated);
 
-        if (initiativeBefore !== params.initiative && initiativeAfter === initiativeBefore) {
-          throw createBridgeError(
-            ERROR_CODES.INTERNAL_ERROR,
-            `Combatant ${params.combatantId} of combat ${combatId} still stores initiative ${
-              initiativeBefore ?? "null"
-            }: Foundry resolved setInitiative() without applying it, which means a module's preUpdateCombatant hook or a core _preUpdate refused the write, or it failed Foundry's own client-side validation (reported only as a UI notification). ${COMBAT_VETO_REMEDY}`,
-            { combatId, combatantId: params.combatantId, initiative: params.initiative }
-          );
+        if (initiativeAfter !== params.initiative) {
+          throw createMismatchError({
+            subject: `Combatant ${params.combatantId} of combat ${combatId}`,
+            report: buildMismatchReport([{ segments: ["initiative"], requested: params.initiative }], {
+              initiative: initiativeAfter
+            }),
+            hookName: "preUpdateCombatant",
+            changedFields: initiativeAfter === initiativeBefore ? [] : ["initiative"],
+            details: { combatId, combatantId: params.combatantId, initiative: params.initiative },
+            remedy: COMBAT_VETO_REMEDY
+          });
         }
         const sceneAfter = combatStoredSceneId(parent);
         return {
