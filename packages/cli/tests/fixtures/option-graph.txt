@@ -3292,6 +3292,13 @@ command compendium get
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
   opt --include <fields> | parser=parseCompendiumIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: effects)
 
+command compendium get-many
+  aliases=[]
+  summary=Read several entries of one compendium pack in a single call
+  opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id
+  opt --ids <list> | parser=parseIdList | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Comma-separated entry ids (atomic: all must exist)
+  opt --include <fields> | parser=parseCompendiumIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: effects)
+
 command folder
   aliases=[]
   summary=Foundry folder commands

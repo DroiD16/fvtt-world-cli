@@ -931,6 +931,18 @@ export const RENDERERS = registerRenderers([
       `document: ${JSON.stringify(result.document ?? null, null, 2)}`
     ].join("\n")
   ),
+  customRenderer("compendium.get-many", (result) => {
+    const entries = result.entries ?? [];
+    return [
+      `pack: ${result.pack}`,
+      `Entries (${entries.length})`,
+      ...entries.map(
+        (entry: any) =>
+          `${entry.entryId}\t${entry.documentName ?? ""}\t${entry.document?.name ?? ""}${Array.isArray(entry.effects) ? `\teffects=${entry.effects.length}` : ""}`
+      ),
+      "(use --json for the documents)"
+    ].join("\n");
+  }),
 
   listRenderer("folder.list", {
     key: "folders",

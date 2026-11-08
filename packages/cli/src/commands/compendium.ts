@@ -1,5 +1,7 @@
 import { executeRemoteCommand } from "../exec.js";
-import { parseCompendiumFieldsList, parseCompendiumIncludeFields } from "../parse.js";
+import type { Command } from "commander";
+
+import { parseCompendiumFieldsList, parseCompendiumIncludeFields, parseIdList } from "../parse.js";
 import {
   type RegistrationContext,
   addNameFilterOption,
@@ -8,11 +10,31 @@ import {
   paginationParams
 } from "./shared.js";
 
+interface CompendiumGetOptions {
+  pack: string;
+  entryId: string;
+  include?: string[];
+}
+
+interface CompendiumGetManyOptions {
+  pack: string;
+  ids: string[];
+  include?: string[];
+}
+
+function addCompendiumIncludeOption(command: Command): Command {
+  return command.option(
+    "--include <fields>",
+    "Comma-separated extra fields to include (allowed: effects)",
+    parseCompendiumIncludeFields
+  );
+}
+
 export function registerCompendium({ program, dependencies }: RegistrationContext) {
   const compendium = program.command("compendium").description("Foundry compendium pack commands (read)");
   compendium.addHelpText(
     "after",
-    "\nResult key (--json): .result.packs[] (list), .result.entries[] (index), .result.document (get — Foundry's raw source object)."
+    "\nResult key (--json): .result.packs[] (list), .result.entries[] (index), .result.document (get — Foundry's raw source object plus id, compendiumSource and duplicateSource), .result.entries[] (get-many — one get result per requested id, in request order)."
   );
   addPaginationOptions(compendium.command("list")).action(async function listCompendiums(options: {
     limit?: number;
@@ -55,29 +77,39 @@ export function registerCompendium({ program, dependencies }: RegistrationContex
         dependencies
       });
     });
-  compendium
-    .command("get")
-    .requiredOption("--pack <pack>", "Compendium pack id")
-    .requiredOption("--entry-id <entryId>", "Compendium entry id")
-    .option(
-      "--include <fields>",
-      "Comma-separated extra fields to include (allowed: effects)",
-      parseCompendiumIncludeFields
-    )
-    .action(async function getCompendiumEntry(options: {
-      pack: string;
-      entryId: string;
-      include?: string[];
-    }) {
-      await executeRemoteCommand({
-        commandName: "compendium.get",
-        params: {
-          pack: options.pack,
-          entryId: options.entryId,
-          ...(options.include ? { include: options.include } : {})
-        },
-        command: this,
-        dependencies
-      });
+  addCompendiumIncludeOption(
+    compendium
+      .command("get")
+      .requiredOption("--pack <pack>", "Compendium pack id")
+      .requiredOption("--entry-id <entryId>", "Compendium entry id")
+  ).action(async function getCompendiumEntry(options: CompendiumGetOptions) {
+    await executeRemoteCommand({
+      commandName: "compendium.get",
+      params: {
+        pack: options.pack,
+        entryId: options.entryId,
+        ...(options.include ? { include: options.include } : {})
+      },
+      command: this,
+      dependencies
     });
+  });
+  addCompendiumIncludeOption(
+    compendium
+      .command("get-many")
+      .description("Read several entries of one compendium pack in a single call")
+      .requiredOption("--pack <pack>", "Compendium pack id")
+      .requiredOption("--ids <list>", "Comma-separated entry ids (atomic: all must exist)", parseIdList)
+  ).action(async function getManyCompendiumEntries(options: CompendiumGetManyOptions) {
+    await executeRemoteCommand({
+      commandName: "compendium.get-many",
+      params: {
+        pack: options.pack,
+        ids: options.ids,
+        ...(options.include ? { include: options.include } : {})
+      },
+      command: this,
+      dependencies
+    });
+  });
 }

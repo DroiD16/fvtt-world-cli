@@ -1782,6 +1782,16 @@ var compendiumCommands = {
       ...compendiumIncludeProperty
     },
     additionalProperties: false
+  }),
+  "compendium.get-many": cmd({
+    type: "object",
+    required: ["pack", "ids"],
+    properties: {
+      pack: { type: "string", minLength: 1 },
+      ...batchIdsProperty,
+      ...compendiumIncludeProperty
+    },
+    additionalProperties: false
   })
 };
 
@@ -5693,6 +5703,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "compendium.list": "allow",
   "compendium.index": "allow",
   "compendium.get": "allow",
+  "compendium.get-many": "allow",
   "folder.list": "allow",
   "folder.get": "allow",
   "folder.create": "allow",

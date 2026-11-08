@@ -460,6 +460,11 @@ describe("fvtt-world-cli commands", () => {
         ["compendium", "get", "--pack", "world.x", "--entry-id", "e-1", "--include", "effects"],
         "compendium.get",
         { pack: "world.x", entryId: "e-1", include: ["effects"] }
+      ],
+      [
+        ["compendium", "get-many", "--pack", "world.x", "--ids", "e-1,e-2", "--include", "effects"],
+        "compendium.get-many",
+        { pack: "world.x", ids: ["e-1", "e-2"], include: ["effects"] }
       ]
     ])("threads --include flags from %j into %s params", async (argv, expectedCommand, expectedParams) => {
       const sendCommand = okEmpty();
@@ -667,7 +672,8 @@ describe("fvtt-world-cli commands", () => {
 
       [["compendium", "get", "--pack", "world.x", "--entry-id", "e-1", "--include", "flags"]],
       [["compendium", "get", "--pack", "world.x", "--entry-id", "e-1", "--include", "bogus"]],
-      [["scene", "token", "list", "--scene-id", "scene-1", "--include", "prepared"]]
+      [["scene", "token", "list", "--scene-id", "scene-1", "--include", "prepared"]],
+      [["compendium", "get-many", "--pack", "world.x", "--ids", "e-1", "--include", "flags"]]
     ])("rejects %j with a local INVALID_ARGUMENT before any daemon call", async (argv) => {
       const sendCommand = failIfCalledSendCommand();
 

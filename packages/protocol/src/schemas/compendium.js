@@ -1,4 +1,5 @@
 import {
+  batchIdsProperty,
   cmd,
   compendiumIncludeProperty,
   nameFilterProperty,
@@ -27,6 +28,16 @@ export const compendiumCommands = {
     properties: {
       pack: { type: "string", minLength: 1 },
       entryId: { type: "string", minLength: 1 },
+      ...compendiumIncludeProperty
+    },
+    additionalProperties: false
+  }),
+  "compendium.get-many": cmd({
+    type: "object",
+    required: ["pack", "ids"],
+    properties: {
+      pack: { type: "string", minLength: 1 },
+      ...batchIdsProperty,
       ...compendiumIncludeProperty
     },
     additionalProperties: false

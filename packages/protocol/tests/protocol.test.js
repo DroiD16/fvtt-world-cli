@@ -2525,7 +2525,7 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 61 approve-listed, 8 denied and 276 self-running commands in a registry of 345", () => {
+    it("counts 61 approve-listed, 8 denied and 277 self-running commands in a registry of 346", () => {
       const bucket = (behavior) =>
         COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
@@ -2537,10 +2537,10 @@ describe("protocol contract", () => {
           allow: bucket("allow")
         },
         "the totals moved: re-check the default-policy prose in docs/commands.md and docs/security.md (they name the buckets, not the counts) in the same change"
-      ).toEqual({ commands: 345, approve: 61, deny: 8, allow: 276 });
+      ).toEqual({ commands: 346, approve: 61, deny: 8, allow: 277 });
     });
 
-    it("leaves 340 governed commands in 19 top-level groups once the exempt ones are removed", () => {
+    it("leaves 341 governed commands in 19 top-level groups once the exempt ones are removed", () => {
       const exempt = new Set(POLICY_EXEMPT_COMMANDS);
       const governed = COMMAND_NAMES.filter((command) => !exempt.has(command));
 
@@ -2550,7 +2550,7 @@ describe("protocol contract", () => {
           groups: new Set(governed.map((command) => command.split(".")[0])).size
         },
         "the window totals moved: the permissions window renders one section per top-level group, so re-check its rendering assumptions in the same change"
-      ).toEqual({ governed: 340, groups: 19 });
+      ).toEqual({ governed: 341, groups: 19 });
     });
 
     it("cannot be mutated in place", () => {
@@ -6515,6 +6515,7 @@ describe("protocol contract", () => {
       "scene.token.get": { sceneId: "scene-1", tokenId: "token-1" },
       "scene.token.list": { sceneId: "scene-1" },
       "compendium.get": { pack: "world.x", entryId: "e-1" },
+      "compendium.get-many": { pack: "world.x", ids: ["e-1"] },
       "system.info": {}
     });
 
@@ -6538,7 +6539,7 @@ describe("protocol contract", () => {
       if (command === "actor.get" || command === "actor.get-many") return ACTOR_INCLUDE_ENUM;
       if (command === "scene.token.get") return TOKEN_INCLUDE_ENUM;
       if (command === "scene.token.list") return TOKEN_LIST_INCLUDE_ENUM;
-      if (command === "compendium.get") return COMPENDIUM_INCLUDE_ENUM;
+      if (command === "compendium.get" || command === "compendium.get-many") return COMPENDIUM_INCLUDE_ENUM;
       if (command === "system.info") return SYSTEM_INFO_INCLUDE_ENUM;
       return BASE_INCLUDE_ENUM;
     };
@@ -6584,6 +6585,7 @@ describe("protocol contract", () => {
           command === "scene.token.get" ||
           command === "scene.token.list" ||
           command === "compendium.get" ||
+          command === "compendium.get-many" ||
           command === "system.info"
         ) {
           continue;
@@ -6667,6 +6669,53 @@ describe("protocol contract", () => {
       );
       expectRejected("item.list", { include: ["flags"] }, "$.params.include is not allowed");
       expectRejected("actor.list", { include: ["flags"] }, "$.params.include is not allowed");
+    });
+  });
+
+  describe("compendium.get-many", () => {
+    it("is a read that requires a pack and the shared batch ids array and carries the compendium include", () => {
+      const definition = COMMAND_DEFINITIONS["compendium.get-many"];
+      expect(definition.mutation).toBe(false);
+      expect(definition.paramsSchema.required).toEqual(["pack", "ids"]);
+      expect(definition.paramsSchema.additionalProperties).toBe(false);
+      expect(definition.paramsSchema.properties.ids).toEqual(
+        COMMAND_DEFINITIONS["item.get-many"].paramsSchema.properties.ids
+      );
+      expect(definition.paramsSchema.properties.include).toEqual(
+        COMMAND_DEFINITIONS["compendium.get"].paramsSchema.properties.include
+      );
+      expect(defaultBehaviorFor("compendium.get-many")).toBe("allow");
+
+      expectValid("compendium.get-many", { pack: "world.x", ids: ["a", "a"], include: ["effects"] });
+      expectRejected("compendium.get-many", { ids: ["a"] }, "pack");
+      expectRejected("compendium.get-many", { pack: "world.x", ids: [] }, "$.params.ids");
+      expectRejected("compendium.get-many", { pack: "world.x", ids: ["a"], entryId: "a" }, "entryId");
+    });
+  });
+
+  describe("scene.token.restore-delta", () => {
+    it("is a mutation taking only sceneId, tokenId and dryRun, in the same default bucket as a token item delete", () => {
+      const definition = COMMAND_DEFINITIONS["scene.token.restore-delta"];
+      expect(definition.mutation).toBe(true);
+      expect(Object.keys(definition.paramsSchema.properties).sort()).toEqual([
+        "dryRun",
+        "sceneId",
+        "tokenId"
+      ]);
+      expect(definition.paramsSchema.required).toEqual(["sceneId", "tokenId"]);
+      expect(isDestructiveCommand("scene.token.restore-delta")).toBe(true);
+      expect(DEFAULT_COMMAND_PROFILE["scene.token.restore-delta"]).toBe(
+        DEFAULT_COMMAND_PROFILE["scene.token.item.delete"]
+      );
+      expect(DEFAULT_COMMAND_PROFILE["scene.token.restore-delta"]).toBe("approve");
+
+      expectValid("scene.token.restore-delta", { sceneId: "scene-1", tokenId: "tok-1", dryRun: true });
+      expectRejected("scene.token.restore-delta", { sceneId: "scene-1" }, "tokenId");
+      expectRejected(
+        "scene.token.restore-delta",
+        { sceneId: "scene-1", tokenId: "tok-1", force: true },
+        "force"
+      );
     });
   });
 
@@ -7044,6 +7093,7 @@ describe("protocol contract", () => {
       "playlist.get-many.paramsSchema.properties.ids",
       "table.get-many.paramsSchema.properties.ids",
       "cards.get-many.paramsSchema.properties.ids",
+      "compendium.get-many.paramsSchema.properties.ids",
       "cards.pass.paramsSchema.properties.cardIds",
       "setting.get-many.paramsSchema.properties.ids",
       "setting.set-many.paramsSchema.properties.items",

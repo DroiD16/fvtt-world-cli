@@ -2580,6 +2580,28 @@ describe("fvtt-world-cli commands", () => {
     expect(provenance.stdout).toContain("duplicateSource: Item.abcdefghij654321");
   });
 
+  it("renders compendium get-many in human-readable mode", async () => {
+    const respond = (result: Record<string, unknown>) =>
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result
+      }));
+
+    const many = await runCommand(
+      ["compendium", "get-many", "--pack", "world.x", "--ids", "e-1"],
+      respond({
+        pack: "world.x",
+        entries: [
+          { pack: "world.x", entryId: "e-1", documentName: "Item", document: { _id: "e-1", name: "Staff" } }
+        ]
+      })
+    );
+    expect(many.stdout).toContain("e-1\tItem\tStaff");
+  });
+
   it("renders scene update output in human-readable mode", async () => {
     const result = await runCommand(
       [

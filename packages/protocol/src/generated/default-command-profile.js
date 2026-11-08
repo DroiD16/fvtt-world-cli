@@ -326,6 +326,7 @@ export const DEFAULT_COMMAND_PROFILE = deepFreeze({
   "compendium.list": "allow",
   "compendium.index": "allow",
   "compendium.get": "allow",
+  "compendium.get-many": "allow",
   "folder.list": "allow",
   "folder.get": "allow",
   "folder.create": "allow",

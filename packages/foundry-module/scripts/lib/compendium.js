@@ -32,6 +32,14 @@ export function getCompendiumPack(packId) {
   return pack;
 }
 
+function compendiumEntryNotFound(packId, entryId) {
+  return createBridgeError(
+    ERROR_CODES.COMPENDIUM_ENTRY_NOT_FOUND,
+    `Compendium entry ${entryId} was not found in ${packId}; use compendium.index with pack "${packId}" to list its entry ids`,
+    { pack: packId, entryId }
+  );
+}
+
 export async function getCompendiumDocument(packId, entryId) {
   const pack = getCompendiumPack(packId);
   if (typeof pack.getDocument !== "function") {
@@ -40,14 +48,31 @@ export async function getCompendiumDocument(packId, entryId) {
 
   const document = await pack.getDocument(entryId);
   if (!document) {
-    throw createBridgeError(
-      ERROR_CODES.COMPENDIUM_ENTRY_NOT_FOUND,
-      `Compendium entry ${entryId} was not found in ${packId}; use compendium.index with pack "${packId}" to list its entry ids`,
-      { pack: packId, entryId }
-    );
+    throw compendiumEntryNotFound(packId, entryId);
   }
 
   return document;
+}
+
+/**
+ * @param {string} packId
+ * @param {string[]} entryIds
+ * @returns {Promise<Map<string, any>>}
+ */
+export async function getCompendiumDocuments(packId, entryIds) {
+  const pack = getCompendiumPack(packId);
+  if (typeof pack.getDocuments !== "function") {
+    throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Compendium getDocuments API is not available");
+  }
+
+  const documents = await pack.getDocuments({ _id__in: entryIds });
+  const byId = new Map(Array.from(documents ?? [], (document) => [document.id ?? document._id, document]));
+  const missing = entryIds.find((entryId) => !byId.has(entryId));
+  if (missing !== undefined) {
+    throw compendiumEntryNotFound(packId, missing);
+  }
+
+  return byId;
 }
 
 /**

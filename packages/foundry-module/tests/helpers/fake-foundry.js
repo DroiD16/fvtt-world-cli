@@ -583,6 +583,7 @@ function fromCompendiumLikeCore(documentName, source, options = {}) {
 
 function makePackEntry(packId, documentName, source) {
   return {
+    id: source._id,
     documentName,
     pack: packId,
     uuid: `Compendium.${packId}.${documentName}.${source._id}`,
@@ -596,7 +597,7 @@ function makePackEntry(packId, documentName, source) {
  * @param {Record<string, any>} entries
  * @param {{ label?: string }} [options]
  */
-function makeCompendiumPack(packId, documentName, entries, { label } = {}) {
+export function makeCompendiumPack(packId, documentName, entries, { label } = {}) {
   return {
     collection: packId,
     documentName,
@@ -605,7 +606,12 @@ function makeCompendiumPack(packId, documentName, entries, { label } = {}) {
     getIndex: vi.fn(async () =>
       Object.entries(entries).map(([id, source]) => ({ _id: id, name: source.name }))
     ),
-    getDocument: vi.fn(async (id) => (entries[id] ? makePackEntry(packId, documentName, entries[id]) : null))
+    getDocument: vi.fn(async (id) => (entries[id] ? makePackEntry(packId, documentName, entries[id]) : null)),
+    getDocuments: vi.fn(async ({ _id__in: wanted } = {}) =>
+      Object.entries(entries)
+        .filter(([id]) => !Array.isArray(wanted) || wanted.includes(id))
+        .map(([, source]) => makePackEntry(packId, documentName, source))
+    )
   };
 }
 

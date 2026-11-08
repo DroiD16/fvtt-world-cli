@@ -2580,6 +2580,11 @@ describe("fvtt-world-cli commands", () => {
       "compendium.get",
       { pack: "dnd5e.monsters", entryId: "arch1" }
     ],
+    [
+      ["compendium", "get-many", "--pack", "dnd5e.monsters", "--ids", "arch1,arch2,arch1"],
+      "compendium.get-many",
+      { pack: "dnd5e.monsters", ids: ["arch1", "arch2", "arch1"] }
+    ],
     [["folder", "list"], "folder.list", {}],
     [["folder", "list", "--type", "Actor"], "folder.list", { type: "Actor" }],
     [
