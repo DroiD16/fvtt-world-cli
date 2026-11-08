@@ -760,15 +760,14 @@ describe("folder management", () => {
 
     expect(response.ok).toBe(false);
     expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-    expect(response.error.message).toMatch(/was NOT updated/);
+    expect(response.error.message).toContain("cannot verify");
     expect(response.error.message).toMatch(/preUpdateFolder/);
 
     expect(response.error.message).toMatch(/locks this folder/);
     expect(response.error.details.folderId).toBe("fd");
 
     expect(response.error.details.fields).toEqual(["name"]);
-
-    expect(response.error.details.validationError).toBeNull();
+    expect(response.error.details.paths).toEqual([{ path: "name", requested: "Vetoed", stored: "D" }]);
 
     expect(folders.get("fd").name).toBe("D");
   });
@@ -2094,6 +2093,23 @@ describe("user write surface", () => {
     expect(again.result).toMatchObject({ changed: false, previousRole: 3 });
   });
 
+  it("reports a role stored at a value other than the requested one as changed", async () => {
+    const user = users().get("player-1");
+    user.update = vi.fn(async () => {
+      user.role = 2;
+      return user;
+    });
+
+    const response = await router.route(createRequest("user.role.set", { userId: "player-1", role: 3 }));
+
+    expect(response.ok).toBe(false);
+    expect(response.error.details).toMatchObject({
+      paths: [{ path: "role", requested: 3, stored: 2 }],
+      changedFields: ["role"],
+      partial: true
+    });
+  });
+
   it("reports a role change Foundry silently refused", async () => {
     users().get("player-1").update = vi.fn(async () => users().get("player-1"));
 
@@ -2101,7 +2117,13 @@ describe("user write surface", () => {
 
     expect(response.ok).toBe(false);
     expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-    expect(response.error.details).toMatchObject({ requested: 3, stored: 1 });
+    expect(response.error.message).toContain("cannot verify");
+    expect(response.error.details).toMatchObject({
+      requested: 3,
+      stored: 1,
+      paths: [{ path: "role", requested: 3, stored: 1 }],
+      changedFields: []
+    });
   });
 
   it("maps Foundry's own refusal to a permission error", async () => {
@@ -2144,6 +2166,29 @@ describe("user write surface", () => {
     expect(cleared.ok).toBe(true);
     expect(cleared.result.overrides).toEqual({ FILES_UPLOAD: true, TOKEN_CREATE: true });
     expect(cleared.result.permissions.MACRO_SCRIPT).toBe(true);
+  });
+
+  it("reports per-path values when Foundry silently refuses a permission write", async () => {
+    users().get("player-1").update = vi.fn(async () => users().get("player-1"));
+
+    const response = await router.route(
+      createRequest("user.permissions.set", {
+        userId: "player-1",
+        permissions: { TOKEN_CREATE: true, FILES_UPLOAD: null }
+      })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.message).toContain("cannot verify");
+    expect(response.error.details).toMatchObject({
+      unapplied: ["TOKEN_CREATE", "FILES_UPLOAD"],
+      paths: [
+        { path: "permissions.TOKEN_CREATE", requested: true, absent: "stored" },
+        { path: "permissions.FILES_UPLOAD", absent: "requested", stored: true }
+      ],
+      changedFields: []
+    });
   });
 
   it("previews a permission write without changing the stored overrides", async () => {

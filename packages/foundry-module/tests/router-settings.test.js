@@ -882,6 +882,23 @@ describe("settings write surface", () => {
     vi.restoreAllMocks();
   });
 
+  it("refuses a value nested far beyond the depth limit as too large, never as an internal error", async () => {
+    setupWorld({ values: [["my-module.mode", "allow"]] });
+    /** @type {any} */
+    let value = 1;
+    for (let level = 0; level < 100_000; level += 1) value = { v: value };
+
+    const started = performance.now();
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "my-module", key: "mode", value })
+    );
+    expect(performance.now() - started).toBeLessThan(500);
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.PAYLOAD_TOO_LARGE);
+    expect(response.error.details).toMatchObject({ limit: "value-depth" });
+  });
+
   it("writes a registered setting and reports the value it read back", async () => {
     setupWorld({ values: [["my-module.mode", "allow"]] });
 

@@ -1103,10 +1103,14 @@ describe("command router", () => {
 
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-      expect(response.error.message).toMatch(/was NOT updated/);
+      expect(response.error.message).toContain("cannot verify");
       expect(response.error.message).toMatch(/preUpdateRollTable/);
-      expect(response.error.details).toMatchObject({ tableId: "table-1", fields: ["name"] });
-      expect(response.error.details.validationError).toBeNull();
+      expect(response.error.details).toMatchObject({
+        tableId: "table-1",
+        fields: ["name"],
+        paths: [{ path: "name", requested: "Vetoed", stored: "Loot" }],
+        changedFields: []
+      });
       expect(globalThis.game.tables.get("table-1").name).toBe("Loot");
     });
 
@@ -1172,7 +1176,7 @@ describe("command router", () => {
 
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-      expect(response.error.message).toMatch(/was NOT updated/);
+      expect(response.error.message).toContain("cannot verify");
       expect(response.error.message).toMatch(/preUpdateTableResult/);
       expect(response.error.details).toMatchObject({
         tableId: "table-1",

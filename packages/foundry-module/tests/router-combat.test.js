@@ -17,7 +17,8 @@ import {
   createCombatDocument,
   createCombatantDocument,
   createRequest,
-  installFakeFoundry
+  installFakeFoundry,
+  makeDataModelValidationError
 } from "./helpers/fake-foundry.js";
 
 describe("command router", () => {
@@ -2078,6 +2079,10 @@ describe("command router", () => {
       expect(vetoed.ok).toBe(false);
       expect(vetoed.error.message).toContain("preUpdateCombatant");
       expect(vetoed.error.message).not.toContain("disable the module");
+      expect(vetoed.error.details).toMatchObject({
+        paths: [{ path: "hidden", requested: true, stored: false }],
+        changedFields: []
+      });
       expect(row._source.hidden).toBe(false);
     });
 
@@ -2694,7 +2699,7 @@ describe("command router", () => {
       expect(stored(combat)).toEqual({ round: 0, turn: null });
     });
 
-    it("combat.start raises INTERNAL_ERROR when a hook keeps round 0 (a write that landed as something else)", async () => {
+    it("combat.start reports a partial write when a hook keeps round 0 but lets turn 0 through", async () => {
       const combat = seedCombat("cbt-start-rewritten");
       combat.startCombat = vi.fn(async () => {
         combat._source.turn = 0;
@@ -2706,8 +2711,16 @@ describe("command router", () => {
       );
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-      expect(response.error.message).toContain("was NOT started");
-      expect(response.error.details).toMatchObject({ combatId: "cbt-start-rewritten", round: 0, turn: 0 });
+      expect(response.error.message).not.toContain("None of the requested fields changed");
+      expect(response.error.details).toMatchObject({
+        combatId: "cbt-start-rewritten",
+        round: 0,
+        turn: 0,
+        paths: [{ path: "round", requested: 1, stored: 0 }],
+        changedFields: ["turn"],
+        appliedFields: ["turn"],
+        partial: true
+      });
       expect(stored(combat)).toEqual({ round: 0, turn: 0 });
     });
 
@@ -2717,7 +2730,12 @@ describe("command router", () => {
       const response = await router().route(createRequest("combat.start", { combatId: "cbt-start-veto" }));
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-      expect(response.error.message).toContain("did not change combat");
+      expect(response.error.message).toContain("cannot verify");
+      expect(response.error.details).toMatchObject({
+        combatId: "cbt-start-veto",
+        paths: [{ path: "round", requested: 1, stored: 0 }],
+        changedFields: []
+      });
       expect(stored(combat)).toEqual({ round: 0, turn: null });
     });
 
@@ -2800,8 +2818,41 @@ describe("command router", () => {
       );
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-      expect(response.error.message).toContain("is NOT active");
+      expect(response.error.message).toContain("Another client");
+      expect(response.error.message).not.toContain("will not change the result");
+      expect(response.error.details).toMatchObject({
+        combatId: "cbt-activate-rewritten",
+        fields: ["active"],
+        paths: [{ path: "active", requested: true, stored: false }],
+        changedFields: []
+      });
       expect(combat._source.active).toBe(false);
+    });
+
+    it("combat.activate without a result leaves the resend question open, alone or beside a concurrent activation", async () => {
+      for (const concurrent of [false, true]) {
+        const combat = seedCombat(`cbt-activate-falsy-${concurrent}`);
+        combat.activate = vi.fn(async () => {
+          if (concurrent) {
+            const other = globalThis.game.combats.get("combat-1");
+            other._source.active = true;
+            other.active = true;
+          }
+          return undefined;
+        });
+        const response = await router().route(
+          createRequest("combat.activate", { combatId: `cbt-activate-falsy-${concurrent}` })
+        );
+        expect(response.ok).toBe(false);
+        expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+        expect(response.error.message).toContain("Another client");
+        expect(response.error.message).not.toContain("will not change the result");
+        expect(response.error.details).toMatchObject({
+          paths: [{ path: "active", requested: true, stored: false }],
+          changedFields: []
+        });
+        expect(combat._source.active).toBe(false);
+      }
     });
 
     it("combat.activate raises INTERNAL_ERROR when the activation is vetoed", async () => {
@@ -2812,6 +2863,45 @@ describe("command router", () => {
       );
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+      expect(combat._source.active).toBe(false);
+    });
+
+    it("combat.activate reports an encounter that lost its active flag as changed", async () => {
+      const combat = seedCombat("cbt-activate-lost", { active: true });
+      combat.activate = vi.fn(async () => {
+        combat._source.active = false;
+        combat.active = false;
+        return combat;
+      });
+      const response = await router().route(
+        createRequest("combat.activate", { combatId: "cbt-activate-lost" })
+      );
+      expect(response.ok).toBe(false);
+      expect(response.error.details).toMatchObject({
+        paths: [{ path: "active", requested: true, stored: false }],
+        changedFields: ["active"],
+        partial: true
+      });
+    });
+
+    it("combat.activate reports a rejected re-probe of an unchanged encounter as a rejection", async () => {
+      const combat = seedCombat("cbt-activate-rejected");
+      combat.vetoCombatUpdates = true;
+      combat.clone = vi.fn(async () => ({
+        updateSource() {
+          throw makeDataModelValidationError("active: may not be set");
+        },
+        toObject: () => structuredClone(combat._source)
+      }));
+      const response = await router().route(
+        createRequest("combat.activate", { combatId: "cbt-activate-rejected" })
+      );
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+      expect(response.error.details).toMatchObject({
+        combatId: "cbt-activate-rejected",
+        reason: "foundry_validation"
+      });
       expect(combat._source.active).toBe(false);
     });
 

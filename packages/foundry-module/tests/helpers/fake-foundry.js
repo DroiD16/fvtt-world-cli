@@ -73,8 +73,8 @@ function applyMergeKey(out, rawKey, value, performDeletions) {
       return;
     }
     const target = out[name];
-    if (isPlainMergeTarget(value) && isPlainMergeTarget(target)) {
-      out[name] = applyDocumentMerge(target, value, { performDeletions });
+    if (isPlainMergeTarget(value)) {
+      out[name] = applyDocumentMerge(isPlainMergeTarget(target) ? target : {}, value, { performDeletions });
     } else {
       out[name] = value;
     }

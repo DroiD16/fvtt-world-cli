@@ -1,4 +1,5 @@
 import { ERROR_CODES } from "../generated/protocol.js";
+import { assertPatchFitsStored, expandPatch } from "./batch-guards.js";
 import { createBridgeError } from "./errors.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
 import {
@@ -77,7 +78,14 @@ export async function importActorItemFromCompendium(
 
   const importData = items.fromCompendium(source, { keepId: false, clearFolder: true, clearOwnership: true });
 
-  const safeUpdate = stripProtectedMeta(updateData);
+  const rawUpdate = stripProtectedMeta(updateData);
+  const safeUpdate = expandPatch(rawUpdate);
+  assertPatchFitsStored({
+    rawPatch: rawUpdate,
+    expandedPatch: safeUpdate,
+    stored: importData,
+    subject: "The import overrides"
+  });
   const mergeObject = globalThis.foundry?.utils?.mergeObject;
   const merged =
     typeof mergeObject === "function"

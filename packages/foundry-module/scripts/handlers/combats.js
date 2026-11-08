@@ -55,6 +55,7 @@ import {
 } from "../lib/write-confirmation.js";
 import { deleteDocument, previewDocumentUpdate } from "../lib/world-docs.js";
 import { createBridgeError, toFailureSummary } from "../lib/errors.js";
+import { buildMismatchReport, changedRoots, createMismatchError } from "../lib/mismatch-report.js";
 import {
   deriveChatCaptureStatus,
   newBridgeCorrelationId,
@@ -178,6 +179,9 @@ function createCombatAdvanceHandlers() {
   }
   return handlers;
 }
+
+const CONCURRENT_ACTIVATION_NOTE =
+  "Another client activating a different combat in the meantime fits the same observation.";
 
 export function createCombatHandlers() {
   return {
@@ -322,18 +326,18 @@ export function createCombatHandlers() {
         await startCombat(combat);
         const parent = rereadCombat(combatId, combat);
         const after = combatStoredState(parent);
-        assertCombatTransitionCommitted({ combatId, verb: "combat.start", before, after });
-
         if (!(after.round > 0)) {
-          throw createBridgeError(
-            ERROR_CODES.INTERNAL_ERROR,
-            `Combat ${combatId} was NOT started: Foundry resolved startCombat() and stored turn ${
-              after.turn ?? "null"
-            }, but the encounter still stores round ${
-              after.round
-            } — startCombat() issues \`update({round:1, turn:0})\`. The bridge cannot verify whether Foundry core, the game system or a module normalized the round, or whether a preUpdateCombat hook rewrote or dropped it. Re-read with combat.get. ${COMBAT_VETO_REMEDY}`,
-            { combatId, round: after.round, turn: after.turn }
-          );
+          throw createMismatchError({
+            subject: `Combat ${combatId}`,
+            report: buildMismatchReport([{ segments: ["round"], requested: 1 }], {
+              round: after.round
+            }),
+            hookName: "preUpdateCombat",
+            changedFields: changedRoots(["round", "turn"], before, after),
+            details: { combatId, round: after.round, turn: after.turn },
+            note: "startCombat() issues update({round: 1, turn: 0}).",
+            remedy: COMBAT_VETO_REMEDY
+          });
         }
         return {
           combatId,
@@ -377,18 +381,29 @@ export function createCombatHandlers() {
             subject: `Combat ${combatId}`,
             hookName: "preUpdateCombat",
             details: { combatId },
-            remedy: COMBAT_VETO_REMEDY
+            before: { active: alreadyActive },
+            note: CONCURRENT_ACTIVATION_NOTE,
+            remedy: COMBAT_VETO_REMEDY,
+            resendDeterministic: false
           });
         }
         const parent = rereadCombat(combatId, combat);
         const activeAfter = activeCombatIds(combatId);
 
-        if (!combatStoredActive(parent)) {
-          throw createBridgeError(
-            ERROR_CODES.INTERNAL_ERROR,
-            `Combat ${combatId} is NOT active: Foundry resolved the activation without storing it, which means a module's preUpdateCombat hook or a core _preUpdate refused the write. ${COMBAT_VETO_REMEDY}`,
-            { combatId }
-          );
+        const storedActive = combatStoredActive(parent);
+        if (!storedActive) {
+          throw createMismatchError({
+            subject: `Combat ${combatId}`,
+            report: buildMismatchReport([{ segments: ["active"], requested: true }], {
+              active: storedActive
+            }),
+            hookName: "preUpdateCombat",
+            changedFields: changedRoots(["active"], { active: alreadyActive }, { active: storedActive }),
+            details: { combatId },
+            note: CONCURRENT_ACTIVATION_NOTE,
+            remedy: COMBAT_VETO_REMEDY,
+            resendDeterministic: false
+          });
         }
         return {
           combatId,
