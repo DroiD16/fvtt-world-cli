@@ -623,6 +623,16 @@ const DANGEROUS_SEGMENT_BRANCHES = Object.freeze([
     branch: "a registered core setting is written, confirmed, and restored"
   },
   {
+    step: "dangerous.setting.set(type cast)",
+    branch:
+      "a setting whose registered type casts on read reports its read form and is confirmed on stored JSON, even when the cast is lossy"
+  },
+  {
+    step: "dangerous.setting.set(defaults)",
+    branch:
+      "re-sending the default of an unset world setting is a no-op, and a DataField whose clean yields no value stores its default"
+  },
+  {
     step: "dangerous.user.lifecycle",
     branch: "a scratch user is created, re-roled, permission-overridden, updated, and deleted"
   },
@@ -1806,6 +1816,210 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
       );
     }
 
+    const castNamespace = "fvtt-world-cli-smoke";
+    const castSettings = {
+      color: `${castNamespace}.color`,
+      number: `${castNamespace}.number`,
+      flag: `${castNamespace}.flag`,
+      worldflag: `${castNamespace}.worldflag`,
+      userflag: `${castNamespace}.userflag`,
+      limit: `${castNamespace}.limit`,
+      count: `${castNamespace}.count`
+    };
+    let defaultLimitRun = null;
+    let defaultLimitDocumentId;
+    let defaultCountSeedRun = null;
+    let defaultCountRun = null;
+    let castRegistered = null;
+    let castColorRun = null;
+    let castNumberRun = null;
+    let castFlagRun = null;
+    let castFlagStored = null;
+    /** @type {Record<string, any>} */
+    const castScopeRuns = {};
+    /** @type {Record<string, unknown>} */
+    const castScopeStored = {};
+    try {
+      castRegistered = await evaluateInGmPage(
+        gmControlUrl,
+        `const ns = ${JSON.stringify(castNamespace)};
+        game.settings.register(ns, "color", { scope: "client", config: false, type: foundry.utils.Color, default: "#000000" });
+        game.settings.register(ns, "number", { scope: "client", config: false, type: Number, default: 0 });
+        game.settings.register(ns, "flag", { scope: "client", config: false, type: Boolean, default: true });
+        game.settings.register(ns, "worldflag", { scope: "world", config: false, type: Boolean, default: true });
+        game.settings.register(ns, "userflag", { scope: "user", config: false, type: Boolean, default: true });
+        game.settings.register(ns, "limit", { scope: "world", config: false, type: String, default: "1" });
+        game.settings.register(ns, "count", {
+          scope: "world",
+          config: false,
+          type: new foundry.data.fields.NumberField({ required: false, nullable: false }),
+          default: 7
+        });
+        return true;`
+      );
+      castColorRun = runFoundryctl([
+        "setting",
+        "set",
+        "--namespace",
+        castNamespace,
+        "--key",
+        "color",
+        "--value-json",
+        "16711680"
+      ]);
+      castNumberRun = runFoundryctl([
+        "setting",
+        "set",
+        "--namespace",
+        castNamespace,
+        "--key",
+        "number",
+        "--value-json",
+        JSON.stringify("5")
+      ]);
+      castFlagRun = runFoundryctl([
+        "setting",
+        "set",
+        "--namespace",
+        castNamespace,
+        "--key",
+        "flag",
+        "--value-json",
+        JSON.stringify("false")
+      ]);
+      castFlagStored = await evaluateInGmPage(
+        gmControlUrl,
+        `return game.settings.get(${JSON.stringify(castNamespace)}, "flag", { document: true })._source.value;`
+      );
+      for (const key of ["worldflag", "userflag"]) {
+        castScopeRuns[key] = runFoundryctl([
+          "setting",
+          "set",
+          "--namespace",
+          castNamespace,
+          "--key",
+          key,
+          "--value-json",
+          JSON.stringify("false")
+        ]);
+        castScopeStored[key] = await evaluateInGmPage(
+          gmControlUrl,
+          `return game.settings.get(${JSON.stringify(castNamespace)}, ${JSON.stringify(key)}, { document: true })._source.value;`
+        );
+      }
+      defaultLimitRun = runFoundryctl([
+        "setting",
+        "set",
+        "--namespace",
+        castNamespace,
+        "--key",
+        "limit",
+        "--value-json",
+        JSON.stringify("1")
+      ]);
+      defaultLimitDocumentId = await evaluateInGmPage(
+        gmControlUrl,
+        `return game.settings.get(${JSON.stringify(castNamespace)}, "limit", { document: true }).id ?? null;`
+      );
+      defaultCountSeedRun = runFoundryctl([
+        "setting",
+        "set",
+        "--namespace",
+        castNamespace,
+        "--key",
+        "count",
+        "--value-json",
+        "3"
+      ]);
+      defaultCountRun = runFoundryctl([
+        "setting",
+        "set-many",
+        "--items-json",
+        JSON.stringify([{ namespace: castNamespace, key: "count", value: null }])
+      ]);
+    } finally {
+      await evaluateInGmPage(
+        gmControlUrl,
+        `for (const key of ["worldflag", "userflag", "limit", "count"]) {
+          const doc = game.settings.get(${JSON.stringify(castNamespace)}, key, { document: true });
+          if (doc?.id) await doc.delete();
+        }
+        return true;`
+      ).catch(() => null);
+      await evaluateInGmPage(
+        gmControlUrl,
+        `for (const id of ${JSON.stringify(Object.values(castSettings))}) {
+          game.settings.storage.get("client").removeItem(id);
+          game.settings.settings.delete(id);
+        }
+        return true;`
+      ).catch(() => null);
+    }
+    markAndPush(
+      summary,
+      "dangerous.setting.set(type cast)",
+      Boolean(
+        castRegistered === true &&
+        castColorRun?.response?.ok &&
+        castColorRun.response.result?.value === "#ff0000" &&
+        castNumberRun?.response?.ok &&
+        castNumberRun.response.result?.value === 5 &&
+        castFlagRun?.response?.ok &&
+        castFlagRun.response.result?.changed === true &&
+        castFlagRun.response.result?.value === true &&
+        castFlagStored === JSON.stringify("false") &&
+        ["worldflag", "userflag"].every(
+          (key) =>
+            castScopeRuns[key]?.response?.ok &&
+            castScopeRuns[key].response.result?.changed === true &&
+            castScopeRuns[key].response.result?.value === true &&
+            castScopeStored[key] === JSON.stringify("false")
+        )
+      ),
+      {
+        color: castColorRun ? summarizeCommand(castColorRun) : null,
+        colorValue: castColorRun?.response?.result?.value ?? null,
+        number: castNumberRun ? summarizeCommand(castNumberRun) : null,
+        numberValue: castNumberRun?.response?.result?.value ?? null,
+        flag: castFlagRun ? summarizeCommand(castFlagRun) : null,
+        flagResult: castFlagRun?.response?.result ?? null,
+        flagStoredJson: castFlagStored,
+        scopes: Object.fromEntries(
+          ["worldflag", "userflag"].map((key) => [
+            key,
+            {
+              run: castScopeRuns[key] ? summarizeCommand(castScopeRuns[key]) : null,
+              result: castScopeRuns[key]?.response?.result ?? null,
+              storedJson: castScopeStored[key] ?? null
+            }
+          ])
+        )
+      }
+    );
+
+    markAndPush(
+      summary,
+      "dangerous.setting.set(defaults)",
+      Boolean(
+        castRegistered === true &&
+        defaultLimitRun?.response?.ok &&
+        defaultLimitRun.response.result?.changed === false &&
+        defaultLimitDocumentId === null &&
+        defaultCountSeedRun?.response?.ok &&
+        defaultCountRun?.response?.ok &&
+        defaultCountRun.response.result?.outcomes?.[0]?.status === "updated" &&
+        defaultCountRun.response.result.outcomes[0].value === 7
+      ),
+      {
+        limit: defaultLimitRun ? summarizeCommand(defaultLimitRun) : null,
+        limitResult: defaultLimitRun?.response?.result ?? null,
+        limitDocumentId: defaultLimitDocumentId ?? null,
+        countSeed: defaultCountSeedRun ? summarizeCommand(defaultCountSeedRun) : null,
+        count: defaultCountRun ? summarizeCommand(defaultCountRun) : null,
+        countResult: defaultCountRun?.response?.result ?? null
+      }
+    );
+
     const userCreateRun = runFoundryctl(["user", "create", "--name", `CLI Smoke User ${stamp}`]);
     userId = userCreateRun.response?.result?.user?.id || null;
     const roleSetRun = userId
@@ -2843,6 +3057,121 @@ function runExtendedCoverage(
       );
       if (itemClone?.item?.id) {
         created.items.push(itemClone.item.id);
+      }
+
+      const ampersandDescription = `<p>Smoke A & B ${stamp}</p>`;
+      const ampersandRun = runFoundryctl([
+        "item",
+        "update",
+        "--item-id",
+        createdItemId,
+        "--system-json",
+        JSON.stringify({ description: { value: ampersandDescription } })
+      ]);
+      const ampersandPath = ampersandRun.response?.error?.details?.paths?.find(
+        (entry) => entry?.path === "system.description.value"
+      );
+      markAndPush(
+        summary,
+        "item.update(raw & in an HTML field → INTERNAL_ERROR listing requested vs stored at system.description.value)",
+        isExpectedError(ampersandRun, ERROR_CODES.INTERNAL_ERROR) &&
+          ampersandPath?.requested === ampersandDescription &&
+          typeof ampersandPath?.stored === "string" &&
+          ampersandPath.stored.includes("&amp;") &&
+          !/disable the module/i.test(ampersandRun.response?.error?.message ?? ""),
+        { ...summarizeCommand(ampersandRun), path: ampersandPath ?? null }
+      );
+
+      const forcedDescription = `<p>Smoke forced ${stamp}</p>`;
+      expectOk(
+        summary,
+        'item.update(nested {system: {"==description": …}} forced replacement confirms)',
+        runFoundryctl([
+          "item",
+          "update",
+          "--item-id",
+          createdItemId,
+          "--system-json",
+          JSON.stringify({ "==description": { value: forcedDescription } })
+        ])
+      );
+      const afterForced = expectOk(
+        summary,
+        "item.get(after the nested forced replacement)",
+        runFoundryctl(["item", "get", "--item-id", createdItemId])
+      );
+      markAndPush(
+        summary,
+        "item.update(the nested forced replacement is stored)",
+        afterForced?.item?.system?.description?.value === forcedDescription,
+        { observed: afterForced?.item?.system?.description?.value ?? null, expected: forcedDescription }
+      );
+
+      const activityId = "smokeActivity001";
+      const absentActivityId = "smokeActivity002";
+      const weaponRun = runFoundryctl([
+        "item",
+        "create",
+        "--name",
+        `Smoke Weapon ${stamp}`,
+        "--type",
+        "weapon",
+        "--system-json",
+        JSON.stringify({ activities: { [activityId]: { _id: activityId, type: "attack" } } })
+      ]);
+      const weapon = expectOk(summary, "item.create(weapon with one activity)", weaponRun)?.item ?? null;
+      if (weapon?.id) created.items.push(weapon.id);
+      const storedActivity = weapon?.system?.activities?.[activityId];
+      if (!weapon?.id) {
+        markAndPush(summary, "item.update(typed-object deletion: no weapon to delete from)", false, {
+          ...summarizeCommand(weaponRun)
+        });
+      } else if (!storedActivity) {
+        markAndPush(summary, "item.update(typed-object deletion: skipped, no activities field)", true, {
+          ...summarizeCommand(weaponRun),
+          reason:
+            "the world's system stored no TypedObjectField activity on a weapon; the deletion cases are covered by the local confirmation harness only"
+        });
+        summary.notes.push(
+          "Typed-object deletion (system.activities) was not exercised live: the system stored no activity on a weapon. The local confirmation harness covers it on v13 and v14."
+        );
+      } else {
+        expectOk(
+          summary,
+          "item.update(delete a present key of a TypedObjectField: system.activities.-=<id>)",
+          runFoundryctl([
+            "item",
+            "update",
+            "--item-id",
+            weapon.id,
+            "--system-json",
+            JSON.stringify({ activities: { [`-=${activityId}`]: null } })
+          ])
+        );
+        expectOk(
+          summary,
+          "item.update(delete an absent key of a TypedObjectField confirms)",
+          runFoundryctl([
+            "item",
+            "update",
+            "--item-id",
+            weapon.id,
+            "--system-json",
+            JSON.stringify({ activities: { [`-=${absentActivityId}`]: null } })
+          ])
+        );
+        const afterDeletion = expectOk(
+          summary,
+          "item.get(after the typed-object deletions)",
+          runFoundryctl(["item", "get", "--item-id", weapon.id])
+        );
+        markAndPush(
+          summary,
+          "item.update(the typed-object deletion is stored)",
+          afterDeletion?.item?.system?.activities !== undefined &&
+            !Object.hasOwn(afterDeletion.item.system.activities ?? {}, activityId),
+          { observed: Object.keys(afterDeletion?.item?.system?.activities ?? {}) }
+        );
       }
 
       const bulkItemA = expectOk(
