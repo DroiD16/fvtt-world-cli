@@ -8,10 +8,11 @@ import {
 import {
   assertBatchArrayWritesReflected,
   assertNoAmbiguousBatchKeySpellings,
+  assertNoStoredArrayDescent,
+  assertNoTopLevelDottedArrayWrite,
   batchEcfResidualEntries,
   batchEmbeddedCreateKeys,
-  batchMergedConfirmationKeys,
-  mergedPreviewReflected,
+  expandPatch,
   readDocumentSource,
   structuredCloneish
 } from "./batch-guards.js";
@@ -23,6 +24,7 @@ import {
   toFoundryValidationError,
   toProtocolError
 } from "./errors.js";
+import { WORLD_VETO_REMEDY, evaluateRequestedDiff, unverifiableCauseSentence } from "./mismatch-report.js";
 
 export const BATCH_STATUS = Object.freeze({
   CREATED: "created",
@@ -168,8 +170,8 @@ function failedCount(outcomes) {
   return outcomes.filter((outcome) => !SUCCESS_STATUSES.has(outcome.status)).length;
 }
 
-/** @param {{ command: string, outcomes: Array<{index:number,id:string|null,status:string}> }} args */
-function assertBatchPersistedSomething({ command, outcomes }) {
+/** @param {{ command: string, outcomes: Array<{index:number,id:string|null,status:string}>, verb: "create" | "update" | "delete" }} args */
+function assertBatchPersistedSomething({ command, outcomes, verb }) {
   if (persistedCount(outcomes) > 0 || failedCount(outcomes) === 0) {
     return;
   }
@@ -178,21 +180,32 @@ function assertBatchPersistedSomething({ command, outcomes }) {
   const refused = outcomes.filter((outcome) => outcome.status === BATCH_STATUS.DROPPED).length;
   const converged = outcomes.filter((outcome) => SUCCESS_STATUSES.has(outcome.status)).length;
   const tally =
-    `${refused} refused, ${unestablished} unestablished` +
+    `${refused} ${verb === "update" ? "dropped" : "refused"}, ${unestablished} unestablished` +
     (converged > 0 ? `, ${converged} already converged (never sent to Foundry)` : "");
+  if (unestablished > 0) {
+    throw createBridgeError(
+      ERROR_CODES.INTERNAL_ERROR,
+      `${command} reported no confirmed write: Foundry accepted the batch call, but the bridge could not ` +
+        `establish the post-state of every element it sent (a confirmation re-read failed). Outcomes: ${tally}. ` +
+        `Nothing is known to have landed — RE-READ the targets before retrying, and use a NEW idempotency key.`,
+      { command, outcomes }
+    );
+  }
   throw createBridgeError(
     ERROR_CODES.INTERNAL_ERROR,
-    unestablished > 0
-      ? `${command} reported no confirmed write: Foundry accepted the batch call, but the bridge could not ` +
-          `establish the post-state of every element it sent (a confirmation re-read failed). Outcomes: ${tally}. ` +
-          `Nothing is known to have landed — RE-READ the targets before retrying, and use a NEW idempotency key.`
+    verb === "update"
+      ? `${command} confirmed no requested write: Foundry accepted the batch call, and a re-read shows stored ` +
+          `values that differ from the request for every element it was sent, or cannot confirm an element's ` +
+          `embedded creation (details.outcomes[].paths lists the requested and the stored value per path where the ` +
+          `stored state was compared). ${unverifiableCauseSentence()} Part of an element's patch may still have ` +
+          `landed. Outcomes: ${tally}. Compare the requested and stored values and RE-READ the targets before ` +
+          `deciding what remains to apply; any retry needs a NEW idempotency key. ${WORLD_VETO_REMEDY}`
       : `${command} confirmed no requested write: Foundry accepted the batch call and then refused every element ` +
-          `it was sent (a preUpdate/preCreate/preDelete hook veto, or a validation failure the client backend reports ` +
-          `only through the Foundry notifications area) — or, on an update, a hook stripped or rewrote the requested ` +
-          `change while letting another one through, so a write for that id may still have landed. Stored state was ` +
-          `re-read to confirm that none of the requested writes is present. Outcomes: ${tally}. ` +
-          `Check the GM client's console/notifications for the cause, or disable the module that vetoes these writes, ` +
-          `then RE-READ the targets and retry with a NEW idempotency key.`,
+          `it was sent (a ${verb === "create" ? "preCreate" : "preDelete"} hook veto, or a validation failure the ` +
+          `client backend reports only through the Foundry notifications area). Stored state was re-read to confirm ` +
+          `that none of the requested writes is present. Outcomes: ${tally}. The GM client's console and ` +
+          `notifications show the cause. RE-READ the targets before retrying, and use a NEW idempotency key. ` +
+          WORLD_VETO_REMEDY,
     { command, outcomes }
   );
 }
@@ -275,7 +288,7 @@ export async function executeBatchCreate({
   if (failure) {
     return finishThrownBatch({ outcomes, failure, error: failure.error });
   }
-  assertBatchPersistedSomething({ command, outcomes });
+  assertBatchPersistedSomething({ command, outcomes, verb: "create" });
   return buildBatchResult({ outcomes });
 }
 
@@ -304,15 +317,25 @@ export async function executeBatchUpdate({
     const document = resolve(id, index);
     let preparedPatch;
     let elementDiff;
-    let mergedSource = null;
-    let mergedConfirmationKeys = [];
     let embeddedCreateKeys = [];
     try {
-      preparedPatch = await prepare(patch, index, document);
-
-      assertNoAmbiguousBatchKeySpellings({
-        documentClass: documentClass ?? document?.constructor,
-        patch: preparedPatch,
+      const rawPatch = await prepare(patch, index, document);
+      preparedPatch = expandPatch(rawPatch);
+      assertNoAmbiguousBatchKeySpellings({ expandedPatch: preparedPatch, index, command, id });
+      const storedSource = readDocumentSource(document);
+      const elementClass = documentClass ?? document?.constructor;
+      assertNoTopLevelDottedArrayWrite({
+        rawPatch,
+        stored: storedSource,
+        documentClass: elementClass,
+        index,
+        command,
+        id
+      });
+      assertNoStoredArrayDescent({
+        expandedPatch: preparedPatch,
+        stored: storedSource,
+        documentClass: elementClass,
         index,
         command,
         id
@@ -320,22 +343,16 @@ export async function executeBatchUpdate({
 
       const merged = await mergePreview(document, structuredCloneish(preparedPatch));
       assertBatchArrayWritesReflected({
-        documentClass: documentClass ?? document?.constructor,
+        documentClass: elementClass,
         patch: preparedPatch,
         merged,
-
         stored: document,
         index,
         command,
         id
       });
 
-      mergedConfirmationKeys = batchMergedConfirmationKeys(preparedPatch);
-      if (mergedConfirmationKeys.length > 0) {
-        mergedSource = readDocumentSource(merged);
-      }
-
-      embeddedCreateKeys = batchEmbeddedCreateKeys(documentClass ?? document?.constructor, preparedPatch);
+      embeddedCreateKeys = batchEmbeddedCreateKeys(elementClass, preparedPatch);
       elementDiff = await diff(document, structuredCloneish(preparedPatch));
     } catch (error) {
       throw annotateBatchElementFailure(error, { command, index, id });
@@ -345,10 +362,8 @@ export async function executeBatchUpdate({
       id,
       document,
       patch: preparedPatch,
-      mergedSource,
-      mergedConfirmationKeys,
       embeddedCreateKeys,
-      unchanged: Object.keys(elementDiff).length === 0
+      unchanged: evaluateRequestedDiff(elementDiff, () => readDocumentSource(document)).status === "confirmed"
     });
   }
 
@@ -394,20 +409,28 @@ export async function executeBatchUpdate({
     }
   }
 
-  for (const element of changed) {
-    let applied = false;
-    let probeAnswered = true;
+  /**
+   * @param {any} document
+   * @param {Record<string, any>} patch
+   * @returns {Promise<import("./mismatch-report.js").RequestedDiffEvaluation>}
+   */
+  const evaluate = async (document, patch) => {
     try {
-      const postDiff = await diff(element.document, structuredCloneish(element.patch));
-      applied = Object.keys(postDiff).length === 0;
-    } catch {
-      probeAnswered = false;
+      return evaluateRequestedDiff(await diff(document, structuredCloneish(patch)), () =>
+        readDocumentSource(document)
+      );
+    } catch (error) {
+      return {
+        status: /** @type {const} */ ("unprovable"),
+        probeError: /** @type {any} */ (error)?.message ?? String(error)
+      };
     }
-    if (!applied && element.mergedConfirmationKeys.length > 0) {
-      const reflected = mergedPreviewReflected(element);
-      applied = reflected === true;
-      probeAnswered = reflected !== null;
-    }
+  };
+
+  for (const element of changed) {
+    let evaluation = await evaluate(element.document, element.patch);
+    let applied = evaluation.status === "confirmed";
+    let probeAnswered = evaluation.status !== "unprovable";
     if (!applied && element.embeddedCreateKeys.length > 0) {
       const residual = { ...element.patch };
       for (const key of element.embeddedCreateKeys) {
@@ -415,17 +438,13 @@ export async function executeBatchUpdate({
         if (retained.length > 0) residual[key] = retained;
         else delete residual[key];
       }
-      let residualConfirmed = Object.keys(residual).length === 0;
-      if (!residualConfirmed) {
-        try {
-          const residualDiff = await diff(element.document, structuredCloneish(residual));
-          residualConfirmed = Object.keys(residualDiff).length === 0;
-        } catch {
-          probeAnswered = false;
-        }
+      if (Object.keys(residual).length > 0) {
+        evaluation = await evaluate(element.document, residual);
+        probeAnswered = probeAnswered && evaluation.status !== "unprovable";
+      } else {
+        evaluation = { status: "confirmed" };
       }
-
-      applied = residualConfirmed && returned.has(element.id);
+      applied = evaluation.status === "confirmed" && returned.has(element.id);
     }
     if (applied) {
       outcomes.push({
@@ -435,11 +454,20 @@ export async function executeBatchUpdate({
         ...(summarize ? summarize(element.document) : {})
       });
     } else {
+      const status = failure || !probeAnswered ? BATCH_STATUS.UNKNOWN : BATCH_STATUS.DROPPED;
       outcomes.push({
         index: element.index,
         id: element.id,
-        status: failure || !probeAnswered ? BATCH_STATUS.UNKNOWN : BATCH_STATUS.DROPPED,
-        ...(summarize ? summarize(element.document) : {})
+        status,
+        ...(summarize ? summarize(element.document) : {}),
+        ...(status === BATCH_STATUS.DROPPED && evaluation.status === "pending"
+          ? {
+              paths: evaluation.report.paths,
+              ...(evaluation.report.pathsTruncated
+                ? { pathsTruncated: evaluation.report.pathsTruncated }
+                : {})
+            }
+          : {})
       });
     }
   }
@@ -448,7 +476,7 @@ export async function executeBatchUpdate({
   if (failure) {
     return finishThrownBatch({ outcomes: ordered, failure, error: failure.error });
   }
-  assertBatchPersistedSomething({ command, outcomes: ordered });
+  assertBatchPersistedSomething({ command, outcomes: ordered, verb: "update" });
   return buildBatchResult({ outcomes: ordered });
 }
 
@@ -512,7 +540,7 @@ export async function executeBatchDelete({ command, ids, dryRun, resolve, assert
   if (failure) {
     return finishThrownBatch({ outcomes: ordered, failure, error: failure.error });
   }
-  assertBatchPersistedSomething({ command, outcomes: ordered });
+  assertBatchPersistedSomething({ command, outcomes: ordered, verb: "delete" });
   return buildBatchResult({ outcomes: ordered });
 }
 

@@ -9,7 +9,7 @@ import {
   previewPreparedEmbeddedEffectCreate,
   updateEmbeddedEffectMany
 } from "../lib/effects.js";
-import { computeDocumentUpdateDiff, previewDocumentUpdate } from "../lib/world-docs.js";
+import { computeDocumentUpdateDiff, previewExpandedDocumentUpdate } from "../lib/world-docs.js";
 import { executeBatchCreate, executeBatchDelete, executeBatchUpdate } from "../lib/batch-write.js";
 import { createBridgeError } from "../lib/errors.js";
 import { isDryRun } from "../lib/dry-run.js";
@@ -66,8 +66,8 @@ export function createEmbeddedEffectBatchHandlers({ prefix, resolve }) {
         },
         prepare: (patch) => prepareEmbeddedEffectUpdateData(parent, patch),
         documentClass: getEmbeddedEffectDocumentClass(parent),
-        diff: (document, patch) => computeDocumentUpdateDiff(document, patch),
-        mergePreview: (document, patch) => previewDocumentUpdate(document, patch),
+        diff: computeDocumentUpdateDiff,
+        mergePreview: previewExpandedDocumentUpdate,
         update: (entries) => updateEmbeddedEffectMany(parent, entries),
         summarize
       });

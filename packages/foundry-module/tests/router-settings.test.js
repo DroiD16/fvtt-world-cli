@@ -7,6 +7,7 @@ import { COMMAND_DEFINITIONS, ERROR_CODES, MODULE_ID } from "../scripts/generate
 import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 
 import { allowEveryCommandPolicy, createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
+import { fakeSettingDocument, fakeSettingStorage } from "./helpers/fake-settings.js";
 
 describe("settings read surface", () => {
   let router;
@@ -813,14 +814,15 @@ describe("settings write surface", () => {
 
   const NUMBER_FIELD = "core.time";
 
-  /** @param {{ clean?: (value: any) => any, validate?: (value: any) => any }} [behavior] */
+  /** @param {{ clean?: (value: any) => any, validate?: (value: any) => any, initialize?: (value: any) => any }} [behavior] */
   function makeField(name, behavior = {}) {
-    const { clean = (value) => value, validate = () => undefined } = behavior;
+    const { clean = (value) => value, validate = () => undefined, initialize = (value) => value } = behavior;
     const FieldClass = /** @type {any} */ ({ NumberField: class {} }).NumberField;
     const field = /** @type {any} */ (new FieldClass());
     field.name = name;
     field.clean = vi.fn(clean);
     field.validate = vi.fn(validate);
+    field.initialize = vi.fn(initialize);
     return field;
   }
 
@@ -851,14 +853,16 @@ describe("settings write surface", () => {
     store = new Map(values);
     settings = {
       settings: registry,
-      get: vi.fn((namespace, key) => {
+      get: vi.fn((namespace, key, options) => {
         if (namespace === MODULE_ID && key === MODULE_SETTING_KEYS.COMMAND_POLICY) {
           return allowEveryCommandPolicy();
         }
 
         const id = `${namespace}.${key}`;
+        if (options?.document) return fakeSettingDocument(store, id, registry.get(id)?.default);
         return store.has(id) ? store.get(id) : registry.get(id)?.default;
       }),
+      storage: fakeSettingStorage(store),
       set:
         set ??
         vi.fn(async (namespace, key, value) => {
@@ -880,6 +884,23 @@ describe("settings write surface", () => {
   afterEach(() => {
     delete globalThis.game;
     vi.restoreAllMocks();
+  });
+
+  it("refuses a value nested far beyond the depth limit as too large, never as an internal error", async () => {
+    setupWorld({ values: [["my-module.mode", "allow"]] });
+    /** @type {any} */
+    let value = 1;
+    for (let level = 0; level < 100_000; level += 1) value = { v: value };
+
+    const started = performance.now();
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "my-module", key: "mode", value })
+    );
+    expect(performance.now() - started).toBeLessThan(500);
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.PAYLOAD_TOO_LARGE);
+    expect(response.error.details).toMatchObject({ limit: "value-depth" });
   });
 
   it("writes a registered setting and reports the value it read back", async () => {
@@ -1023,6 +1044,28 @@ describe("settings write surface", () => {
     expect(response.result).toMatchObject({ value: 12, previous: 0, validated: true, changed: true });
   });
 
+  it("reports a mismatch when the stored value moved to a value other than the requested one", async () => {
+    setupWorld({
+      values: [["my-module.mode", "allow"]],
+      set: vi.fn(async () => {
+        store.set("my-module.mode", "audit");
+      })
+    });
+
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "my-module", key: "mode", value: "deny" })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.message).toContain("cannot verify");
+    expect(response.error.details).toMatchObject({
+      paths: [{ path: "value", requested: "deny", stored: "audit" }],
+      changedFields: ["value"],
+      partial: true
+    });
+  });
+
   it("refuses to report success when the stored value never moved", async () => {
     setupWorld({
       values: [["my-module.mode", "allow"]],
@@ -1035,7 +1078,13 @@ describe("settings write surface", () => {
 
     expect(response.ok).toBe(false);
     expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-    expect(response.error.details).toMatchObject({ id: "my-module.mode", previous: "allow" });
+    expect(response.error.message).toContain("cannot verify");
+    expect(response.error.details).toMatchObject({
+      id: "my-module.mode",
+      previous: "allow",
+      paths: [{ path: "value", requested: "deny", stored: "allow" }],
+      changedFields: []
+    });
   });
 
   it("writes a batch and reports one outcome per element in request order", async () => {
@@ -1083,6 +1132,332 @@ describe("settings write surface", () => {
     expect(response.error.details).toMatchObject({ index: 1, id: `${MODULE_ID}.authToken` });
     expect(settings.set).not.toHaveBeenCalled();
     expect(store.get("my-module.mode")).toBe("allow");
+  });
+
+  it("reports a later element whose stored value differs as dropped with paths beside a persisted one", async () => {
+    const level = { ...MODULE_MODE, id: "my-module.level", key: "level", default: "low" };
+    setupWorld({
+      registrations: [MODULE_MODE, level],
+      values: [
+        ["my-module.mode", "allow"],
+        ["my-module.level", "low"]
+      ],
+      set: vi.fn(async (namespace, key, value) => {
+        store.set(`${namespace}.${key}`, key === "level" ? "medium" : value);
+      })
+    });
+
+    const response = await router.route(
+      createRequest("setting.set-many", {
+        items: [
+          { namespace: "my-module", key: "mode", value: "deny" },
+          { namespace: "my-module", key: "level", value: "high" }
+        ]
+      })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result.complete).toBe(false);
+    expect(response.result.outcomes[0]).toMatchObject({ index: 0, status: "updated", value: "deny" });
+    expect(response.result.outcomes[1]).toEqual({
+      index: 1,
+      id: "my-module.level",
+      status: "dropped",
+      paths: [{ path: "value", requested: "high", stored: "medium" }]
+    });
+    expect(response.result.failure.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.result.failure.message).toContain("outcomes[1].paths");
+  });
+
+  /**
+   * @param {{ id: string, key: string, type: (value: any) => any, stored: unknown }} spec
+   * @param {(stored: Map<string, unknown>, key: string, value: unknown) => void} [write]
+   */
+  function setupCastWorld(spec, write = (stored, key, value) => stored.set(key, value)) {
+    setupWorld({
+      registrations: [{ ...MODULE_MODE, id: spec.id, key: spec.key, type: spec.type }],
+      values: [[spec.id, spec.stored]],
+      set: vi.fn(async (namespace, key, value) => write(store, `${namespace}.${key}`, value))
+    });
+    const worldGet = settings.get;
+    settings.get = vi.fn((namespace, key, options) => {
+      if (namespace === MODULE_ID) return worldGet(namespace, key, options);
+      const id = `${namespace}.${key}`;
+      if (options?.document) return fakeSettingDocument(store, id, undefined);
+      return spec.type(store.get(id));
+    });
+    const previousFoundry = globalThis.foundry;
+    globalThis.foundry = /** @type {any} */ ({
+      ...previousFoundry,
+      documents: {
+        Setting: class {
+          /** @param {{ value: string }} data */
+          constructor({ value }) {
+            this.value = spec.type(JSON.parse(value));
+          }
+        }
+      }
+    });
+    return () => {
+      globalThis.foundry = previousFoundry;
+    };
+  }
+
+  const toHex = (/** @type {unknown} */ value) => `#${Number(value).toString(16)}`;
+  const truthy = (/** @type {unknown} */ value) => Boolean(value);
+
+  it("reports a cast setting in its read form and confirms it against the stored JSON", async () => {
+    const restore = setupCastWorld({ id: "my-module.hex", key: "hex", type: toHex, stored: 0 });
+    try {
+      const response = await router.route(
+        createRequest("setting.set", { namespace: "my-module", key: "hex", value: 16711680 })
+      );
+      expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
+      expect(response.result).toMatchObject({ value: "#ff0000", previous: "#0", changed: true });
+    } finally {
+      restore();
+    }
+  });
+
+  it("sends a write whose lossy cast reads the same as the stored value", async () => {
+    const restore = setupCastWorld({ id: "my-module.flag", key: "flag", type: truthy, stored: true });
+    try {
+      const preview = await router.route(
+        createRequest("setting.set", { namespace: "my-module", key: "flag", value: "false", dryRun: true })
+      );
+      expect(preview.result).toMatchObject({ changed: true });
+
+      const batchPreview = await router.route(
+        createRequest("setting.set-many", {
+          items: [{ namespace: "my-module", key: "flag", value: "false" }],
+          dryRun: true
+        })
+      );
+      expect(batchPreview.result.outcomes[0].status).toBe("updated");
+
+      const response = await router.route(
+        createRequest("setting.set", { namespace: "my-module", key: "flag", value: "false" })
+      );
+      expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
+      expect(settings.set).toHaveBeenCalledWith("my-module", "flag", "false");
+      expect(store.get("my-module.flag")).toBe("false");
+      expect(response.result).toMatchObject({ value: true, changed: true });
+    } finally {
+      restore();
+    }
+  });
+
+  it("reports a stored value whose lossy cast reads the same as the request as a mismatch", async () => {
+    const restore = setupCastWorld(
+      { id: "my-module.flag", key: "flag", type: truthy, stored: false },
+      (stored, key) => stored.set(key, "yes")
+    );
+    try {
+      const single = await router.route(
+        createRequest("setting.set", { namespace: "my-module", key: "flag", value: "true" })
+      );
+      expect(single.ok).toBe(false);
+      expect(single.error.details).toMatchObject({
+        paths: [{ path: "value", requested: "true", stored: "yes" }],
+        changedFields: ["value"]
+      });
+
+      store.set("my-module.flag", false);
+      const batch = await router.route(
+        createRequest("setting.set-many", { items: [{ namespace: "my-module", key: "flag", value: "true" }] })
+      );
+      expect(batch.ok).toBe(false);
+      expect(batch.error.details.outcomes).toEqual([
+        {
+          index: 0,
+          id: "my-module.flag",
+          status: "dropped",
+          paths: [{ path: "value", requested: "true", stored: "yes" }]
+        }
+      ]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("refuses a typed value nested past Foundry's clone depth as too large, on the dry run and the real call", async () => {
+    const previousFoundry = globalThis.foundry;
+    const deepClone = (value, depth = 0) => {
+      if (depth > 100) throw new Error("Maximum depth exceeded");
+      if (!value || typeof value !== "object") return value;
+      return Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [key, deepClone(entry, depth + 1)])
+      );
+    };
+    globalThis.foundry = {
+      ...(previousFoundry ?? {}),
+      utils: { ...(previousFoundry?.utils ?? {}), deepClone }
+    };
+    try {
+      setupWorld({
+        registrations: [
+          {
+            id: "my-module.field",
+            namespace: "my-module",
+            key: "field",
+            scope: "world",
+            type: makeField("my-module.field"),
+            default: {}
+          },
+          {
+            id: "my-module.model",
+            namespace: "my-module",
+            key: "model",
+            scope: "world",
+            type: class {
+              static fromSource(source) {
+                return source;
+              }
+            },
+            default: {}
+          }
+        ]
+      });
+      /** @type {any} */
+      let value = 1;
+      for (let level = 0; level < 150; level += 1) value = { v: value };
+      for (const key of ["field", "model"]) {
+        for (const dryRun of [true, false]) {
+          const response = await router.route(
+            createRequest("setting.set", { namespace: "my-module", key, value, dryRun })
+          );
+          expect(response.ok, `${key} dryRun:${dryRun}`).toBe(false);
+          expect(response.error.code).toBe(ERROR_CODES.PAYLOAD_TOO_LARGE);
+          expect(response.error.details).toMatchObject({ limit: "value-depth" });
+        }
+      }
+      expect(settings.set).not.toHaveBeenCalled();
+    } finally {
+      globalThis.foundry = previousFoundry;
+    }
+  });
+
+  it("leaves the registered default and the request value unchanged when a type cleans in place", async () => {
+    const inPlace = (value) => {
+      value.cleaned = true;
+      return value;
+    };
+    const fieldDefault = { level: 1 };
+    const modelDefault = { level: 2 };
+    const ModelType = class {
+      static fromSource(source) {
+        source.cleaned = true;
+        return { toObject: () => source };
+      }
+    };
+    setupWorld({
+      registrations: [
+        {
+          id: "my-module.field",
+          namespace: "my-module",
+          key: "field",
+          scope: "world",
+          type: makeField("my-module.field", { clean: inPlace }),
+          default: fieldDefault
+        },
+        {
+          id: "my-module.model",
+          namespace: "my-module",
+          key: "model",
+          scope: "world",
+          type: ModelType,
+          default: modelDefault
+        }
+      ],
+      set: vi.fn(async (namespace, key, value) => {
+        value.cleanedBySet = true;
+        store.set(`${namespace}.${key}`, value);
+      })
+    });
+
+    for (const key of ["field", "model"]) {
+      const preview = await router.route(
+        createRequest("setting.set", { namespace: "my-module", key, value: { level: 5 }, dryRun: true })
+      );
+      expect(preview.ok, JSON.stringify(preview.error ?? {})).toBe(true);
+      const params = { namespace: "my-module", key, value: { level: 6 } };
+      await router.route(createRequest("setting.set", params));
+      expect(params.value).toEqual({ level: 6 });
+    }
+    expect(fieldDefault).toEqual({ level: 1 });
+    expect(modelDefault).toEqual({ level: 2 });
+  });
+
+  it("stores a DataField's default when its clean yields no value, as Foundry does", async () => {
+    const registration = {
+      id: NUMBER_FIELD,
+      namespace: "core",
+      key: "time",
+      scope: "world",
+      type: makeField(NUMBER_FIELD, { clean: (value) => (value === null ? undefined : value) }),
+      default: 7
+    };
+    setupWorld({ registrations: [registration] });
+
+    const unsetPreview = await router.route(
+      createRequest("setting.set", { namespace: "core", key: "time", value: null, dryRun: true })
+    );
+    expect(unsetPreview.result).toMatchObject({ value: 7, changed: false });
+
+    const unset = await router.route(
+      createRequest("setting.set", { namespace: "core", key: "time", value: null })
+    );
+    expect(unset.ok, JSON.stringify(unset.error ?? {})).toBe(true);
+    expect(unset.result).toMatchObject({ changed: false });
+    expect(settings.set).not.toHaveBeenCalled();
+
+    store.set(NUMBER_FIELD, 3);
+    settings.set = vi.fn(async (namespace, key, value) => {
+      store.set(`${namespace}.${key}`, value === null ? 7 : value);
+    });
+    const written = await router.route(
+      createRequest("setting.set", { namespace: "core", key: "time", value: null })
+    );
+    expect(written.ok, JSON.stringify(written.error ?? {})).toBe(true);
+    expect(written.result).toMatchObject({ value: 7, previous: 3, changed: true });
+  });
+
+  it("treats re-sending the default of an unset setting as a no-op", async () => {
+    const numericDefault = { ...MODULE_MODE, id: "my-module.limit", key: "limit", default: "1" };
+    const model = {
+      ...MODULE_MODE,
+      id: "my-module.layout",
+      key: "layout",
+      type: class {
+        /** @param {Record<string, unknown>} source */
+        static fromSource(source) {
+          return { columns: 2, ...source };
+        }
+      },
+      default: {}
+    };
+    setupWorld({ registrations: [numericDefault, model] });
+
+    for (const [key, value] of /** @type {Array<[string, unknown]>} */ ([
+      ["limit", "1"],
+      ["layout", {}]
+    ])) {
+      const preview = await router.route(
+        createRequest("setting.set", { namespace: "my-module", key, value, dryRun: true })
+      );
+      expect(preview.result.changed, key).toBe(false);
+      const response = await router.route(
+        createRequest("setting.set", { namespace: "my-module", key, value })
+      );
+      expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
+      expect(response.result.changed, key).toBe(false);
+    }
+    expect(settings.set).not.toHaveBeenCalled();
+
+    const batch = await router.route(
+      createRequest("setting.set-many", { items: [{ namespace: "my-module", key: "limit", value: "1" }] })
+    );
+    expect(batch.result.outcomes[0].status).toBe("unchanged");
   });
 
   it("previews a batch without writing", async () => {

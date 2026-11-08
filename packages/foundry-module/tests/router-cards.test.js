@@ -2526,6 +2526,8 @@ describe("command router", () => {
 
       expect(response.error.details.chatNotification).toEqual({ requested: true, status: "dispatched" });
       expect(response.error.details.mutation).toBe("partial");
+      expect(response.error.message).not.toMatch(/disable a|disable the/i);
+      expect(response.error.message).toContain("possible cause");
     });
 
     it("a DECK reset where NOTHING landed still reports the chat as dispatched (the type arm is load-bearing)", async () => {

@@ -19,6 +19,20 @@ import {
 
 const V14_RELEASE = { version: "14.369", generation: 14 };
 
+/** @param {any} document */
+function exposeV14ChangesShim(document) {
+  if (document.shimmedToObject) return;
+  const innerToObject = document.toObject.bind(document);
+  document.toObject = (...args) => {
+    const data = innerToObject(...args);
+    if (!Object.hasOwn(data, "changes") && Array.isArray(data.system?.changes)) {
+      Object.defineProperty(data, "changes", { get: () => data.system.changes, enumerable: false });
+    }
+    return data;
+  };
+  Object.defineProperty(document, "shimmedToObject", { value: true });
+}
+
 describe("command router", () => {
   beforeEach(() => {
     installFakeFoundry();
@@ -1588,6 +1602,7 @@ describe("command router", () => {
     };
 
     const modelSystem = (document) => {
+      exposeV14ChangesShim(document);
       const system = document.system;
       if (system && typeof system === "object" && !Object.prototype.hasOwnProperty.call(system, "schema")) {
         Object.defineProperty(system, "schema", {
@@ -1644,11 +1659,21 @@ describe("command router", () => {
     );
     expect(created.ok, JSON.stringify(created.error)).toBe(true);
     const effectId = created.result.outcomes[0].id;
-    modelV14Merge(actor.effects.get(effectId));
+    const effect = actor.effects.get(effectId);
+    effect.system = {
+      ...(effect.system ?? {}),
+      changes: [{ key: "system.a", type: "add", value: "0", phase: "initial" }]
+    };
+    modelV14Merge(effect);
+    Object.defineProperty(effect, "constructor", { value: actor.effects.documentClass, configurable: true });
+    expect(
+      Array.isArray(effect.toObject().changes),
+      "the v14 toObject shim exposes a top-level changes"
+    ).toBe(true);
 
     /** @type {Array<{patch: Record<string, any>, needle: RegExp}>} */
     const droppedSpellings = [
-      { patch: { "changes.0.value": 9 }, needle: /dotted path into the field is not migrated/ },
+      { patch: { "changes.0.value": 9 }, needle: /a write inside the field is not migrated/ },
       {
         patch: { "==changes": [{ key: "a", value: "1" }] },
         needle: /legacy "==" operator key is not migrated/
@@ -1662,8 +1687,35 @@ describe("command router", () => {
       expect(refused.ok, `${JSON.stringify(patch)} must be refused`).toBe(false);
       expect(refused.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
       expect(refused.error.message).toMatch(needle);
-      expect(refused.error.message).toContain('MOVED to "system.changes"');
       expect(refused.error.details).toMatchObject({ index: 0, id: effectId, movedTo: "system.changes" });
+
+      const single = await router.route(
+        createRequest("actor.effect.update", { actorId: "actor-1", effectId, patch })
+      );
+      expect(single.ok, `${JSON.stringify(patch)} must be refused on the single path`).toBe(false);
+      expect(single.error.message).toMatch(needle);
+      expect(single.error.details).toMatchObject({ movedTo: "system.changes" });
+    }
+
+    for (const patch of /** @type {Array<Record<string, any>>} */ ([
+      { "changes.0.value": "9" },
+      { changes: { 0: { value: "9" } } },
+      { "==changes": { 0: { value: "9" } } }
+    ])) {
+      for (const dryRun of [true, false]) {
+        effect.clone.mockClear();
+        const cloned = await router.route(
+          createRequest("actor.effect.clone", { actorId: "actor-1", effectId, patch, dryRun })
+        );
+        expect(cloned.ok, `${JSON.stringify(patch)} clone (dryRun ${dryRun}) must be refused`).toBe(false);
+        expect(cloned.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+        if (!("changes" in patch)) {
+          const field = "==changes" in patch ? "changes.0" : "changes.0.value";
+          expect(cloned.error.message).toContain('MOVED to "system.changes"');
+          expect(cloned.error.details).toMatchObject({ field, movedTo: "system.changes" });
+        }
+        expect(effect.clone).not.toHaveBeenCalled();
+      }
     }
 
     actor.updateEmbeddedDocuments.mockClear();

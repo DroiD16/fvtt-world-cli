@@ -11,6 +11,8 @@ The bridge supports Foundry VTT v13 and v14. Check your connected version with
 | Scene thumbnail rendering | Renders the scene | Renders the scene's initial level by default | On v14, expect the initial level in the thumbnail. Check the returned dimensions and image. |
 | Scene thumbnail files | Uses a stable scene-based filename | Uses a filename based on the image content | Use the returned path. On v14, a changed image can leave an older thumbnail file behind. |
 | User permission names | `TEMPLATE_CREATE` | `REGION_CREATE` | Use the permission keys reported by the connected Foundry version when calling `user.permissions.set`. |
+| Forced replacement of one typed-object entry (`{"system": {"activities": {"==<id>": {…}}}}`) | Not applied as a replacement: the entry is merged, so the bridge reports a per-path mismatch | Replaces the entry and confirms | On v13, a forced replacement of the whole typed object (`system.==activities`) is applied as requested. |
+| HTML in rich-text fields | The server stores `<br>` as `<br />` | The server keeps `<br>` | The same HTML write can confirm on v14 and return a per-path mismatch on v13. `details.paths` shows the stored form, which is Foundry's own sanitized markup. Both versions store a raw `&` as `&amp;`. |
 
 Scene placeable fields and available region behavior types also differ. Read the target document
 before preparing a patch; valid data from one version is not automatically valid on the other.

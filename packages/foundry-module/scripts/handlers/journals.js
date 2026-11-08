@@ -4,6 +4,7 @@ import {
   JOURNAL_CATEGORY_DANGLING_PAGE_ID_CAP,
   JOURNAL_CATEGORY_VETO_REMEDY,
   assertJournalPageOpsValid,
+  assertJournalPagePatchesStorable,
   assertJournalPageRenderable,
   assertJournalPagesExist,
   createJournalCategory,
@@ -226,6 +227,12 @@ export function createJournalHandlers() {
       }
 
       if (isDryRun(params)) {
+        const expandedPages = await assertJournalPagePatchesStorable(
+          journal,
+          journal.id ?? params.journalId,
+          updatePagesPayload
+        );
+        assertJournalPageOpsValid(journal, { createPagesPayload, updatePagesPayload: expandedPages });
         if (Object.keys(documentPatch).length > 0) {
           await assertRequestedWriteStorable({
             document: journal,
@@ -241,7 +248,7 @@ export function createJournalHandlers() {
         const { preview, pages } = await previewJournalUpdate(journal, {
           documentPatch,
           createPagesPayload,
-          updatePagesPayload,
+          updatePagesPayload: expandedPages,
           deletePageIds
         });
         const previewJournal = serializeJournal(preview);
@@ -249,7 +256,12 @@ export function createJournalHandlers() {
         return dryRunResponse({ journal: previewJournal });
       }
 
-      assertJournalPageOpsValid(journal, { createPagesPayload, updatePagesPayload });
+      const expandedPages = await assertJournalPagePatchesStorable(
+        journal,
+        journal.id ?? params.journalId,
+        updatePagesPayload
+      );
+      assertJournalPageOpsValid(journal, { createPagesPayload, updatePagesPayload: expandedPages });
 
       if (Object.keys(documentPatch).length > 0) {
         await applyConfirmedUpdate({
@@ -266,8 +278,8 @@ export function createJournalHandlers() {
         await createJournalPages(params.journalId, createPagesPayload);
       }
 
-      if (updatePagesPayload.length > 0) {
-        await updateJournalPages(params.journalId, updatePagesPayload);
+      if (expandedPages.length > 0) {
+        await updateJournalPages(params.journalId, expandedPages);
       }
 
       if (deletePageIds.length > 0) {

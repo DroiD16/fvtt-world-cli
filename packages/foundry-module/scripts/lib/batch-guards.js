@@ -1,8 +1,9 @@
-import { ERROR_CODES } from "../generated/protocol.js";
+import { ERROR_CODES, PATCH_MAX_DEPTH } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
 
-function isPlainObjectish(value) {
-  if (value === null || value === undefined) return false;
+/** @param {unknown} value */
+export function isPlainObject(value) {
+  if (value === null || typeof value !== "object") return false;
   const proto = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
@@ -18,184 +19,471 @@ function usableEntryId(entry) {
 
 /**
  * @param {string} rawKey
- * @returns {{ prefix: ""|"=="|"-=", path: string, root: string }}
+ * @returns {{ segments: string[], operators: Array<"delete" | "replace" | null>, path: string, root: string, operatorAt: number, target: string[] }}
  */
-function splitPatchKey(rawKey) {
-  const prefix = rawKey.startsWith("==") ? "==" : rawKey.startsWith("-=") ? "-=" : "";
-  const path = prefix ? rawKey.slice(2) : rawKey;
-  return { prefix, path, root: path.split(".")[0] };
-}
-
-/**
- * @param {string} rawKey
- * @returns {{ path: string, root: string, operatorTargets: string[] }}
- */
-function splitPatchKeyDeep(rawKey) {
+export function parsePatchKey(rawKey) {
   /** @type {string[]} */
-  const stripped = [];
-  /** @type {string[]} */
-  const operatorTargets = [];
+  const segments = [];
+  /** @type {Array<"delete" | "replace" | null>} */
+  const operators = [];
   for (const segment of rawKey.split(".")) {
-    const prefix = segment.startsWith("==") ? "==" : segment.startsWith("-=") ? "-=" : "";
-    stripped.push(prefix ? segment.slice(2) : segment);
-    if (prefix) operatorTargets.push(stripped.join("."));
+    const operator = segment.startsWith("-=") ? "delete" : segment.startsWith("==") ? "replace" : null;
+    segments.push(operator ? segment.slice(2) : segment);
+    operators.push(operator);
   }
-  const path = stripped.join(".");
-  return { path, root: stripped[0], operatorTargets };
+  const operatorAt = operators.findIndex((operator) => operator !== null);
+  return {
+    segments,
+    operators,
+    path: segments.join("."),
+    root: segments[0],
+    operatorAt,
+    target: operatorAt < 0 ? segments : segments.slice(0, operatorAt + 1)
+  };
+}
+
+const SERIALIZED_OPERATOR_KEY = "__$OPERATOR$__";
+const RESERVED_KEY_SEGMENTS = new Set(["__proto__", "constructor", "prototype", SERIALIZED_OPERATOR_KEY]);
+
+/**
+ * @param {string} key
+ * @returns {string | undefined}
+ */
+function reservedSegmentOf(key) {
+  return parsePatchKey(key).segments.find((segment) => RESERVED_KEY_SEGMENTS.has(segment));
 }
 
 /**
- * @param {string} rawKey
- * @returns {{ path: string, deletes: boolean }}
+ * @param {unknown} root
+ * @returns {{ key: string, segment: string } | null}
  */
-function normalizeOperatorPath(rawKey) {
-  const { path } = splitPatchKeyDeep(rawKey);
-  return { path, deletes: rawKey.split(".").some((segment) => segment.startsWith("-=")) };
+export function findReservedKeySegment(root) {
+  /** @typedef {{ value: unknown, key: string, parent: Visit | null }} Visit */
+  /** @type {Visit[]} */
+  const pending = [{ value: root, key: "", parent: null }];
+  while (pending.length > 0) {
+    const visit = /** @type {Visit} */ (pending.pop());
+    const { value } = visit;
+    if (value === null || typeof value !== "object") continue;
+    for (const key of Object.keys(value)) {
+      const segment = reservedSegmentOf(key);
+      if (segment !== undefined) {
+        const path = [key];
+        for (let node = /** @type {Visit | null} */ (visit); node?.parent; node = node.parent)
+          path.push(node.key);
+        return { key: path.reverse().join("."), segment };
+      }
+      pending.push({ value: /** @type {Record<string, unknown>} */ (value)[key], key, parent: visit });
+    }
+  }
+  return null;
 }
 
-/** @param {{ documentClass: any, patch: Record<string, any>, index: number, command: string, id: string, coordinate?: string }} args */
-export function assertNoAmbiguousBatchKeySpellings({
-  documentClass,
-  patch,
+/**
+ * @param {string[]} path
+ * @returns {never}
+ */
+function refuseTooDeep(path) {
+  const field = `${path.slice(0, PATCH_MAX_DEPTH + 1).join(".")}${path.length > PATCH_MAX_DEPTH + 1 ? "…" : ""}`;
+  throw createBridgeError(
+    ERROR_CODES.INVALID_PARAMS,
+    `The patch key "${field}" nests deeper than the ${PATCH_MAX_DEPTH}-level limit. Stored Foundry ` +
+      `documents nest far less deeply, so the bridge refuses the patch instead of expanding it. Send a ` +
+      `shallower patch.`,
+    { field, limit: "patch-depth", max: PATCH_MAX_DEPTH }
+  );
+}
+
+/**
+ * @param {string} key
+ * @param {string} segment
+ * @param {{ subject?: string, details?: Record<string, unknown> }} [context]
+ * @returns {never}
+ */
+export function refuseReservedSegment(key, segment, { subject = "The patch", details = {} } = {}) {
+  const reason =
+    segment === SERIALIZED_OPERATOR_KEY
+      ? `That name is Foundry 14's internal form of a deletion or forced replacement: Foundry 14 rebuilds the ` +
+        `operator from it and replaces the whole object, dropping every other key beside it, while Foundry 13 ` +
+        `stores it as data. Send a "-=key" deletion or a "==key" replacement instead.`
+      : `That name is a JavaScript object internal, never a document field or setting key, and the bridge ` +
+        `refuses it so that no request can reach an object prototype. Remove the key and resend.`;
+  throw createBridgeError(
+    ERROR_CODES.INVALID_PARAMS,
+    `${subject} has the key "${key}", which contains the segment "${segment}". ${reason}`,
+    { ...details, field: key, reservedSegment: segment }
+  );
+}
+
+/**
+ * @param {string} key
+ * @param {string} arrayPath
+ * @returns {never}
+ */
+function refuseArrayDescent(key, arrayPath) {
+  throw createBridgeError(
+    ERROR_CODES.INVALID_PARAMS,
+    `The patch key "${key}" writes inside the array that another key of the same patch sets at "${arrayPath}". ` +
+      `Foundry rebuilds an array from the patch instead of changing one entry, so the bridge refuses the ` +
+      `combination. Send the whole array in one key.`,
+    { field: key, arrayField: arrayPath }
+  );
+}
+
+/**
+ * @param {Record<string, unknown>} target
+ * @param {Record<string, unknown>} source
+ * @param {string[]} path
+ * @param {string} key
+ * @returns {Record<string, unknown>}
+ */
+function mergeExpanded(target, source, path, key) {
+  for (const [name, value] of Object.entries(source)) {
+    const current = target[name];
+    if (Array.isArray(current) && isPlainObject(value)) refuseArrayDescent(key, [...path, name].join("."));
+    target[name] =
+      isPlainObject(value) && isPlainObject(current)
+        ? mergeExpanded(
+            /** @type {Record<string, unknown>} */ (current),
+            /** @type {Record<string, unknown>} */ (value),
+            [...path, name],
+            key
+          )
+        : value;
+  }
+  return target;
+}
+
+/**
+ * @param {unknown} value
+ * @param {string[]} prefix
+ * @returns {unknown}
+ */
+function expandValue(value, prefix) {
+  if (Array.isArray(value)) {
+    if (value.length > 0 && prefix.length >= PATCH_MAX_DEPTH) refuseTooDeep([...prefix, "0"]);
+    return value.map((entry, index) => expandValue(entry, [...prefix, String(index)]));
+  }
+  return isPlainObject(value) ? expandKeys(/** @type {Record<string, unknown>} */ (value), prefix) : value;
+}
+
+/**
+ * @param {Record<string, unknown>} object
+ * @param {string[]} prefix
+ * @returns {Record<string, unknown>}
+ */
+function expandKeys(object, prefix) {
+  /** @type {Record<string, unknown>} */
+  const out = {};
+  for (const [rawKey, rawValue] of Object.entries(object)) {
+    const key = [...prefix, rawKey].join(".");
+    const reserved = reservedSegmentOf(rawKey);
+    if (reserved !== undefined) refuseReservedSegment(key, reserved);
+    const segments = rawKey.split(".");
+    if (prefix.length + segments.length > PATCH_MAX_DEPTH) refuseTooDeep([...prefix, ...segments]);
+    /** @type {Record<string, unknown>} */
+    let node = out;
+    for (const [depth, segment] of segments.slice(0, -1).entries()) {
+      if (Array.isArray(node[segment]))
+        refuseArrayDescent(key, [...prefix, ...segments.slice(0, depth + 1)].join("."));
+      if (!isPlainObject(node[segment])) node[segment] = {};
+      node = /** @type {Record<string, unknown>} */ (node[segment]);
+    }
+    const last = /** @type {string} */ (segments.at(-1));
+    const value = expandValue(rawValue, [...prefix, ...segments]);
+    if (Array.isArray(node[last]) && isPlainObject(value))
+      refuseArrayDescent(key, [...prefix, ...segments].join("."));
+    node[last] =
+      isPlainObject(value) && isPlainObject(node[last])
+        ? mergeExpanded(
+            /** @type {Record<string, unknown>} */ (node[last]),
+            /** @type {Record<string, unknown>} */ (value),
+            [...prefix, ...segments],
+            key
+          )
+        : value;
+  }
+  return out;
+}
+
+/**
+ * @param {Record<string, any>} patch
+ * @returns {Record<string, any>}
+ */
+export function expandPatch(patch) {
+  return isPlainObject(patch) ? /** @type {Record<string, any>} */ (expandKeys(patch, [])) : patch;
+}
+
+/** @param {string} key */
+function isArrayIndexKey(key) {
+  const index = Number(key);
+  return Number.isInteger(index) && index >= 0;
+}
+
+/**
+ * @param {unknown} patch
+ * @param {unknown} stored
+ * @param {string[]} path
+ * @param {any} [documentClass]
+ * @returns {{ field: string, arrayField: string, movedTo?: string } | null}
+ */
+function findStoredArrayDescent(patch, stored, path, documentClass = null) {
+  if (!isPlainObject(patch) || !isPlainObject(stored)) return null;
+  const storedObject = /** @type {Record<string, unknown>} */ (stored);
+  for (const [key, value] of Object.entries(/** @type {Record<string, unknown>} */ (patch))) {
+    if (key === "_id") continue;
+    const parsed = parsePatchKey(key);
+    const operator = parsed.operators[0];
+    if (operator === "delete") continue;
+    const name = parsed.root;
+    const storedValue = storedObject[name];
+    const here = [...path, name];
+    const movedTo = path.length === 0 ? findMigratedArrayTarget(documentClass, name) : null;
+    if (movedTo) {
+      const firstKey = isPlainObject(value)
+        ? Object.keys(/** @type {Record<string, unknown>} */ (value))[0]
+        : undefined;
+      if (firstKey !== undefined)
+        return { field: `${name}.${parsePatchKey(firstKey).root}`, arrayField: name, movedTo };
+      continue;
+    }
+    if (Array.isArray(storedValue)) {
+      if (isPlainObject(value)) {
+        const innerKey = Object.keys(/** @type {Record<string, unknown>} */ (value)).find(
+          (inner) => path.length > 0 || isArrayIndexKey(parsePatchKey(inner).root)
+        );
+        if (innerKey !== undefined) {
+          return { field: [...here, parsePatchKey(innerKey).root].join("."), arrayField: here.join(".") };
+        }
+      } else if (Array.isArray(value) && operator !== "replace") {
+        /** @type {Map<unknown, unknown> | null} */
+        let storedById = null;
+        for (const [position, entry] of value.entries()) {
+          const entryId = isPlainObject(entry)
+            ? /** @type {Record<string, unknown>} */ (entry)._id
+            : undefined;
+          if (typeof entryId !== "string") continue;
+          storedById ??= new Map(
+            storedValue
+              .filter((candidate) => isPlainObject(candidate))
+              .map((candidate) => [candidate._id, candidate])
+          );
+          const inner = findStoredArrayDescent(entry, storedById.get(entryId), [...here, String(position)]);
+          if (inner) return inner;
+        }
+      }
+      continue;
+    }
+    if (operator === "replace") continue;
+    const inner = findStoredArrayDescent(value, storedValue, here);
+    if (inner) return inner;
+  }
+  return null;
+}
+
+/** @param {{ expandedPatch: Record<string, any>, stored: unknown, documentClass?: any, index?: number, command?: string, id?: string, coordinate?: string }} args */
+export function assertNoStoredArrayDescent({
+  expandedPatch,
+  stored,
+  documentClass = null,
   index,
   command,
   id,
   coordinate = `${command} element ${index} (id ${id})`
 }) {
-  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return;
+  const descent = findStoredArrayDescent(expandedPatch, stored, [], documentClass);
+  if (!descent) return;
+  if (descent.movedTo) {
+    refuseMigratedRootWrite({
+      coordinate,
+      field: descent.field,
+      rootKey: descent.arrayField,
+      movedTo: descent.movedTo,
+      index,
+      id
+    });
+  }
+  throw createBridgeError(
+    ERROR_CODES.INVALID_PARAMS,
+    `${coordinate} writes "${descent.field}" inside the stored array "${descent.arrayField}". Foundry does not ` +
+      `change one entry of an array: it rebuilds the array from the patch, so every entry the patch does not ` +
+      `name is lost while the write still succeeds. Send the whole array instead: read it, change the entry ` +
+      `you mean, and send all entries back.`,
+    { ...elementCoordinates(index, id), field: descent.field, arrayField: descent.arrayField }
+  );
+}
 
-  const refuse = ({ where, rule, path, root, spellings }) => {
-    const mechanism =
-      rule === 1
-        ? `which one is not the same on the two supported cores: Foundry 13 keeps the LAST spelling in the ` +
-          `object while Foundry 14 lets a "==" forced replacement win regardless of order`
-        : `an operator-spelled ("==" / "-=") whole field (at any depth) and a key underneath it are resolved DIFFERENTLY by ` +
-          `the two supported cores: Foundry 13 applies the narrower key on top of the forced replacement, ` +
-          `Foundry 14 discards it entirely (and a "-=" whole field beside such a key is rejected outright on ` +
-          `both)`;
+/**
+ * @param {number | undefined} index
+ * @param {string | undefined} id
+ */
+function elementCoordinates(index, id) {
+  return index === undefined ? {} : { index, id };
+}
+
+/**
+ * @param {{ coordinate: string, field: string, rootKey: string, movedTo: string, index?: number, id?: string }} args
+ * @returns {never}
+ */
+function refuseMigratedRootWrite({ coordinate, field, rootKey, movedTo, index, id }) {
+  throw createBridgeError(
+    ERROR_CODES.INVALID_PARAMS,
+    `${coordinate} writes "${field}", inside "${rootKey}", which this Foundry version does NOT declare at the ` +
+      `top level: the field has MOVED to "${movedTo}", and a write inside the field is not migrated by this ` +
+      `Foundry version. An update silently discards such a write, so it would be reported as applied while ` +
+      `nothing changed; a clone (or an import, when the game system migrates the key) rebuilds the copy's ` +
+      `array from these keys alone and loses every entry they do not name. Send the whole array as ` +
+      `"${rootKey}": [ … ] (or write "${movedTo}" directly — that spelling is judged by the same rule) and retry.`,
+    { ...elementCoordinates(index, id), field, arrayField: rootKey, movedTo }
+  );
+}
+
+/** @param {{ rawPatch: Record<string, any>, stored: unknown, documentClass?: any, index?: number, command?: string, id?: string, coordinate?: string }} args */
+export function assertNoTopLevelDottedArrayWrite({
+  rawPatch,
+  stored,
+  documentClass = null,
+  index,
+  command,
+  id,
+  coordinate = `${command} element ${index} (id ${id})`
+}) {
+  if (!isPlainObject(rawPatch) || !isPlainObject(stored)) return;
+  const storedSource = /** @type {Record<string, unknown>} */ (stored);
+  for (const [rawKey, value] of Object.entries(rawPatch)) {
+    const parsedKey = parsePatchKey(rawKey);
+    if (parsedKey.segments.length < 2 || parsedKey.operators[0] === "delete") continue;
+    const rootKey = parsedKey.root;
+    const movedTo = findMigratedArrayTarget(documentClass, rootKey);
+    if (movedTo) refuseMigratedRootWrite({ coordinate, field: rawKey, rootKey, movedTo, index, id });
+    if (!Array.isArray(storedSource[rootKey])) continue;
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
-
-      `${coordinate} writes the same field "${path}" through more than one key ` +
-        `${where}: ${spellings.map((key) => `"${key}"`).join(" and ")}. Foundry applies exactly ONE of them and ` +
-        `SILENTLY DISCARDS the rest — ${mechanism}, and no check downstream can see the loss because the merged ` +
-        `preview and the stored result come from the same ambiguous patch. Merge them into one key and retry.`,
-      { index, id, field: path, ambiguousRoot: root, ambiguousKeys: spellings, ambiguityRule: rule }
+      `${coordinate} writes the dotted path "${rawKey}" INSIDE the ARRAY field ` +
+        `"${rootKey}". Foundry does NOT patch an array in place: it REBUILDS the array from this patch alone, so ` +
+        `every entry the patch does not name is DESTROYED — and when the rebuilt array fails the field's own ` +
+        `validator, Foundry drops the whole write with only a UI notification, so the write would be ` +
+        `reported as applied while the stored array lost data or kept none of it. Send the WHOLE array instead ` +
+        `(for a Wall, "c": [x1, y1, x2, y2]): read it first, change the entry you mean, send all of them back, ` +
+        `and retry.`,
+      {
+        ...elementCoordinates(index, id),
+        field: rawKey,
+        arrayField: rootKey,
+        requested: value,
+        stored: storedSource[rootKey]
+      }
     );
-  };
-
-  /**
-   * @param {string[]} rawKeys
-   * @param {{ deep: boolean }} options
-   * @returns {{ rule: 1|2, path: string, root: string, spellings: string[] }|null}
-   */
-  const findCollision = (rawKeys, { deep }) => {
-    /** @type {Map<string, string[]>} */
-    const byPath = new Map();
-    /** @type {Map<string, string[]>} */
-    const byRoot = new Map();
-    /** @type {Array<{rawKey:string, root:string, path:string, operatorTargets:string[]}>} */
-    const keys = [];
-    for (const rawKey of rawKeys) {
-      const { path, root, operatorTargets } = deep
-        ? splitPatchKeyDeep(rawKey)
-        : (() => {
-            const { prefix, path: shallowPath, root: shallowRoot } = splitPatchKey(rawKey);
-            return {
-              path: shallowPath,
-              root: shallowRoot,
-              operatorTargets: prefix && shallowPath === shallowRoot ? [shallowRoot] : []
-            };
-          })();
-      if (!root) continue;
-      byPath.set(path, [...(byPath.get(path) ?? []), rawKey]);
-      byRoot.set(root, [...(byRoot.get(root) ?? []), rawKey]);
-      keys.push({ rawKey, root, path, operatorTargets });
-    }
-
-    for (const [path, spellings] of byPath) {
-      if (spellings.length > 1) return { rule: 1, path, root: path.split(".")[0], spellings };
-    }
-
-    for (const key of keys) {
-      for (const target of key.operatorTargets) {
-        const others = keys.filter(
-          (other) => other !== key && (other.path === target || other.path.startsWith(`${target}.`))
-        );
-        if (others.length) {
-          const involved = new Set([key.rawKey, ...others.map((other) => other.rawKey)]);
-          return {
-            rule: 2,
-            path: target,
-            root: target.split(".")[0],
-            spellings: rawKeys.filter((rawKey) => involved.has(rawKey))
-          };
-        }
-      }
-    }
-    return null;
-  };
-
-  const topLevel = findCollision(Object.keys(patch), { deep: true });
-  if (topLevel) refuse({ where: "at the top level", ...topLevel });
-
-  const schema = documentClass?.schema;
-  if (!schema || typeof schema.get !== "function") return;
-  for (const [rawKey, value] of Object.entries(patch)) {
-    if (!Array.isArray(value)) continue;
-    const { path, root } = splitPatchKey(rawKey);
-    if (path !== root) continue;
-    let field;
-    try {
-      field = schema.get(root);
-    } catch {
-      field = null;
-    }
-    if (!field || classifyArrayBackedField(field) !== "embedded-collection") continue;
-    for (const entry of value) {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry) || !isPlainObjectish(entry)) continue;
-      const collision = findCollision(
-        Object.keys(entry).filter((key) => key !== "_id"),
-        { deep: false }
-      );
-      if (collision) {
-        refuse({
-          where: `inside one entry of the embedded collection "${root}"`,
-          ...collision
-        });
-      }
-    }
   }
 }
 
 /**
+ * @param {{ rawPatch: Record<string, any>, expandedPatch: Record<string, any>, stored: unknown, documentClass?: any, subject: string }} args
+ */
+export function assertPatchFitsStored({ rawPatch, expandedPatch, stored, documentClass, subject }) {
+  assertNoAmbiguousBatchKeySpellings({ expandedPatch, coordinate: subject });
+  assertNoTopLevelDottedArrayWrite({ rawPatch, stored, documentClass, coordinate: subject });
+  assertNoStoredArrayDescent({ expandedPatch, stored, documentClass, coordinate: subject });
+}
+
+/**
+ * @param {unknown} value
+ * @param {string[]} prefix
+ * @param {boolean} inArray
+ * @returns {{ rule: 1 | 2, path: string, root: string, spellings: string[], where: string } | null}
+ */
+function findOperatorConflict(value, prefix, inArray) {
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      const inner = findOperatorConflict(entry, [...prefix, String(index)], true);
+      if (inner) return inner;
+    }
+    return null;
+  }
+  if (!isPlainObject(value)) return null;
+  const object = /** @type {Record<string, unknown>} */ (value);
+  /** @type {Map<string, Array<{ key: string, operator: boolean }>>} */
+  const byName = new Map();
+  for (const key of Object.keys(object)) {
+    if (key === "_id") continue;
+    const parsed = parsePatchKey(key);
+    byName.set(parsed.root, [...(byName.get(parsed.root) ?? []), { key, operator: parsed.operatorAt >= 0 }]);
+  }
+  for (const [name, keys] of byName) {
+    if (keys.length < 2 || !keys.some((entry) => entry.operator)) continue;
+    const plain = keys.find((entry) => !entry.operator);
+    const path = [...prefix, name];
+    return {
+      rule: plain && isPlainObject(object[plain.key]) ? 2 : 1,
+      path: path.join("."),
+      root: path[0],
+      spellings: keys.map((entry) => [...prefix, entry.key].join(".")),
+      where: inArray
+        ? "inside an array entry"
+        : prefix.length > 0
+          ? "inside a nested object"
+          : "at the top level"
+    };
+  }
+  for (const [key, inner] of Object.entries(object)) {
+    if (parsePatchKey(key).operatorAt >= 0) continue;
+    const conflict = findOperatorConflict(inner, [...prefix, key], inArray);
+    if (conflict) return conflict;
+  }
+  return null;
+}
+
+/** @param {{ expandedPatch: Record<string, any>, index?: number, command?: string, id?: string, coordinate?: string }} args */
+export function assertNoAmbiguousBatchKeySpellings({
+  expandedPatch,
+  index,
+  command,
+  id,
+  coordinate = `${command} element ${index} (id ${id})`
+}) {
+  const conflict = findOperatorConflict(expandedPatch, [], false);
+  if (!conflict) return;
+  const { rule, path, root, spellings, where } = conflict;
+  throw createBridgeError(
+    ERROR_CODES.INVALID_PARAMS,
+    `${coordinate} writes the field "${path}" ${where} through more than one key, one of them an operator: ` +
+      `${spellings.map((key) => `"${key}"`).join(" and ")}. A "-=" deletion or "==" replacement of a field ` +
+      `cannot be combined with another write to the same field, and Foundry resolves the combination ` +
+      `differently on the two supported cores. Send one key: the "==${path.split(".").at(-1)}" replacement ` +
+      `alone with the complete value, or the plain key without the operator.`,
+    {
+      ...elementCoordinates(index, id),
+      field: path,
+      ambiguousRoot: root,
+      ambiguousKeys: spellings,
+      ambiguityRule: rule
+    }
+  );
+}
+
+/** @param {Record<string, unknown>} value */
+function definedKeys(value) {
+  return Object.keys(value).filter((key) => value[key] !== undefined);
+}
+
+/**
+ * An own key holding `undefined` equals an absent key: Foundry produces both for the same state.
  * @param {unknown} a
  * @param {unknown} b
+ * @returns {boolean}
  */
-export function batchValuesEqual(a, b) {
+export function sourceValuesEqual(a, b) {
   if (a === b) return true;
   if (Array.isArray(a) || Array.isArray(b)) {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-    return a.every((entry, index) => batchValuesEqual(entry, b[index]));
+    return a.every((entry, index) => sourceValuesEqual(entry, b[index]));
   }
-  if (
-    a &&
-    b &&
-    typeof a === "object" &&
-    typeof b === "object" &&
-    isPlainObjectish(a) &&
-    isPlainObjectish(b)
-  ) {
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
-    if (aKeys.length !== bKeys.length) return false;
-    return aKeys.every(
-      (key) =>
-        Object.hasOwn(/** @type {any} */ (b), key) &&
-        batchValuesEqual(/** @type {any} */ (a)[key], /** @type {any} */ (b)[key])
-    );
-  }
-  return false;
+  if (!isPlainObject(a) || !isPlainObject(b)) return false;
+  const left = /** @type {Record<string, unknown>} */ (a);
+  const right = /** @type {Record<string, unknown>} */ (b);
+  const leftKeys = definedKeys(left);
+  if (leftKeys.length !== definedKeys(right).length) return false;
+  return leftKeys.every((key) => right[key] !== undefined && sourceValuesEqual(left[key], right[key]));
 }
 
 /** @param {{ documentClass: any, patch: Record<string, any>, merged: any, stored?: any, index: number, command: string, id: string, coordinate?: string }} args */
@@ -218,9 +506,10 @@ export function assertBatchArrayWritesReflected({
   }
 
   for (const [rawKey, value] of Object.entries(patch ?? {})) {
-    const operator = rawKey.startsWith("==") ? "==" : rawKey.startsWith("-=") ? "-=" : "";
-    const key = operator ? rawKey.slice(2) : rawKey;
-    const rootKey = key.split(".")[0];
+    const parsedKey = parsePatchKey(rawKey);
+    const operator =
+      parsedKey.operators[0] === "replace" ? "==" : parsedKey.operators[0] === "delete" ? "-=" : "";
+    const rootKey = parsedKey.root;
     if (!rootKey) continue;
 
     let field;
@@ -233,7 +522,6 @@ export function assertBatchArrayWritesReflected({
       assertMigratedArrayKeyReflected({
         documentClass,
         rawKey,
-        key,
         rootKey,
         operator,
         value,
@@ -263,89 +551,64 @@ export function assertBatchArrayWritesReflected({
       coordinate
     });
 
-    if (key === rootKey) {
-      const kind = classifyArrayBackedField(field);
-      if (!kind) continue;
+    const kind = classifyArrayBackedField(field);
+    if (!kind) continue;
 
-      if (batchValuesEqual(value, source[rootKey])) continue;
+    if (sourceValuesEqual(value, source[rootKey])) continue;
 
-      if (kind === "embedded-collection") {
-        assertBatchEcfEntriesReflected({
-          field,
-          rootKey,
-          rawKey,
-          value,
-          source,
-          preSource,
-          index,
-          id,
-          coordinate
-        });
-        continue;
-      }
-
-      if (typeof field.clean !== "function") continue;
-
-      let expected;
-      try {
-        expected = field.clean(structuredCloneish(value));
-      } catch {
-        expected = undefined;
-      }
-
-      if (!batchValuesEqual(expected, source[rootKey])) {
-        throw createBridgeError(
-          ERROR_CODES.INVALID_PARAMS,
-          `${coordinate} sets "${rawKey}" to a value this Foundry version SILENTLY DISCARDS: ` +
-            `the merged document keeps ${JSON.stringify(source[rootKey])}. Foundry 14 drops an invalid array field ` +
-            `without an error (Foundry 13 rejects it outright), so the write would be reported as applied while ` +
-            `nothing changed. Fix the value (a Wall's "c", for example, must be exactly four numbers) and retry.`,
-          { index, id, field: rawKey, arrayField: rootKey, requested: value, stored: source[rootKey] ?? null }
-        );
-      }
-
-      if (!arrayWriteLanded({ field, value, rootKey, source, preSource })) {
-        throw createBridgeError(
-          ERROR_CODES.INVALID_PARAMS,
-          `${coordinate} sets "${rawKey}" to a value the element schema does not accept, ` +
-            `and this Foundry version SILENTLY DISCARDS it: cleaning it COLLAPSES onto the value already stored ` +
-            `(${JSON.stringify(source[rootKey])}), so nothing changes and the write would be reported as applied. ` +
-            `Send an array of values the field accepts (for a set-valued field such as a Wall's "levels", an array ` +
-            `of level ids) and retry.`,
-          { index, id, field: rawKey, arrayField: rootKey, requested: value, stored: source[rootKey] ?? null }
-        );
-      }
+    if (kind === "embedded-collection") {
+      assertBatchEcfEntriesReflected({
+        field,
+        rootKey,
+        rawKey,
+        value,
+        source,
+        preSource,
+        index,
+        id,
+        coordinate
+      });
       continue;
     }
 
-    if (!Array.isArray(source[rootKey])) continue;
+    if (typeof field.clean !== "function") continue;
 
-    throw createBridgeError(
-      ERROR_CODES.INVALID_PARAMS,
-      `${coordinate} writes the dotted path "${rawKey}" INSIDE the ARRAY field ` +
-        `"${rootKey}". Foundry does NOT patch an array in place: it REBUILDS the array from this patch alone, so ` +
-        `every entry the patch does not name is DESTROYED — and when the rebuilt array fails the field's own ` +
-        `validator, Foundry drops the whole write with only a UI notification, so the write would be ` +
-        `reported as applied while the stored array lost data or kept none of it. Send the WHOLE array instead ` +
-        `(for a Wall, "c": [x1, y1, x2, y2]): read it first, change the entry you mean, send all of them back, ` +
-        `and retry.`,
-      {
-        index,
-        id,
-        field: rawKey,
-        arrayField: rootKey,
-        requested: value,
-        stored: preSource?.[rootKey] ?? null
-      }
-    );
+    let expected;
+    try {
+      expected = field.clean(structuredCloneish(value));
+    } catch {
+      expected = undefined;
+    }
+
+    if (!sourceValuesEqual(expected, source[rootKey])) {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `${coordinate} sets "${rawKey}" to a value this Foundry version SILENTLY DISCARDS: ` +
+          `the merged document keeps ${JSON.stringify(source[rootKey])}. Foundry 14 drops an invalid array field ` +
+          `without an error (Foundry 13 rejects it outright), so the write would be reported as applied while ` +
+          `nothing changed. Fix the value (a Wall's "c", for example, must be exactly four numbers) and retry.`,
+        { index, id, field: rawKey, arrayField: rootKey, requested: value, stored: source[rootKey] ?? null }
+      );
+    }
+
+    if (!arrayWriteLanded({ field, value, rootKey, source, preSource })) {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `${coordinate} sets "${rawKey}" to a value the element schema does not accept, ` +
+          `and this Foundry version SILENTLY DISCARDS it: cleaning it COLLAPSES onto the value already stored ` +
+          `(${JSON.stringify(source[rootKey])}), so nothing changes and the write would be reported as applied. ` +
+          `Send an array of values the field accepts (for a set-valued field such as a Wall's "levels", an array ` +
+          `of level ids) and retry.`,
+        { index, id, field: rawKey, arrayField: rootKey, requested: value, stored: source[rootKey] ?? null }
+      );
+    }
   }
 }
 
-/** @param {{ documentClass: any, rawKey: string, key: string, rootKey: string, operator: ""|"=="|"-=", value: unknown, source: Record<string, any>, merged?: any, preSource?: Record<string, any>|null, index: number, id: string, coordinate: string }} args */
+/** @param {{ documentClass: any, rawKey: string, rootKey: string, operator: ""|"=="|"-=", value: unknown, source: Record<string, any>, merged?: any, preSource?: Record<string, any>|null, index: number, id: string, coordinate: string }} args */
 function assertMigratedArrayKeyReflected({
   documentClass,
   rawKey,
-  key,
   rootKey,
   operator,
   value,
@@ -363,8 +626,7 @@ function assertMigratedArrayKeyReflected({
   const storedNow =
     (system && typeof system === "object" && !Array.isArray(system) ? system[rootKey] : undefined) ?? null;
 
-  const migratedValue =
-    !operator && key === rootKey ? migratedArrayValue(documentClass, key, value, rootKey) : undefined;
+  const migratedValue = operator ? undefined : migratedArrayValue(documentClass, rootKey, value);
   if (migratedValue !== undefined) {
     if (migratedArrayWriteLanded({ merged, rootKey, migratedValue, storedNow, preSource })) return;
     throw createBridgeError(
@@ -389,9 +651,7 @@ function assertMigratedArrayKeyReflected({
 
   const reason = operator
     ? `a legacy "${operator}" operator key is not migrated by this Foundry version`
-    : key === rootKey
-      ? `this Foundry version migrates the field only when the value is an ARRAY`
-      : `a dotted path into the field is not migrated by this Foundry version`;
+    : `this Foundry version migrates the field only when the value is an ARRAY`;
   throw createBridgeError(
     ERROR_CODES.INVALID_PARAMS,
     `${coordinate} writes "${rawKey}", which this Foundry version does NOT declare at ` +
@@ -422,27 +682,11 @@ function assertMigratedSystemArrayReflected({
   id,
   coordinate
 }) {
-  const { path: normalizedKey, deletes: keyDeletes } = normalizeOperatorPath(rawKey);
-  const segments = normalizedKey.split(".");
-  const migrationRoot = segments[0];
-  if (!migrationRoot) return;
+  const migrationRoot = parsePatchKey(rawKey).root;
+  if (!migrationRoot || !isPlainObject(value)) return;
 
-  /** @type {Array<{ subPath: string, requested: unknown, deletes: boolean }>} */
-  let candidates;
-  if (segments.length > 1) {
-    candidates = [{ subPath: segments.slice(1).join("."), requested: value, deletes: keyDeletes }];
-  } else if (value && typeof value === "object" && !Array.isArray(value) && isPlainObjectish(value)) {
-    candidates = Object.entries(value).map(([entryKey, entryValue]) => {
-      const inner = normalizeOperatorPath(entryKey);
-      return { subPath: inner.path, requested: entryValue, deletes: keyDeletes || inner.deletes };
-    });
-  } else {
-    return;
-  }
-
-  for (const { subPath, requested, deletes } of candidates) {
-    if (!subPath) continue;
-    const candidateKey = subPath.split(".")[0];
+  for (const [entryKey, requested] of Object.entries(/** @type {Record<string, unknown>} */ (value))) {
+    const candidateKey = parsePatchKey(entryKey).root;
     if (!candidateKey) continue;
 
     const movedTo = findMigratedArrayTarget(documentClass, candidateKey);
@@ -454,124 +698,25 @@ function assertMigratedSystemArrayReflected({
         ? container[candidateKey]
         : undefined) ?? null;
 
-    if (subPath === candidateKey) {
-      if (batchValuesEqual(requested, storedNow)) continue;
-      if (
-        migratedArrayWriteLanded({
-          merged,
-          rootKey: candidateKey,
-          migratedValue: requested,
-          storedNow,
-          preSource
-        })
-      ) {
-        continue;
-      }
-
-      throw createBridgeError(
-        ERROR_CODES.INVALID_PARAMS,
-        `${coordinate} sets "${movedTo}"${rawKey === movedTo ? "" : ` (through "${rawKey}")`} ` +
-          `to a value that field does NOT accept, and this Foundry version SILENTLY DISCARDS it: the merged ` +
-          `document keeps ${JSON.stringify(storedNow)} there, so nothing changes and the write would be reported ` +
-          `as applied. Send entries the field accepts (an ActiveEffect change "type", for example, must be ` +
-          `dot-delimited alphanumeric segments of at least three characters, or "custom.<number>" — a hyphen or ` +
-          `an underscore is rejected) and retry.`,
-        {
-          index,
-          id,
-          field: rawKey,
-          arrayField: candidateKey,
-          movedTo,
-          requested,
-          stored: storedNow
-        }
-      );
-    }
-
-    const fullPath = `${migrationRoot}.${subPath}`;
-
-    const resolvedNow = resolveSourcePath(source, fullPath);
-
-    if (resolvedNow.status === "unaddressable") {
-      const arraySegment = resolvedNow.container === "array";
-      throw createBridgeError(
-        ERROR_CODES.INVALID_PARAMS,
-        `${coordinate} writes "${rawKey}"${rawKey === fullPath ? "" : ` ("${fullPath}")`}, whose segment ` +
-          `${JSON.stringify(resolvedNow.segment)} addresses ` +
-          (arraySegment
-            ? `the array field "${movedTo}" and is not an ARRAY INDEX. An array is addressed by its indices ` +
-              `only, so this write cannot land the state it names — and on Foundry 14 a "length" spelling ` +
-              `silently EMPTIES the whole array while reporting the write as applied. `
-            : `a property of a SCALAR value stored inside the array field "${movedTo}" (a string's or a ` +
-              `number's own property is a fact about that value, not stored data), so this write cannot ` +
-              `land the state it names — on Foundry 14 it silently REPLACES the scalar with an object and ` +
-              `destroys the other entries while reporting the write as applied. `) +
-          `Send the WHOLE array at "${movedTo}" (an empty array to clear it) and retry.`,
-        {
-          index,
-          id,
-          field: rawKey,
-          arrayField: candidateKey,
-          movedTo,
-          path: fullPath,
-          segment: resolvedNow.segment,
-          requested: requested ?? null,
-          stored: storedNow
-        }
-      );
-    }
-    const storedNowAtPath = resolvedNow.value;
-
-    let credited = batchValuesEqual(requested, storedNowAtPath);
-
-    if (deletes && storedNowAtPath === undefined) credited = true;
-
+    if (sourceValuesEqual(requested, storedNow)) continue;
     if (
-      storedNowAtPath !== undefined &&
-      preSource &&
-      !batchValuesEqual(storedNowAtPath, readSourcePath(preSource, fullPath))
+      migratedArrayWriteLanded({
+        merged,
+        rootKey: candidateKey,
+        migratedValue: requested,
+        storedNow,
+        preSource
+      })
     ) {
-      credited = true;
-    }
-
-    if (credited) {
-      const preArray = preSource ? readSourcePath(preSource, `${migrationRoot}.${candidateKey}`) : undefined;
-      if (Array.isArray(preArray) && preArray.length > 0) {
-        throw createBridgeError(
-          ERROR_CODES.INVALID_PARAMS,
-          `${coordinate} writes "${rawKey}"${rawKey === fullPath ? "" : ` ("${fullPath}")`} ` +
-            `INSIDE the array field "${movedTo}", which currently holds ${preArray.length} ` +
-            `entr${preArray.length === 1 ? "y" : "ies"}. This Foundry version does NOT patch that array in ` +
-            `place: it REBUILDS it from this patch alone, and the bridge does not compare the rebuilt array ` +
-            `against the stored one, so it cannot confirm that the entries you did not name — or the fields ` +
-            `of the entry you did name that this patch omits — are preserved. The write is refused for that ` +
-            `reason; the refusal is deliberately conservative and also covers the narrow case where your ` +
-            `patch names every field and nothing would change. WORKAROUND: send the WHOLE array at ` +
-            `"${movedTo}" wholesale ({"${movedTo}": [ ...full desired state... ]}) — read it first, change ` +
-            `the entry you mean, send all of them back; an empty array clears it — which is allowed and ` +
-            `applied faithfully. Then retry.`,
-          {
-            index,
-            id,
-            field: rawKey,
-            arrayField: candidateKey,
-            movedTo,
-            path: fullPath,
-            requested: requested ?? null,
-            stored: preArray
-          }
-        );
-      }
       continue;
     }
 
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
-      `${coordinate} writes "${rawKey}" INSIDE the array field "${movedTo}", and this ` +
-        `Foundry version SILENTLY DISCARDS the whole write: the merged document still holds ` +
-        `${JSON.stringify(storedNowAtPath ?? null)} at "${fullPath}" and ${JSON.stringify(storedNow)} in the ` +
-        `array, so nothing changes and the write would be reported as applied. Send the WHOLE array at ` +
-        `"${movedTo}" with entries the field accepts (an ActiveEffect change "type", for example, must be ` +
+      `${coordinate} sets "${movedTo}"${rawKey === movedTo ? "" : ` (through "${rawKey}")`} ` +
+        `to a value that field does NOT accept, and this Foundry version SILENTLY DISCARDS it: the merged ` +
+        `document keeps ${JSON.stringify(storedNow)} there, so nothing changes and the write would be reported ` +
+        `as applied. Send entries the field accepts (an ActiveEffect change "type", for example, must be ` +
         `dot-delimited alphanumeric segments of at least three characters, or "custom.<number>" — a hyphen or ` +
         `an underscore is rejected) and retry.`,
       {
@@ -580,9 +725,8 @@ function assertMigratedSystemArrayReflected({
         field: rawKey,
         arrayField: candidateKey,
         movedTo,
-        path: fullPath,
-        requested: requested ?? null,
-        stored: storedNowAtPath ?? null
+        requested,
+        stored: storedNow
       }
     );
   }
@@ -602,13 +746,13 @@ function migratedArrayWriteLanded({ merged, rootKey, migratedValue, storedNow, p
       expected = undefined;
     }
   }
-  if (batchValuesEqual(expected, storedNow)) return true;
+  if (sourceValuesEqual(expected, storedNow)) return true;
 
   if (!preSource) return false;
   const system = preSource.system;
   const storedBefore =
     (system && typeof system === "object" && !Array.isArray(system) ? system[rootKey] : undefined) ?? null;
-  return !batchValuesEqual(storedNow, storedBefore);
+  return !sourceValuesEqual(storedNow, storedBefore);
 }
 
 /**
@@ -630,27 +774,26 @@ function systemModelField(document, key) {
  * @returns {string|null}
  */
 function findMigratedArrayTarget(documentClass, rootKey) {
-  return migratedArrayValue(documentClass, rootKey, [], rootKey) === undefined ? null : `system.${rootKey}`;
+  return migratedArrayValue(documentClass, rootKey, []) === undefined ? null : `system.${rootKey}`;
 }
 
 /**
  * @param {any} documentClass
- * @param {string} key
- * @param {unknown} value
  * @param {string} rootKey
+ * @param {unknown} value
  * @returns {unknown[]|undefined}
  */
-function migratedArrayValue(documentClass, key, value, rootKey) {
+function migratedArrayValue(documentClass, rootKey, value) {
   const migrateData = documentClass?.migrateData;
   if (typeof migrateData !== "function") return undefined;
   let migrated;
   try {
-    migrated = migrateData.call(documentClass, { [key]: structuredCloneish(value) });
+    migrated = migrateData.call(documentClass, { [rootKey]: structuredCloneish(value) });
   } catch {
     return undefined;
   }
   const system = migrated?.system;
-  if (!system || typeof system !== "object" || Array.isArray(system) || !isPlainObjectish(system))
+  if (!system || typeof system !== "object" || Array.isArray(system) || !isPlainObject(system))
     return undefined;
   if (!Object.hasOwn(system, rootKey) || !Array.isArray(system[rootKey])) return undefined;
   return system[rootKey];
@@ -663,8 +806,7 @@ function migratedArrayValue(documentClass, key, value, rootKey) {
  */
 function findShimmedArrayPath(source, rootKey) {
   const system = source?.system;
-  if (!system || typeof system !== "object" || Array.isArray(system) || !isPlainObjectish(system))
-    return null;
+  if (!system || typeof system !== "object" || Array.isArray(system) || !isPlainObject(system)) return null;
   if (!Object.hasOwn(system, rootKey) || !Array.isArray(system[rootKey])) return null;
   return `system.${rootKey}`;
 }
@@ -684,7 +826,7 @@ function arrayWriteLanded({ field, value, rootKey, source, preSource }) {
   if (!failure?.unresolved) return true;
 
   if (!preSource) return false;
-  return !batchValuesEqual(source[rootKey], preSource[rootKey]);
+  return !sourceValuesEqual(source[rootKey], preSource[rootKey]);
 }
 
 /**
@@ -812,7 +954,7 @@ function assertBatchEcfEntriesReflected({
   const consumedCandidates = new Set();
 
   for (const entry of /** @type {any[]} */ (value)) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry) || !isPlainObjectish(entry)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry) || !isPlainObject(entry)) {
       refuse(`one of the entries is not a plain object`, entry, null);
     }
     const entryId = /** @type {any} */ (entry)._id;
@@ -858,20 +1000,20 @@ function assertBatchEcfEntriesReflected({
     for (const [rawEntryKey, entryValue] of Object.entries(/** @type {any} */ (entry))) {
       if (rawEntryKey === "_id") continue;
 
-      const isDeletion = rawEntryKey.startsWith("-=");
-      const entryKey = isDeletion || rawEntryKey.startsWith("==") ? rawEntryKey.slice(2) : rawEntryKey;
-      const entryRoot = entryKey.split(".")[0];
-      if (!entryRoot) continue;
+      const parsedEntryKey = parsePatchKey(rawEntryKey);
+      const isDeletion = parsedEntryKey.operators[0] === "delete";
+      const entryKey = parsedEntryKey.root;
+      if (!entryKey) continue;
 
       let elementField;
       try {
-        elementField = elementSchema?.get?.(entryRoot) ?? null;
+        elementField = elementSchema?.get?.(entryKey) ?? null;
       } catch {
         elementField = null;
       }
 
       if (!elementField) {
-        const movedTo = findShimmedArrayPath(mergedEntry, entryRoot);
+        const movedTo = findShimmedArrayPath(mergedEntry, entryKey);
         if (movedTo) {
           refuse(
             `entry ${entryId} writes "${rawEntryKey}", which this Foundry version does not declare on the element ` +
@@ -891,50 +1033,39 @@ function assertBatchEcfEntriesReflected({
       }
 
       if (isDeletion) {
-        if (readSourcePath(mergedEntry, entryKey) !== undefined) {
+        if (mergedEntry[entryKey] !== undefined) {
           refuse(
             `entry ${entryId} asks to DELETE "${entryKey}" ("${rawEntryKey}"), which the merged entry still holds ` +
               `— no supported core applies a forced deletion inside an embedded entry`,
             null,
-            readSourcePath(mergedEntry, entryKey)
+            mergedEntry[entryKey]
           );
         }
         continue;
       }
 
-      if (entryKey !== entryRoot) {
-        if (!batchValuesEqual(entryValue, readSourcePath(mergedEntry, entryKey))) {
-          refuse(
-            `entry ${entryId} writes the dotted path "${entryKey}", which the merged entry does not reflect`,
-            entryValue,
-            readSourcePath(mergedEntry, entryKey)
-          );
-        }
-        continue;
-      }
+      const mergedValue = mergedEntry[entryKey];
 
-      const mergedValue = mergedEntry[entryRoot];
+      if (sourceValuesEqual(entryValue, mergedValue)) continue;
 
-      if (batchValuesEqual(entryValue, mergedValue)) continue;
-
-      if (!isPlainObjectish(entryValue) && typeof elementField.clean === "function") {
+      if (!isPlainObject(entryValue) && typeof elementField.clean === "function") {
         let pinned;
         try {
           pinned = elementField.clean(structuredCloneish(entryValue));
         } catch {
           pinned = undefined;
         }
-        if (!batchValuesEqual(pinned, mergedValue)) {
+        if (!sourceValuesEqual(pinned, mergedValue)) {
           refuse(
-            `entry ${entryId} sets "${entryRoot}" to a value the merged entry does not hold ` +
-              `(another entry, or another key of this entry, wrote "${entryRoot}" last)`,
+            `entry ${entryId} sets "${entryKey}" to a value the merged entry does not hold ` +
+              `(another entry, or another key of this entry, wrote "${entryKey}" last)`,
             entryValue,
             mergedValue
           );
         }
       }
 
-      if (preEntry && !batchValuesEqual(mergedValue, preEntry[entryRoot])) continue;
+      if (preEntry && !sourceValuesEqual(mergedValue, preEntry[entryKey])) continue;
 
       if (typeof elementField.validate === "function") {
         let failure = null;
@@ -945,7 +1076,7 @@ function assertBatchEcfEntriesReflected({
         }
         if (failure?.unresolved) {
           refuse(
-            `entry ${entryId} sets "${entryRoot}" to a value the element schema rejects ` +
+            `entry ${entryId} sets "${entryKey}" to a value the element schema rejects ` +
               `(${String(failure.message ?? "invalid value")})`,
             entryValue,
             mergedValue
@@ -960,9 +1091,9 @@ function assertBatchEcfEntriesReflected({
       } catch {
         expected = undefined;
       }
-      if (!batchValuesEqual(expected, mergedValue)) {
+      if (!sourceValuesEqual(expected, mergedValue)) {
         refuse(
-          `entry ${entryId} sets "${entryRoot}" to a value the merged entry does not hold`,
+          `entry ${entryId} sets "${entryKey}" to a value the merged entry does not hold`,
           entryValue,
           mergedValue
         );
@@ -983,23 +1114,22 @@ function findEcfCreateWitness({ entry, candidates, consumed, elementSchema }) {
   const matches = (candidate) => {
     if (!candidate || typeof candidate !== "object") return false;
     return keys.every((rawEntryKey) => {
-      if (rawEntryKey.startsWith("-=")) return false;
-      const entryKey = rawEntryKey.startsWith("==") ? rawEntryKey.slice(2) : rawEntryKey;
+      const parsedEntryKey = parsePatchKey(rawEntryKey);
+      if (parsedEntryKey.operators[0] === "delete") return false;
+      const entryKey = parsedEntryKey.root;
       const requested = entry[rawEntryKey];
-      const present = readSourcePath(candidate, entryKey);
-      if (batchValuesEqual(requested, present)) return true;
+      const present = candidate[entryKey];
+      if (sourceValuesEqual(requested, present)) return true;
 
-      const entryRoot = entryKey.split(".")[0];
-      if (entryKey !== entryRoot) return false;
       let elementField;
       try {
-        elementField = elementSchema?.get?.(entryRoot) ?? null;
+        elementField = elementSchema?.get?.(entryKey) ?? null;
       } catch {
         elementField = null;
       }
       if (typeof elementField?.clean !== "function") return false;
       try {
-        return batchValuesEqual(elementField.clean(structuredCloneish(requested)), present);
+        return sourceValuesEqual(elementField.clean(structuredCloneish(requested)), present);
       } catch {
         return false;
       }
@@ -1023,20 +1153,6 @@ export function readDocumentSource(document) {
 }
 
 /**
- * @param {Record<string, any>} patch
- * @returns {string[]}
- */
-export function batchMergedConfirmationKeys(patch) {
-  const split = Object.keys(patch ?? {}).map((key) => splitPatchKeyDeep(key));
-  if (!split.some((entry) => entry.operatorTargets.length > 0)) return [];
-  const roots = new Set();
-  for (const entry of split) {
-    if (entry.root) roots.add(entry.root);
-  }
-  return [...roots];
-}
-
-/**
  * @param {any} documentClass
  * @param {Record<string, any>} patch
  * @returns {string[]}
@@ -1048,9 +1164,9 @@ export function batchEmbeddedCreateKeys(documentClass, patch) {
   const keys = [];
   for (const [key, value] of Object.entries(patch ?? {})) {
     if (!Array.isArray(value)) continue;
-    const { path, root, operatorTargets } = splitPatchKeyDeep(key);
+    const { path, root, operatorAt } = parsePatchKey(key);
 
-    if (path !== root || operatorTargets.length > 0) continue;
+    if (path !== root || operatorAt >= 0) continue;
     let field = null;
     try {
       field = schema.get(root);
@@ -1079,21 +1195,8 @@ export function batchEcfResidualEntries(value) {
   return value.filter((entry) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry) || !usableEntryId(entry)) return false;
 
-    return Object.keys(entry).every((rawKey) => splitPatchKeyDeep(rawKey).operatorTargets.length === 0);
+    return Object.keys(entry).every((rawKey) => parsePatchKey(rawKey).operatorAt < 0);
   });
-}
-
-/**
- * @param {{ document: any, mergedSource: Record<string, any>|null, mergedConfirmationKeys: string[] }} element
- * @returns {boolean|null}
- */
-export function mergedPreviewReflected(element) {
-  const merged = element.mergedSource;
-  const stored = readDocumentSource(element.document);
-  if (!merged || !stored) return null;
-  return element.mergedConfirmationKeys.every((rootKey) =>
-    batchValuesEqual(merged[rootKey], stored[rootKey])
-  );
 }
 
 function readSourcePath(source, path) {
@@ -1103,24 +1206,6 @@ function readSourcePath(source, path) {
     current = current[segment];
   }
   return current;
-}
-
-// @returns {{status:"resolved", value:unknown, segment:null}|{status:"missing", value:undefined, segment:string|null}|{status:"unaddressable", value:undefined, segment:string, container:"array"|"scalar"}}
-function resolveSourcePath(source, path) {
-  let current = /** @type {any} */ (source);
-  for (const segment of path.split(".")) {
-    if (current === undefined) {
-      return { status: "missing", value: undefined, segment };
-    }
-    if (current === null || typeof current !== "object") {
-      return { status: "unaddressable", value: undefined, segment, container: "scalar" };
-    }
-    if (Array.isArray(current) && !/^\d+$/.test(segment)) {
-      return { status: "unaddressable", value: undefined, segment, container: "array" };
-    }
-    current = current[segment];
-  }
-  return { status: "resolved", value: current, segment: null };
 }
 
 export function structuredCloneish(value) {

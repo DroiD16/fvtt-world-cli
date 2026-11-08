@@ -196,10 +196,20 @@ world state when the return value does not establish the effect.
 
 ### Setting results
 
-Setting writes return the observed `value` and its `previous` value. Registered types or callbacks
-may normalize the input. Confirmation establishes that the previous value changed, not that the
-requested value was stored exactly. Writing an already-stored value succeeds as unchanged without
-calling Foundry. `requiresReload: true` indicates that the GM client needs a reload.
+Setting writes return the observed `value` and its `previous` value, both in the form
+`game.settings.get` returns after the setting's registered type cast. For example, `16711680`
+written to a `Color` setting reports `value: "#ff0000"`. Change detection and confirmation compare
+the JSON Foundry stores for the setting with the JSON of the validated request, so two requests
+that cast to the same value are still different writes. A setting that has never been stored compares as
+its registered default prepared the same way, so re-sending the default is unchanged. When a
+DataField's `clean` yields no value, Foundry stores the registered default, and the request is
+compared and previewed as that default.
+
+A stored value other than the requested one, for example from an `onChange` callback, turns the
+write into an `INTERNAL_ERROR` with a `paths` entry for `value` that shows the requested and stored
+JSON values. In `setting.set-many` that element becomes a `dropped` outcome carrying the same
+`paths`. Writing an already-stored value succeeds as unchanged without calling Foundry.
+`requiresReload: true` indicates that the GM client needs a reload.
 
 ## Write confirmation
 
@@ -207,11 +217,30 @@ Document writes report success only after confirmation. Foundry can resolve a ve
 write without throwing, and hooks can remove or rewrite part of a patch. Single and bulk updates
 pass Foundry a private copy, then compare stored state with the original request.
 
+Confirmation compares each requested leaf path that survives Foundry's cleaning with the stored
+source. Foundry drops a key the document's schema does not declare without an error before that
+comparison, so a write made only of undeclared keys reports success with nothing stored. A deletion (`-=key` or
+Foundry 14's `ForcedDeletion`) is confirmed when the key is absent, including a key that never
+existed. A forced replacement (`==key` at any depth, dotted or nested, or Foundry 14's
+`ForcedReplacement`) is confirmed when the whole stored value at that path equals the requested
+value after Foundry's cleaning.
+
+A patch that deletes or force-replaces a key and also writes it, such as
+`{"flags": {"-=mod": null, "mod": {…}}}`, is refused before the write (see
+[Patch shape checks](#patch-shape-checks)). A forced replacement `{"flags": {"==mod": {…}}}`
+replaces the value in one key.
+
 A valid patch whose requested state is already stored remains a successful no-op. A validation
 failure recovered after an unwritten update returns `INVALID_PARAMS`. Unconfirmed, partial, or
 indeterminate updates can return `INTERNAL_ERROR` with these details:
 
-- `fields`: requested fields whose state was not confirmed.
+- `fields`: requested top-level fields whose state was not confirmed.
+- `paths`: up to 20 entries `{ path, requested, stored }`, one per leaf path where the stored value
+  differs from the request. `absent: "stored"` replaces `stored` when the key is missing from the
+  stored source, and `absent: "requested"` replaces `requested` for a deletion that did not land.
+  A long string, or an object or array whose JSON is long, is shortened to a window around the
+  first differing character; `truncated` then carries `format` (`text` or `json`), `offset`, and
+  the full `requestedLength` and `storedLength`. `pathsTruncated` counts the entries beyond 20.
 - `partial: true`: stored data changed in a requested field, but the full requested state was
   not reached. A hook may have applied only part of a nested object or replaced a value.
 - `changedFields`: requested top-level fields observed to change, including fields that changed
@@ -220,6 +249,20 @@ indeterminate updates can return `INTERNAL_ERROR` with these details:
   even when `partial` is true.
 - `indeterminate: true`: confirmation could not establish the outcome. Some or all of the write
   may have persisted. `changedFields` is `null` when the before/after comparison was unavailable.
+
+When stored differs from requested, the message says that the bridge cannot verify whether Foundry
+core, the game system or a module normalized the value, or whether a hook rewrote, dropped or vetoed
+the change. A blocking module is listed as one possible cause, never as the diagnosis. Resending the
+same patch does not change the result. `scene.activate` and `combat.activate` are the exceptions:
+another client activating a different scene or combat fits the same observation, so their messages
+leave out the resend sentence. The same `paths` entries appear on `journal.update` page writes, on
+scene and combat activation, on `combat.start`, on combat initiative, on setting and user role or
+permission writes, and on a `dropped` outcome of a bulk update when the stored state was compared. A
+bulk element whose embedded creation without `_id` cannot be confirmed is `dropped` without `paths`.
+
+Clearing a field counts as a deletion: when Foundry cleans `null` or `""` on a field that does not
+accept it to "no value", the request is confirmed when the key is absent, and a mismatch reports it
+with `absent: "requested"`.
 
 Parent patches that create embedded entries without `_id`, such as new `behaviors` in
 `scene.region.update`, return an indeterminate error after writing because parent update results
@@ -231,10 +274,52 @@ new operation with a fresh idempotency key if using one.
 
 ### Patch shape checks
 
-Single updates, bulk updates, and dry runs reject ambiguous field spellings, invalid or discarded
-array values, and dotted writes inside arrays with `INVALID_PARAMS` before mutation. Recognized
-legacy fields are checked against their migrated destinations as well. Send whole arrays; ordinary
-dotted object-property writes remain supported where the schema permits them.
+Single updates, bulk updates, journal page patches in `journal.update`, and dry runs reject
+ambiguous field spellings, invalid or discarded array values, and dotted writes inside arrays with
+`INVALID_PARAMS` before mutation.
+
+The bridge expands every dotted key into nested objects before it checks, previews, writes or
+confirms an update patch, a clone patch or the overrides of a compendium import, so Foundry never
+receives a dotted key in any of them; the pre-write array checks preview and judge the same expanded
+patch. Keys merge in the order they appear in the object: nested
+objects merge field by field, and when two keys set the same leaf the later key wins, so
+`{"system": {"hp": {"value": 1}}, "system.hp.value": 5}` stores 5. Operator keys stay nested as
+`-=key` and `==key`. The same expansion applies at every nesting level, inside the entries of every
+array (embedded collections included), and to journal page patches. These shapes are refused with
+`INVALID_PARAMS`, for clone patches and import overrides too; for those the stored-array check
+compares against the source document or the imported compendium data:
+
+- after expansion, a `-=` or `==` key next to another key for the same field, because a field
+  cannot be deleted or replaced and written in the same patch;
+- a key that writes into an array the document already stores. Below the top level of the patch any
+  key counts: `{"system.tags.1": "z"}`, `{"system": {"tags.1": "z"}}`, `{"system": {"tags": {"1":
+  "z"}}}`, `{"system.tags.length": 0}` and `{"system": {"tags": {"foo": "z"}}}` all target the
+  stored `system.tags`. Foundry would rebuild that array from the patch, turning `["a", "b", "c"]`
+  into `[null, "z"]` or `[]`. A `==` replacement of a stored array with an object counts too. For a
+  top-level array field, a dotted key such as `{"c.foo": 1}` or `{"==c.foo": 1}` is refused, and an
+  object counts only through a key Foundry reads as an array index: any key that `Number()` turns
+  into a non-negative integer, so `"0"`, `" 0"` and `"0e0"` all count. Any other object written to a
+  top-level array field is a whole-field write that the array checks above judge. A dotted key or an
+  object written into a top-level key that the running core has moved, such as an ActiveEffect's
+  `changes` on Foundry 14, is refused with a message that names where the field moved, with
+  `movedTo` in the details. Inside an embedded-collection entry the check uses the stored entry with
+  the same `_id`. The details carry `field` and `arrayField`;
+- a key that writes inside an array an earlier key of the same patch sets, such as
+  `{"system.tags": ["p", "q"], "system.tags.0": "z"}`, because Foundry rebuilds an array instead of
+  changing one entry. In the reverse order the later key wins as usual: the whole array replaces
+  the earlier entry write;
+- a key path longer than 32 segments, counting nesting levels, dotted segments and array indexes.
+  That is more than twice the deepest nesting measured across the worlds, systems and modules of a
+  v13 and a v14 installation (13 levels). The details carry `limit: "patch-depth"` and `max`;
+- any key segment named `__proto__`, `constructor` or `prototype`, anywhere in the request. The
+  details carry `field` (the full key path) and `reservedSegment`;
+- any key named `__$OPERATOR$__`, anywhere in the request. Foundry 14 rebuilds a deletion or
+  forced replacement from an object holding that key and replaces the whole object, dropping every
+  key beside it, while Foundry 13 stores it as data. The `-=key` and `==key` spellings do the same
+  job on both cores. The details carry `field` and `reservedSegment`.
+
+Recognized legacy fields are checked against their migrated destinations as well. Send whole
+arrays; ordinary dotted object-property writes remain supported where the schema permits them.
 
 Errors identify the `field` and may include `arrayField`, `requested`, `stored`, or migration
 destination details. Bulk failures add the entry's `index` and `id`; single failures use document
