@@ -355,13 +355,14 @@ command scene token list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --include <fields> | parser=parseTokenListIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: delta — a derived per-token summary of the token-level overrides, null when there are none)
 
 command scene token get
   aliases=[]
   summary=
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
   opt --token-id <tokenId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Token id
-  opt --include <fields> | parser=parseTokenIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: prepared)
+  opt --include <fields> | parser=parseTokenIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: prepared, delta — the stored ActorDelta source, null for a linked token or when none is stored)
 
 command scene token create
   aliases=[]
@@ -418,6 +419,12 @@ command scene token delete
   summary=
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
   opt --token-id <tokenId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Token id
+
+command scene token restore-delta
+  aliases=[]
+  summary=Discard every token-level override of an unlinked token (items, effects, system data, name, …) so it follows its world actor again
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --token-id <tokenId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Unlinked token id
 
 command scene token create-many
   aliases=[]

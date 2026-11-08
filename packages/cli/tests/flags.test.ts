@@ -328,6 +328,26 @@ describe("fvtt-world-cli commands", () => {
         "scene.token.get",
         { sceneId: "scene-1", tokenId: "token-1", include: ["prepared"] }
       ],
+      [
+        [
+          "scene",
+          "token",
+          "get",
+          "--scene-id",
+          "scene-1",
+          "--token-id",
+          "token-1",
+          "--include",
+          "prepared,delta"
+        ],
+        "scene.token.get",
+        { sceneId: "scene-1", tokenId: "token-1", include: ["prepared", "delta"] }
+      ],
+      [
+        ["scene", "token", "list", "--scene-id", "scene-1", "--include", "delta"],
+        "scene.token.list",
+        { sceneId: "scene-1", include: ["delta"] }
+      ],
 
       [
         ["item", "create", "--name", "Torch", "--type", "loot", "--include", "flags"],
@@ -646,7 +666,8 @@ describe("fvtt-world-cli commands", () => {
       [["scene", "token", "get", "--scene-id", "scene-1", "--token-id", "token-1", "--include", "bogus"]],
 
       [["compendium", "get", "--pack", "world.x", "--entry-id", "e-1", "--include", "flags"]],
-      [["compendium", "get", "--pack", "world.x", "--entry-id", "e-1", "--include", "bogus"]]
+      [["compendium", "get", "--pack", "world.x", "--entry-id", "e-1", "--include", "bogus"]],
+      [["scene", "token", "list", "--scene-id", "scene-1", "--include", "prepared"]]
     ])("rejects %j with a local INVALID_ARGUMENT before any daemon call", async (argv) => {
       const sendCommand = failIfCalledSendCommand();
 

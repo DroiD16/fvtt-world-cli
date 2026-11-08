@@ -1608,6 +1608,16 @@ describe("fvtt-world-cli commands", () => {
     ],
     [["scene", "token", "list", "--scene-id", "scene-1"], "scene.token.list", { sceneId: "scene-1" }],
     [
+      ["scene", "token", "restore-delta", "--scene-id", "scene-1", "--token-id", "token-a"],
+      "scene.token.restore-delta",
+      { sceneId: "scene-1", tokenId: "token-a" }
+    ],
+    [
+      ["--dry-run", "scene", "token", "restore-delta", "--scene-id", "scene-1", "--token-id", "token-a"],
+      "scene.token.restore-delta",
+      { sceneId: "scene-1", tokenId: "token-a", dryRun: true }
+    ],
+    [
       ["scene", "token", "get", "--scene-id", "scene-1", "--token-id", "token-a"],
       "scene.token.get",
       { sceneId: "scene-1", tokenId: "token-a" }

@@ -4524,3 +4524,196 @@ describe("executable region behaviors", () => {
     }
   });
 });
+
+describe("token actor deltas", () => {
+  const OVERRIDES = {
+    _id: "token-a",
+    name: "Valeros the Bold",
+    system: {},
+    items: [{ _id: "delta-item-1", name: "Silvered Dagger", type: "weapon" }],
+    effects: [],
+    flags: {}
+  };
+  const V13_RECREATED = { _id: "token-a", system: {}, items: [], effects: [], flags: {} };
+
+  /**
+   * @param {string} tokenId
+   * @param {Record<string, any> | null} source
+   * @param {(stored: Record<string, any> | null) => Record<string, any> | null} [afterRestore]
+   */
+  function attachDelta(tokenId, source, afterRestore = () => null) {
+    const token = globalThis.game.scenes.get("scene-1").tokens.get(tokenId);
+    let stored = source;
+    const baseToObject = token.toObject.bind(token);
+    token.toObject = () => ({ ...baseToObject(), delta: stored === null ? null : structuredClone(stored) });
+    const delta = {
+      restore: vi.fn(async () => {
+        stored = afterRestore(stored);
+      })
+    };
+    Object.defineProperty(token, "delta", { value: delta, configurable: true, enumerable: false });
+    return { delta, read: () => stored };
+  }
+
+  const router = () => createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+  const restore = (params = {}) =>
+    router().route(
+      createRequest("scene.token.restore-delta", { sceneId: "scene-1", tokenId: "token-a", ...params })
+    );
+
+  beforeEach(() => {
+    installFakeFoundry();
+  });
+
+  it("scene.token.get returns the stored delta with include delta and null for a linked token", async () => {
+    attachDelta("token-a", OVERRIDES);
+    attachDelta("token-linked", OVERRIDES);
+    const unlinked = await router().route(
+      createRequest("scene.token.get", { sceneId: "scene-1", tokenId: "token-a", include: ["delta"] })
+    );
+    expect(unlinked.result.token.delta).toEqual(OVERRIDES);
+    const linked = await router().route(
+      createRequest("scene.token.get", { sceneId: "scene-1", tokenId: "token-linked", include: ["delta"] })
+    );
+    expect(linked.result.token.delta).toBeNull();
+    const plain = await router().route(
+      createRequest("scene.token.get", { sceneId: "scene-1", tokenId: "token-a" })
+    );
+    expect(Object.hasOwn(plain.result.token, "delta")).toBe(false);
+  });
+
+  it("scene.token.list carries a derived deltaSummary per row only with include delta", async () => {
+    attachDelta("token-a", OVERRIDES);
+    attachDelta("token-linked", OVERRIDES);
+    const listed = await router().route(
+      createRequest("scene.token.list", { sceneId: "scene-1", include: ["delta"] })
+    );
+    const byId = Object.fromEntries(listed.result.tokens.map((row) => [row.id, row]));
+    expect(byId["token-a"].deltaSummary).toEqual({
+      itemEntries: 1,
+      effectEntries: 0,
+      overriddenKeys: ["name", "items"]
+    });
+    expect(byId["token-linked"].deltaSummary).toBeNull();
+
+    const plain = await router().route(createRequest("scene.token.list", { sceneId: "scene-1" }));
+    expect(plain.result.tokens.every((row) => !Object.hasOwn(row, "deltaSummary"))).toBe(true);
+  });
+
+  it.each([
+    ["the delta is removed", () => null],
+    ["an empty delta is recreated", () => V13_RECREATED]
+  ])("restores an unlinked token when %s", async (_label, afterRestore) => {
+    const { delta, read } = attachDelta("token-a", OVERRIDES, afterRestore);
+    const response = await restore();
+    expect(response.ok).toBe(true);
+    expect(delta.restore).toHaveBeenCalledTimes(1);
+    expect(response.result).toEqual({
+      sceneId: "scene-1",
+      tokenId: "token-a",
+      changed: true,
+      discarded: { itemEntries: 1, effectEntries: 0, overriddenKeys: ["name", "items"] }
+    });
+    expect(read()).toEqual(afterRestore());
+  });
+
+  it.each([
+    ["no delta is stored", null],
+    ["the stored delta is empty", V13_RECREATED],
+    [
+      "the stored delta holds only top-level nulls",
+      { ...V13_RECREATED, name: null, img: null, ownership: null }
+    ]
+  ])("is a no-op without calling restore when %s", async (_label, source) => {
+    const { delta } = attachDelta("token-a", source);
+    for (const dryRun of [false, true]) {
+      const response = await restore(dryRun ? { dryRun } : {});
+      expect(response.ok).toBe(true);
+      expect(response.result).toMatchObject({ changed: false, discarded: null });
+      expect(response.result.dryRun === true).toBe(dryRun);
+    }
+    expect(delta.restore).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a nested null", { system: { attributes: { hp: { temp: null } } } }, "system"],
+    ["a nested empty array", { system: { traits: { dr: { value: [] } } } }, "system"],
+    ["a nested empty object", { flags: { mod: {} } }, "flags"]
+  ])("restores a delta holding %s, which Foundry applies to the actor", async (_label, extra, key) => {
+    const { delta, read } = attachDelta("token-a", { ...V13_RECREATED, ...extra });
+    const response = await restore();
+    expect(response.ok).toBe(true);
+    expect(delta.restore).toHaveBeenCalledTimes(1);
+    expect(response.result).toMatchObject({ changed: true, discarded: { overriddenKeys: [key] } });
+    expect(read()).toBeNull();
+  });
+
+  it("reports a nested null left after a restore as an override", async () => {
+    attachDelta(
+      "token-a",
+      { ...V13_RECREATED, system: { attributes: { hp: { temp: null } } } },
+      (stored) => stored
+    );
+    const response = await restore();
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe("INTERNAL_ERROR");
+    expect(response.error.details.paths).toEqual([
+      { path: "delta.system", requested: {}, stored: { attributes: { hp: { temp: null } } } }
+    ]);
+  });
+
+  it("previews what a restore would discard without touching the delta", async () => {
+    const { delta, read } = attachDelta("token-a", OVERRIDES);
+    const preview = await restore({ dryRun: true });
+    expect(preview.ok).toBe(true);
+    expect(delta.restore).not.toHaveBeenCalled();
+    expect(read()).toEqual(OVERRIDES);
+
+    const real = await restore();
+    expect(preview.result).toEqual({ ...real.result, dryRun: true });
+  });
+
+  it("refuses a linked token in both modes", async () => {
+    const { delta } = attachDelta("token-linked", OVERRIDES);
+    for (const dryRun of [false, true]) {
+      const response = await router().route(
+        createRequest("scene.token.restore-delta", { sceneId: "scene-1", tokenId: "token-linked", dryRun })
+      );
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe("INVALID_PARAMS");
+      expect(response.error.details).toEqual({
+        sceneId: "scene-1",
+        tokenId: "token-linked",
+        actorLink: true
+      });
+      expect(response.error.message).toContain("linked");
+    }
+    expect(delta.restore).not.toHaveBeenCalled();
+  });
+
+  it("reports the overrides left after a restore through the shared mismatch report", async () => {
+    attachDelta("token-a", OVERRIDES, (stored) => stored);
+    const response = await restore();
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe("INTERNAL_ERROR");
+    expect(response.error.details).toMatchObject({
+      sceneId: "scene-1",
+      tokenId: "token-a",
+      fields: ["delta"],
+      paths: [
+        { path: "delta.name", requested: null, stored: "Valeros the Bold" },
+        { path: "delta.items", requested: [], stored: OVERRIDES.items }
+      ]
+    });
+    expect(response.error.message).toContain("cannot verify");
+  });
+
+  it("reports a missing restore API before writing", async () => {
+    const token = globalThis.game.scenes.get("scene-1").tokens.get("token-a");
+    attachDelta("token-a", OVERRIDES);
+    Object.defineProperty(token, "delta", { value: {}, configurable: true, enumerable: false });
+    const response = await restore();
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe("BRIDGE_NOT_READY");
+  });
+});

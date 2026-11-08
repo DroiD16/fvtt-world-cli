@@ -58,7 +58,13 @@ import {
   type TokenFieldOptions
 } from "../params.js";
 import { executeRemoteCommand } from "../exec.js";
-import { parseCsvList, parseIdList, parseNumber, parseTokenIncludeFields } from "../parse.js";
+import {
+  parseCsvList,
+  parseIdList,
+  parseNumber,
+  parseTokenIncludeFields,
+  parseTokenListIncludeFields
+} from "../parse.js";
 import {
   addEffectFieldOptions,
   addEmbeddedItemFieldOptions,
@@ -100,6 +106,23 @@ interface SceneLevelCreateOptions extends SceneLevelScopeOptions {
 
 interface SceneLevelPatchOptions extends SceneLevelTargetOptions {
   patchJson?: string;
+}
+
+interface SceneTokenTargetOptions {
+  sceneId: string;
+  tokenId: string;
+}
+
+interface SceneTokenGetOptions extends SceneTokenTargetOptions {
+  include?: string[];
+}
+
+interface SceneTokenListOptions {
+  sceneId: string;
+  name?: string;
+  limit?: number;
+  offset?: number;
+  include?: string[];
 }
 
 function addSceneLevelScopeOption(command: Command): Command {
@@ -299,29 +322,35 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
   const sceneToken = scene.command("token").description("Scene-embedded token commands");
   addNameFilterOption(
     addPaginationOptions(sceneToken.command("list").requiredOption("--scene-id <sceneId>", "Scene id"))
-  ).action(async function listSceneTokens(options: {
-    sceneId: string;
-    name?: string;
-    limit?: number;
-    offset?: number;
-  }) {
-    await executeRemoteCommand({
-      commandName: "scene.token.list",
-      params: { sceneId: options.sceneId, ...nameFilterParams(options), ...paginationParams(options) },
-      command: this,
-      dependencies
+  )
+    .option(
+      "--include <fields>",
+      "Comma-separated extra fields to include (allowed: delta — a derived per-token summary of the token-level overrides, null when there are none)",
+      parseTokenListIncludeFields
+    )
+    .action(async function listSceneTokens(options: SceneTokenListOptions) {
+      await executeRemoteCommand({
+        commandName: "scene.token.list",
+        params: {
+          sceneId: options.sceneId,
+          ...nameFilterParams(options),
+          ...paginationParams(options),
+          ...(options.include ? { include: options.include } : {})
+        },
+        command: this,
+        dependencies
+      });
     });
-  });
   sceneToken
     .command("get")
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--token-id <tokenId>", "Token id")
     .option(
       "--include <fields>",
-      "Comma-separated extra fields to include (allowed: prepared)",
+      "Comma-separated extra fields to include (allowed: prepared, delta — the stored ActorDelta source, null for a linked token or when none is stored)",
       parseTokenIncludeFields
     )
-    .action(async function getSceneToken(options: { sceneId: string; tokenId: string; include?: string[] }) {
+    .action(async function getSceneToken(options: SceneTokenGetOptions) {
       await executeRemoteCommand({
         commandName: "scene.token.get",
         params: {
@@ -392,6 +421,22 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     .action(async function deleteSceneToken(options: { sceneId: string; tokenId: string }) {
       await executeRemoteCommand({
         commandName: "scene.token.delete",
+        params: { sceneId: options.sceneId, tokenId: options.tokenId },
+        command: this,
+        dependencies
+      });
+    });
+
+  sceneToken
+    .command("restore-delta")
+    .description(
+      "Discard every token-level override of an unlinked token (items, effects, system data, name, …) so it follows its world actor again"
+    )
+    .requiredOption("--scene-id <sceneId>", "Scene id")
+    .requiredOption("--token-id <tokenId>", "Unlinked token id")
+    .action(async function restoreSceneTokenDelta(options: SceneTokenTargetOptions) {
+      await executeRemoteCommand({
+        commandName: "scene.token.restore-delta",
         params: { sceneId: options.sceneId, tokenId: options.tokenId },
         command: this,
         dependencies

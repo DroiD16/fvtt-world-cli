@@ -13,7 +13,7 @@ import { paginate } from "../lib/serializers.js";
 import { createSceneEmbeddedBatchHandlers } from "./scene-embedded-batch.js";
 
 /**
- * @param {{ type: string, prefix: string, idField: string, resultKey: string, pluralKey: string, notFoundCode: string, serialize: (document: any) => any, serializeSummary: (document: any) => any, listFilter?: (rows: any[], params: any) => any[], omitVerbs?: string[], prepareCreate?: (data: Record<string, any>, scene: any) => any, assertSupported?: (scene: any) => void, assertDeleteAllowed?: (scene: any, ids: string[]) => void, summarize?: (document: any) => Record<string, unknown> }} config
+ * @param {{ type: string, prefix: string, idField: string, resultKey: string, pluralKey: string, notFoundCode: string, serialize: (document: any) => any, serializeSummary: (document: any, params?: any) => any, listFilter?: (rows: any[], params: any) => any[], omitVerbs?: string[], prepareCreate?: (data: Record<string, any>, scene: any) => any, assertSupported?: (scene: any) => void, assertDeleteAllowed?: (scene: any, ids: string[]) => void, summarize?: (document: any) => Record<string, unknown> }} config
  */
 export function createScenePlaceableHandlers({
   type,
@@ -45,7 +45,7 @@ export function createScenePlaceableHandlers({
       const { page, total, hasMore } = paginate(filtered, params);
       return {
         sceneId: params.sceneId,
-        [pluralKey]: page.map((row) => serializeSummary(row)),
+        [pluralKey]: page.map((row) => serializeSummary(row, params)),
         total,
         hasMore
       };

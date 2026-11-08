@@ -28,6 +28,7 @@ export const DEFAULT_COMMAND_PROFILE = deepFreeze({
   "scene.token.update": "allow",
   "scene.token.delete": "approve",
   "scene.token.clone": "allow",
+  "scene.token.restore-delta": "approve",
   "scene.token.create-many": "allow",
   "scene.token.update-many": "allow",
   "scene.token.delete-many": "approve",

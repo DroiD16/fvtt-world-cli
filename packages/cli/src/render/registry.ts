@@ -59,7 +59,9 @@ import {
   renderSoundDetails,
   renderTemplateDetails,
   renderTileDetails,
+  renderTokenDeltaRestore,
   renderTokenDetails,
+  tokenDeltaSummaryCell,
   renderWallDetails,
   renderLevelDetails,
   renderLevelRow,
@@ -1077,13 +1079,14 @@ export const RENDERERS = registerRenderers([
     heading: "Tokens",
     prefix: scenePrefix,
     row: (token) =>
-      `${token.id}\t${token.name}\tactor=${token.actorId ?? "-"}\tlinked=${String(Boolean(token.actorLink))}\t(${token.x},${token.y})${levelMembershipCell(token)}`
+      `${token.id}\t${token.name}\tactor=${token.actorId ?? "-"}\tlinked=${String(Boolean(token.actorLink))}\t(${token.x},${token.y})${levelMembershipCell(token)}${tokenDeltaSummaryCell(token)}`
   }),
   detailRenderer(
     ["scene.token.get", "scene.token.create", "scene.token.update", "scene.token.clone"],
     (result) => renderTokenDetails(result.sceneId, result.token)
   ),
   deleteRenderer("scene.token.delete", "token", { suffix: sceneSuffix }),
+  detailRenderer("scene.token.restore-delta", (result) => renderTokenDeltaRestore(result)),
   listRenderer("scene.token.item.list", {
     key: "items",
     empty: "No items found.",

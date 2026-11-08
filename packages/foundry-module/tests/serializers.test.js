@@ -4557,3 +4557,75 @@ describe("compendiumSource", () => {
     expect(Object.hasOwn(actor.items[0], "compendiumSource")).toBe(false);
   });
 });
+
+describe("token delta reads", () => {
+  const V13_EMPTY_DELTA = { _id: "d1", system: {}, items: [], effects: [], flags: {} };
+  const OVERRIDING_DELTA = {
+    _id: "d1",
+    name: "Renamed",
+    system: { attributes: { hp: { value: 1 } } },
+    items: [{ _id: "item-1", name: "Talons OVR", type: "weapon" }],
+    effects: [],
+    flags: {}
+  };
+  const token = (source) => ({
+    id: "tok-1",
+    toObject: () => ({ _id: "tok-1", name: "T", actorId: "actor-1", ...source })
+  });
+
+  it("returns the stored delta source only when asked for it", () => {
+    const unlinked = token({ actorLink: false, delta: OVERRIDING_DELTA });
+    expect(Object.hasOwn(serializeToken(unlinked), "delta")).toBe(false);
+    const read = serializeToken(unlinked, { include: ["delta"] });
+    expect(read.delta).toEqual(OVERRIDING_DELTA);
+    expect(read.delta).not.toBe(OVERRIDING_DELTA);
+    assertStructuredCloneable(read);
+  });
+
+  it("reports null for a linked token even when a dormant delta is stored, and when none is stored", () => {
+    expect(
+      serializeToken(token({ actorLink: true, delta: OVERRIDING_DELTA }), { include: ["delta"] }).delta
+    ).toBeNull();
+    expect(serializeToken(token({ actorLink: false, delta: null }), { include: ["delta"] }).delta).toBeNull();
+    expect(
+      serializeToken(token({ actorLink: false, delta: V13_EMPTY_DELTA }), { include: ["delta"] }).delta
+    ).toEqual(V13_EMPTY_DELTA);
+  });
+
+  it("summarizes a stored delta per list row as derived counts and overridden keys", () => {
+    const row = serializeTokenSummary(token({ actorLink: false, delta: OVERRIDING_DELTA }), {
+      include: ["delta"]
+    });
+    expect(row.deltaSummary).toEqual({
+      itemEntries: 1,
+      effectEntries: 0,
+      overriddenKeys: ["name", "system", "items"]
+    });
+    expect(Object.hasOwn(row, "delta")).toBe(false);
+    expect(
+      Object.hasOwn(
+        serializeTokenSummary(token({ actorLink: false, delta: OVERRIDING_DELTA })),
+        "deltaSummary"
+      )
+    ).toBe(false);
+  });
+
+  it("summarizes no delta, an empty delta, a null-valued delta and a linked token alike as no overrides", () => {
+    const summaryOf = (source) => serializeTokenSummary(token(source), { include: ["delta"] }).deltaSummary;
+    expect(summaryOf({ actorLink: false, delta: null })).toBeNull();
+    expect(summaryOf({ actorLink: false, delta: V13_EMPTY_DELTA })).toBeNull();
+    expect(
+      summaryOf({
+        actorLink: false,
+        delta: { ...V13_EMPTY_DELTA, name: null, type: null, img: null, ownership: null }
+      })
+    ).toBeNull();
+    expect(summaryOf({ actorLink: true, delta: OVERRIDING_DELTA })).toBeNull();
+    expect(
+      summaryOf({
+        actorLink: false,
+        delta: { ...V13_EMPTY_DELTA, flags: { mod: {} }, system: { attributes: { hp: { temp: null } } } }
+      })?.overriddenKeys
+    ).toEqual(["system", "flags"]);
+  });
+});

@@ -1,3 +1,4 @@
+import { summarizeTokenDelta } from "../generated/protocol.js";
 import { hasSceneLevels } from "./foundry-capabilities.js";
 export { paginate, filterByName, filterByPath } from "./pagination.js";
 
@@ -1150,11 +1151,23 @@ export function placeableName(document, data) {
 
 /**
  * @param {any} token
+ * @param {any} [data]
+ * @returns {Record<string, any> | null}
+ */
+export function storedTokenDelta(token, data = documentData(token)) {
+  if (data.actorLink ?? token.actorLink ?? false) return null;
+  const delta = data.delta ?? null;
+  return delta && typeof delta === "object" ? cloneValue(delta) : null;
+}
+
+/**
+ * @param {any} token
  * @param {{ include?: string[] }} [options]
  */
 export function serializeToken(token, { include } = {}) {
   const data = documentData(token);
   const withPrepared = Array.isArray(include) && include.includes("prepared");
+  const withDelta = Array.isArray(include) && include.includes("delta");
   return {
     ...identityFields(token, data),
     name: tokenName(token, data),
@@ -1177,12 +1190,18 @@ export function serializeToken(token, { include } = {}) {
     bar1: cloneValue(data.bar1 ?? null),
     bar2: cloneValue(data.bar2 ?? null),
     flags: cloneValue(data.flags ?? {}),
+    ...(withDelta ? { delta: storedTokenDelta(token, data) } : {}),
     ...(withPrepared ? { prepared: buildPreparedToken(token) } : {})
   };
 }
 
-export function serializeTokenSummary(token) {
+/**
+ * @param {any} token
+ * @param {{ include?: string[] }} [options]
+ */
+export function serializeTokenSummary(token, { include } = {}) {
   const data = documentData(token);
+  const withDelta = Array.isArray(include) && include.includes("delta");
   return {
     ...identityFields(token, data),
     name: tokenName(token, data),
@@ -1191,7 +1210,8 @@ export function serializeTokenSummary(token) {
     x: data.x ?? token.x ?? 0,
     y: data.y ?? token.y ?? 0,
     ...levelMembership(data, "level"),
-    hidden: data.hidden ?? token.hidden ?? false
+    hidden: data.hidden ?? token.hidden ?? false,
+    ...(withDelta ? { deltaSummary: summarizeTokenDelta(storedTokenDelta(token, data)) } : {})
   };
 }
 
