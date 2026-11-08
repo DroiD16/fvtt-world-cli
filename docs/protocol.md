@@ -181,6 +181,21 @@ filters apply before pagination. Previewed documents have no persistent identity
 observed during a preview must not be reused. Some result fields depend on the connected Foundry
 version; [Foundry compatibility](compatibility.md) lists them.
 
+World document reads carry `compendiumSource` and `duplicateSource`, hoisted from Foundry's
+`_stats` and `null` when absent. `compendium.get` and each `compendium.get-many` entry return the
+raw source under `document` with `id`, `compendiumSource` and `duplicateSource` added beside `_id`.
+
+`scene.token.get` with `include: ["delta"]` returns `token.delta`, the stored `ActorDelta` source,
+or `null` for a linked token or when none is stored. `scene.token.list` with `include: ["delta"]`
+returns `deltaSummary` per row, a derived value of the form `{ itemEntries, effectEntries,
+overriddenKeys }`. The two counts are the lengths of the delta's `items` and `effects` arrays,
+deletion markers (`_tombstone` entries) included. `overriddenKeys` lists every key other than `_id`
+whose value is not `null`, `[]` or `{}` at the top level; content below the top level, nested
+`null`, `[]` and `{}` included, counts as an override. `deltaSummary` is `null` when that list is
+empty. The no-op check, dry run and confirmation of `scene.token.restore-delta` use the same rule.
+`scene.token.restore-delta` returns `{ sceneId, tokenId, changed, discarded }`, where `discarded` is
+that summary taken before the restore, or `null` for a no-op.
+
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.
 
@@ -257,7 +272,8 @@ same patch does not change the result. `scene.activate` and `combat.activate` ar
 another client activating a different scene or combat fits the same observation, so their messages
 leave out the resend sentence. The same `paths` entries appear on `journal.update` page writes, on
 scene and combat activation, on `combat.start`, on combat initiative, on setting and user role or
-permission writes, and on a `dropped` outcome of a bulk update when the stored state was compared. A
+permission writes, on `scene.token.restore-delta` (one `delta.<key>` path per override left after
+the restore), and on a `dropped` outcome of a bulk update when the stored state was compared. A
 bulk element whose embedded creation without `_id` cannot be confirmed is `dropped` without `paths`.
 
 Clearing a field counts as a deletion: when Foundry cleans `null` or `""` on a field that does not
@@ -366,8 +382,11 @@ Its input ids and line indexes belong to CLI output, not the wire contract.
 Bulk writes accept bounded arrays and prevalidate their elements. Persistence is not transactional;
 results report `complete` and per-element `outcomes`, all of which the caller must inspect.
 
-`get-many` fails the request if any requested id cannot be read. `setting.get-many` is the exception;
-it reports an unregistered key as `SETTING_NOT_FOUND` on that row without failing the whole request.
+`get-many` fails the request if any requested id cannot be read, naming the first such id in request
+order. `setting.get-many` is the exception; it reports an unregistered key as `SETTING_NOT_FOUND` on
+that row without failing the whole request. Results hold one element per requested id in request
+order, repeats included. `compendium.get-many` takes a `pack` and reads the distinct ids with one
+Foundry `getDocuments` query.
 
 ## Error model
 
