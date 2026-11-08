@@ -171,6 +171,16 @@ Classify a failure before reacting:
   observed to change, not fully applied nested values. An embedded creation without a requested
   id may already exist despite an indeterminate error. Send only the remaining changes as a new
   operation with a fresh idempotency key, if using one.
+- An update `INTERNAL_ERROR` with `details.paths` is a stored-vs-requested mismatch. Compare
+  `requested` and `stored` for each path (`absent` marks a missing side, `truncated` a shortened
+  window). A representation-only difference, such as HTML escaping (`&` stored as `&amp;`) or
+  whitespace, can be accepted as done. Report any other difference to the user. The same patch
+  stores the same result, so the next request is either a different patch or none. For
+  `scene.activate` and `combat.activate`, read which scene or combat is active first: another client
+  may have activated a different one, and activating again can then succeed.
+- A success confirms only the requested paths the document's schema declares: Foundry drops an
+  undeclared key, such as a misspelled field, without an error before confirmation. After writing
+  a key you are not sure the schema declares, read the document and check that the key is stored.
 - Correct a structured Foundry rejection and submit the corrected content as a new operation.
 
 ## Bulk writes and actions
@@ -179,7 +189,8 @@ Bulk commands (`create-many`, `update-many`, `delete-many`) share single-command
 are not transactions: check the top-level `complete` flag and inspect every entry in `outcomes`.
 Persisted statuses such as `created`, `updated`, and `deleted` mean something different from
 `unchanged`, `alreadyDeleted`, `dropped`, and `unknown`; the authoritative status set lives in the
-protocol constants, not here. Action commands
+protocol constants, not here. A `dropped` update outcome carries the same `paths` entries as a single
+update's mismatch error when the stored state was compared. Action commands
 (playback, draws, deals, combat transitions, thumbnails, fog) call fixed typed Foundry methods and
 can trigger hooks, chat output, and system automation; read the schema, dry-run first, and
 interpret confirmation fields literally rather than assuming an ordinary update happened.

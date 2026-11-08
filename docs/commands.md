@@ -164,7 +164,9 @@ Use JSON flags such as `--data-json` and `--patch-json` for structured values. U
 
 - Nested objects merge recursively.
 - Ordinary arrays replace as a whole.
-- Dotted paths target object properties where permitted; dotted writes inside arrays are refused.
+- Dotted paths target object properties where permitted. The bridge expands them into nested
+  objects and merges keys in order, so when two keys set the same leaf the later one wins. Dotted
+  writes inside arrays are refused.
 - Foundry deletion syntax can remove permitted nested keys.
 - Embedded collections follow their family's Foundry semantics.
 
@@ -189,6 +191,16 @@ Denied commands remain denied in previews.
 A timeout or disconnect can happen after a write commits. An update error with `details.partial`
 or `details.indeterminate` can also mean that some changes persisted. Read affected state before
 retrying and send only what remains to be done.
+
+An update whose stored state differs from the request fails with `INTERNAL_ERROR`. The comparison
+covers each requested path that survives Foundry's cleaning: Foundry drops a key the document's
+schema does not declare without an error, so such a key is never compared and a write made only of
+undeclared keys reports success with nothing stored. `details.paths` lists up to 20 differing paths, each with the requested and the stored value, and
+`details.pathsTruncated` counts the rest. Foundry core, the game system and modules can all change
+a value on its way into the world. Foundry's HTML
+sanitizer, for example, stores a raw `&` in a rich-text field as `&amp;`. The bridge cannot tell such
+a normalization from a hook that rewrote, dropped or vetoed the write, so the error reports the
+values and leaves that judgment to the caller. Sending the same patch again stores the same result.
 
 An idempotency key identifies one logical request and can prevent duplicate effects while its
 cached state survives. Reuse it only for the same request; a corrected or remaining patch is a
