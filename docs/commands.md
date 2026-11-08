@@ -15,10 +15,20 @@ fvtt-world-cli actor update --help
 shows CLI flags. Protocol names use dots; CLI commands use spaces. For example, `scene.token.get`
 becomes `scene token get`. Nested commands require the parent IDs as well as the target's ID.
 
-With a bridge connected, discovery omits denied commands and marks approval requirements with
-`approval: true`. If the daemon or bridge is unavailable, it returns the static registry with
-`policy.applied: false`. Authentication and protocol errors do not trigger that fallback.
-`schema` and `--help` always describe the static registry, including denied commands.
+In `commands --json`, `result` is the list of commands, each `{command, mutation}` plus
+`approval: true` where it applies. The policy is reported beside `result` in a top-level `policy`
+object, not inside it. With a bridge connected, discovery omits denied commands, marks approval
+requirements and reports `"policy": {"applied": true, "source": "bridge"}`. If the daemon or bridge
+is unavailable, it returns the static registry with `applied: false`, `source: "static"` and a
+`reason` such as `DAEMON_UNAVAILABLE` or `BRIDGE_NOT_READY`. Authentication and protocol errors do not trigger that
+fallback. `schema` and `--help` always describe the static registry, including denied commands.
+
+This check prints `true` and exits 0 only when the client's permissions were read and
+`actor.update` is available to it:
+
+```bash
+fvtt-world-cli commands --json | jq -e '.policy.applied == true and any(.result[]; .command == "actor.update")'
+```
 
 ## Capability map
 
@@ -188,7 +198,14 @@ update. Reads return authored state; some commands accept `include` options for 
 data. Check the command's help for available projections and filters.
 
 Actor results carry `itemCount` in place of the owned items; `actor get` and `actor get-many`
-return the items with `--include items`. `system info --include modules` lists installed modules.
+return the items with `--include items`. Those items leave out their `flags` and `effects`;
+`--include items.flags,items.effects` adds them and implies `items`, so one call returns every
+owned item with its flags and effects. `actor item list --include flags,effects` adds both to its
+rows, which carry no `system`.
+
+`system info --include modules` lists every installed module as `{id, title, version, active}`,
+inactive ones included. Without the option the result still reports `moduleCount` and
+`activeModuleCount`.
 
 World document reads report two provenance fields from Foundry's `_stats`: `compendiumSource`, the
 compendium entry a document was imported from, and `duplicateSource`, the document it was
@@ -211,8 +228,32 @@ Use JSON flags such as `--data-json` and `--patch-json` for structured values. U
 - Dotted paths target object properties where permitted. The bridge expands them into nested
   objects and merges keys in order, so when two keys set the same leaf the later one wins. Dotted
   writes inside arrays are refused.
-- Foundry deletion syntax can remove permitted nested keys.
+- Foundry's operator keys work at any permitted nested level: `{"-=key": null}` deletes the key,
+  and `{"==key": value}` replaces the key's whole value instead of merging into it.
 - Embedded collections follow their family's Foundry semantics.
+
+Both operators come in a nested form, `{"system": {"==description": {…}}}`, and a dotted form,
+`{"flags": {"my-module.==config": {…}}}`. Families with closed patch fields, such as `item.update`
+and `actor.update`, accept only their named top-level fields, so any dotted key, operator or not,
+sits below one of them; a top-level `"system.==description"` or `"system.hp.value"` is refused
+there. A patch that deletes or
+replaces a key and also writes the same key is refused as ambiguous.
+
+On a dnd5e item whose description is `{"value": "Old text", "chat": "Old chat"}`, this patch
+replaces the description and deletes one module flag:
+
+```bash
+fvtt-world-cli item update --item-id <id> --json \
+  --patch-json '{"system":{"==description":{"value":"New text"}},"flags":{"my-module":{"-=draft":null}}}'
+```
+
+The stored description becomes `{"value": "New text", "chat": ""}`. The replacement drops the old
+`chat`, and Foundry fills in the field's default. A plain `{"system": {"description": {"value": "New
+text"}}}` would have kept `"Old chat"`. A deletion confirms when the key is absent afterwards, and a
+forced replacement when the whole stored value equals the request after Foundry's cleaning (see
+[write confirmation](protocol.md#write-confirmation)). Foundry 14 logs a deprecation warning for
+both spellings; [Compatibility](compatibility.md) lists that and a v13 difference for single
+typed-object entries.
 
 Read arrays before editing and preserve unchanged values. For a wall's `c` field, send the complete
 `[x1, y1, x2, y2]`, not `c.0`. Invalid or ambiguous patch shapes return `INVALID_PARAMS` before
