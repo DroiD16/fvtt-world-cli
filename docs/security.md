@@ -69,9 +69,10 @@ reads, writes, bulk commands, and dry runs. Permissions belong to that browser p
 paired browser can have a different policy.
 
 By default, code execution, setting writes, and user role or permission changes are denied.
-Destructive operations, GM-client reload, and user creation require approval. The Command permissions
-window shows the full current policy. State checks and internal approval controls remain available;
-daemon-side `auth` commands are outside this policy.
+Destructive operations, including discarding a token's overrides with `scene.token.restore-delta`,
+GM-client reload, and user creation require approval. The Command permissions window shows the full
+current policy. State checks and internal approval controls remain available; daemon-side `auth`
+commands are outside this policy.
 
 The module enforces command permissions at dispatch. An approved request passes the normal guards
 again and cannot run if its command was changed to deny while waiting. A force flag acknowledges

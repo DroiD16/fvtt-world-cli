@@ -105,7 +105,11 @@ export const batchIdsProperty = {
 };
 
 export const tokenIncludeProperty = {
-  include: { type: "array", items: { type: "string", enum: ["prepared"] } }
+  include: { type: "array", items: { type: "string", enum: ["prepared", "delta"] } }
+};
+
+export const tokenListIncludeProperty = {
+  include: { type: "array", items: { type: "string", enum: ["delta"] } }
 };
 
 export const compendiumIncludeProperty = {

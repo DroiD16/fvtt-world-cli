@@ -64,6 +64,38 @@ fvtt-world-cli scene token list --scene-id <sceneId> --json
 fvtt-world-cli scene token get --scene-id <sceneId> --token-id <tokenId> --json
 ```
 
+### Token overrides
+
+An unlinked token keeps its own copy of the actor's data in an actor delta: overridden items,
+effects, system data, name and other fields. Edits to the world actor do not reach a value the
+delta overrides, and `scene token item` commands on an unlinked token write into the delta.
+
+```bash
+fvtt-world-cli scene token list --scene-id <sceneId> --include delta --json
+fvtt-world-cli scene token get --scene-id <sceneId> --token-id <tokenId> --include delta --json
+fvtt-world-cli --dry-run scene token restore-delta --scene-id <sceneId> --token-id <tokenId> --json
+fvtt-world-cli scene token restore-delta --scene-id <sceneId> --token-id <tokenId> --json
+```
+
+`scene token get --include delta` returns the stored delta under `token.delta`, or `null` for a
+linked token or a token that stores none. `scene token list --include delta` adds `deltaSummary` to
+each row instead. The bridge derives it from the stored delta. `itemEntries` and `effectEntries`
+count the entries of the delta's `items` and `effects`, including deletion markers (tombstones)
+for items or effects the token removes; they are not the token's item or effect count.
+`overriddenKeys` lists the top-level keys that hold an override. Only a top-level value of `null`,
+`[]` or `{}` overrides nothing. Any content below the top level counts, including a nested `null`,
+`[]` or `{}`, because Foundry merges such a value into the actor and can replace what the actor
+holds there. `deltaSummary` is `null` when no key holds an override, and `restore-delta` uses the
+same rule.
+
+`scene token restore-delta` discards every override of an unlinked token through Foundry's
+`ActorDelta#restore()`, so the token follows its actor again. The token keeps its own `name` field,
+while the actor-side name a delta overrode goes back to the world actor's name. The result reports
+`changed` and, under `discarded`, the summary of what was removed; the dry run reports the same
+summary without writing. A token without overrides returns `changed: false`, and a linked token is
+refused with `INVALID_PARAMS`. The command succeeds only when a re-read finds no overrides left;
+otherwise it fails with `INTERNAL_ERROR` and `details.paths` entries under `delta.<key>`.
+
 ### Build a scene with levels
 
 On Foundry v14 a scene's maps live on its levels. Pass the levels when you create the scene:
@@ -157,6 +189,18 @@ data. Check the command's help for available projections and filters.
 
 Actor results carry `itemCount` in place of the owned items; `actor get` and `actor get-many`
 return the items with `--include items`. `system info --include modules` lists installed modules.
+
+World document reads report two provenance fields from Foundry's `_stats`: `compendiumSource`, the
+compendium entry a document was imported from, and `duplicateSource`, the document it was
+duplicated from. Each is `null` when Foundry stored none. List rows and items nested in an actor
+result carry neither.
+
+`compendium get` returns Foundry's raw source of the entry under `document`, with `id`,
+`compendiumSource` and `duplicateSource` added next to its `_id`. `compendium get-many --pack <id>
+--ids <list>` reads several entries of one pack in a single call. Each element of its `entries`
+has the shape of a `compendium get` result. As with the other `get-many` commands, `entries` holds
+one element per requested id in request order, and an unknown id fails the whole request, here
+with `COMPENDIUM_ENTRY_NOT_FOUND`.
 
 ### Updates and merge semantics
 

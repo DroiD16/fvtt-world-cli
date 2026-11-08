@@ -270,7 +270,11 @@ export function parseActorIncludeFields(value: string) {
 }
 
 export function parseTokenIncludeFields(value: string) {
-  return parseAllowedIncludeFields(value, ["prepared"]);
+  return parseAllowedIncludeFields(value, ["prepared", "delta"]);
+}
+
+export function parseTokenListIncludeFields(value: string) {
+  return parseAllowedIncludeFields(value, ["delta"]);
 }
 
 export function parseSystemInfoIncludeFields(value: string) {

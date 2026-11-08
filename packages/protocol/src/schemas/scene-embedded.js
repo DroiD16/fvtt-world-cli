@@ -14,7 +14,8 @@ import {
   sceneScopeProperties,
   sceneTokenItemScopeProperties,
   sceneTokenScopeProperties,
-  tokenIncludeProperty
+  tokenIncludeProperty,
+  tokenListIncludeProperty
 } from "./shared.js";
 
 const tokenWriteProperties = {
@@ -434,7 +435,8 @@ export const sceneEmbeddedCommands = {
     properties: {
       sceneId: { type: "string", minLength: 1 },
       ...nameFilterProperty,
-      ...paginationProperties
+      ...paginationProperties,
+      ...tokenListIncludeProperty
     },
     additionalProperties: false
   }),
@@ -499,6 +501,19 @@ export const sceneEmbeddedCommands = {
         patch: tokenPatchSchema,
         ...dryRunProperty,
         ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "scene.token.restore-delta": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "tokenId"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        tokenId: { type: "string", minLength: 1 },
+        ...dryRunProperty
       },
       additionalProperties: false
     },

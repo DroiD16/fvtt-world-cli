@@ -80,6 +80,15 @@ level ids in a preview are provisional.
 Deleting a level also deletes its tokens and every placeable only on that level, and the dry run
 does not list them: read the scene's placeables (token `level`, others' `levels`) and tell the user
 what the delete removes before running it.
+An unlinked token holds overrides (items, effects, system data, name) that edits to its world
+actor never reach. Before editing an actor that has placed tokens, run `scene token list
+--scene-id <id> --include delta` on each scene and read `deltaSummary`: a derived summary, `null`
+when the token has no overrides. Change a token's own items only with `scene token item *`.
+`scene token restore-delta` discards every override of that token: dry-run it, show the user the
+`discarded` summary, and run it only when the user wants the token to follow its actor again.
+On Foundry v14, `overriddenKeys: ["name"]` alone is usually the name the token was placed with;
+restoring resets the token's actor-side name to the world actor's name, while the token keeps its
+own name.
 `setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
 When a setting write returns `requiresReload: true`, the change needs a GM-client reload to take
 effect; `system.reload` performs it, drops the bridge, and requires a reconnect wait before the

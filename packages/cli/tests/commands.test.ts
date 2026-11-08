@@ -2460,6 +2460,148 @@ describe("fvtt-world-cli commands", () => {
     expect(dry.stdout).toContain("viewed scene: scene-2");
   });
 
+  it("renders scene.token.restore-delta for a restore, a dry run and a no-op", async () => {
+    const respond = (result: Record<string, unknown>) =>
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result
+      }));
+    const argv = ["scene", "token", "restore-delta", "--scene-id", "scene-1", "--token-id", "tok-1"];
+    const discarded = { itemEntries: 2, effectEntries: 0, overriddenKeys: ["name", "items"] };
+
+    const real = await runCommand(
+      argv,
+      respond({ sceneId: "scene-1", tokenId: "tok-1", changed: true, discarded })
+    );
+    expect(real.error).toBeNull();
+    expect(real.stdout).toContain(
+      "Discarded token overrides: name, items (item entries 2, effect entries 0)"
+    );
+
+    const dry = await runCommand(
+      ["--dry-run", ...argv],
+      respond({ sceneId: "scene-1", tokenId: "tok-1", changed: true, discarded, dryRun: true })
+    );
+    expect(dry.stdout).toContain("[dry-run] would discard token overrides: name, items");
+
+    const noop = await runCommand(
+      argv,
+      respond({ sceneId: "scene-1", tokenId: "tok-1", changed: false, discarded: null })
+    );
+    expect(noop.stdout).toContain("nothing to restore");
+  });
+
+  it("renders token delta reads in human-readable mode", async () => {
+    const respond = (result: Record<string, unknown>) =>
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result
+      }));
+
+    const list = await runCommand(
+      ["scene", "token", "list", "--scene-id", "scene-1", "--include", "delta"],
+      respond({
+        sceneId: "scene-1",
+        tokens: [
+          {
+            id: "tok-1",
+            name: "A",
+            x: 0,
+            y: 0,
+            deltaSummary: { itemEntries: 1, effectEntries: 0, overriddenKeys: ["items"] }
+          },
+          { id: "tok-2", name: "B", x: 0, y: 0, deltaSummary: null }
+        ],
+        total: 2,
+        hasMore: false
+      })
+    );
+    expect(list.stdout).toContain("overrides=items (item entries 1, effect entries 0)");
+    expect(list.stdout).toContain("overrides=none");
+
+    const get = await runCommand(
+      ["scene", "token", "get", "--scene-id", "scene-1", "--token-id", "tok-2", "--include", "delta"],
+      respond({ sceneId: "scene-1", token: { id: "tok-2", name: "B", delta: null } })
+    );
+    expect(get.stdout).toContain("delta: none");
+
+    const emptyV13 = await runCommand(
+      ["scene", "token", "get", "--scene-id", "scene-1", "--token-id", "tok-3", "--include", "delta"],
+      respond({
+        sceneId: "scene-1",
+        token: {
+          id: "tok-3",
+          name: "C",
+          delta: { _id: "tok-3", system: {}, items: [], effects: [], flags: {}, name: null }
+        }
+      })
+    );
+    expect(emptyV13.stdout).toContain("delta: none");
+
+    const overriding = await runCommand(
+      ["scene", "token", "get", "--scene-id", "scene-1", "--token-id", "tok-4", "--include", "delta"],
+      respond({
+        sceneId: "scene-1",
+        token: { id: "tok-4", name: "D", delta: { _id: "tok-4", name: "Renamed", items: [{ _id: "i1" }] } }
+      })
+    );
+    expect(overriding.stdout).toContain("delta: overrides name, items");
+  });
+
+  it("renders duplicateSource next to compendiumSource in human-readable document output", async () => {
+    const respond = (result: Record<string, unknown>) =>
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result
+      }));
+
+    const provenance = await runCommand(
+      ["item", "get", "--item-id", "item-1"],
+      respond({
+        item: {
+          id: "item-1",
+          name: "Copy",
+          type: "loot",
+          system: {},
+          compendiumSource: null,
+          duplicateSource: "Item.abcdefghij654321"
+        }
+      })
+    );
+    expect(provenance.stdout).toContain("duplicateSource: Item.abcdefghij654321");
+  });
+
+  it("renders compendium get-many in human-readable mode", async () => {
+    const respond = (result: Record<string, unknown>) =>
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result
+      }));
+
+    const many = await runCommand(
+      ["compendium", "get-many", "--pack", "world.x", "--ids", "e-1"],
+      respond({
+        pack: "world.x",
+        entries: [
+          { pack: "world.x", entryId: "e-1", documentName: "Item", document: { _id: "e-1", name: "Staff" } }
+        ]
+      })
+    );
+    expect(many.stdout).toContain("e-1\tItem\tStaff");
+  });
+
   it("renders scene update output in human-readable mode", async () => {
     const result = await runCommand(
       [

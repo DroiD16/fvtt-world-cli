@@ -55,6 +55,7 @@ import {
   PROTOCOL_VERSION,
   defaultProfile,
   isDestructiveCommand,
+  summarizeTokenDelta,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
   FOG_RESET_CONFIRM_TIMEOUT_MS,
   SCENE_THUMBNAIL_MAX_BYTES,
@@ -652,6 +653,7 @@ const MUTATION_BASES = Object.freeze({
   "scene.token.update": { sceneId: "scene-1", tokenId: "tok-1", patch: { name: "X" } },
   "scene.token.delete": { sceneId: "scene-1", tokenId: "tok-1" },
   "scene.token.clone": { sceneId: "scene-1", tokenId: "tok-1" },
+  "scene.token.restore-delta": { sceneId: "scene-1", tokenId: "tok-1" },
   "scene.token.item.create": { sceneId: "scene-1", tokenId: "tok-1", data: { name: "X", type: "loot" } },
   "scene.token.item.update": {
     sceneId: "scene-1",
@@ -2281,7 +2283,7 @@ describe("protocol contract", () => {
   });
 
   describe("command policy primitives", () => {
-    const DESTRUCTIVE_EXTRAS = ["chat.flush", "file.move", "scene.fog.reset"];
+    const DESTRUCTIVE_EXTRAS = ["chat.flush", "file.move", "scene.fog.reset", "scene.token.restore-delta"];
     const finalSegment = (name) => name.slice(name.lastIndexOf(".") + 1);
 
     it("exposes a code for the deny verdict and for every approval outcome", () => {
@@ -2476,7 +2478,14 @@ describe("protocol contract", () => {
       "scene.region.behavior.executable.update",
       "scene.region.behavior.executable.clone"
     ];
-    const APPROVED_EXTRAS = ["chat.flush", "file.move", "scene.fog.reset", "system.reload", "user.create"];
+    const APPROVED_EXTRAS = [
+      "chat.flush",
+      "file.move",
+      "scene.fog.reset",
+      "scene.token.restore-delta",
+      "system.reload",
+      "user.create"
+    ];
     const DESTRUCTIVE_SUFFIXES = [".delete", ".delete-many"];
 
     const expectedBehavior = (command) => {
@@ -2516,7 +2525,7 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 60 approve-listed, 8 denied and 276 self-running commands in a registry of 344", () => {
+    it("counts 61 approve-listed, 8 denied and 277 self-running commands in a registry of 346", () => {
       const bucket = (behavior) =>
         COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
@@ -2528,10 +2537,10 @@ describe("protocol contract", () => {
           allow: bucket("allow")
         },
         "the totals moved: re-check the default-policy prose in docs/commands.md and docs/security.md (they name the buckets, not the counts) in the same change"
-      ).toEqual({ commands: 344, approve: 60, deny: 8, allow: 276 });
+      ).toEqual({ commands: 346, approve: 61, deny: 8, allow: 277 });
     });
 
-    it("leaves 339 governed commands in 19 top-level groups once the exempt ones are removed", () => {
+    it("leaves 341 governed commands in 19 top-level groups once the exempt ones are removed", () => {
       const exempt = new Set(POLICY_EXEMPT_COMMANDS);
       const governed = COMMAND_NAMES.filter((command) => !exempt.has(command));
 
@@ -2541,7 +2550,7 @@ describe("protocol contract", () => {
           groups: new Set(governed.map((command) => command.split(".")[0])).size
         },
         "the window totals moved: the permissions window renders one section per top-level group, so re-check its rendering assumptions in the same change"
-      ).toEqual({ governed: 339, groups: 19 });
+      ).toEqual({ governed: 341, groups: 19 });
     });
 
     it("cannot be mutated in place", () => {
@@ -6504,7 +6513,9 @@ describe("protocol contract", () => {
         patch: { name: "Renamed" }
       },
       "scene.token.get": { sceneId: "scene-1", tokenId: "token-1" },
+      "scene.token.list": { sceneId: "scene-1" },
       "compendium.get": { pack: "world.x", entryId: "e-1" },
+      "compendium.get-many": { pack: "world.x", ids: ["e-1"] },
       "system.info": {}
     });
 
@@ -6519,14 +6530,16 @@ describe("protocol contract", () => {
       "items.effects",
       "prepared"
     ]);
-    const TOKEN_INCLUDE_ENUM = Object.freeze(["prepared"]);
+    const TOKEN_INCLUDE_ENUM = Object.freeze(["prepared", "delta"]);
+    const TOKEN_LIST_INCLUDE_ENUM = Object.freeze(["delta"]);
 
     const COMPENDIUM_INCLUDE_ENUM = Object.freeze(["effects"]);
     const SYSTEM_INFO_INCLUDE_ENUM = Object.freeze(["modules"]);
     const expectedIncludeEnum = (command) => {
       if (command === "actor.get" || command === "actor.get-many") return ACTOR_INCLUDE_ENUM;
       if (command === "scene.token.get") return TOKEN_INCLUDE_ENUM;
-      if (command === "compendium.get") return COMPENDIUM_INCLUDE_ENUM;
+      if (command === "scene.token.list") return TOKEN_LIST_INCLUDE_ENUM;
+      if (command === "compendium.get" || command === "compendium.get-many") return COMPENDIUM_INCLUDE_ENUM;
       if (command === "system.info") return SYSTEM_INFO_INCLUDE_ENUM;
       return BASE_INCLUDE_ENUM;
     };
@@ -6570,7 +6583,9 @@ describe("protocol contract", () => {
           command === "actor.get" ||
           command === "actor.get-many" ||
           command === "scene.token.get" ||
+          command === "scene.token.list" ||
           command === "compendium.get" ||
+          command === "compendium.get-many" ||
           command === "system.info"
         ) {
           continue;
@@ -6585,13 +6600,28 @@ describe("protocol contract", () => {
       }
     });
 
-    it("scene.token.get accepts prepared and rejects flags/effects/items.* (singleton enum)", () => {
-      expectValid("scene.token.get", { sceneId: "scene-1", tokenId: "token-1", include: ["prepared"] });
+    it("scene.token.get accepts prepared and delta and rejects flags/effects/items.*", () => {
+      expectValid("scene.token.get", {
+        sceneId: "scene-1",
+        tokenId: "token-1",
+        include: ["prepared", "delta"]
+      });
       for (const bogus of ["flags", "effects", "items.flags"]) {
         expectRejected(
           "scene.token.get",
           { sceneId: "scene-1", tokenId: "token-1", include: [bogus] },
           "$.params.include[0] must be one of prepared"
+        );
+      }
+    });
+
+    it("scene.token.list accepts only delta as an include", () => {
+      expectValid("scene.token.list", { sceneId: "scene-1", include: ["delta"] });
+      for (const bogus of ["prepared", "flags", "effects"]) {
+        expectRejected(
+          "scene.token.list",
+          { sceneId: "scene-1", include: [bogus] },
+          "$.params.include[0] must be one of delta"
         );
       }
     });
@@ -6639,6 +6669,53 @@ describe("protocol contract", () => {
       );
       expectRejected("item.list", { include: ["flags"] }, "$.params.include is not allowed");
       expectRejected("actor.list", { include: ["flags"] }, "$.params.include is not allowed");
+    });
+  });
+
+  describe("compendium.get-many", () => {
+    it("is a read that requires a pack and the shared batch ids array and carries the compendium include", () => {
+      const definition = COMMAND_DEFINITIONS["compendium.get-many"];
+      expect(definition.mutation).toBe(false);
+      expect(definition.paramsSchema.required).toEqual(["pack", "ids"]);
+      expect(definition.paramsSchema.additionalProperties).toBe(false);
+      expect(definition.paramsSchema.properties.ids).toEqual(
+        COMMAND_DEFINITIONS["item.get-many"].paramsSchema.properties.ids
+      );
+      expect(definition.paramsSchema.properties.include).toEqual(
+        COMMAND_DEFINITIONS["compendium.get"].paramsSchema.properties.include
+      );
+      expect(defaultBehaviorFor("compendium.get-many")).toBe("allow");
+
+      expectValid("compendium.get-many", { pack: "world.x", ids: ["a", "a"], include: ["effects"] });
+      expectRejected("compendium.get-many", { ids: ["a"] }, "pack");
+      expectRejected("compendium.get-many", { pack: "world.x", ids: [] }, "$.params.ids");
+      expectRejected("compendium.get-many", { pack: "world.x", ids: ["a"], entryId: "a" }, "entryId");
+    });
+  });
+
+  describe("scene.token.restore-delta", () => {
+    it("is a mutation taking only sceneId, tokenId and dryRun, in the same default bucket as a token item delete", () => {
+      const definition = COMMAND_DEFINITIONS["scene.token.restore-delta"];
+      expect(definition.mutation).toBe(true);
+      expect(Object.keys(definition.paramsSchema.properties).sort()).toEqual([
+        "dryRun",
+        "sceneId",
+        "tokenId"
+      ]);
+      expect(definition.paramsSchema.required).toEqual(["sceneId", "tokenId"]);
+      expect(isDestructiveCommand("scene.token.restore-delta")).toBe(true);
+      expect(DEFAULT_COMMAND_PROFILE["scene.token.restore-delta"]).toBe(
+        DEFAULT_COMMAND_PROFILE["scene.token.item.delete"]
+      );
+      expect(DEFAULT_COMMAND_PROFILE["scene.token.restore-delta"]).toBe("approve");
+
+      expectValid("scene.token.restore-delta", { sceneId: "scene-1", tokenId: "tok-1", dryRun: true });
+      expectRejected("scene.token.restore-delta", { sceneId: "scene-1" }, "tokenId");
+      expectRejected(
+        "scene.token.restore-delta",
+        { sceneId: "scene-1", tokenId: "tok-1", force: true },
+        "force"
+      );
     });
   });
 
@@ -6721,6 +6798,7 @@ describe("protocol contract", () => {
       "scene.token.update",
       "scene.token.delete",
       "scene.token.clone",
+      "scene.token.restore-delta",
       "scene.token.item.create",
       "scene.token.item.update",
       "scene.token.item.delete",
@@ -7015,6 +7093,7 @@ describe("protocol contract", () => {
       "playlist.get-many.paramsSchema.properties.ids",
       "table.get-many.paramsSchema.properties.ids",
       "cards.get-many.paramsSchema.properties.ids",
+      "compendium.get-many.paramsSchema.properties.ids",
       "cards.pass.paramsSchema.properties.cardIds",
       "setting.get-many.paramsSchema.properties.ids",
       "setting.set-many.paramsSchema.properties.items",
@@ -7956,5 +8035,52 @@ describe("protocol contract", () => {
 
       expect(SEARCH_RESULT_MAX_LIMIT * SEARCH_SNIPPET_MAX_CHARS * 4).toBeLessThan(SEARCH_RESPONSE_MAX_BYTES);
     });
+  });
+});
+
+describe("summarizeTokenDelta", () => {
+  const EMPTY = { _id: "d1", system: {}, items: [], effects: [], flags: {} };
+
+  it("reports no overrides for a missing delta and for top-level values that are null, [] or {}", () => {
+    expect(summarizeTokenDelta(null)).toBeNull();
+    expect(summarizeTokenDelta(EMPTY)).toBeNull();
+    expect(summarizeTokenDelta({ ...EMPTY, name: null, img: null, ownership: null })).toBeNull();
+  });
+
+  it("counts any content below the top level as an override, nested null, [] and {} included", () => {
+    expect(
+      summarizeTokenDelta({ ...EMPTY, system: { attributes: { hp: { temp: null } } } })?.overriddenKeys
+    ).toEqual(["system"]);
+    expect(
+      summarizeTokenDelta({ ...EMPTY, system: { traits: { dr: { value: [] } } } })?.overriddenKeys
+    ).toEqual(["system"]);
+    expect(summarizeTokenDelta({ ...EMPTY, flags: { world: { x: {} } } })?.overriddenKeys).toEqual(["flags"]);
+    expect(summarizeTokenDelta({ ...EMPTY, flags: { mod: {} } })?.overriddenKeys).toEqual(["flags"]);
+  });
+
+  it("names every top-level key holding a value and counts delta entries, deletion markers included", () => {
+    expect(
+      summarizeTokenDelta({
+        ...EMPTY,
+        name: "Aarakocra Skirmisher",
+        system: { attributes: { hp: { value: 0 } } },
+        flags: { mod: { enabled: false } },
+        items: [
+          { _id: "i1", name: "Talons" },
+          { _id: "i2", _tombstone: true }
+        ],
+        effects: [{ _id: "e1", _tombstone: true }]
+      })
+    ).toEqual({
+      itemEntries: 2,
+      effectEntries: 1,
+      overriddenKeys: ["system", "items", "effects", "flags", "name"]
+    });
+  });
+
+  it("treats empty strings, zero and false as override values", () => {
+    expect(summarizeTokenDelta({ ...EMPTY, name: "" })?.overriddenKeys).toEqual(["name"]);
+    expect(summarizeTokenDelta({ ...EMPTY, system: { hp: 0 } })?.overriddenKeys).toEqual(["system"]);
+    expect(summarizeTokenDelta({ ...EMPTY, flags: { m: { on: false } } })?.overriddenKeys).toEqual(["flags"]);
   });
 });

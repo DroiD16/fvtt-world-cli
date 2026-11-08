@@ -1608,6 +1608,16 @@ describe("fvtt-world-cli commands", () => {
     ],
     [["scene", "token", "list", "--scene-id", "scene-1"], "scene.token.list", { sceneId: "scene-1" }],
     [
+      ["scene", "token", "restore-delta", "--scene-id", "scene-1", "--token-id", "token-a"],
+      "scene.token.restore-delta",
+      { sceneId: "scene-1", tokenId: "token-a" }
+    ],
+    [
+      ["--dry-run", "scene", "token", "restore-delta", "--scene-id", "scene-1", "--token-id", "token-a"],
+      "scene.token.restore-delta",
+      { sceneId: "scene-1", tokenId: "token-a", dryRun: true }
+    ],
+    [
       ["scene", "token", "get", "--scene-id", "scene-1", "--token-id", "token-a"],
       "scene.token.get",
       { sceneId: "scene-1", tokenId: "token-a" }
@@ -2569,6 +2579,11 @@ describe("fvtt-world-cli commands", () => {
       ["compendium", "get", "--pack", "dnd5e.monsters", "--entry-id", "arch1"],
       "compendium.get",
       { pack: "dnd5e.monsters", entryId: "arch1" }
+    ],
+    [
+      ["compendium", "get-many", "--pack", "dnd5e.monsters", "--ids", "arch1,arch2,arch1"],
+      "compendium.get-many",
+      { pack: "dnd5e.monsters", ids: ["arch1", "arch2", "arch1"] }
     ],
     [["folder", "list"], "folder.list", {}],
     [["folder", "list", "--type", "Actor"], "folder.list", { type: "Actor" }],
