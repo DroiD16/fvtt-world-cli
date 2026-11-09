@@ -7,7 +7,6 @@ import {
   createMismatchError,
   evaluateRequestedDiff
 } from "../scripts/lib/mismatch-report.js";
-import { assertClonePatchValid, previewDocumentUpdate } from "../scripts/lib/world-docs.js";
 import { applyConfirmedUpdate, assertDocumentUpdateCommitted } from "../scripts/lib/write-confirmation.js";
 
 import { ForcedDeletion, ForcedReplacement, dataFieldOperators } from "./helpers/data-field-operators.js";
@@ -558,32 +557,5 @@ describe("assertDocumentUpdateCommitted", () => {
     );
     expect(error.details.changedFields).toBeUndefined();
     expect(error.details.paths).toEqual([{ path: "active", requested: true, stored: false }]);
-  });
-});
-
-describe("the clone validation and the dry-run preview hand Foundry only nested keys", () => {
-  it("expands dotted keys before updateSource", async () => {
-    /** @type {any[]} */
-    const received = [];
-    const document = {
-      _source: { system: { attrs: { a: 1 } } },
-      async clone() {
-        return {
-          updateSource: (/** @type {any} */ changes) => {
-            received.push(structuredClone(changes));
-            return {};
-          }
-        };
-      },
-      updateSource() {
-        return {};
-      }
-    };
-    await assertClonePatchValid(document, { system: { "attrs.a": 5 }, "system.attrs.b": 6 });
-    await previewDocumentUpdate(document, { "system.attrs.==inner": { c: 1 } });
-    expect(received).toEqual([
-      { system: { attrs: { a: 5, b: 6 } } },
-      { system: { attrs: { "==inner": { c: 1 } } } }
-    ]);
   });
 });

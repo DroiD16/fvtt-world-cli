@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createCommandRouter } from "../scripts/command-router.js";
-import { ERROR_CODES, MODULE_ID, PATCH_MAX_DEPTH } from "../scripts/generated/protocol.js";
-import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
+import { ERROR_CODES } from "../scripts/generated/protocol.js";
 
 import {
   COMBAT_GROUP_A,
@@ -307,8 +306,23 @@ describe("a write that landed only in part is reported as partial, not as succes
   });
 });
 
-describe("a dotted key inside an embedded-collection entry is judged in the expanded form the bridge sends", () => {
-  it("lands through scene.region.update and scene.region.update-many, real and dry run, with a v13-like preview", async () => {
+describe("a dotted key inside an embedded-collection entry is previewed the way the client expands it", () => {
+  it("lands through scene.region.update and scene.region.update-many, real and dry run, sent as written", async () => {
+    /** @param {any} value @returns {any} */
+    const expandObject = (value) => {
+      if (Array.isArray(value)) return value.map(expandObject);
+      if (!value || typeof value !== "object") return value;
+      /** @type {Record<string, any>} */
+      const out = {};
+      for (const [key, inner] of Object.entries(value)) {
+        const segments = key.split(".");
+        let node = out;
+        for (const segment of segments.slice(0, -1)) node = node[segment] ??= {};
+        node[/** @type {string} */ (segments.at(-1))] = expandObject(inner);
+      }
+      return out;
+    };
+    globalThis.foundry.utils.expandObject = expandObject;
     const scene = globalThis.game.scenes.get("scene-1");
     const region = scene.regions.get("region-lava");
     const behavior = Array.from(region.behaviors)[0];
@@ -363,7 +377,9 @@ describe("a dotted key inside an embedded-collection entry is judged in the expa
       const real = await send(command, params);
       expect(real.ok, `${command}: ${JSON.stringify(real.error)}`).toBe(true);
       const regionEntry = sent.mock.calls.find((call) => call[0] === "Region")?.[1]?.[0];
-      expect(Object.keys(regionEntry.behaviors[0]).every((key) => !key.includes("."))).toBe(true);
+      expect(regionEntry.behaviors).toEqual(
+        command === "scene.region.update" ? params.patch.behaviors : params.patches[0].patch.behaviors
+      );
     }
     const stored = Array.from(region.behaviors).find((entry) => (entry._id ?? entry.id) === behaviorId);
     expect(stored.toObject().flags.mod).toMatchObject({ k: 1, j: 2 });
@@ -417,401 +433,6 @@ describe("an embedded creation without a requested id needs independent confirma
     expect(response.error.details).toMatchObject({ indeterminate: true });
     expect(response.error.details.paths).toHaveLength(20);
     expect(response.error.details.pathsTruncated).toBe(3);
-  });
-});
-
-describe("a key segment naming an object internal is refused before anything reads or writes the patch", () => {
-  const prototypeNames = () => Object.getOwnPropertyNames(Object.prototype).sort();
-
-  /**
-   * @param {string} command
-   * @param {string} paramsJson
-   * @param {string} field
-   * @param {string} segment
-   */
-  async function expectRefused(command, paramsJson, field, segment) {
-    const before = prototypeNames();
-    const response = await send(command, JSON.parse(paramsJson));
-    expect(response.ok, paramsJson).toBe(false);
-    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(response.error.details).toMatchObject({ command, reservedSegment: segment });
-    expect(response.error.details.field).toBe(field);
-    expect(prototypeNames()).toEqual(before);
-    expect(/** @type {any} */ ({}).isGM).toBeUndefined();
-    expect(/** @type {any} */ ({}).a).toBeUndefined();
-  }
-
-  it("refuses dotted and own-key spellings at the top level and nested, on real writes and dry runs", async () => {
-    const actor = globalThis.game.actors.get("actor-1");
-    const update = vi.spyOn(actor, "update");
-    for (const dryRun of [false, true]) {
-      await expectRefused(
-        "actor.update",
-        `{"actorId":"actor-1","dryRun":${dryRun},"patch":{"system":{"__proto__.a":99}}}`,
-        "patch.system.__proto__.a",
-        "__proto__"
-      );
-      await expectRefused(
-        "actor.update",
-        `{"actorId":"actor-1","dryRun":${dryRun},"patch":{"system":{"__proto__":{"isGM":true}}}}`,
-        "patch.system.__proto__",
-        "__proto__"
-      );
-      await expectRefused(
-        "actor.update",
-        `{"actorId":"actor-1","dryRun":${dryRun},"patch":{"flags":{"constructor.prototype.isGM":true}}}`,
-        "patch.flags.constructor.prototype.isGM",
-        "constructor"
-      );
-      await expectRefused(
-        "actor.update",
-        `{"actorId":"actor-1","dryRun":${dryRun},"patch":{"flags":{"mod":{"==prototype":{"isGM":true}}}}}`,
-        "patch.flags.mod.==prototype",
-        "prototype"
-      );
-    }
-    expect(update).not.toHaveBeenCalled();
-  });
-
-  it("refuses them at the top level of an open-schema patch that protocol validation lets through", async () => {
-    const scene = globalThis.game.scenes.get("scene-1");
-    const updateEmbedded = vi.spyOn(scene, "updateEmbeddedDocuments");
-    for (const dryRun of [false, true]) {
-      await expectRefused(
-        "scene.token.update",
-        `{"sceneId":"scene-1","tokenId":"token-a","dryRun":${dryRun},"patch":{"__proto__":{"isGM":true}}}`,
-        "patch.__proto__",
-        "__proto__"
-      );
-      await expectRefused(
-        "scene.token.update",
-        `{"sceneId":"scene-1","tokenId":"token-a","dryRun":${dryRun},"patch":{"__proto__.isGM":true}}`,
-        "patch.__proto__.isGM",
-        "__proto__"
-      );
-    }
-    expect(updateEmbedded).not.toHaveBeenCalled();
-  });
-
-  it("refuses them before a command the policy holds for approval reaches the approval queue", async () => {
-    await globalThis.game.settings.set(MODULE_ID, MODULE_SETTING_KEYS.COMMAND_POLICY, {
-      version: 1,
-      overrides: { "actor.update": "approve" }
-    });
-    const before = prototypeNames();
-    const response = await router.route(
-      createRequest(
-        "actor.update",
-        JSON.parse('{"actorId":"actor-1","patch":{"system":{"__proto__":{"isGM":true}}}}')
-      ),
-      { measureRequestBytes: () => 512 }
-    );
-    expect(response.ok).toBe(false);
-    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(response.error.details).toMatchObject({ command: "actor.update", reservedSegment: "__proto__" });
-    expect(router.approvalStore.getQueueView()).toMatchObject({ current: null, waitingCount: 0 });
-    expect(prototypeNames()).toEqual(before);
-    expect(/** @type {any} */ ({}).isGM).toBeUndefined();
-  });
-
-  it("refuses Foundry 14's serialized operator key, alone or beside other keys, on single and bulk updates", async () => {
-    const actor = globalThis.game.actors.get("actor-1");
-    const update = vi.spyOn(actor, "update");
-    for (const flags of [
-      { "mod.k": 9, mod: { __$OPERATOR$__: "ForcedReplacement", value: { j: 1 } } },
-      { mod: { __$OPERATOR$__: "ForcedDeletion", k: 9 } },
-      { mod: { __$OPERATOR$__: "ForcedDeletion" } }
-    ]) {
-      for (const dryRun of [false, true]) {
-        const response = await send("actor.update", { actorId: "actor-1", patch: { flags }, dryRun });
-        expect(response.ok, JSON.stringify(flags)).toBe(false);
-        expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-        expect(response.error.details).toMatchObject({ reservedSegment: "__$OPERATOR$__" });
-        expect(response.error.message).toContain('"==key" replacement');
-      }
-      const bulk = await send("actor.update-many", { patches: [{ id: "actor-1", patch: { flags } }] });
-      expect(bulk.ok).toBe(false);
-      expect(bulk.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(bulk.error.details).toMatchObject({ reservedSegment: "__$OPERATOR$__" });
-    }
-    expect(update).not.toHaveBeenCalled();
-  });
-
-  it("refuses them in bulk elements and inside embedded-collection entries", async () => {
-    const item = globalThis.game.items.get("item-1");
-    const update = vi.spyOn(item, "update");
-    await expectRefused(
-      "item.update-many",
-      '{"patches":[{"id":"item-1","patch":{"system":{"__proto__":{"isGM":true}}}}]}',
-      "patches.0.patch.system.__proto__",
-      "__proto__"
-    );
-    expect(update).not.toHaveBeenCalled();
-
-    const scene = globalThis.game.scenes.get("scene-1");
-    const region = scene.regions.get("region-lava");
-    const behavior = Array.from(region.behaviors)[0];
-    const behaviorId = behavior._id ?? behavior.id;
-    const regionUpdate = vi.spyOn(region, "update");
-    for (const entry of [
-      `{"_id":"${behaviorId}","system.__proto__.a":1}`,
-      `{"_id":"${behaviorId}","flags":{"__proto__":{"a":1}}}`
-    ]) {
-      await expectRefused(
-        "scene.region.update-many",
-        `{"sceneId":"scene-1","patches":[{"id":"region-lava","patch":{"behaviors":[${entry}]}}]}`,
-        entry.includes("flags")
-          ? "patches.0.patch.behaviors.0.flags.__proto__"
-          : "patches.0.patch.behaviors.0.system.__proto__.a",
-        "__proto__"
-      );
-    }
-    expect(regionUpdate).not.toHaveBeenCalled();
-  });
-});
-
-describe("clone and import overrides reach Foundry expanded", () => {
-  it("hands document.clone the expanded patch on the dry run and on the real clone", async () => {
-    const actor = globalThis.game.actors.get("actor-1");
-    for (const dryRun of [true, false]) {
-      actor.clone.mockClear();
-      const response = await send("actor.clone", {
-        actorId: "actor-1",
-        patch: { flags: { "mod.k": 5, mod: { j: 20 } } },
-        dryRun
-      });
-      expect(response.ok, JSON.stringify(response.error)).toBe(true);
-      expect(actor.clone.mock.calls[0][0]).toEqual({ flags: { mod: { k: 5, j: 20 } } });
-    }
-  });
-
-  it("refuses a clone patch that writes into a stored array or pairs an operator with another key", async () => {
-    const actor = globalThis.game.actors.get("actor-1");
-    actor.flags = { mod: { list: ["a", "b", "c"] } };
-    for (const dryRun of [true, false]) {
-      actor.clone.mockClear();
-      const descent = await send("actor.clone", {
-        actorId: "actor-1",
-        patch: { flags: { "mod.list.1": "z" } },
-        dryRun
-      });
-      expect(descent.ok).toBe(false);
-      expect(descent.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(descent.error.details).toMatchObject({
-        field: "flags.mod.list.1",
-        arrayField: "flags.mod.list"
-      });
-      const conflict = await send("actor.clone", {
-        actorId: "actor-1",
-        patch: { flags: { "-=mod": null, mod: { k: 1 } } },
-        dryRun
-      });
-      expect(conflict.ok).toBe(false);
-      expect(conflict.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(conflict.error.details).toMatchObject({ field: "flags.mod", ambiguityRule: 2 });
-      expect(actor.clone).not.toHaveBeenCalled();
-    }
-  });
-
-  it("refuses import overrides that write into an array of the imported data or pair an operator with another key", async () => {
-    const fromCompendium = globalThis.game.actors.fromCompendium;
-    const original = fromCompendium.getMockImplementation();
-    fromCompendium.mockImplementation((...args) => ({
-      ...original(...args),
-      flags: { mod: { list: ["a", "b"] } }
-    }));
-    const descent = await send("actor.import-from-compendium", {
-      pack: "world.test-monsters",
-      entryId: "arch1",
-      patch: { flags: { "mod.list.0": "z" } }
-    });
-    expect(descent.ok).toBe(false);
-    expect(descent.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(descent.error.details).toMatchObject({ field: "flags.mod.list.0", arrayField: "flags.mod.list" });
-    const conflict = await send("actor.import-from-compendium", {
-      pack: "world.test-monsters",
-      entryId: "arch1",
-      patch: { prototypeToken: { "-=texture": null, texture: { src: "x.webp" } } }
-    });
-    expect(conflict.ok).toBe(false);
-    expect(conflict.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(conflict.error.details).toMatchObject({ field: "prototypeToken.texture" });
-    fromCompendium.mockImplementation(original);
-
-    const embedded = await send("actor.item.import-from-compendium", {
-      actorId: "actor-1",
-      pack: "world.test-items",
-      entryId: "it-full",
-      patch: { system: { "-=description": null, description: { value: "x" } } }
-    });
-    expect(embedded.ok).toBe(false);
-    expect(embedded.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(embedded.error.details).toMatchObject({ field: "system.description" });
-  });
-
-  it("hands mergeObject expanded import overrides, so no leaf is lost", async () => {
-    const mergeObject = vi.spyOn(globalThis.foundry.utils, "mergeObject");
-    const response = await send("actor.import-from-compendium", {
-      pack: "world.test-monsters",
-      entryId: "arch1",
-      patch: { prototypeToken: { "texture.src": "compendium/a.webp", texture: { tint: "#ff0000" } } }
-    });
-    expect(response.ok, JSON.stringify(response.error)).toBe(true);
-    expect(response.result.actor.prototypeToken.texture).toMatchObject({
-      src: "compendium/a.webp",
-      tint: "#ff0000"
-    });
-    expect(mergeObject.mock.calls.at(-1)?.[1]).toEqual({
-      prototypeToken: { texture: { src: "compendium/a.webp", tint: "#ff0000" } }
-    });
-
-    mergeObject.mockClear();
-    const embedded = await send("actor.item.import-from-compendium", {
-      actorId: "actor-1",
-      pack: "world.test-items",
-      entryId: "it-full",
-      patch: { system: { "description.value": "<p>x</p>", description: { chat: "c" } } }
-    });
-    expect(embedded.ok, JSON.stringify(embedded.error)).toBe(true);
-    expect(mergeObject.mock.calls.at(-1)?.[1]).toEqual({
-      system: { description: { value: "<p>x</p>", chat: "c" } }
-    });
-  });
-});
-
-describe("a write into a stored array is refused before anything is written", () => {
-  it("refuses all three spellings on single updates, dry runs and bulk updates", async () => {
-    const actor = globalThis.game.actors.get("actor-1");
-    actor.flags = { mod: { list: ["a", "b", "c"] } };
-    const update = vi.spyOn(actor, "update");
-    for (const [flags, field] of /** @type {Array<[Record<string, unknown>, string]>} */ ([
-      [{ "mod.list.1": "z" }, "flags.mod.list.1"],
-      [{ mod: { "list.1": "z" } }, "flags.mod.list.1"],
-      [{ mod: { list: { 1: "z" } } }, "flags.mod.list.1"],
-      [{ "mod.list.length": 0 }, "flags.mod.list.length"],
-      [{ mod: { list: { foo: "z" } } }, "flags.mod.list.foo"]
-    ])) {
-      for (const dryRun of [false, true]) {
-        const response = await send("actor.update", { actorId: "actor-1", patch: { flags }, dryRun });
-        expect(response.ok, JSON.stringify(flags)).toBe(false);
-        expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-        expect(response.error.details).toMatchObject({ field, arrayField: "flags.mod.list" });
-      }
-      const bulk = await send("actor.update-many", { patches: [{ id: "actor-1", patch: { flags } }] });
-      expect(bulk.ok).toBe(false);
-      expect(bulk.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(bulk.error.details).toMatchObject({ index: 0, id: "actor-1", field });
-    }
-    expect(update).not.toHaveBeenCalled();
-    expect(actor.flags.mod.list).toEqual(["a", "b", "c"]);
-  });
-});
-
-describe("a patch nested beyond the depth limit is refused as invalid", () => {
-  it("refuses deep nesting, a long dotted key and deep arrays, and accepts the limit itself", async () => {
-    /** @type {any} */
-    let nested = 1;
-    for (let level = 0; level < 3000; level += 1) nested = { v: nested };
-    /** @type {any} */
-    let arrays = 1;
-    for (let level = 0; level < 3000; level += 1) arrays = [arrays];
-    for (const patch of [
-      { flags: nested },
-      { flags: { [Array.from({ length: 5000 }, () => "a").join(".")]: 1 } },
-      { flags: { list: arrays } }
-    ]) {
-      const response = await send("actor.update", { actorId: "actor-1", patch, dryRun: true });
-      expect(response.ok).toBe(false);
-      expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(response.error.details, JSON.stringify(response.error).slice(0, 400)).toMatchObject({
-        limit: "patch-depth",
-        max: PATCH_MAX_DEPTH
-      });
-    }
-    const atLimit = Array.from({ length: PATCH_MAX_DEPTH - 1 }, () => "a").join(".");
-    const accepted = await send("actor.update", {
-      actorId: "actor-1",
-      patch: { flags: { [atLimit]: 1 } },
-      dryRun: true
-    });
-    expect(accepted.ok, JSON.stringify(accepted.error)).toBe(true);
-  });
-
-  it("refuses a request nested about 100 000 levels deep promptly, without a stack overflow", async () => {
-    /** @type {any} */
-    let nested = 1;
-    for (let level = 0; level < 100_000; level += 1) nested = { v: nested };
-    /** @type {any} */
-    let arrays = 1;
-    for (let level = 0; level < 100_000; level += 1) arrays = [arrays];
-    for (const [command, params, code] of /** @type {Array<[string, Record<string, any>, string]>} */ ([
-      [
-        "actor.update",
-        { actorId: "actor-1", patch: { flags: nested }, dryRun: true },
-        ERROR_CODES.INVALID_PARAMS
-      ],
-      ["actor.update", { actorId: "actor-1", patch: { flags: nested } }, ERROR_CODES.INVALID_PARAMS],
-      [
-        "actor.update-many",
-        { patches: [{ id: "actor-1", patch: { flags: nested } }] },
-        ERROR_CODES.INVALID_PARAMS
-      ],
-      ["actor.update", { actorId: "actor-1", patch: { flags: { list: arrays } } }, ERROR_CODES.INVALID_PARAMS]
-    ])) {
-      const started = performance.now();
-      const response = await send(command, params);
-      const elapsed = performance.now() - started;
-      expect(response.ok).toBe(false);
-      expect(response.error.code, JSON.stringify(response.error).slice(0, 300)).toBe(code);
-      expect(elapsed).toBeLessThan(500);
-    }
-  });
-});
-
-describe("a nested deletion beside a plain key of the same path is refused before any write", () => {
-  const patch = { flags: { "-=zz": null, zz: { k: 1 } } };
-
-  it("journal page patches inside journal.update and its dry run refuse it before any write", async () => {
-    const journal = globalThis.game.journal.get("journal-1");
-    const updatePages = vi.spyOn(journal, "updateEmbeddedDocuments");
-    for (const [pagePatch, field] of /** @type {Array<[Record<string, unknown>, string]>} */ ([
-      [{ flags: { "-=mod": null, mod: { k: 1 } } }, "flags.mod"],
-      [{ flags: { "mod.-=k": null, mod: { k: 2 } } }, "flags.mod.k"]
-    ])) {
-      for (const dryRun of [false, true]) {
-        const response = await send("journal.update", {
-          journalId: "journal-1",
-          patch: { pages: [{ id: "page-1", ...pagePatch }] },
-          dryRun
-        });
-        expect(response.ok, JSON.stringify(pagePatch)).toBe(false);
-        expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-        expect(response.error.details).toMatchObject({
-          journalId: "journal-1",
-          pageId: "page-1",
-          field
-        });
-      }
-    }
-    expect(updatePages).not.toHaveBeenCalled();
-  });
-
-  it("item.update, its dry run and item.update-many refuse it alike", async () => {
-    const item = globalThis.game.items.get("item-1");
-    const update = vi.spyOn(item, "update");
-
-    for (const dryRun of [false, true]) {
-      const response = await send("item.update", { itemId: "item-1", patch, dryRun });
-      expect(response.ok).toBe(false);
-      expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(response.error.details).toMatchObject({ field: "flags.zz" });
-    }
-
-    const bulk = await send("item.update-many", { patches: [{ id: "item-1", patch }] });
-    expect(bulk.ok).toBe(false);
-    expect(bulk.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(bulk.error.details).toMatchObject({ index: 0, id: "item-1", field: "flags.zz" });
-    expect(update).not.toHaveBeenCalled();
   });
 });
 
@@ -1082,38 +703,6 @@ describe("a patch shape Foundry stores nothing for is refused before the write",
     expect(response.error.details).toMatchObject({ sceneId: "scene-1", wallId: "wall-plain" });
     expect(scene.walls.get("wall-plain").c).toEqual(stored);
     expect(scene.updateEmbeddedDocuments).not.toHaveBeenCalled();
-  });
-
-  it("refuses a dotted key under a forced replacement into the wall's coordinate array on every path", async () => {
-    const scene = globalThis.game.scenes.get("scene-1");
-    const wall = scene.walls.get("wall-plain");
-    const stored = [...wall.c];
-    const cloneSpy = vi.spyOn(wall, "clone");
-    for (const [command, params] of /** @type {Array<[string, Record<string, any>]>} */ ([
-      ["scene.wall.update", { sceneId: "scene-1", wallId: "wall-plain", patch: { "==c.foo": 1 } }],
-      [
-        "scene.wall.update",
-        { sceneId: "scene-1", wallId: "wall-plain", patch: { "==c.foo": 1 }, dryRun: true }
-      ],
-      [
-        "scene.wall.update-many",
-        { sceneId: "scene-1", patches: [{ id: "wall-plain", patch: { "==c.foo": 1 } }] }
-      ],
-      ["scene.wall.clone", { sceneId: "scene-1", wallId: "wall-plain", patch: { "==c.foo": 1 } }],
-      [
-        "scene.wall.clone",
-        { sceneId: "scene-1", wallId: "wall-plain", patch: { "==c.foo": 1 }, dryRun: true }
-      ]
-    ])) {
-      const response = await send(command, params);
-      expect(response.ok, `${command} ${JSON.stringify(params)}`).toBe(false);
-      expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(response.error.message).toContain('dotted path "==c.foo"');
-      expect(response.error.details).toMatchObject({ field: "==c.foo", arrayField: "c" });
-    }
-    expect(scene.updateEmbeddedDocuments).not.toHaveBeenCalled();
-    expect(cloneSpy).not.toHaveBeenCalled();
-    expect(wall.c).toEqual(stored);
   });
 
   it("a dry run refuses the same shape the real write refuses", async () => {

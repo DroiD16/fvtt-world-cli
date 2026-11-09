@@ -1,5 +1,4 @@
 import { ERROR_CODES } from "../generated/protocol.js";
-import { assertPatchFitsStored, expandPatch, readDocumentSource } from "./batch-guards.js";
 import { createBridgeError } from "./errors.js";
 
 import {
@@ -122,23 +121,15 @@ export async function cloneDocument(document, patch = {}, { dryRun = false } = {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Foundry document clone API is not available");
   }
 
-  const expanded = expandPatch(patch ?? {});
-  assertPatchFitsStored({
-    rawPatch: patch ?? {},
-    expandedPatch: expanded,
-    stored: readDocumentSource(document),
-    documentClass: document?.constructor,
-    subject: `The clone of ${document.documentName ?? "document"} ${document.id ?? ""}`.trimEnd()
-  });
   if (dryRun) {
-    const preview = await document.clone(expanded, { save: false });
+    const preview = await document.clone(patch ?? {}, { save: false });
     if (!preview) {
       throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Document clone returned no preview");
     }
     return preview;
   }
 
-  const result = await document.clone(expanded, { save: true, render: true });
+  const result = await document.clone(patch, { save: true, render: true });
   const clone = Array.isArray(result) ? (result[0] ?? null) : result;
   if (!clone) {
     throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Document clone returned no document");
@@ -153,18 +144,19 @@ export async function cloneDocument(document, patch = {}, { dryRun = false } = {
  * @returns {Promise<void>}
  */
 export async function assertClonePatchValid(document, patch = {}) {
-  await computeDocumentUpdateDiff(document, expandPatch(patch ?? {}));
-}
-
-export async function previewDocumentUpdate(document, patch = {}) {
-  return previewExpandedDocumentUpdate(document, expandPatch(patch ?? {}));
+  await computeDocumentUpdateDiff(document, patch ?? {});
 }
 
 /**
- * @param {any} document
- * @param {Record<string, any>} [patch]
+ * @param {Record<string, any> | null | undefined} patch
+ * @returns {Record<string, any>}
  */
-export async function previewExpandedDocumentUpdate(document, patch = {}) {
+function expandLikeClient(patch) {
+  const expandObject = globalThis.foundry?.utils?.expandObject;
+  return typeof expandObject === "function" ? expandObject(patch ?? {}) : (patch ?? {});
+}
+
+export async function previewDocumentUpdate(document, patch = {}) {
   if (typeof document?.clone !== "function" || typeof document?.updateSource !== "function") {
     throw createBridgeError(
       ERROR_CODES.BRIDGE_NOT_READY,
@@ -177,7 +169,7 @@ export async function previewExpandedDocumentUpdate(document, patch = {}) {
     throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Document clone returned no update preview");
   }
 
-  preview.updateSource(patch ?? {});
+  preview.updateSource(expandLikeClient(patch));
   return preview;
 }
 
@@ -197,7 +189,7 @@ export async function computeDocumentUpdateDiff(document, patch = {}) {
   if (!probe || typeof probe.updateSource !== "function") {
     throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Document clone returned no update probe");
   }
-  const diff = probe.updateSource(patch ?? {}, {
+  const diff = probe.updateSource(expandLikeClient(patch), {
     dryRun: true,
     fallback: false,
     clean: { partial: true }

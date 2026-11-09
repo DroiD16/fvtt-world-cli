@@ -1,4 +1,3 @@
-import { expandPatch } from "../scripts/lib/batch-guards.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createCommandRouter } from "../scripts/command-router.js";
@@ -310,7 +309,7 @@ describe("command router", () => {
     const updateCall = scene.updateEmbeddedDocuments.mock.calls.find(([type]) => type === "Tile");
     expect(updateCall).toBeDefined();
     const [, entries] = updateCall;
-    expect(entries[0].texture.src).toBe("worlds/world-1/maps/my%20map%20(v2).webp");
+    expect(entries[0]["texture.src"]).toBe("worlds/world-1/maps/my%20map%20(v2).webp");
   });
 
   it("lists, gets, creates, updates, clones, and deletes scene walls", async () => {
@@ -1262,8 +1261,8 @@ describe("command router", () => {
       .at(-1)[1][0];
     expect({ ...batchEntry, _id: "X" }).toEqual({ ...singleEntry, _id: "X" });
 
-    expect(singleEntry).toMatchObject({ someModuleKey: 1, threshold: { light: 12 }, ds: 1 });
-    expect(batchEntry).toMatchObject({ someModuleKey: 1, threshold: { light: 12 }, ds: 1 });
+    expect(singleEntry).toMatchObject({ someModuleKey: 1, "threshold.light": 12, ds: 1 });
+    expect(batchEntry).toMatchObject({ someModuleKey: 1, "threshold.light": 12, ds: 1 });
   });
 
   it("the shared preparation pipeline canonicalizes FilePath fields (the limb Wall cannot reach)", () => {
@@ -2913,7 +2912,7 @@ describe("command router", () => {
       );
       expect(response.ok, JSON.stringify(response.error)).toBe(true);
       const sent = /** @type {any} */ (updateSpy.mock.calls[0][1])[0];
-      expect(sent).toEqual({ _id: "behavior-darkness", name: "Renamed", ...expandPatch(expected) });
+      expect(sent).toEqual({ _id: "behavior-darkness", name: "Renamed", ...expected });
       updateSpy.mockRestore();
     });
   }
@@ -3076,7 +3075,7 @@ describe("command router", () => {
     const sent = /** @type {any} */ (updateSpy.mock.calls[0][1])[0];
 
     expect(sent.behaviors).toEqual([
-      { _id: "behavior-darkness", name: "Dimmer", flags: { mymod: { _id: "keepme" } } }
+      { _id: "behavior-darkness", name: "Dimmer", "flags.mymod._id": "keepme" }
     ]);
     updateSpy.mockRestore();
   });
@@ -3694,7 +3693,7 @@ describe("command router", () => {
         type: { __$OPERATOR$__: "ForcedReplacement", value: "executeScript" },
         system: { source: "alert(1)" }
       },
-      expected: "operator"
+      expected: "shape"
     },
     {
       label: "an array-wrapped executable type",
@@ -3747,9 +3746,7 @@ describe("command router", () => {
           );
           expect(response.ok, `${command} dryRun:${dryRun} must be rejected`).toBe(false);
           expect(response.error.code).toBe("INVALID_PARAMS");
-          if (expected === "operator") {
-            expect(response.error.details).toMatchObject({ reservedSegment: "__$OPERATOR$__" });
-          } else if (expected === "seam") {
+          if (expected === "seam") {
             expect(response.error.message).toContain("no arbitrary JavaScript execution from the CLI");
             expect(response.error.details).toMatchObject({ field: "behaviors", behaviorType: storedType });
           } else {

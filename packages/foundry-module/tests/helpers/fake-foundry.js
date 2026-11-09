@@ -397,13 +397,19 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
         );
       if (context.dryRun) {
         const diff = {};
+        const setDiff = (/** @type {string[]} */ segments, /** @type {unknown} */ value) => {
+          /** @type {Record<string, any>} */
+          let node = diff;
+          for (const segment of segments.slice(0, -1)) node = node[segment] ??= {};
+          node[/** @type {string} */ (segments.at(-1))] = value;
+        };
         for (const key of Object.keys(patch ?? {})) {
           if (key === "id" || key === "_id") continue;
           const segments = key.split(".");
           // Foundry re-emits a "==" forced-replacement key in every diff, so the probe can never
           // confirm it directly; the fake must model that or the merged-preview fallback goes dark.
           if (segments.some((segment) => segment.startsWith("=="))) {
-            diff[key] = patch[key];
+            setDiff(segments, patch[key]);
             continue;
           }
           const cleanPath = segments.map((segment) =>
@@ -411,11 +417,11 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
           );
           const before = readAtPath(current, cleanPath);
           if (segments.some((segment) => segment.startsWith("-="))) {
-            if (before !== undefined) diff[key] = patch[key];
+            if (before !== undefined) setDiff(segments, patch[key]);
             continue;
           }
           const after = readAtPath(merged, cleanPath);
-          if (JSON.stringify(after) !== JSON.stringify(before)) diff[key] = after;
+          if (JSON.stringify(after) !== JSON.stringify(before)) setDiff(segments, after);
         }
         return diff;
       }

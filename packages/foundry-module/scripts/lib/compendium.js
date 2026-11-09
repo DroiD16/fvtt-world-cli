@@ -1,5 +1,4 @@
 import { ERROR_CODES } from "../generated/protocol.js";
-import { assertPatchFitsStored, expandPatch } from "./batch-guards.js";
 import { createBridgeError } from "./errors.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
 import { cloneValue } from "./serializers.js";
@@ -143,7 +142,7 @@ export async function importWorldDocumentFromCompendium(
     ...canonicalizeFilePathFields(patch ?? {}, documentName),
     ...(folderProvided ? { folder } : {})
   };
-  const merged = mergeImportOverrides(importData, overrides, resolveWorldDocumentClass(documentName));
+  const merged = mergeImportOverrides(importData, overrides);
   if (compendiumSource !== null) {
     const stats = { ...(merged._stats ?? {}), compendiumSource };
     merged._stats = stats;
@@ -158,19 +157,11 @@ export async function importWorldDocumentFromCompendium(
   return createWorldDocument(documentName, merged);
 }
 
-function mergeImportOverrides(importData, overrides, documentClass) {
-  const expanded = expandPatch(overrides ?? {});
-  assertPatchFitsStored({
-    rawPatch: overrides ?? {},
-    expandedPatch: expanded,
-    stored: importData,
-    documentClass,
-    subject: "The import overrides"
-  });
+function mergeImportOverrides(importData, overrides) {
   const mergeObject = globalThis.foundry?.utils?.mergeObject;
   if (typeof mergeObject === "function") {
-    return mergeObject(importData, expanded, { inplace: false, insertKeys: true, insertValues: true });
+    return mergeObject(importData, overrides, { inplace: false, insertKeys: true, insertValues: true });
   }
 
-  return { ...importData, ...expanded };
+  return { ...importData, ...overrides };
 }

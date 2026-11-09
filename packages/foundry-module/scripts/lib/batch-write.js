@@ -7,12 +7,8 @@ import {
 } from "../generated/protocol.js";
 import {
   assertBatchArrayWritesReflected,
-  assertNoAmbiguousBatchKeySpellings,
-  assertNoStoredArrayDescent,
-  assertNoTopLevelDottedArrayWrite,
   batchEcfResidualEntries,
   batchEmbeddedCreateKeys,
-  expandPatch,
   readDocumentSource,
   structuredCloneish
 } from "./batch-guards.js";
@@ -319,28 +315,8 @@ export async function executeBatchUpdate({
     let elementDiff;
     let embeddedCreateKeys = [];
     try {
-      const rawPatch = await prepare(patch, index, document);
-      preparedPatch = expandPatch(rawPatch);
-      assertNoAmbiguousBatchKeySpellings({ expandedPatch: preparedPatch, index, command, id });
-      const storedSource = readDocumentSource(document);
+      preparedPatch = await prepare(patch, index, document);
       const elementClass = documentClass ?? document?.constructor;
-      assertNoTopLevelDottedArrayWrite({
-        rawPatch,
-        stored: storedSource,
-        documentClass: elementClass,
-        index,
-        command,
-        id
-      });
-      assertNoStoredArrayDescent({
-        expandedPatch: preparedPatch,
-        stored: storedSource,
-        documentClass: elementClass,
-        index,
-        command,
-        id
-      });
-
       const merged = await mergePreview(document, structuredCloneish(preparedPatch));
       assertBatchArrayWritesReflected({
         documentClass: elementClass,

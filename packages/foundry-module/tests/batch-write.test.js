@@ -1,13 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  expandPatch,
-  assertBatchArrayWritesReflected,
-  assertNoAmbiguousBatchKeySpellings,
-  assertNoStoredArrayDescent,
-  assertNoTopLevelDottedArrayWrite,
-  sourceValuesEqual
-} from "../scripts/lib/batch-guards.js";
+import { assertBatchArrayWritesReflected, sourceValuesEqual } from "../scripts/lib/batch-guards.js";
 import {
   BATCH_STATUS,
   annotateBatchElementFailure,
@@ -24,8 +17,7 @@ import {
   BATCH_WRITE_PERSISTED_STATUSES,
   BATCH_WRITE_STATUSES,
   BATCH_WRITE_SUCCESS_STATUSES,
-  ERROR_CODES,
-  PATCH_MAX_DEPTH
+  ERROR_CODES
 } from "../scripts/generated/protocol.js";
 import { BridgeError, createBridgeError, toProtocolError } from "../scripts/lib/errors.js";
 
@@ -691,39 +683,6 @@ describe("batch-write engine: update-many", () => {
     };
   };
 
-  it("refuses an AMBIGUOUS element patch before mergePreview is even called", async () => {
-    const row = { id: "wall-1", source: { c: [0, 0, 1, 1] } };
-    const rowStore = createStore([row]);
-    const mergePreview = vi.fn(async () => {
-      throw createBridgeError(ERROR_CODES.INVALID_PARAMS, "the v13 merge probe complains about [1,2]");
-    });
-    await expect(
-      executeBatchUpdate({
-        ...baseArgs(rowStore),
-        patches: [{ id: "wall-1", patch: { "==c": [1, 2], c: [1, 2, 3, 4] } }],
-        resolve: () => row,
-        mergePreview
-      })
-    ).rejects.toMatchObject({
-      code: ERROR_CODES.INVALID_PARAMS,
-      details: { index: 0, id: "wall-1", ambiguousRoot: "c", ambiguousKeys: ["==c", "c"] }
-    });
-    expect(mergePreview).not.toHaveBeenCalled();
-  });
-
-  it("refuses an AMBIGUOUS element patch under --dry-run too (one shared prevalidation path)", async () => {
-    const row = { id: "wall-1", source: { ds: 0 } };
-    const rowStore = createStore([row]);
-    await expect(
-      executeBatchUpdate({
-        ...baseArgs(rowStore),
-        dryRun: true,
-        patches: [{ id: "wall-1", patch: { ds: 1, "-=ds": null } }],
-        resolve: () => row
-      })
-    ).rejects.toMatchObject({ code: ERROR_CODES.INVALID_PARAMS, details: { ambiguousRoot: "ds" } });
-  });
-
   it("refuses the whole batch when an element's array write COLLAPSES onto the stored value", async () => {
     await expect(executeBatchUpdate(levelsArgs({ nope: 1 }, [], []))).rejects.toMatchObject({
       code: ERROR_CODES.INVALID_PARAMS,
@@ -951,7 +910,7 @@ describe("batch-write engine: update-many", () => {
     );
 
     expect(update.mock.calls[0][0]).toEqual([
-      { _id: "wall-1", someModuleKey: 1, threshold: { light: 12 }, door: 1 }
+      { _id: "wall-1", someModuleKey: 1, "threshold.light": 12, door: 1 }
     ]);
 
     expect(result.outcomes).toEqual([
@@ -1720,7 +1679,7 @@ describe("batch-write engine: update-many confirmation for OPERATOR spellings", 
       resolve: (id) => (row.id === id ? row : null),
       prepare: (patch) => ({ ...patch }),
 
-      diff: async (_document, patch) => ({ threshold: { "==light": patch.threshold["==light"] } }),
+      diff: async (_document, patch) => ({ threshold: { "==light": patch["threshold.==light"] } }),
 
       mergePreview: async (document) => {
         const merged = structuredClone(document.source);
@@ -2398,108 +2357,30 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
 
   const mergedWith = (changes) => ({
     system: v14EffectSystem,
-    toObject: () => {
-      const data = { system: { changes }, disabled: false };
-      Object.defineProperty(data, "changes", { get: () => data.system.changes, enumerable: false });
-      return data;
-    }
+    toObject: () => ({ system: { changes }, disabled: false })
   });
   const v14EffectMerged = mergedWith([{ key: "system.a", type: "add", value: "1", phase: "initial" }]);
-  const productionGuard = (patch, merged, stored) => {
-    const coordinates = { index: 2, command: "actor.effect.update-many", id: "effect-1" };
-    const storedSource = stored.toObject();
-    const expandedPatch = expandPatch(patch);
-    const documentClass = v14EffectClass;
-    assertNoTopLevelDottedArrayWrite({
-      rawPatch: patch,
-      stored: storedSource,
-      documentClass,
-      ...coordinates
-    });
-    assertNoStoredArrayDescent({ expandedPatch, stored: storedSource, documentClass, ...coordinates });
+  const shimGuard = (patch, merged = v14EffectMerged) =>
     assertBatchArrayWritesReflected({
       documentClass: v14EffectClass,
-      patch: expandedPatch,
+      patch,
       merged,
-      stored,
-      ...coordinates
+      stored: v14EffectMerged,
+      index: 2,
+      command: "actor.effect.update-many",
+      id: "effect-1"
     });
-  };
-  const shimGuard = (patch, merged = v14EffectMerged) => productionGuard(patch, merged, v14EffectMerged);
 
-  const shimGuardEmptyStored = (patch, merged) => productionGuard(patch, merged, mergedWith([]));
-
-  it("refuses a write inside a migrated top-level key as MOVED, although the v14 source shim exposes it", () => {
-    const shimmed = v14EffectMerged.toObject();
-    expect(Array.isArray(shimmed.changes)).toBe(true);
-    const coordinates = { index: 2, command: "actor.effect.update-many", id: "effect-1" };
-    /** @type {Array<[() => void, string]>} */
-    const checks = [
-      [
-        () =>
-          assertNoTopLevelDottedArrayWrite({
-            rawPatch: { "changes.0.value": 9 },
-            stored: shimmed,
-            documentClass: v14EffectClass,
-            ...coordinates
-          }),
-        "changes.0.value"
-      ],
-      [
-        () =>
-          assertNoStoredArrayDescent({
-            expandedPatch: { changes: { 0: { value: 9 } } },
-            stored: shimmed,
-            documentClass: v14EffectClass,
-            ...coordinates
-          }),
-        "changes.0"
-      ],
-      [
-        () =>
-          assertNoStoredArrayDescent({
-            expandedPatch: { changes: { nope: 1 } },
-            stored: {},
-            documentClass: v14EffectClass,
-            ...coordinates
-          }),
-        "changes.nope"
-      ]
-    ];
-    for (const [check, field] of checks) {
-      /** @type {any} */
-      let error = null;
-      try {
-        check();
-      } catch (thrown) {
-        error = thrown;
-      }
-      expect(error?.code, field).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(error?.message, field).toContain("a write inside the field is not migrated");
-      expect(error?.details, field).toEqual({
-        index: 2,
-        id: "effect-1",
-        field,
-        arrayField: "changes",
-        movedTo: "system.changes"
-      });
-    }
-    expect(() =>
-      assertNoStoredArrayDescent({
-        expandedPatch: { changes: [{ key: "system.a", value: "1" }] },
-        stored: shimmed,
-        documentClass: v14EffectClass,
-        ...coordinates
-      })
-    ).not.toThrow();
-    expect(() =>
-      assertNoTopLevelDottedArrayWrite({
-        rawPatch: { "changes.0.value": 9 },
-        stored: shimmed,
-        ...coordinates
-      })
-    ).toThrow(/INSIDE the ARRAY field/);
-  });
+  const shimGuardEmptyStored = (patch, merged) =>
+    assertBatchArrayWritesReflected({
+      documentClass: v14EffectClass,
+      patch,
+      merged,
+      stored: mergedWith([]),
+      index: 2,
+      command: "actor.effect.update-many",
+      id: "effect-1"
+    });
 
   it("REFUSES only the SPELLINGS the v14 `changes` migration never sees", () => {
     /** @type {any} */
@@ -2521,11 +2402,10 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
       movedTo: "system.changes"
     });
 
-    for (const patch of [{ changes: 5 }, { changes: null }]) {
+    for (const patch of [{ changes: { nope: 1 } }, { changes: 5 }, { changes: null }]) {
       expect(() => shimGuard(patch)).toThrow(/migrates the field only when the value is an ARRAY/);
     }
-    expect(() => shimGuard({ changes: { nope: 1 } })).toThrow(/a write inside the field is not migrated/);
-    expect(() => shimGuard({ "changes.0.value": "9" })).toThrow(/a write inside the field is not migrated/);
+    expect(() => shimGuard({ "changes.0.value": "9" })).toThrow(/dotted path into the field is not migrated/);
     expect(() => shimGuard({ "==changes": [{ key: "a", value: "1" }] })).toThrow(
       /legacy "==" operator key is not migrated/
     );
@@ -2601,22 +2481,44 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
       )
     ).not.toThrow();
 
-    expect(() => productionGuard(malformed, v14EffectMerged, v14EffectMerged)).toThrow(/does NOT accept/);
+    expect(() =>
+      assertBatchArrayWritesReflected({
+        documentClass: v14EffectClass,
+        patch: malformed,
+        merged: v14EffectMerged,
+        index: 2,
+        command: "actor.effect.update-many",
+        id: "effect-1"
+      })
+    ).toThrow(/does NOT accept/);
 
     const rawMerged = {
       toObject: () => ({ system: { changes: [{ key: "system.a", type: "my-module.bonus", value: 2 }] } })
     };
-    expect(() => productionGuard(malformed, rawMerged, rawMerged)).not.toThrow();
+    expect(() =>
+      assertBatchArrayWritesReflected({
+        documentClass: v14EffectClass,
+        patch: malformed,
+        merged: rawMerged,
+        stored: rawMerged,
+        index: 2,
+        command: "actor.effect.update-many",
+        id: "effect-1"
+      })
+    ).not.toThrow();
   });
 
   it("does NOT refuse an ordinary undeclared key, nor one the class does not migrate", () => {
     expect(() => shimGuard({ someModuleKey: [1, 2, 3] })).not.toThrow();
     expect(() =>
-      productionGuard(
-        { scalarish: 5 },
-        { toObject: () => ({ system: { scalarish: 5 } }) },
-        { toObject: () => ({ system: { scalarish: 5 } }) }
-      )
+      assertBatchArrayWritesReflected({
+        documentClass: v14EffectClass,
+        patch: { scalarish: 5 },
+        merged: { toObject: () => ({ system: { scalarish: 5 } }) },
+        index: 0,
+        command: "actor.effect.update-many",
+        id: "effect-1"
+      })
     ).not.toThrow();
 
     expect(() =>
@@ -2669,11 +2571,15 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
       error = thrown;
     }
     expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(error?.message).toContain("does NOT accept");
+    expect(error?.message).toContain('sets "system.changes" to a value that field does NOT accept');
+    expect(error?.message).toContain("SILENTLY DISCARDS");
+    expect(error?.message).toContain("dot-delimited alphanumeric");
+
+    expect(error?.message).not.toContain("has MOVED to");
     expect(error?.details).toMatchObject({
       index: 2,
       id: "effect-1",
-      field: "system",
+      field: "system.changes",
       arrayField: "changes",
       movedTo: "system.changes"
     });
@@ -2699,34 +2605,94 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
       shimGuard({ "system.changes": [{ key: "system.a", type: "add", value: 3 }, ...malformed] })
     ).toThrow(/does NOT accept/);
 
-    expect(() => productionGuard({ "system.changes": malformed }, v14EffectMerged, v14EffectMerged)).toThrow(
-      /does NOT accept/
+    expect(() =>
+      assertBatchArrayWritesReflected({
+        documentClass: v14EffectClass,
+        patch: { "system.changes": malformed },
+        merged: v14EffectMerged,
+        index: 2,
+        command: "actor.effect.update-many",
+        id: "effect-1"
+      })
+    ).toThrow(/does NOT accept/);
+  });
+
+  it("refuses a DEEPER path into the migration target that the merge silently discarded", () => {
+    /** @type {any} */
+    let error = null;
+    try {
+      shimGuard({ "system.changes.0.type": "my-module.bonus" });
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(error?.message).toContain(
+      'writes "system.changes.0.type" INSIDE the array field "system.changes"'
     );
+    expect(error?.message).toContain("SILENTLY DISCARDS the whole write");
+    expect(error?.message).toContain('Send the WHOLE array at "system.changes"');
+    expect(error?.details).toMatchObject({
+      index: 2,
+      id: "effect-1",
+      field: "system.changes.0.type",
+      arrayField: "changes",
+      movedTo: "system.changes",
+      path: "system.changes.0.type",
+      requested: "my-module.bonus",
+      stored: "add"
+    });
+
+    expect(() =>
+      shimGuard({ "system.changes.0": { key: "system.a", type: "my-module.bonus", value: 4 } })
+    ).toThrow(/SILENTLY DISCARDS the whole write/);
+    expect(() => shimGuard({ "system.changes.1.type": "my-module.bonus" })).toThrow(
+      /SILENTLY DISCARDS the whole write/
+    );
+
+    /** @type {any} */
+    let nestedError = null;
+    try {
+      shimGuard({ system: { "changes.0.type": "my-module.bonus" } });
+    } catch (thrown) {
+      nestedError = thrown;
+    }
+    expect(nestedError?.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(nestedError?.details).toMatchObject({ field: "system", path: "system.changes.0.type" });
+
+    expect(() =>
+      shimGuard({ "system.changes.0.type": "my-module.bonus", "system.changes.1.value": 5 })
+    ).toThrow(/system\.changes\.0\.type/);
+
+    expect(() =>
+      assertBatchArrayWritesReflected({
+        documentClass: v14EffectClass,
+        patch: { "system.changes.0.value": 9 },
+        merged: v14EffectMerged,
+        index: 2,
+        command: "actor.effect.update-many",
+        id: "effect-1"
+      })
+    ).toThrow(/SILENTLY DISCARDS the whole write/);
   });
 
   it("refuses a NON-ARRAY value at the migration target that the merge silently discarded", () => {
-    for (const dropped of [5, "nope"]) {
-      /** @type {any} */
-      let error = null;
-      try {
-        shimGuard({ "system.changes": dropped });
-      } catch (thrown) {
-        error = thrown;
-      }
-      expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(error?.message).toContain(
-        'sets "system.changes" (through "system") to a value that field does NOT accept'
-      );
-      expect(error?.details).toMatchObject({
-        field: "system",
-        arrayField: "changes",
-        movedTo: "system.changes"
-      });
-      expect(error?.details?.requested).toEqual(dropped);
+    const dropped = { 0: { key: "system.a", type: "my-module.bonus", value: 2 } };
+    /** @type {any} */
+    let error = null;
+    try {
+      shimGuard({ "system.changes": dropped });
+    } catch (thrown) {
+      error = thrown;
     }
+    expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(error?.message).toContain('sets "system.changes" to a value that field does NOT accept');
+    expect(error?.details).toMatchObject({ field: "system.changes", arrayField: "changes" });
+    expect(error?.details?.requested).toEqual(dropped);
+
+    expect(() => shimGuard({ system: { changes: dropped } })).toThrow(/does NOT accept/);
   });
 
-  it("normalizes the `==` prefix, so `system.==changes` is judged by its value", () => {
+  it("normalizes the `==` prefix at EVERY segment, so `system.==changes` is judged by its value", () => {
     const malformed = [{ key: "system.a", type: "my-module.bonus", value: 2 }];
     /** @type {any} */
     let error = null;
@@ -2736,84 +2702,358 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
       error = thrown;
     }
     expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(error?.message).toContain('sets "system.changes" (through "system")');
+
+    expect(error?.message).toContain('sets "system.changes" (through "system.==changes")');
     expect(error?.details).toMatchObject({
-      field: "system",
+      field: "system.==changes",
       arrayField: "changes",
       movedTo: "system.changes"
     });
 
     expect(() => shimGuard({ system: { "==changes": malformed } })).toThrow(/does NOT accept/);
-    expect(() => productionGuard({ "system.==changes": malformed }, mergedWith([]), mergedWith([]))).toThrow(
-      /does NOT accept/
-    );
+    const empty = mergedWith([]);
+    expect(() =>
+      assertBatchArrayWritesReflected({
+        documentClass: v14EffectClass,
+        patch: { "system.==changes": malformed },
+        merged: empty,
+        stored: empty,
+        index: 2,
+        command: "actor.effect.update-many",
+        id: "effect-1"
+      })
+    ).toThrow(/does NOT accept/);
+
     expect(() => shimGuard({ "system.-=changes": null })).toThrow(/does NOT accept/);
     expect(() => shimGuard({ system: { "-=changes": null } })).toThrow(/does NOT accept/);
   });
 
-  it("refuses every write into the migrated array, in every spelling, stored entries or not", () => {
+  it("judges a `-=` at a DEEPER segment by what the merge did, not by the spelling", () => {
+    /** @type {any} */
+    let error = null;
+    try {
+      shimGuard({ "system.changes.0.-=type": null });
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(error?.message).toContain(
+      'writes "system.changes.0.-=type" INSIDE the array field "system.changes"'
+    );
+    expect(error?.details).toMatchObject({
+      field: "system.changes.0.-=type",
+      arrayField: "changes",
+      movedTo: "system.changes",
+      path: "system.changes.0.type",
+      stored: "add"
+    });
+
+    expect(() => shimGuard({ "system.changes.0.-=type": null, "system.changes.0.value": 7 })).toThrow(
+      /SILENTLY DISCARDS the whole write/
+    );
+
+    for (const patch of [{ "system.changes.-=0": null }, { system: { "changes.-=0": null } }]) {
+      expect(() => shimGuard(patch, mergedWith([])), JSON.stringify(patch)).toThrow(
+        /REBUILDS it from this patch alone/
+      );
+    }
+
+    expect(() => shimGuard({ system: { changes: { "-=0": null } } }, mergedWith([]))).not.toThrow();
+
+    expect(() => shimGuardEmptyStored({ "system.changes.-=0": null }, mergedWith([]))).not.toThrow();
+
+    expect(() =>
+      assertBatchArrayWritesReflected({
+        documentClass: v14EffectClass,
+        patch: { "system.changes.0.type": null },
+        merged: mergedWith([{ key: "", type: "add", value: "", phase: "initial" }]),
+        stored: mergedWith([]),
+        index: 2,
+        command: "actor.effect.update-many",
+        id: "effect-1"
+      })
+    ).not.toThrow();
+
+    expect(() => shimGuard({ "system.changes.0.type": null })).toThrow(/SILENTLY DISCARDS the whole write/);
+  });
+
+  it("refuses a `==<index>` write whose merge EMPTIED the array, even with a valid entry", () => {
+    const valid = { key: "system.a", type: "add", value: 2 };
+    /** @type {any} */
+    let error = null;
+    try {
+      shimGuard({ "system.changes.==0": valid }, mergedWith([]));
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(error?.message).toContain('writes "system.changes.==0" INSIDE the array field "system.changes"');
+    expect(error?.details).toMatchObject({
+      field: "system.changes.==0",
+      arrayField: "changes",
+      movedTo: "system.changes",
+      path: "system.changes.0",
+      stored: null
+    });
+    expect(error?.details?.requested).toEqual(valid);
+
+    expect(() =>
+      shimGuard(
+        { "system.changes.==0": { key: "system.a", type: "my-module.bonus", value: 2 } },
+        mergedWith([])
+      )
+    ).toThrow(/SILENTLY DISCARDS the whole write/);
+
+    expect(() =>
+      shimGuardEmptyStored(
+        { "system.changes.0.==value": 9 },
+        mergedWith([{ key: "", type: "add", value: 9, phase: "initial" }])
+      )
+    ).not.toThrow();
+    expect(() =>
+      shimGuard(
+        { "system.changes.0.==value": 9 },
+        mergedWith([{ key: "", type: "add", value: 9, phase: "initial" }])
+      )
+    ).toThrow(/REBUILDS it from this patch alone/);
+  });
+
+  it("refuses a NON-INDEX segment on the migrated ARRAY, in every spelling that wipes it", () => {
+    const wiped = mergedWith([]);
+    /** @type {any} */
+    let error = null;
+    try {
+      shimGuard({ "system.changes.length": 3 }, wiped);
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(error?.message).toContain('addresses the array field "system.changes" and is not an ARRAY INDEX');
+    expect(error?.details).toMatchObject({
+      field: "system.changes.length",
+      arrayField: "changes",
+      movedTo: "system.changes",
+      path: "system.changes.length",
+      segment: "length"
+    });
+
+    expect(() => shimGuard({ "system.changes.-=length": null }, wiped)).toThrow(/not an ARRAY INDEX/);
+    expect(() => shimGuard({ system: { "changes.length": 3 } }, wiped)).toThrow(/not an ARRAY INDEX/);
+
+    expect(() => shimGuard({ "system.changes.length": 0 }, wiped)).toThrow(/not an ARRAY INDEX/);
+
+    expect(() => shimGuard({ "system.changes.constructor": 1 })).toThrow(/not an ARRAY INDEX/);
+
+    expect(() => shimGuardEmptyStored({ "system.changes.-=0": null }, wiped)).not.toThrow();
+    expect(() =>
+      shimGuardEmptyStored(
+        { "system.changes.0.value": 9 },
+        mergedWith([{ key: "", type: "add", value: 9, phase: "initial" }])
+      )
+    ).not.toThrow();
+    expect(() =>
+      shimGuard(
+        { "system.changes.0.value": 9 },
+        mergedWith([{ key: "", type: "add", value: 9, phase: "initial" }])
+      )
+    ).toThrow(/REBUILDS it from this patch alone/);
+
+    expect(() =>
+      shimGuardEmptyStored(
+        { "system.changes.0.value.x": 1 },
+        mergedWith([{ key: "", type: "add", value: { x: 1 }, phase: "initial" }])
+      )
+    ).not.toThrow();
+
+    for (const patch of [
+      { "system.changes.0.key.-=length": null },
+      { "system.changes.0.value.-=deep": null },
+      { "system.changes.0.key.length": 3 }
+    ]) {
+      /** @type {any} */
+      let scalarError = null;
+      try {
+        shimGuard(patch, mergedWith([{ key: "[object Object]", type: "add", value: "", phase: "initial" }]));
+      } catch (thrown) {
+        scalarError = thrown;
+      }
+      expect(scalarError?.code, JSON.stringify(patch)).toBe(ERROR_CODES.INVALID_PARAMS);
+      expect(scalarError?.message, JSON.stringify(patch)).toContain(
+        "a property of a SCALAR value stored inside"
+      );
+    }
+
+    expect(() =>
+      shimGuardEmptyStored(
+        { "system.changes.0.key.length": 3 },
+        mergedWith([{ key: "[object Object]", type: "add", value: "", phase: "initial" }])
+      )
+    ).toThrow(/a property of a SCALAR value stored inside/);
+  });
+
+  it("REFUSES every deeper-path cell whose merge LOSES stored entry content", () => {
     const stored = [
       { key: "aaa", type: "add", value: 1, phase: "initial" },
-      { key: "bbb", type: "add", value: 2, phase: "initial" }
+      { key: "bbb", type: "add", value: 2, phase: "initial" },
+      { key: "ccc", type: "override", value: 3, phase: "initial" }
     ];
+    const storedDoc = mergedWith(stored);
+    const guard = (patch, merged) =>
+      assertBatchArrayWritesReflected({
+        documentClass: v14EffectClass,
+        patch,
+        merged,
+        stored: storedDoc,
+        index: 2,
+        command: "actor.effect.update-many",
+        id: "effect-1"
+      });
     const defaulted = { key: "", type: "add", value: "", phase: "initial" };
-    for (const storedChanges of [stored, []]) {
-      const storedDoc = mergedWith(storedChanges);
-      for (const [patch, field] of /** @type {Array<[Record<string, any>, string]>} */ ([
-        [{ "system.changes.0.type": "my-module.bonus" }, "system.changes.0"],
-        [{ system: { "changes.0.type": "my-module.bonus" } }, "system.changes.0"],
-        [{ system: { changes: { 0: { type: "add" } } } }, "system.changes.0"],
-        [{ "system.changes.0": { key: "system.a", type: "add", value: 4 } }, "system.changes.0"],
-        [{ "system.changes.1.value": 5 }, "system.changes.1"],
-        [{ "system.changes.-=0": null }, "system.changes.-=0"],
-        [{ system: { "changes.-=5": null } }, "system.changes.-=5"],
-        [{ "system.changes.0.-=type": null }, "system.changes.0"],
-        [{ "system.changes.==0": { key: "system.a", type: "add", value: 2 } }, "system.changes.==0"],
-        [{ "system.changes.0.==value": 9 }, "system.changes.0"],
-        [{ system: { "==changes.0.value": 9 } }, "system.changes.0"],
-        [{ "system.changes.length": 3 }, "system.changes.length"],
-        [{ "system.changes.-=length": null }, "system.changes.-=length"],
-        [{ system: { changes: { nope: 1 } } }, "system.changes.nope"],
-        [{ "system.changes.0.key.length": 3 }, "system.changes.0"],
-        [{ "system.changes.0.toString": 1 }, "system.changes.0"]
-      ])) {
-        /** @type {any} */
-        let error = null;
-        try {
-          productionGuard(patch, mergedWith([defaulted]), storedDoc);
-        } catch (thrown) {
-          error = thrown;
-        }
-        const label = `${JSON.stringify(patch)} over ${storedChanges.length} stored entries`;
-        expect(error?.code, label).toBe(ERROR_CODES.INVALID_PARAMS);
-        expect(error?.message, label).toContain("inside the stored array");
-        expect(error?.details, label).toMatchObject({
-          index: 2,
-          id: "effect-1",
-          arrayField: "system.changes"
-        });
-        if (!field.includes("=")) expect(error?.details?.field, label).toBe(field);
+
+    /** @type {Array<[string, any, any[]]>} */
+    const cells = [
+      ["J1 -=0", { "system.changes.-=0": null }, []],
+      ["J2 -=5", { "system.changes.-=5": null }, []],
+      ["J3 0.-=nope", { "system.changes.0.-=nope": null }, [defaulted]],
+      [
+        "J4 0.key.-=length",
+        { "system.changes.0.key.-=length": null },
+        [{ ...defaulted, key: "[object Object]" }]
+      ],
+      ["J6 -=00", { "system.changes.-=00": null }, []],
+      ["J7 0.value.-=deep", { "system.changes.0.value.-=deep": null }, [{ ...defaulted, value: {} }]],
+      ["J9 nested -=5", { system: { "changes.-=5": null } }, []],
+      ["K1 0.toString", { "system.changes.0.toString": 1 }, [{ ...defaulted, toString: 1 }]],
+      [
+        "K4 0.hasOwnProperty",
+        { "system.changes.0.hasOwnProperty": 1 },
+        [{ ...defaulted, hasOwnProperty: 1 }]
+      ],
+      [
+        "L1 index 5",
+        { "system.changes.5": { key: "system.a", type: "add", value: 2 } },
+        [
+          defaulted,
+          defaulted,
+          defaulted,
+          defaulted,
+          defaulted,
+          { key: "system.a", type: "add", value: 2, phase: "initial" }
+        ]
+      ],
+      [
+        "L3 index 5 leaf",
+        { "system.changes.5.value": 9 },
+        [defaulted, defaulted, defaulted, defaulted, defaulted, { ...defaulted, value: 9 }]
+      ],
+      ["N1 0.value", { "system.changes.0.value": 9 }, [{ ...defaulted, value: 9 }]],
+      [
+        "N5 whole entry 0",
+        { "system.changes.0": { key: "system.a", type: "add", value: 2 } },
+        [{ key: "system.a", type: "add", value: 2, phase: "initial" }]
+      ]
+    ];
+    for (const cellRow of cells) {
+      const label = /** @type {string} */ (cellRow[0]);
+      const patch = /** @type {any} */ (cellRow[1]);
+      const merged = /** @type {any[]} */ (cellRow[2]);
+
+      const lost = stored.filter(
+        (entry) => !merged.some((after) => JSON.stringify(after) === JSON.stringify(entry))
+      );
+      expect(
+        lost.length,
+        `${label} must be a destructive cell for this table to mean anything`
+      ).toBeGreaterThan(0);
+      /** @type {any} */
+      let error = null;
+      try {
+        guard(patch, mergedWith(merged));
+      } catch (thrown) {
+        error = thrown;
       }
+      expect(error?.code, `${label} must be REFUSED`).toBe(ERROR_CODES.INVALID_PARAMS);
+
+      expect(error?.message, label).toContain('the array field "system.changes"');
+      expect(error?.message, label).toContain('the WHOLE array at "system.changes"');
     }
   });
 
-  it("does NOT refuse a whole-array write at the migration target that lands, in any measured shape", () => {
+  it("does NOT refuse a direct `system.<key>` write that lands, in any measured shape", () => {
     const valid = [{ key: "system.a", type: "add", value: "2" }];
     const cleaned = [{ key: "system.a", type: "add", value: "2", phase: "initial" }];
 
     expect(() => shimGuard({ "system.changes": valid }, mergedWith(cleaned))).not.toThrow();
     expect(() => shimGuard({ system: { changes: valid } }, mergedWith(cleaned))).not.toThrow();
+
     expect(() => shimGuard({ "system.changes": [] }, mergedWith([]))).not.toThrow();
     expect(() =>
       shimGuard({ "system.changes": [{ key: "system.a", type: "add", value: "1", phase: "initial" }] })
     ).not.toThrow();
-    expect(() => shimGuardEmptyStored({ "system.changes": valid }, mergedWith(cleaned))).not.toThrow();
 
-    for (const patch of [{ "system.changes": "nope" }, { "system.changes": null }, { "system.changes": 5 }]) {
+    expect(() =>
+      shimGuardEmptyStored(
+        { "system.changes.0.value": 9 },
+        mergedWith([{ key: "", type: "add", value: 9, phase: "initial" }])
+      )
+    ).not.toThrow();
+    expect(() =>
+      shimGuardEmptyStored(
+        { "system.changes.0.value.x": 1 },
+        mergedWith([{ key: "", type: "add", value: { x: 1 }, phase: "initial" }])
+      )
+    ).not.toThrow();
+
+    expect(() =>
+      shimGuardEmptyStored(
+        { "system.changes.1.value": 5 },
+        mergedWith([
+          { key: "", type: "add", value: "", phase: "initial" },
+          { key: "", type: "add", value: 5, phase: "initial" }
+        ])
+      )
+    ).not.toThrow();
+
+    expect(() => shimGuard({ "system.changes.0.type": "add" })).toThrow(/REBUILDS it from this patch alone/);
+
+    expect(() =>
+      shimGuardEmptyStored(
+        { "system.changes.0.priority": "3" },
+        mergedWith([{ key: "", type: "add", value: "", phase: "initial", priority: 3 }])
+      )
+    ).not.toThrow();
+    expect(() =>
+      shimGuardEmptyStored(
+        { "system.changes.0": { key: "system.a", type: "add", value: 4 } },
+        mergedWith([{ key: "system.a", type: "add", value: 4, phase: "initial" }])
+      )
+    ).not.toThrow();
+
+    expect(() =>
+      shimGuard(
+        { "system.changes.0": { key: "system.a", type: "add", value: 4 } },
+        mergedWith([{ key: "system.a", type: "add", value: 4, phase: "initial" }])
+      )
+    ).toThrow(/REBUILDS it from this patch alone/);
+
+    for (const patch of [
+      { "system.changes": "nope" },
+      { "system.changes": null },
+      { "system.changes": 5 },
+      { system: { changes: { nope: 1 } } }
+    ]) {
       expect(() => shimGuard(patch, mergedWith([])), JSON.stringify(patch)).not.toThrow();
     }
 
+    expect(() =>
+      shimGuard(
+        { system: { changes: { 0: { key: "system.a", type: "add", value: "2" } } } },
+        mergedWith(cleaned)
+      )
+    ).not.toThrow();
+
     expect(() => shimGuard({ "system.otherKey.deep": 1 })).not.toThrow();
+
     expect(() => shimGuard({ system: { somethingElse: 1 } })).not.toThrow();
     expect(() => shimGuard({ "system.someModuleArray": [1, 2, 3] })).not.toThrow();
 
@@ -2821,8 +3061,48 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
     expect(() =>
       shimGuard({ "==system.changes": [{ key: "system.a", type: "my-module.bonus", value: 2 }] })
     ).toThrow(/does NOT accept/);
+
     expect(() => shimGuard({ "system.==changes": valid }, mergedWith(cleaned))).not.toThrow();
     expect(() => shimGuard({ system: { "==changes": valid } }, mergedWith(cleaned))).not.toThrow();
+
+    expect(() =>
+      shimGuardEmptyStored(
+        { system: { "==changes.0.value": 9 } },
+        mergedWith([{ key: "", type: "add", value: 9, phase: "initial" }])
+      )
+    ).not.toThrow();
+    expect(() =>
+      shimGuard(
+        { system: { "==changes.0.value": 9 } },
+        mergedWith([{ key: "", type: "add", value: 9, phase: "initial" }])
+      )
+    ).toThrow(/REBUILDS it from this patch alone/);
+
+    expect(() =>
+      shimGuard(
+        { "system.changes": [{ key: "system.a", type: "my-module.bonus", value: 2 }] },
+        mergedWith([{ key: "system.a", type: "my-module.bonus", value: 2, phase: "afterDerived" }])
+      )
+    ).not.toThrow();
+  });
+
+  it("refuses the rebuild without claiming destruction, and names the wholesale workaround", () => {
+    /** @type {any} */
+    let error = null;
+    try {
+      shimGuard({ "system.changes.0.type": "add" });
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error, "the deeper write over stored entries must still be refused").toBeTruthy();
+    const message = String(error.message);
+
+    expect(message).toMatch(/REBUILDS it from this patch alone/);
+    expect(message).toMatch(/does not compare the rebuilt array/i);
+    expect(message).toMatch(/conservative/i);
+    expect(message).toMatch(/WHOLE array/);
+
+    expect(message).not.toMatch(/DESTROYED|destroys|destroyed/);
   });
 
   it("judges a legacy ==forced replacement like a plain array write", () => {
@@ -2847,20 +3127,11 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
     });
   });
 
-  const dottedGuard = (rawPatch, storedC) =>
-    assertNoTopLevelDottedArrayWrite({
-      rawPatch,
-      stored: { c: storedC, door: 1 },
-      index: 3,
-      command: "scene.wall.update-many",
-      id: "wall-7"
-    });
-
   it("refuses a DOTTED write into an array field, which both cores rebuild destructively", () => {
     /** @type {any} */
     let error = null;
     try {
-      dottedGuard({ "c.0": 5 }, [0, 0, 100, 100]);
+      guard({ "c.0": 5 }, [0, 0, 100, 100]);
     } catch (thrown) {
       error = thrown;
     }
@@ -2877,15 +3148,9 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
       stored: [0, 0, 100, 100]
     });
 
-    expect(() => dottedGuard({ "c.9": 5 }, [0, 0, 100, 100])).toThrow(/DESTROYED/);
+    expect(() => guard({ "c.9": 5 }, [0, 0, 100, 100])).toThrow(/DESTROYED/);
 
-    expect(() => dottedGuard({ ds: 1, "c.3": 999 }, [0, 0, 100, 100])).toThrow(/DESTROYED/);
-    expect(() => dottedGuard({ "c.foo": 1 }, [0, 0, 100, 100])).toThrow(/DESTROYED/);
-    expect(() => dottedGuard({ "c.length": 0 }, [0, 0, 100, 100])).toThrow(/DESTROYED/);
-    expect(() => dottedGuard({ "==c": [1, 2, 3, 4] }, [0, 0, 100, 100])).not.toThrow();
-    expect(() => dottedGuard({ "==c.foo": 1 }, [0, 0, 100, 100])).toThrow(/dotted path "==c.foo"/);
-    expect(() => dottedGuard({ "c.==foo": 1 }, [0, 0, 100, 100])).toThrow(/DESTROYED/);
-    expect(() => dottedGuard({ "-=c.foo": null }, [0, 0, 100, 100])).not.toThrow();
+    expect(() => guard({ ds: 1, "c.3": 999 }, [0, 0, 100, 100])).toThrow(/DESTROYED/);
   });
 
   it("skips a forced DELETION of a DECLARED field (no array value to compare; loud on both cores)", () => {
@@ -2895,14 +3160,15 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
   });
 
   it("refuses a dotted write even when the named entry already holds the value: the rebuild drops the rest", () => {
-    expect(() => dottedGuard({ "c.0": 0 }, [0, 0, 100, 100])).toThrow(/DESTROYED/);
+    expect(() => guard({ "c.0": 0 }, [0, 0, 100, 100])).toThrow(/DESTROYED/);
   });
 
-  it("skips a dotted write whose root is NOT an array in the stored state", () => {
+  it("skips a dotted write whose root is NOT an array in the merged state", () => {
     expect(() =>
-      assertNoTopLevelDottedArrayWrite({
-        rawPatch: { "animation.type": "swing", "flags.mod.x": 1 },
-        stored: { animation: { type: "swing" }, flags: {} },
+      assertBatchArrayWritesReflected({
+        documentClass: { schema: { get: () => ({ clean: (value) => value }) } },
+        patch: { "animation.type": "swing", "flags.mod.x": 1 },
+        merged: { toObject: () => ({ animation: { type: "swing" }, flags: {} }) },
         index: 0,
         command: "scene.wall.update-many",
         id: "wall-1"
@@ -3617,18 +3883,19 @@ describe("batch-write: the array guard models EmbeddedCollectionField MERGE-BY-_
     ).not.toThrow();
   });
 
-  it("judges a dotted key inside an entry by its expanded form: allowed when reflected, refused when not", () => {
+  it("judges a DOTTED key inside an entry per core: allowed when reflected, refused when not", () => {
     expect(() =>
-      guard(expandPatch({ behaviors: [{ _id: B1, "system.foo": 1 }] }), [
+      guard({ behaviors: [{ _id: B1, "system.foo": 1 }] }, [
         { ...mergedUnchanged[0], system: { foo: 1 } },
         mergedUnchanged[1]
       ])
     ).not.toThrow();
-    expect(() => guard(expandPatch({ behaviors: [{ _id: B1, "system.foo": 1 }] }), mergedUnchanged)).toThrow(
-      /sets "system" to a value the merged entry does not hold/
+    expect(() => guard({ behaviors: [{ _id: B1, "system.foo": 1 }] }, mergedUnchanged)).toThrow(
+      /dotted path "system.foo"/
     );
-    expect(() => guard(expandPatch({ behaviors: [{ _id: B1, "flags.mod.x": 1 }] }), mergedUnchanged)).toThrow(
-      /sets "flags" to a value the merged entry does not hold/
+
+    expect(() => guard({ behaviors: [{ _id: B1, "flags.mod.x": 1 }] }, mergedUnchanged)).toThrow(
+      /dotted path "flags.mod.x"/
     );
   });
 
@@ -3709,447 +3976,6 @@ describe("batch-write: the array guard models EmbeddedCollectionField MERGE-BY-_
   });
 });
 
-describe("batch-write: two spellings of ONE field in one element patch", () => {
-  const B1 = "b1b1b1b1b1b1b1b1";
-
-  const scan = (patch) =>
-    assertNoAmbiguousBatchKeySpellings({
-      expandedPatch: expandPatch(patch),
-      index: 3,
-      command: "scene.wall.update-many",
-      id: "wall-9"
-    });
-
-  it("REFUSES two spellings of the same TOP-LEVEL root, in both key orders", () => {
-    /** @type {any} */
-    let error = null;
-    try {
-      scan({ "==threshold": { light: 2 }, threshold: { light: 1 } });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(error?.message).toContain("scene.wall.update-many element 3 (id wall-9)");
-    expect(error?.message).toContain('"threshold"');
-    expect(error?.message).toContain('"==threshold"');
-    expect(error?.details).toMatchObject({
-      index: 3,
-      id: "wall-9",
-      field: "threshold",
-      ambiguousRoot: "threshold"
-    });
-    expect(error?.details?.ambiguousKeys).toEqual(["==threshold", "threshold"]);
-
-    expect(() => scan({ threshold: { light: 1 }, "==threshold": { light: 2 } })).toThrow(/more than one key/);
-
-    expect(() => scan({ ds: 1, "-=ds": null })).toThrow(/more than one key/);
-    expect(() => scan({ "-=ds": null, ds: 1 })).toThrow(/more than one key/);
-    expect(() => scan({ "==ds": 1, "-=ds": null })).toThrow(/more than one key/);
-    expect(() => scan({ "-=ds": null, "==ds": 1 })).toThrow(/more than one key/);
-
-    expect(() => scan({ "threshold.light": 9, "==threshold.light": 7 })).toThrow(/more than one key/);
-    expect(() => scan({ "==threshold.light": 7, "threshold.light": 9 })).toThrow(/more than one key/);
-  });
-
-  it("REFUSES an OPERATOR-spelled wholesale root beside a dotted key under it", () => {
-    expect(() => scan({ "==threshold": { light: 1 }, "threshold.light": 9 })).toThrow(/more than one key/);
-    expect(() => scan({ "threshold.light": 9, "==threshold": { light: 1 } })).toThrow(/more than one key/);
-    expect(() => scan({ "-=threshold": null, "threshold.light": 9 })).toThrow(/more than one key/);
-
-    /** @type {any} */
-    let error = null;
-    try {
-      scan({ "==threshold": { light: 1 }, "threshold.light": 9 });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details?.ambiguityRule).toBe(2);
-    expect(error?.message).toContain('"==threshold"');
-
-    try {
-      scan({ ds: 1, "==ds": 2 });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details?.ambiguityRule).toBe(1);
-  });
-
-  it("ALLOWS ordinary patches whose keys share a root without overlapping", () => {
-    expect(() => scan({ "threshold.light": 9, "threshold.sight": 8 })).not.toThrow();
-    expect(() => scan({ "flags.mod.a": 1, "flags.mod.b": 2 })).not.toThrow();
-
-    expect(() => scan({ "==threshold": { light: 1 }, ds: 1, "-=door": null, "c.0": 5 })).not.toThrow();
-    expect(() => scan({})).not.toThrow();
-  });
-
-  it("REFUSES a nested operator spelling on an INNER segment of a top-level dotted key", () => {
-    expect(() => scan({ "threshold.light": 9, "threshold.==light": 7 })).toThrow(/more than one key/);
-    expect(() => scan({ "threshold.==light": 7, "threshold.light": 9 })).toThrow(/more than one key/);
-    expect(() => scan({ "threshold.light": 9, "threshold.-=light": null })).toThrow(/more than one key/);
-    expect(() => scan({ "flags.core.a": 1, "flags.core.==a": 7 })).toThrow(/more than one key/);
-
-    expect(() => scan({ "flags.==core.a": 1, "flags.core.==a": 7 })).toThrow(/more than one key/);
-    /** @type {any} */
-    let error = null;
-    try {
-      scan({ "flags.core.a": 1, "flags.core.==a": 7 });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details).toMatchObject({ field: "flags.core.a", ambiguousRoot: "flags", ambiguityRule: 1 });
-    expect(error?.details?.ambiguousKeys).toEqual(["flags.core.a", "flags.core.==a"]);
-
-    expect(error?.message).toContain('writes the field "flags.core.a"');
-
-    expect(() => scan({ "==flags.core": { a: 5 }, "flags.core.b": 9 })).toThrow(/more than one key/);
-    expect(() => scan({ "flags.core.b": 9, "==flags.core": { a: 5 } })).toThrow(/more than one key/);
-    expect(() => scan({ "flags.==core": { a: 5 }, "flags.core.b": 9 })).toThrow(/more than one key/);
-    expect(() => scan({ "-=flags.core": null, "flags.core.b": 9 })).toThrow(/more than one key/);
-    error = null;
-    try {
-      scan({ "flags.==core": { a: 5 }, "flags.core.b": 9 });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details).toMatchObject({ field: "flags.core", ambiguousRoot: "flags", ambiguityRule: 2 });
-    expect(error?.details?.ambiguousKeys).toEqual(["flags.==core", "flags.core"]);
-
-    error = null;
-    try {
-      scan({ "==threshold.light": 7, "threshold.==light": 3 });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details?.ambiguityRule).toBe(2);
-    expect(error?.details?.field).toBe("threshold");
-  });
-
-  it("targets the SEGMENT the operator sits on, so only keys under THAT path collide", () => {
-    expect(() => scan({ "==threshold.light": 7, "threshold.sight": 8 })).toThrow(/more than one key/);
-
-    expect(() => scan({ "threshold.==light": 7, "threshold.sight": 8 })).not.toThrow();
-  });
-
-  it("ALLOWS a nested operator key that collides with nothing", () => {
-    expect(() => scan({ "==threshold.==light": 7 })).not.toThrow();
-
-    expect(() => scan({ "threshold.==light": 7 })).not.toThrow();
-
-    expect(() => scan({ "flags.==core": { a: 5 } })).not.toThrow();
-
-    expect(() => scan({ "flags.==core": { a: 5 }, "flags.other": 1 })).not.toThrow();
-
-    expect(() => scan({ "flags.==core": { a: 5 }, "flags.other.deep": 1 })).not.toThrow();
-
-    expect(() => scan({ "threshold.==light": 7, "threshold.==sight": 8 })).not.toThrow();
-  });
-
-  it("applies the same operator rule to dotted keys inside an array entry", () => {
-    expect(() => scan({ behaviors: [{ _id: B1, "system.keep": 3, "system.==keep": 7 }] })).toThrow(
-      /more than one key/
-    );
-    expect(() => scan({ behaviors: [{ _id: B1, "flags.==core": { a: 5 }, "flags.core.z": 9 }] })).toThrow(
-      /more than one key/
-    );
-
-    expect(() => scan({ behaviors: [{ _id: B1, "==flags.core": { a: 5 }, "flags.core.z": 9 }] })).toThrow(
-      /more than one key/
-    );
-    expect(() => scan({ behaviors: [{ _id: B1, "flags.mod.a": 1, "flags.mod.b": 2 }] })).not.toThrow();
-
-    expect(() =>
-      scan({ behaviors: [{ _id: B1, "==flags": { core: { a: 5 } }, "flags.core.z": 9 }] })
-    ).toThrow(/more than one key/);
-  });
-
-  it("REFUSES two spellings of one field INSIDE an array entry", () => {
-    /** @type {any} */
-    let error = null;
-    try {
-      scan({ behaviors: [{ _id: B1, system: { bar: 2 }, "==system": { foo: 1 } }] });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(error?.message).toContain("inside an array entry");
-    expect(error?.details).toMatchObject({ field: "behaviors.0.system", ambiguousRoot: "behaviors" });
-
-    expect(() => scan({ behaviors: [{ _id: B1, name: "x", "==name": "y" }] })).toThrow(/more than one key/);
-    expect(() => scan({ behaviors: [{ _id: B1, "==name": "y", name: "x" }] })).toThrow(/more than one key/);
-    expect(() => scan({ behaviors: [{ _id: B1, name: "x", "-=name": null }] })).toThrow(/more than one key/);
-
-    expect(() =>
-      scan({
-        behaviors: [
-          { _id: B1, name: "ok" },
-          { name: "x", "==name": "y" }
-        ]
-      })
-    ).toThrow(/more than one key/);
-
-    expect(() => scan({ behaviors: [{ _id: B1, name: "x" }] })).not.toThrow();
-    expect(() => scan({ behaviors: [{ _id: B1, "flags.mod.a": 1, "flags.mod.b": 2 }] })).not.toThrow();
-  });
-
-  it("scans the entries of every array, at any depth, and treats a non-array value as a nested object", () => {
-    expect(() => scan({ shapes: [{ "==type": "a", type: "b" }] })).toThrow(/inside an array entry/);
-    expect(() => scan({ system: { list: [[{ "-=k": null, k: 1 }]] } })).toThrow(/inside an array entry/);
-    expect(() => scan({ behaviors: { "==name": 1, name: 2 } })).toThrow(/inside a nested object/);
-    expect(() => scan({ shapes: [{ type: "a" }, { "==type": "b" }] })).not.toThrow();
-  });
-
-  it("REFUSES a deletion or forced replacement beside a plain key of the same path inside a nested object", () => {
-    for (const patch of [
-      { system: { activities: { "-=a1": null, a1: { type: "attack" } } } },
-      { system: { activities: { a1: { type: "attack" }, "-=a1": null } } },
-      { flags: { "-=zz": null, zz: { k: 1 } } },
-      { flags: { "-=zz": null, zz: 5 } },
-      { flags: { "==mod": { a: 1 }, mod: { b: 2 } } },
-      { flags: { mod: { "==a": 1, a: 2 } } }
-    ]) {
-      /** @type {any} */
-      let error = null;
-      try {
-        scan(patch);
-      } catch (thrown) {
-        error = thrown;
-      }
-      expect(error?.code, JSON.stringify(patch)).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(error?.message, JSON.stringify(patch)).toContain("inside a nested object");
-    }
-
-    /** @type {any} */
-    let detail = null;
-    try {
-      scan({ system: { activities: { "-=a1": null, a1: { type: "attack" } } } });
-    } catch (thrown) {
-      detail = thrown;
-    }
-    expect(detail?.details).toMatchObject({
-      field: "system.activities.a1",
-      ambiguityRule: 2,
-      ambiguousKeys: ["system.activities.-=a1", "system.activities.a1"]
-    });
-    expect(detail?.message).toContain('"==a1"');
-  });
-
-  it("ALLOWS nested operators that touch different paths", () => {
-    expect(() => scan({ flags: { "==mod": { a: 1 } } })).not.toThrow();
-    expect(() => scan({ system: { activities: { "-=a1": null, a2: { type: "save" } } } })).not.toThrow();
-    expect(() => scan({ system: { attrs: { "==inner": { c: 1 }, a: 2 } } })).not.toThrow();
-  });
-
-  it("REFUSES a key segment naming an object internal, in every spelling and position, without touching Object.prototype", () => {
-    const before = Object.getOwnPropertyNames(Object.prototype).sort();
-    for (const json of [
-      '{"__proto__":{"isGM":true}}',
-      '{"__proto__.isGM":true}',
-      '{"system":{"__proto__.a":99}}',
-      '{"system":{"__proto__":{"a":99}}}',
-      '{"system":{"attrs.constructor.prototype":{"a":1}}}',
-      '{"flags":{"-=__proto__":null}}',
-      '{"behaviors":[{"_id":"b1","system.__proto__.a":1}]}',
-      '{"behaviors":[{"_id":"b1","flags":{"__proto__":{"a":1}}}]}',
-      '{"system":{"list":[[{"prototype":1}]]}}',
-      '{"flags":{"mod":{"__$OPERATOR$__":"ForcedDeletion","k":1}}}'
-    ]) {
-      /** @type {any} */
-      let error = null;
-      try {
-        expandPatch(JSON.parse(json));
-      } catch (thrown) {
-        error = thrown;
-      }
-      expect(error?.code, json).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(["__proto__", "constructor", "prototype", "__$OPERATOR$__"], json).toContain(
-        error?.details?.reservedSegment
-      );
-    }
-    expect(Object.getOwnPropertyNames(Object.prototype).sort()).toEqual(before);
-    expect(/** @type {any} */ ({}).isGM).toBeUndefined();
-    expect(/** @type {any} */ ({}).a).toBeUndefined();
-  });
-
-  it("REFUSES a key path longer than the depth limit and accepts one at the limit", () => {
-    const path = (length) => Array.from({ length }, (_, index) => `k${index}`).join(".");
-    expect(() => expandPatch({ [path(PATCH_MAX_DEPTH)]: 1 })).not.toThrow();
-    expect(() => expandPatch({ k0: { [path(PATCH_MAX_DEPTH - 1)]: 1 } })).not.toThrow();
-    for (const patch of [{ [path(PATCH_MAX_DEPTH + 1)]: 1 }, { k0: { [path(PATCH_MAX_DEPTH)]: 1 } }]) {
-      /** @type {any} */
-      let error = null;
-      try {
-        expandPatch(patch);
-      } catch (thrown) {
-        error = thrown;
-      }
-      expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(error?.details).toMatchObject({ limit: "patch-depth", max: PATCH_MAX_DEPTH });
-    }
-  });
-
-  it("REFUSES any key written onto a stored array below the top level, and an array-index key at the top level", () => {
-    const stored = {
-      system: { tags: ["a", "b", "c"], nested: { list: [1, 2] } },
-      items: [{ _id: "i1", system: { rows: ["x", "y"] } }],
-      detectionModes: [{ id: "basicSight" }]
-    };
-    const check = (patch) =>
-      assertNoStoredArrayDescent({
-        expandedPatch: expandPatch(patch),
-        stored,
-        index: 2,
-        command: "actor.update-many",
-        id: "a1"
-      });
-    for (const [patch, field, arrayField] of [
-      [{ "system.tags.1": "z" }, "system.tags.1", "system.tags"],
-      [{ system: { "tags.1": "z" } }, "system.tags.1", "system.tags"],
-      [{ system: { tags: { 1: "z" } } }, "system.tags.1", "system.tags"],
-      [{ system: { tags: { "-=0": null } } }, "system.tags.0", "system.tags"],
-      [{ "system.nested.list.0": 9 }, "system.nested.list.0", "system.nested.list"],
-      [{ items: [{ _id: "i1", "system.rows.1": "q" }] }, "items.0.system.rows.1", "items.0.system.rows"],
-      [{ "system.tags.length": 0 }, "system.tags.length", "system.tags"],
-      [{ system: { tags: { foo: "z" } } }, "system.tags.foo", "system.tags"],
-      [
-        { items: [{ _id: "i1", system: { rows: { foo: 1 } } }] },
-        "items.0.system.rows.foo",
-        "items.0.system.rows"
-      ],
-      [{ detectionModes: { 0: { id: "x" } } }, "detectionModes.0", "detectionModes"],
-      [{ detectionModes: { " 0": { id: "x" } } }, "detectionModes. 0", "detectionModes"],
-      [{ detectionModes: { "0e0": { id: "x" } } }, "detectionModes.0e0", "detectionModes"]
-    ]) {
-      /** @type {any} */
-      let error = null;
-      try {
-        check(patch);
-      } catch (thrown) {
-        error = thrown;
-      }
-      expect(error?.code, JSON.stringify(patch)).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(error?.details, JSON.stringify(patch)).toMatchObject({ index: 2, id: "a1", field, arrayField });
-      expect(error?.message).toContain("inside the stored array");
-    }
-    for (const patch of [
-      { system: { tags: ["z"] } },
-      { "system.==tags": ["z"] },
-      { "system.-=tags": null },
-      { system: { other: { 0: "z" } } },
-      { detectionModes: { basicSight: { enabled: true } } },
-      { detectionModes: { "-1": { id: "x" }, "1e-1": { id: "y" }, Infinity: { id: "z" } } },
-      { items: [{ _id: "i1", system: { rows: ["q"] } }] },
-      { items: [{ name: "new", "system.rows.0": "q" }] }
-    ]) {
-      expect(() => check(patch), JSON.stringify(patch)).not.toThrow();
-    }
-  });
-
-  it("matches embedded entries to stored entries by _id in linear time", () => {
-    const count = 20_000;
-    const stored = {
-      walls: Array.from({ length: count }, (_, index) => ({ _id: `w${index}`, c: [0, 0, 1, 1] }))
-    };
-    const expandedPatch = {
-      walls: Array.from({ length: count }, (_, index) => ({ _id: `w${index}`, door: 1 }))
-    };
-    const started = performance.now();
-    assertNoStoredArrayDescent({ expandedPatch, stored, index: 0, command: "scene.update", id: "s1" });
-    expect(performance.now() - started).toBeLessThan(200);
-  });
-
-  it("counts every array index toward the depth limit, whatever the entry holds", () => {
-    const key = Array.from({ length: PATCH_MAX_DEPTH - 1 }, (_, index) => `k${index}`).join(".");
-    expect(() => expandPatch({ [key]: [1] })).not.toThrow();
-    const deeper = Array.from({ length: PATCH_MAX_DEPTH }, (_, index) => `k${index}`).join(".");
-    for (const entry of [1, "x", null, {}, []]) {
-      expect(() => expandPatch({ [deeper]: [entry] }), JSON.stringify(entry)).toThrow(/32-level limit/);
-    }
-    expect(() => expandPatch({ [deeper]: [] })).not.toThrow();
-  });
-
-  it("expands dotted keys inside array entries at any depth", () => {
-    expect(
-      expandPatch({
-        system: { rows: [{ "a.b": 1, a: { c: 2 } }, [{ "x.y": 3 }], 4] },
-        sounds: [{ _id: "s", "flags.m.k": 1 }]
-      })
-    ).toEqual({
-      system: { rows: [{ a: { b: 1, c: 2 } }, [{ x: { y: 3 } }], 4] },
-      sounds: [{ _id: "s", flags: { m: { k: 1 } } }]
-    });
-  });
-
-  it("REFUSES a key that writes inside an array another key of the same patch sets", () => {
-    for (const patch of [
-      { "system.tags": ["p", "q"], "system.tags.0": "z" },
-      { system: { tags: ["p", "q"] }, "system.tags.1": "z" },
-      { "system.tags": ["p"], system: { "tags.0": "z" } },
-      { "system.tags": ["p"], system: { tags: { 0: "z" } } }
-    ]) {
-      /** @type {any} */
-      let error = null;
-      try {
-        expandPatch(patch);
-      } catch (thrown) {
-        error = thrown;
-      }
-      expect(error?.code, JSON.stringify(patch)).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(error?.details?.arrayField, JSON.stringify(patch)).toBe("system.tags");
-    }
-    expect(expandPatch({ "system.tags.0": "z", "system.tags": ["p", "q"] })).toEqual({
-      system: { tags: ["p", "q"] }
-    });
-    expect(expandPatch({ "system.tags": 5, "system.tags.0": "z" })).toEqual({ system: { tags: { 0: "z" } } });
-  });
-
-  it("ACCEPTS overlapping plain keys and merges them in key order, the later key winning on a shared leaf", () => {
-    for (const patch of [
-      { system: { "attrs.==inner": { c: 9 }, attrs: { a: 7 } } },
-      { flags: { "mod.-=k": null, mod: { j: 2 } } },
-      { "flags.-=mod": null, flags: { x: 1 } },
-      { system: { "attrs.a": 5, attrs: { b: 6 } } },
-      { "threshold.light": 9, threshold: { light: 1, sight: 1 } },
-      { threshold: { light: 1 }, "threshold.light": 9 }
-    ]) {
-      expect(() => scan(patch), JSON.stringify(patch)).not.toThrow();
-    }
-    expect(expandPatch({ system: { "attrs.a": 5, attrs: { b: 6 } } })).toEqual({
-      system: { attrs: { a: 5, b: 6 } }
-    });
-    expect(expandPatch({ "threshold.light": 9, threshold: { light: 1, sight: 1 } })).toEqual({
-      threshold: { light: 1, sight: 1 }
-    });
-    expect(expandPatch({ threshold: { light: 1 }, "threshold.light": 9 })).toEqual({
-      threshold: { light: 9 }
-    });
-    expect(expandPatch({ "flags.-=mod": null, flags: { x: 1 } })).toEqual({ flags: { "-=mod": null, x: 1 } });
-    expect(expandPatch({ system: { "attrs.b": 50 }, "system.attrs.a": 60 })).toEqual({
-      system: { attrs: { b: 50, a: 60 } }
-    });
-  });
-
-  it("ALLOWS a parent key followed by a narrower key that writes something the parent does not", () => {
-    expect(() => scan({ system: { attrs: { b: "n" } }, "system.hp.value": 5 })).not.toThrow();
-    expect(() => scan({ grid: { type: 1 }, "grid.size": 100 })).not.toThrow();
-    expect(() => scan({ system: { attrs: { b: "n" }, "attrs.a": 5 } })).not.toThrow();
-    expect(() => scan({ flags: { x: 1 }, "flags.-=mod": null })).not.toThrow();
-    expect(() => scan({ flags: { mod: { j: 2 }, "mod.-=k": null } })).not.toThrow();
-    expect(() => scan({ system: { attrs: { a: 7 }, "attrs.==inner": { c: 9 } } })).not.toThrow();
-  });
-
-  it("reports the SAME-PATH collision when a patch trips both rules (precedence is pinned)", () => {
-    /** @type {any} */
-    let error = null;
-    try {
-      scan({ "==threshold": { light: 1 }, threshold: { light: 2 }, "threshold.light": 9 });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details?.field).toBe("threshold");
-    expect(error?.details?.ambiguousKeys).toEqual(["==threshold", "threshold"]);
-  });
-});
-
 describe("batch-write: a Region's `shapes` — credited when it moves, refused when it collapses", () => {
   const shapesField = {
     clean: (value) => (Array.isArray(value) ? value.map((entry) => ({ ...entry })) : []),
@@ -4197,15 +4023,7 @@ describe("batch-write: a Region's `shapes` — credited when it moves, refused w
   });
 
   it("refuses a DOTTED write into shapes, which no supported core applies", () => {
-    expect(() =>
-      assertNoTopLevelDottedArrayWrite({
-        rawPatch: { "shapes.0.x": 5 },
-        stored: { shapes: [RECT] },
-        index: 0,
-        command: "scene.region.update-many",
-        id: "r1"
-      })
-    ).toThrow(/DESTROYED/);
+    expect(() => shapesGuard({ "shapes.0.x": 5 }, [RECT], [RECT])).toThrow(/DESTROYED/);
   });
 });
 

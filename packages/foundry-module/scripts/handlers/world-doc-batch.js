@@ -3,7 +3,7 @@ import {
   deleteWorldDocumentMany,
   getWorldDocumentClass,
   getWorldDocumentCollection,
-  previewExpandedDocumentUpdate,
+  previewDocumentUpdate,
   updateWorldDocumentMany
 } from "../lib/world-docs.js";
 import { executeBatchDelete, executeBatchUpdate } from "../lib/batch-write.js";
@@ -49,8 +49,8 @@ export function createWorldDocumentBatchHandlers({
         prepare: (patch) => (prepareUpdate ? prepareUpdate(patch) : patch),
 
         documentClass: getWorldDocumentClass(documentName),
-        diff: computeDocumentUpdateDiff,
-        mergePreview: previewExpandedDocumentUpdate,
+        diff: (document, patch) => computeDocumentUpdateDiff(document, patch),
+        mergePreview: (document, patch) => previewDocumentUpdate(document, patch),
         update: (entries) => updateWorldDocumentMany(documentName, entries),
         summarize
       });

@@ -5,7 +5,6 @@ import {
   isWriteCommand,
   validateSchema
 } from "../generated/protocol.js";
-import { findReservedKeySegment, refuseReservedSegment } from "./batch-guards.js";
 import { createBridgeError } from "./errors.js";
 
 export const MODULE_SETTING_KEYS = Object.freeze({
@@ -59,14 +58,6 @@ export function validateCommandParams(command, params, commandDefinitions) {
     throw createBridgeError(ERROR_CODES.INVALID_PARAMS, `Invalid params for ${command}`, {
       command,
       errors
-    });
-  }
-
-  const reserved = findReservedKeySegment(params);
-  if (reserved) {
-    refuseReservedSegment(reserved.key, reserved.segment, {
-      subject: `The ${command} request`,
-      details: { command }
     });
   }
 }

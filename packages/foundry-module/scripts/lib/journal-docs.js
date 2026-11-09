@@ -10,11 +10,7 @@ import {
   requestedRoots,
   snapshotRoots
 } from "./mismatch-report.js";
-import {
-  assertRequestedWriteStorable,
-  createIndeterminateError,
-  probeRequestedState
-} from "./write-confirmation.js";
+import { createIndeterminateError, probeRequestedState } from "./write-confirmation.js";
 import { readDocumentSource, structuredCloneish } from "./batch-guards.js";
 
 /**
@@ -268,26 +264,6 @@ export async function updateJournalPages(journalId, pages) {
     });
   }
   return results;
-}
-
-/**
- * @param {any} journal
- * @param {string} journalId
- * @param {any[]} updatePagesPayload
- * @returns {Promise<Array<Record<string, any>>>}
- */
-export async function assertJournalPagePatchesStorable(journal, journalId, updatePagesPayload) {
-  const expandedPages = [];
-  for (const { _id, ...patch } of updatePagesPayload) {
-    const expanded = await assertRequestedWriteStorable({
-      document: journal.pages?.get?.(_id) ?? null,
-      patch,
-      subject: `Journal page ${_id} of journal ${journalId}`,
-      details: { journalId, pageId: _id }
-    });
-    expandedPages.push({ _id, ...expanded });
-  }
-  return expandedPages;
 }
 
 /**

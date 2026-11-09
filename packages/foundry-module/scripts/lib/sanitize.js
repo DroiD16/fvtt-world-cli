@@ -1,4 +1,3 @@
-import { parsePatchKey } from "./batch-guards.js";
 import { canonicalizeFilePathFields } from "./file-access.js";
 
 /**
@@ -6,7 +5,10 @@ import { canonicalizeFilePathFields } from "./file-access.js";
  * @returns {string}
  */
 export function payloadKeyField(key) {
-  return typeof key === "string" ? parsePatchKey(key).root : "";
+  if (typeof key !== "string") return "";
+  const bare = key.startsWith("==") || key.startsWith("-=") ? key.slice(2) : key;
+  const dot = bare.indexOf(".");
+  return dot === -1 ? bare : bare.slice(0, dot);
 }
 
 /**

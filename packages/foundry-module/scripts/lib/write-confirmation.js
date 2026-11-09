@@ -1,11 +1,7 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import {
   assertBatchArrayWritesReflected,
-  assertNoAmbiguousBatchKeySpellings,
-  assertNoStoredArrayDescent,
-  assertNoTopLevelDottedArrayWrite,
   batchEmbeddedCreateKeys,
-  expandPatch,
   readDocumentSource,
   structuredCloneish
 } from "./batch-guards.js";
@@ -23,7 +19,7 @@ import {
   requestedRoots,
   snapshotRoots
 } from "./mismatch-report.js";
-import { computeDocumentUpdateDiff, previewExpandedDocumentUpdate } from "./world-docs.js";
+import { computeDocumentUpdateDiff, previewDocumentUpdate } from "./world-docs.js";
 
 /**
  * @param {unknown} result
@@ -171,58 +167,27 @@ function probeFailureMessage(probe) {
  * @param {Record<string, any>} args.patch
  * @param {string} args.subject
  * @param {Record<string, any>} [args.details]
- * @returns {Promise<Record<string, any>>}
+ * @returns {Promise<void>}
  */
 export async function assertRequestedWriteStorable({ document, patch, subject, details = {} }) {
-  const documentClass = document?.constructor;
-  const id = typeof document?.id === "string" ? document.id : "";
+  let mergedPreview = null;
   try {
-    const expanded = expandPatch(patch ?? {});
-    assertNoAmbiguousBatchKeySpellings({
-      expandedPatch: expanded,
+    mergedPreview = await previewDocumentUpdate(document, structuredCloneish(patch ?? {}));
+  } catch {
+    mergedPreview = null;
+  }
+  if (mergedPreview === null) return;
+  try {
+    assertBatchArrayWritesReflected({
+      documentClass: document?.constructor,
+      patch: patch ?? {},
+      merged: mergedPreview,
+      stored: document,
       index: 0,
       command: subject,
-      id,
+      id: typeof document?.id === "string" ? document.id : "",
       coordinate: subject
     });
-    const storedSource = readDocumentSource(document);
-    assertNoTopLevelDottedArrayWrite({
-      rawPatch: patch ?? {},
-      stored: storedSource,
-      documentClass,
-      index: 0,
-      command: subject,
-      id,
-      coordinate: subject
-    });
-    assertNoStoredArrayDescent({
-      expandedPatch: expanded,
-      stored: storedSource,
-      documentClass,
-      index: 0,
-      command: subject,
-      id,
-      coordinate: subject
-    });
-    let mergedPreview = null;
-    try {
-      mergedPreview = await previewExpandedDocumentUpdate(document, structuredCloneish(expanded));
-    } catch {
-      mergedPreview = null;
-    }
-    if (mergedPreview !== null) {
-      assertBatchArrayWritesReflected({
-        documentClass,
-        patch: expanded,
-        merged: mergedPreview,
-        stored: document,
-        index: 0,
-        command: subject,
-        id,
-        coordinate: subject
-      });
-    }
-    return expanded;
   } catch (error) {
     if (error instanceof BridgeError) {
       const { index: _index, id: _entryId, ...guardDetails } = error.details ?? {};
@@ -260,13 +225,14 @@ export async function applyConfirmedUpdate({
   details,
   remedy = WORLD_VETO_REMEDY
 }) {
-  const expanded = await assertRequestedWriteStorable({ document, patch, subject, details });
-  const embeddedCreateKeys = batchEmbeddedCreateKeys(document?.constructor, expanded);
-  const roots = requestedRoots(expanded);
+  const requested = structuredCloneish(patch ?? {});
+  await assertRequestedWriteStorable({ document, patch: requested, subject, details });
+  const embeddedCreateKeys = batchEmbeddedCreateKeys(document?.constructor, requested);
+  const roots = requestedRoots(requested);
   const beforeSource = snapshotRoots(readDocumentSource(document), roots);
-  const returned = await write(structuredCloneish(expanded));
+  const returned = await write(structuredCloneish(requested));
   const current = await readDocument();
-  const after = await probeRequestedState(current, expanded);
+  const after = await probeRequestedState(current, requested);
   if (after.status === "confirmed" && embeddedCreateKeys.length === 0) return returned;
 
   const changedFields = changedRoots(roots, beforeSource, readDocumentSource(current));

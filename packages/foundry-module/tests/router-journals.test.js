@@ -6,8 +6,7 @@ import {
   createJournalCategoryDocument,
   createJournalDocument,
   createRequest,
-  installFakeFoundry,
-  makeDataModelValidationError
+  installFakeFoundry
 } from "./helpers/fake-foundry.js";
 
 describe("command router", () => {
@@ -1376,26 +1375,6 @@ describe("command router", () => {
       expect(journal.updateEmbeddedDocuments).not.toHaveBeenCalled();
     });
 
-    it("reports the same error on the dry run and the real call when the pages and the document patch are both bad", async () => {
-      const page = globalThis.game.journal.get("journal-preview").pages.get("pv-text");
-      const liveUpdateSource = page.updateSource.bind(page);
-      page.updateSource = (changes, context = {}) => {
-        if (context.dryRun) throw makeDataModelValidationError("name: the page refuses this name");
-        return liveUpdateSource(changes, context);
-      };
-      const patch = { flags: { "-=mod": null, mod: { k: 1 } }, pages: [{ id: "pv-text", name: "Refused" }] };
-      const real = await realUpdate(patch);
-      const dry = await createCommandRouter({
-        bridgeClient: { getStatus: () => ({ status: "connected" }) }
-      }).route(createRequest("journal.update", { journalId: "journal-preview", patch, dryRun: true }));
-      expect(real.ok).toBe(false);
-      expect(dry.ok).toBe(false);
-      expect(dry.error.code).toBe(real.error.code);
-      expect(dry.error.details).toEqual(real.error.details);
-      expect(real.error.details).not.toHaveProperty("ambiguityRule");
-      expect(JSON.stringify(real.error)).toContain("refuses this name");
-    });
-
     it("FAILS an invalid page CREATE with INVALID_PARAMS and never calls createEmbeddedDocuments", async () => {
       const journal = globalThis.game.journal.get("journal-preview");
       const response = await realUpdate({
@@ -1405,20 +1384,6 @@ describe("command router", () => {
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe("INVALID_PARAMS");
       expect(journal.createEmbeddedDocuments).not.toHaveBeenCalled();
-    });
-
-    it("hands updateEmbeddedDocuments page patches whose dotted keys are expanded into nested objects", async () => {
-      const journal = globalThis.game.journal.get("journal-preview");
-      const response = await realUpdate({
-        pages: [{ id: "pv-text", flags: { "mod.k": 1, mod: { j: 2 }, "other.deep.x": 3 } }]
-      });
-
-      expect(response.ok).toBe(true);
-      expect(journal.updateEmbeddedDocuments).toHaveBeenCalledTimes(1);
-      const [, entries] = journal.updateEmbeddedDocuments.mock.calls[0];
-      expect(entries).toEqual([
-        { _id: "pv-text", flags: { mod: { k: 1, j: 2 }, other: { deep: { x: 3 } } } }
-      ]);
     });
 
     it("still APPLIES a valid real page create+update through the embedded write API", async () => {

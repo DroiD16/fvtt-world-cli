@@ -1,5 +1,5 @@
 import { ERROR_CODES } from "../generated/protocol.js";
-import { isPlainObject, parsePatchKey, sourceValuesEqual, structuredCloneish } from "./batch-guards.js";
+import { isPlainObject, sourceValuesEqual, structuredCloneish } from "./batch-guards.js";
 import { createBridgeError } from "./errors.js";
 
 export const WORLD_VETO_REMEDY =
@@ -211,9 +211,8 @@ export function changedRoots(roots, before, stored) {
  * @returns {string[]}
  */
 export function requestedRoots(patch) {
-  return [...new Set(Object.keys(patch ?? {}).map((key) => parsePatchKey(key).root))].filter(
-    (root) => root !== "_id"
-  );
+  const roots = Object.keys(patch ?? {}).map((key) => (key.split(".")[0] ?? "").replace(/^(==|-=)/, ""));
+  return [...new Set(roots)].filter((root) => root !== "_id");
 }
 
 /**
