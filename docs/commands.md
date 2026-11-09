@@ -185,7 +185,7 @@ Both operators also work in a dotted key, `{"flags": {"my-module.==config": {…
 closed patch fields, such as `item.update`, refuse a top-level dotted key like `"system.hp.value"`.
 
 Foundry 14 logs a deprecation warning for both operator spellings; [Compatibility](compatibility.md)
-lists that and the other version differences.
+lists the details.
 
 Read arrays before editing and preserve unchanged values. For a wall's `c` field, send the complete
 `[x1, y1, x2, y2]`, not `c.0`. Array writes that Foundry would discard or rebuild return
