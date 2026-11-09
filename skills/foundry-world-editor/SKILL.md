@@ -122,7 +122,9 @@ guess a command name or parameter.
 4. `get` the complete target before mutating and work from the returned ids.
 5. Build the smallest valid patch. Nested objects merge recursively; plain arrays replace
    wholesale; dotted paths reach permitted leaves; `{"-=key": null}` deletes a permitted key, and
-   `{"==key": value}` replaces its whole value instead of merging. A `get` result contains
+   `{"==key": value}` replaces its whole value instead of merging. Write each field through one
+   key: the patch reaches Foundry as written, and v13 and v14 resolve two keys for one field
+   differently. A `get` result contains
    read-only and derived fields, so build the patch from accepted fields only.
    For arrays and extensible `system`/`flags` data: read, preserve everything that
    stays, change only the intended part.

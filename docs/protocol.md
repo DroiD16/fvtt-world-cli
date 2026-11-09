@@ -241,9 +241,9 @@ existed. A forced replacement (`==key` at any depth, dotted or nested, or Foundr
 value after Foundry's cleaning.
 
 A patch that deletes or force-replaces a key and also writes it, such as
-`{"flags": {"-=mod": null, "mod": {…}}}`, is refused before the write (see
-[Patch shape checks](#patch-shape-checks)). A forced replacement `{"flags": {"==mod": {…}}}`
-replaces the value in one key.
+`{"flags": {"-=mod": null, "mod": {…}}}`, reaches Foundry as written. Foundry 13 and 14 resolve it
+differently, and the write can end in a mismatch error. A forced replacement
+`{"flags": {"==mod": {…}}}` replaces the value in one key.
 
 A valid patch whose requested state is already stored remains a successful no-op. A validation
 failure recovered after an unwritten update returns `INVALID_PARAMS`. Unconfirmed, partial, or
@@ -288,58 +288,32 @@ or use a dedicated embedded create command. Dry runs can still preview these pat
 After partial or indeterminate errors, read stored state and submit only remaining changes as a
 new operation with a fresh idempotency key if using one.
 
-### Patch shape checks
+### Patch shapes
 
-Single updates, bulk updates, journal page patches in `journal.update`, and dry runs reject
-ambiguous field spellings, invalid or discarded array values, and dotted writes inside arrays with
-`INVALID_PARAMS` before mutation.
+The bridge sends an update patch, a clone patch and the overrides of a compendium import to Foundry
+as written. It does not expand or merge dotted keys, and apart from the array checks below it does
+not refuse a patch for the way its keys are spelled. A patch that Foundry cannot apply as meant can end in a mismatch error or an
+unconfirmed result after the write instead of an error before it.
 
-The bridge expands every dotted key into nested objects before it checks, previews, writes or
-confirms an update patch, a clone patch or the overrides of a compendium import, so Foundry never
-receives a dotted key in any of them; the pre-write array checks preview and judge the same expanded
-patch. Keys merge in the order they appear in the object: nested
-objects merge field by field, and when two keys set the same leaf the later key wins, so
-`{"system": {"hp": {"value": 1}}, "system.hp.value": 5}` stores 5. Operator keys stay nested as
-`-=key` and `==key`. The same expansion applies at every nesting level, inside the entries of every
-array (embedded collections included), and to journal page patches. These shapes are refused with
-`INVALID_PARAMS`, for clone patches and import overrides too; for those the stored-array check
-compares against the source document or the imported compendium data:
+Foundry expands dotted keys itself, in the order they appear in the object. A later dotted key
+writes into an object that an earlier key set, and a later plain object replaces what earlier
+dotted keys set under it: `{"system": {"hp": {"value": 1}}, "system.hp.value": 5}` writes 5, and
+`{"system.hp.value": 5, "system": {"hp": {"value": 1}}}` writes 1. Families with closed patch fields,
+such as `actor.update` and `item.update`, refuse top-level dotted keys in protocol validation, so
+these two examples apply only to open-schema families. A dotted key below a field, such as
+`{"system": {"hp.value": 5}}`, works on both cores for updates. On Foundry 13 a clone ignores it,
+because `Document#clone` expands only top-level dotted keys.
 
-- after expansion, a `-=` or `==` key next to another key for the same field, because a field
-  cannot be deleted or replaced and written in the same patch;
-- a key that writes into an array the document already stores. Below the top level of the patch any
-  key counts: `{"system.tags.1": "z"}`, `{"system": {"tags.1": "z"}}`, `{"system": {"tags": {"1":
-  "z"}}}`, `{"system.tags.length": 0}` and `{"system": {"tags": {"foo": "z"}}}` all target the
-  stored `system.tags`. Foundry would rebuild that array from the patch, turning `["a", "b", "c"]`
-  into `[null, "z"]` or `[]`. A `==` replacement of a stored array with an object counts too. For a
-  top-level array field, a dotted key such as `{"c.foo": 1}` or `{"==c.foo": 1}` is refused, and an
-  object counts only through a key Foundry reads as an array index: any key that `Number()` turns
-  into a non-negative integer, so `"0"`, `" 0"` and `"0e0"` all count. Any other object written to a
-  top-level array field is a whole-field write that the array checks above judge. A dotted key or an
-  object written into a top-level key that the running core has moved, such as an ActiveEffect's
-  `changes` on Foundry 14, is refused with a message that names where the field moved, with
-  `movedTo` in the details. Inside an embedded-collection entry the check uses the stored entry with
-  the same `_id`. The details carry `field` and `arrayField`;
-- a key that writes inside an array an earlier key of the same patch sets, such as
-  `{"system.tags": ["p", "q"], "system.tags.0": "z"}`, because Foundry rebuilds an array instead of
-  changing one entry. In the reverse order the later key wins as usual: the whole array replaces
-  the earlier entry write;
-- a key path longer than 32 segments, counting nesting levels, dotted segments and array indexes.
-  That is more than twice the deepest nesting measured across the worlds, systems and modules of a
-  v13 and a v14 installation (13 levels). The details carry `limit: "patch-depth"` and `max`;
-- any key segment named `__proto__`, `constructor` or `prototype`, anywhere in the request. The
-  details carry `field` (the full key path) and `reservedSegment`;
-- any key named `__$OPERATOR$__`, anywhere in the request. Foundry 14 rebuilds a deletion or
-  forced replacement from an object holding that key and replaces the whole object, dropping every
-  key beside it, while Foundry 13 stores it as data. The `-=key` and `==key` spellings do the same
-  job on both cores. The details carry `field` and `reservedSegment`.
+The dry-run preview and the post-write confirmation expand dotted keys with Foundry's own
+`expandObject`, as the Foundry 13 client does before it writes. The patch sent to Foundry is not
+changed by that.
 
-Recognized legacy fields are checked against their migrated destinations as well. Send whole
-arrays; ordinary dotted object-property writes remain supported where the schema permits them.
-
-Errors identify the `field` and may include `arrayField`, `requested`, `stored`, or migration
-destination details. Bulk failures add the entry's `index` and `id`; single failures use document
-coordinates. These details describe a rejected patch, not a write result.
+Single updates and bulk updates, real and dry run, return `INVALID_PARAMS` before mutation for array
+values Foundry would discard, a top-level dotted key into an array field such as a wall's `c.0`, and
+writes to a legacy field that the running core moved and would discard. Errors identify the `field` and may include
+`arrayField`, `requested`, `stored`, or migration destination details. Bulk failures add the
+entry's `index` and `id`; single failures use document coordinates. These details describe a
+rejected patch, not a write result.
 
 ## Dry run
 

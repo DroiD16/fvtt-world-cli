@@ -225,9 +225,9 @@ Use JSON flags such as `--data-json` and `--patch-json` for structured values. U
 
 - Nested objects merge recursively.
 - Ordinary arrays replace as a whole.
-- Dotted paths target object properties where permitted. The bridge expands them into nested
-  objects and merges keys in order, so when two keys set the same leaf the later one wins. Dotted
-  writes inside arrays are refused.
+- Dotted paths target object properties where permitted. The bridge sends them to Foundry as
+  written, and Foundry expands them in key order. A top-level dotted key into an array field, such
+  as `c.0`, is refused.
 - Foundry's operator keys work at any permitted nested level: `{"-=key": null}` deletes the key,
   and `{"==key": value}` replaces the key's whole value instead of merging into it.
 - Embedded collections follow their family's Foundry semantics.
@@ -236,8 +236,8 @@ Both operators come in a nested form, `{"system": {"==description": {…}}}`, an
 `{"flags": {"my-module.==config": {…}}}`. Families with closed patch fields, such as `item.update`
 and `actor.update`, accept only their named top-level fields, so any dotted key, operator or not,
 sits below one of them; a top-level `"system.==description"` or `"system.hp.value"` is refused
-there. A patch that deletes or
-replaces a key and also writes the same key is refused as ambiguous.
+there. A patch that deletes or replaces a key and also writes the same key reaches Foundry as
+written. Foundry 13 and 14 resolve it differently, and the write can end in a mismatch error.
 
 On a dnd5e item whose description is `{"value": "Old text", "chat": "Old chat"}`, this patch
 replaces the description and deletes one module flag:
@@ -256,8 +256,9 @@ both spellings; [Compatibility](compatibility.md) lists that and a v13 differenc
 typed-object entries.
 
 Read arrays before editing and preserve unchanged values. For a wall's `c` field, send the complete
-`[x1, y1, x2, y2]`, not `c.0`. Invalid or ambiguous patch shapes return `INVALID_PARAMS` before
-mutation, including in bulk writes and dry runs. Correct the fields identified by the error.
+`[x1, y1, x2, y2]`, not `c.0`. Array writes that Foundry would discard or rebuild return
+`INVALID_PARAMS` before mutation, including in bulk writes and dry runs; the error names the field.
+Other unusual key spellings are not checked before the write.
 
 Prefer dedicated commands for creating embedded documents. A parent update that adds entries
 without `_id`, such as new `behaviors` in `scene.region.update`, can create them but return an

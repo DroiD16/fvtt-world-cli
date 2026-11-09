@@ -49,13 +49,10 @@ sanitize protected metadata on every write and preview. Identity, statistics, au
 ownership cannot be set through ordinary content payloads. Foundry also applies its own DataModel
 and permission checks.
 
-The bridge refuses any request whose keys contain the segment `__proto__`, `constructor` or
-`prototype`, whether the key is spelled with dots or as a nested object, at any depth, including
-setting values. It checks before any handler reads the parameters, because the bridge expands and
-merges patch keys itself and a key with one of these names would otherwise write to a JavaScript
-object prototype in the GM client. Foundry's own path helpers skip these names for the same reason.
-The same check refuses the key `__$OPERATOR$__`, which Foundry 14 turns into a deletion or forced
-replacement of the whole object that holds it.
+Patch keys reach Foundry as written; the bridge does not expand them into objects itself. Foundry's
+own path helpers (`expandObject`, `setProperty`, `mergeObject`) skip the names `__proto__`,
+`constructor` and `prototype`, so such a key cannot write to a shared JavaScript object prototype in
+the GM client.
 
 ### Document ownership
 
