@@ -5,10 +5,7 @@ import { createBridgeError } from "./errors.js";
 export const WORLD_VETO_REMEDY =
   "One possible cause is a module that blocks or rewrites this write; there is no force flag to override that, and the same change can also be made from the Foundry UI.";
 
-export const MISMATCH_PATH_LIMIT = 20;
-const LISTED_PATH_LIMIT = 5;
-const TEXT_LIMIT = 240;
-const JSON_LIMIT = 480;
+const MISMATCH_PATH_LIMIT = 20;
 const WINDOW_LENGTH = 160;
 const WINDOW_CONTEXT = 48;
 
@@ -129,7 +126,7 @@ function shortenEntry(entry) {
     (!hasStored || typeof entry.stored === "string");
   /** @type {"text" | "json"} */
   const format = textual ? "text" : "json";
-  const limit = textual ? TEXT_LIMIT : JSON_LIMIT;
+  const limit = textual ? 240 : 480;
   const requestedText = hasRequested ? serialize(entry.requested, format) : "";
   const storedText = hasStored ? serialize(entry.stored, format) : "";
   if (requestedText.length <= limit && storedText.length <= limit) return entry;
@@ -237,13 +234,12 @@ export function unverifiableCauseSentence(hookName = null) {
 
 /**
  * @param {MismatchReport} report
- * @param {string} pathsAt
  */
-function describeLocation(report, pathsAt) {
+function describeLocation(report) {
   const total = report.paths.length + (report.pathsTruncated ?? 0);
-  const listed = report.paths.slice(0, LISTED_PATH_LIMIT).map((entry) => entry.path);
+  const listed = report.paths.slice(0, 5).map((entry) => entry.path);
   const more = total - listed.length;
-  return `at ${listed.join(", ")}${more > 0 ? ` and ${more} more path(s)` : ""} (${pathsAt} lists the requested and the stored value per path)`;
+  return `at ${listed.join(", ")}${more > 0 ? ` and ${more} more path(s)` : ""} (each paths entry carries the requested and the stored value)`;
 }
 
 /**
@@ -253,7 +249,6 @@ function describeLocation(report, pathsAt) {
  * @param {string | null} [args.hookName]
  * @param {string[] | null} [args.changedFields]
  * @param {Record<string, any>} [args.details]
- * @param {string} [args.pathsAt]
  * @param {string} [args.remedy]
  */
 export function createMismatchError({
@@ -262,7 +257,6 @@ export function createMismatchError({
   hookName = null,
   changedFields = null,
   details = {},
-  pathsAt = "details.paths",
   remedy = WORLD_VETO_REMEDY
 }) {
   /** @type {Record<string, any>} */
@@ -281,7 +275,7 @@ export function createMismatchError({
   }
   return createBridgeError(
     ERROR_CODES.INTERNAL_ERROR,
-    `${subject}: Foundry stored a different value than requested ${describeLocation(report, pathsAt)}. ` +
+    `${subject}: Foundry stored a different value than requested ${describeLocation(report)}. ` +
       `${unverifiableCauseSentence(hookName)} ${changeSentence}` +
       `Compare the requested and stored values and re-read the stored state before deciding what remains to apply. ${remedy}`,
     {

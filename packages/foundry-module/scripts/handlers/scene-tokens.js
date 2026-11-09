@@ -23,14 +23,6 @@ import { createScenePlaceableHandlers } from "./scene-placeables.js";
 
 const TOKEN = "Token";
 
-/**
- * @param {unknown} value
- */
-function emptyOverride(value) {
-  if (Array.isArray(value)) return [];
-  return value !== null && typeof value === "object" ? {} : null;
-}
-
 export function createSceneTokenHandlers() {
   return {
     ...createScenePlaceableHandlers({
@@ -100,10 +92,13 @@ export function createSceneTokenHandlers() {
         throw createMismatchError({
           subject: `Token ${tokenId}`,
           report: buildMismatchReport(
-            left.overriddenKeys.map((key) => ({
-              segments: ["delta", key],
-              requested: emptyOverride(remaining?.[key])
-            })),
+            left.overriddenKeys.map((key) => {
+              const value = remaining?.[key];
+              return {
+                segments: ["delta", key],
+                requested: Array.isArray(value) ? [] : value !== null && typeof value === "object" ? {} : null
+              };
+            }),
             { delta: remaining }
           ),
           details: { sceneId: params.sceneId, tokenId }

@@ -1163,7 +1163,6 @@ describe("settings write surface", () => {
       paths: [{ path: "value", requested: "high", stored: "medium" }]
     });
     expect(response.result.failure.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-    expect(response.result.failure.message).toContain("outcomes[1].paths");
   });
 
   /**

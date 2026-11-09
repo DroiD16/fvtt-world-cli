@@ -331,7 +331,7 @@ export function createCombatHandlers() {
             hookName: "preUpdateCombat",
             changedFields: [],
             details: { combatId, round: after.round, turn: after.turn },
-            remedy: `startCombat() issues update({round: 1, turn: 0}). ${COMBAT_VETO_REMEDY}`
+            remedy: COMBAT_VETO_REMEDY
           });
         }
         return {

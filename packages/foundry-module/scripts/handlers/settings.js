@@ -438,9 +438,8 @@ async function writeSetting(prepared, requested) {
 /**
  * @param {{ id: string, previous: unknown, requested: unknown, storedBefore: unknown }} prepared
  * @param {unknown} stored
- * @param {string} [pathsAt]
  */
-function settingMismatch(prepared, stored, pathsAt) {
+function settingMismatch(prepared, stored) {
   if (sourceValuesEqual(stored, prepared.requested)) return null;
   return createMismatchError({
     subject: `Setting ${prepared.id}`,
@@ -449,7 +448,6 @@ function settingMismatch(prepared, stored, pathsAt) {
     }),
     changedFields: sourceValuesEqual(stored, prepared.storedBefore) ? [] : ["value"],
     details: { id: prepared.id, previous: prepared.previous, requested: prepared.requested },
-    pathsAt,
     remedy:
       "One possible cause is an onChange handler or the package that registered the setting; the value can also be set from Foundry's Configure Settings."
   });
@@ -663,7 +661,7 @@ export function createSettingHandlers() {
           outcomes.push({ index, id: element.id, status: BATCH_STATUS.UNKNOWN });
           continue;
         }
-        const mismatch = settingMismatch(element, written.stored, `outcomes[${index}].paths`);
+        const mismatch = settingMismatch(element, written.stored);
         if (mismatch) {
           failure = { error: mismatch, ...toFailureSummary(mismatch) };
           outcomes.push({
