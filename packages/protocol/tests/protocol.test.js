@@ -55,7 +55,6 @@ import {
   PROTOCOL_VERSION,
   defaultProfile,
   isDestructiveCommand,
-  summarizeTokenDelta,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
   FOG_RESET_CONFIRM_TIMEOUT_MS,
   SCENE_THUMBNAIL_MAX_BYTES,
@@ -8035,52 +8034,5 @@ describe("protocol contract", () => {
 
       expect(SEARCH_RESULT_MAX_LIMIT * SEARCH_SNIPPET_MAX_CHARS * 4).toBeLessThan(SEARCH_RESPONSE_MAX_BYTES);
     });
-  });
-});
-
-describe("summarizeTokenDelta", () => {
-  const EMPTY = { _id: "d1", system: {}, items: [], effects: [], flags: {} };
-
-  it("reports no overrides for a missing delta and for top-level values that are null, [] or {}", () => {
-    expect(summarizeTokenDelta(null)).toBeNull();
-    expect(summarizeTokenDelta(EMPTY)).toBeNull();
-    expect(summarizeTokenDelta({ ...EMPTY, name: null, img: null, ownership: null })).toBeNull();
-  });
-
-  it("counts any content below the top level as an override, nested null, [] and {} included", () => {
-    expect(
-      summarizeTokenDelta({ ...EMPTY, system: { attributes: { hp: { temp: null } } } })?.overriddenKeys
-    ).toEqual(["system"]);
-    expect(
-      summarizeTokenDelta({ ...EMPTY, system: { traits: { dr: { value: [] } } } })?.overriddenKeys
-    ).toEqual(["system"]);
-    expect(summarizeTokenDelta({ ...EMPTY, flags: { world: { x: {} } } })?.overriddenKeys).toEqual(["flags"]);
-    expect(summarizeTokenDelta({ ...EMPTY, flags: { mod: {} } })?.overriddenKeys).toEqual(["flags"]);
-  });
-
-  it("names every top-level key holding a value and counts delta entries, deletion markers included", () => {
-    expect(
-      summarizeTokenDelta({
-        ...EMPTY,
-        name: "Aarakocra Skirmisher",
-        system: { attributes: { hp: { value: 0 } } },
-        flags: { mod: { enabled: false } },
-        items: [
-          { _id: "i1", name: "Talons" },
-          { _id: "i2", _tombstone: true }
-        ],
-        effects: [{ _id: "e1", _tombstone: true }]
-      })
-    ).toEqual({
-      itemEntries: 2,
-      effectEntries: 1,
-      overriddenKeys: ["system", "items", "effects", "flags", "name"]
-    });
-  });
-
-  it("treats empty strings, zero and false as override values", () => {
-    expect(summarizeTokenDelta({ ...EMPTY, name: "" })?.overriddenKeys).toEqual(["name"]);
-    expect(summarizeTokenDelta({ ...EMPTY, system: { hp: 0 } })?.overriddenKeys).toEqual(["system"]);
-    expect(summarizeTokenDelta({ ...EMPTY, flags: { m: { on: false } } })?.overriddenKeys).toEqual(["flags"]);
   });
 });

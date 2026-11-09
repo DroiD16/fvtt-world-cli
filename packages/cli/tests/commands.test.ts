@@ -2542,16 +2542,7 @@ describe("fvtt-world-cli commands", () => {
         }
       })
     );
-    expect(emptyV13.stdout).toContain("delta: none");
-
-    const overriding = await runCommand(
-      ["scene", "token", "get", "--scene-id", "scene-1", "--token-id", "tok-4", "--include", "delta"],
-      respond({
-        sceneId: "scene-1",
-        token: { id: "tok-4", name: "D", delta: { _id: "tok-4", name: "Renamed", items: [{ _id: "i1" }] } }
-      })
-    );
-    expect(overriding.stdout).toContain("delta: overrides name, items");
+    expect(emptyV13.stdout).toContain("delta: stored (use --json for values)");
   });
 
   it("renders duplicateSource next to compendiumSource in human-readable document output", async () => {

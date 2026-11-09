@@ -1,4 +1,4 @@
-import { ERROR_CODES, summarizeTokenDelta } from "../generated/protocol.js";
+import { ERROR_CODES } from "../generated/protocol.js";
 import { getSceneById } from "../lib/game-collections.js";
 import {
   createSceneEmbedded,
@@ -16,6 +16,7 @@ import {
   serializeToken,
   serializeTokenSummary,
   storedTokenDelta,
+  summarizeTokenDelta,
   tokenName
 } from "../lib/serializers.js";
 import { createScenePlaceableHandlers } from "./scene-placeables.js";

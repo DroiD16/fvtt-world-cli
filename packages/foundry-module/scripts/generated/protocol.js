@@ -5773,23 +5773,6 @@ function defaultProfile(name) {
   return Object.hasOwn(DEFAULT_COMMAND_PROFILE, name) ? DEFAULT_COMMAND_PROFILE[name] : void 0;
 }
 
-// packages/protocol/src/token-delta.js
-function holdsOverride(value) {
-  if (value === null || value === void 0) return false;
-  if (typeof value !== "object") return true;
-  return Object.keys(value).length > 0;
-}
-function summarizeTokenDelta(delta) {
-  if (!delta || typeof delta !== "object") return null;
-  const overriddenKeys = Object.keys(delta).filter((key) => key !== "_id" && holdsOverride(delta[key]));
-  if (overriddenKeys.length === 0) return null;
-  return {
-    itemEntries: Array.isArray(delta.items) ? delta.items.length : 0,
-    effectEntries: Array.isArray(delta.effects) ? delta.effects.length : 0,
-    overriddenKeys
-  };
-}
-
 // packages/protocol/src/validation.js
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -6379,7 +6362,6 @@ export {
   pairingPruneCutoffAt,
   parseBridgeMessage,
   resolveEffectiveLimits,
-  summarizeTokenDelta,
   validateClientHello,
   validateCommandRequest,
   validateDaemonRequest,

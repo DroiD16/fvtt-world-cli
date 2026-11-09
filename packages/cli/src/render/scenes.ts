@@ -1,5 +1,3 @@
-import { summarizeTokenDelta } from "@fvtt-world-cli/protocol";
-
 import { renderProvenanceLines, renderOwnershipLines } from "./common.js";
 
 export function renderSceneActivateResult(result: any) {
@@ -90,10 +88,7 @@ export function renderTokenDetails(sceneId: string, token: any) {
   ];
 
   if (token && Object.hasOwn(token, "delta")) {
-    const summary = summarizeTokenDelta(token.delta);
-    lines.push(
-      `delta: ${summary === null ? "none" : `overrides ${summary.overriddenKeys.join(", ")} (use --json for values)`}`
-    );
+    lines.push(`delta: ${token.delta === null ? "none" : "stored (use --json for values)"}`);
   }
   if (token && Object.hasOwn(token, "prepared")) {
     lines.push(`prepared: ${Object.keys(token.prepared ?? {}).join(", ")} (use --json for values)`);
