@@ -1,4 +1,4 @@
-import { renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
+import { renderProvenanceLines, renderOwnershipLines } from "./common.js";
 
 export function renderItemSummaryLine(item: any, { suppressBody = false }: { suppressBody?: boolean } = {}) {
   const lines = [
@@ -36,7 +36,7 @@ export function renderItemDetails(item: any, prefixLines: string[] = []) {
   if (item && Object.hasOwn(item, "effects")) {
     lines.push(`effects: ${JSON.stringify(item.effects ?? [], null, 2)}`);
   }
-  lines.push(...renderCompendiumSourceLines(item));
+  lines.push(...renderProvenanceLines(item));
 
   if (item && Object.hasOwn(item, "ownership")) {
     lines.push(...renderOwnershipLines(item.ownership));

@@ -16,8 +16,11 @@ export function renderBroadcastLines(result: any): string[] {
   ];
 }
 
-export function renderCompendiumSourceLines(document: any): string[] {
-  return document?.compendiumSource ? [`compendiumSource: ${document.compendiumSource}`] : [];
+export function renderProvenanceLines(document: any): string[] {
+  return [
+    ...(document?.compendiumSource ? [`compendiumSource: ${document.compendiumSource}`] : []),
+    ...(document?.duplicateSource ? [`duplicateSource: ${document.duplicateSource}`] : [])
+  ];
 }
 
 export function renderOwnershipLines(ownership: any): string[] {

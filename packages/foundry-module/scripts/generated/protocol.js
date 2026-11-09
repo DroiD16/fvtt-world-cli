@@ -333,7 +333,10 @@ var batchIdsProperty = {
   }
 };
 var tokenIncludeProperty = {
-  include: { type: "array", items: { type: "string", enum: ["prepared"] } }
+  include: { type: "array", items: { type: "string", enum: ["prepared", "delta"] } }
+};
+var tokenListIncludeProperty = {
+  include: { type: "array", items: { type: "string", enum: ["delta"] } }
 };
 var compendiumIncludeProperty = {
   include: { type: "array", items: { type: "string", enum: ["effects"] } }
@@ -1775,6 +1778,16 @@ var compendiumCommands = {
     properties: {
       pack: { type: "string", minLength: 1 },
       entryId: { type: "string", minLength: 1 },
+      ...compendiumIncludeProperty
+    },
+    additionalProperties: false
+  }),
+  "compendium.get-many": cmd({
+    type: "object",
+    required: ["pack", "ids"],
+    properties: {
+      pack: { type: "string", minLength: 1 },
+      ...batchIdsProperty,
       ...compendiumIncludeProperty
     },
     additionalProperties: false
@@ -3244,7 +3257,8 @@ var sceneEmbeddedCommands = {
     properties: {
       sceneId: { type: "string", minLength: 1 },
       ...nameFilterProperty,
-      ...paginationProperties
+      ...paginationProperties,
+      ...tokenListIncludeProperty
     },
     additionalProperties: false
   }),
@@ -3309,6 +3323,19 @@ var sceneEmbeddedCommands = {
         patch: tokenPatchSchema,
         ...dryRunProperty,
         ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "scene.token.restore-delta": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "tokenId"],
+      properties: {
+        sceneId: { type: "string", minLength: 1 },
+        tokenId: { type: "string", minLength: 1 },
+        ...dryRunProperty
       },
       additionalProperties: false
     },
@@ -5377,6 +5404,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "scene.token.update": "allow",
   "scene.token.delete": "approve",
   "scene.token.clone": "allow",
+  "scene.token.restore-delta": "approve",
   "scene.token.create-many": "allow",
   "scene.token.update-many": "allow",
   "scene.token.delete-many": "approve",
@@ -5674,6 +5702,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "compendium.list": "allow",
   "compendium.index": "allow",
   "compendium.get": "allow",
+  "compendium.get-many": "allow",
   "folder.list": "allow",
   "folder.get": "allow",
   "folder.create": "allow",
@@ -5703,7 +5732,12 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
 
 // packages/protocol/src/command-risk.js
 var DESTRUCTIVE_VERBS = Object.freeze(["delete", "delete-many"]);
-var DESTRUCTIVE_COMMANDS = Object.freeze(["chat.flush", "file.move", "scene.fog.reset"]);
+var DESTRUCTIVE_COMMANDS = Object.freeze([
+  "chat.flush",
+  "file.move",
+  "scene.fog.reset",
+  "scene.token.restore-delta"
+]);
 var APPROVE_EXTRA_COMMANDS = Object.freeze(["system.reload", "user.create"]);
 var DENIED_BY_DEFAULT_COMMANDS = Object.freeze([
   "macro.execute",

@@ -1,8 +1,9 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
 
-function isPlainObjectish(value) {
-  if (value === null || value === undefined) return false;
+/** @param {unknown} value */
+export function isPlainObject(value) {
+  if (value === null || typeof value !== "object") return false;
   const proto = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
@@ -14,16 +15,6 @@ function isPlainObjectish(value) {
 function usableEntryId(entry) {
   const id = entry?._id;
   return typeof id === "string" && id.length > 0;
-}
-
-/**
- * @param {string} rawKey
- * @returns {{ prefix: ""|"=="|"-=", path: string, root: string }}
- */
-function splitPatchKey(rawKey) {
-  const prefix = rawKey.startsWith("==") ? "==" : rawKey.startsWith("-=") ? "-=" : "";
-  const path = prefix ? rawKey.slice(2) : rawKey;
-  return { prefix, path, root: path.split(".")[0] };
 }
 
 /**
@@ -53,149 +44,29 @@ function normalizeOperatorPath(rawKey) {
   return { path, deletes: rawKey.split(".").some((segment) => segment.startsWith("-=")) };
 }
 
-/** @param {{ documentClass: any, patch: Record<string, any>, index: number, command: string, id: string, coordinate?: string }} args */
-export function assertNoAmbiguousBatchKeySpellings({
-  documentClass,
-  patch,
-  index,
-  command,
-  id,
-  coordinate = `${command} element ${index} (id ${id})`
-}) {
-  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return;
-
-  const refuse = ({ where, rule, path, root, spellings }) => {
-    const mechanism =
-      rule === 1
-        ? `which one is not the same on the two supported cores: Foundry 13 keeps the LAST spelling in the ` +
-          `object while Foundry 14 lets a "==" forced replacement win regardless of order`
-        : `an operator-spelled ("==" / "-=") whole field (at any depth) and a key underneath it are resolved DIFFERENTLY by ` +
-          `the two supported cores: Foundry 13 applies the narrower key on top of the forced replacement, ` +
-          `Foundry 14 discards it entirely (and a "-=" whole field beside such a key is rejected outright on ` +
-          `both)`;
-    throw createBridgeError(
-      ERROR_CODES.INVALID_PARAMS,
-
-      `${coordinate} writes the same field "${path}" through more than one key ` +
-        `${where}: ${spellings.map((key) => `"${key}"`).join(" and ")}. Foundry applies exactly ONE of them and ` +
-        `SILENTLY DISCARDS the rest — ${mechanism}, and no check downstream can see the loss because the merged ` +
-        `preview and the stored result come from the same ambiguous patch. Merge them into one key and retry.`,
-      { index, id, field: path, ambiguousRoot: root, ambiguousKeys: spellings, ambiguityRule: rule }
-    );
-  };
-
-  /**
-   * @param {string[]} rawKeys
-   * @param {{ deep: boolean }} options
-   * @returns {{ rule: 1|2, path: string, root: string, spellings: string[] }|null}
-   */
-  const findCollision = (rawKeys, { deep }) => {
-    /** @type {Map<string, string[]>} */
-    const byPath = new Map();
-    /** @type {Map<string, string[]>} */
-    const byRoot = new Map();
-    /** @type {Array<{rawKey:string, root:string, path:string, operatorTargets:string[]}>} */
-    const keys = [];
-    for (const rawKey of rawKeys) {
-      const { path, root, operatorTargets } = deep
-        ? splitPatchKeyDeep(rawKey)
-        : (() => {
-            const { prefix, path: shallowPath, root: shallowRoot } = splitPatchKey(rawKey);
-            return {
-              path: shallowPath,
-              root: shallowRoot,
-              operatorTargets: prefix && shallowPath === shallowRoot ? [shallowRoot] : []
-            };
-          })();
-      if (!root) continue;
-      byPath.set(path, [...(byPath.get(path) ?? []), rawKey]);
-      byRoot.set(root, [...(byRoot.get(root) ?? []), rawKey]);
-      keys.push({ rawKey, root, path, operatorTargets });
-    }
-
-    for (const [path, spellings] of byPath) {
-      if (spellings.length > 1) return { rule: 1, path, root: path.split(".")[0], spellings };
-    }
-
-    for (const key of keys) {
-      for (const target of key.operatorTargets) {
-        const others = keys.filter(
-          (other) => other !== key && (other.path === target || other.path.startsWith(`${target}.`))
-        );
-        if (others.length) {
-          const involved = new Set([key.rawKey, ...others.map((other) => other.rawKey)]);
-          return {
-            rule: 2,
-            path: target,
-            root: target.split(".")[0],
-            spellings: rawKeys.filter((rawKey) => involved.has(rawKey))
-          };
-        }
-      }
-    }
-    return null;
-  };
-
-  const topLevel = findCollision(Object.keys(patch), { deep: true });
-  if (topLevel) refuse({ where: "at the top level", ...topLevel });
-
-  const schema = documentClass?.schema;
-  if (!schema || typeof schema.get !== "function") return;
-  for (const [rawKey, value] of Object.entries(patch)) {
-    if (!Array.isArray(value)) continue;
-    const { path, root } = splitPatchKey(rawKey);
-    if (path !== root) continue;
-    let field;
-    try {
-      field = schema.get(root);
-    } catch {
-      field = null;
-    }
-    if (!field || classifyArrayBackedField(field) !== "embedded-collection") continue;
-    for (const entry of value) {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry) || !isPlainObjectish(entry)) continue;
-      const collision = findCollision(
-        Object.keys(entry).filter((key) => key !== "_id"),
-        { deep: false }
-      );
-      if (collision) {
-        refuse({
-          where: `inside one entry of the embedded collection "${root}"`,
-          ...collision
-        });
-      }
-    }
-  }
+/** @param {Record<string, unknown>} value */
+function definedKeys(value) {
+  return Object.keys(value).filter((key) => value[key] !== undefined);
 }
 
 /**
+ * An own key holding `undefined` equals an absent key: Foundry produces both for the same state.
  * @param {unknown} a
  * @param {unknown} b
+ * @returns {boolean}
  */
-export function batchValuesEqual(a, b) {
+export function sourceValuesEqual(a, b) {
   if (a === b) return true;
   if (Array.isArray(a) || Array.isArray(b)) {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-    return a.every((entry, index) => batchValuesEqual(entry, b[index]));
+    return a.every((entry, index) => sourceValuesEqual(entry, b[index]));
   }
-  if (
-    a &&
-    b &&
-    typeof a === "object" &&
-    typeof b === "object" &&
-    isPlainObjectish(a) &&
-    isPlainObjectish(b)
-  ) {
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
-    if (aKeys.length !== bKeys.length) return false;
-    return aKeys.every(
-      (key) =>
-        Object.hasOwn(/** @type {any} */ (b), key) &&
-        batchValuesEqual(/** @type {any} */ (a)[key], /** @type {any} */ (b)[key])
-    );
-  }
-  return false;
+  if (!isPlainObject(a) || !isPlainObject(b)) return false;
+  const left = /** @type {Record<string, unknown>} */ (a);
+  const right = /** @type {Record<string, unknown>} */ (b);
+  const leftKeys = definedKeys(left);
+  if (leftKeys.length !== definedKeys(right).length) return false;
+  return leftKeys.every((key) => right[key] !== undefined && sourceValuesEqual(left[key], right[key]));
 }
 
 /** @param {{ documentClass: any, patch: Record<string, any>, merged: any, stored?: any, index: number, command: string, id: string, coordinate?: string }} args */
@@ -267,7 +138,7 @@ export function assertBatchArrayWritesReflected({
       const kind = classifyArrayBackedField(field);
       if (!kind) continue;
 
-      if (batchValuesEqual(value, source[rootKey])) continue;
+      if (sourceValuesEqual(value, source[rootKey])) continue;
 
       if (kind === "embedded-collection") {
         assertBatchEcfEntriesReflected({
@@ -293,7 +164,7 @@ export function assertBatchArrayWritesReflected({
         expected = undefined;
       }
 
-      if (!batchValuesEqual(expected, source[rootKey])) {
+      if (!sourceValuesEqual(expected, source[rootKey])) {
         throw createBridgeError(
           ERROR_CODES.INVALID_PARAMS,
           `${coordinate} sets "${rawKey}" to a value this Foundry version SILENTLY DISCARDS: ` +
@@ -431,7 +302,7 @@ function assertMigratedSystemArrayReflected({
   let candidates;
   if (segments.length > 1) {
     candidates = [{ subPath: segments.slice(1).join("."), requested: value, deletes: keyDeletes }];
-  } else if (value && typeof value === "object" && !Array.isArray(value) && isPlainObjectish(value)) {
+  } else if (value && typeof value === "object" && !Array.isArray(value) && isPlainObject(value)) {
     candidates = Object.entries(value).map(([entryKey, entryValue]) => {
       const inner = normalizeOperatorPath(entryKey);
       return { subPath: inner.path, requested: entryValue, deletes: keyDeletes || inner.deletes };
@@ -455,7 +326,7 @@ function assertMigratedSystemArrayReflected({
         : undefined) ?? null;
 
     if (subPath === candidateKey) {
-      if (batchValuesEqual(requested, storedNow)) continue;
+      if (sourceValuesEqual(requested, storedNow)) continue;
       if (
         migratedArrayWriteLanded({
           merged,
@@ -522,14 +393,14 @@ function assertMigratedSystemArrayReflected({
     }
     const storedNowAtPath = resolvedNow.value;
 
-    let credited = batchValuesEqual(requested, storedNowAtPath);
+    let credited = sourceValuesEqual(requested, storedNowAtPath);
 
     if (deletes && storedNowAtPath === undefined) credited = true;
 
     if (
       storedNowAtPath !== undefined &&
       preSource &&
-      !batchValuesEqual(storedNowAtPath, readSourcePath(preSource, fullPath))
+      !sourceValuesEqual(storedNowAtPath, readSourcePath(preSource, fullPath))
     ) {
       credited = true;
     }
@@ -602,13 +473,13 @@ function migratedArrayWriteLanded({ merged, rootKey, migratedValue, storedNow, p
       expected = undefined;
     }
   }
-  if (batchValuesEqual(expected, storedNow)) return true;
+  if (sourceValuesEqual(expected, storedNow)) return true;
 
   if (!preSource) return false;
   const system = preSource.system;
   const storedBefore =
     (system && typeof system === "object" && !Array.isArray(system) ? system[rootKey] : undefined) ?? null;
-  return !batchValuesEqual(storedNow, storedBefore);
+  return !sourceValuesEqual(storedNow, storedBefore);
 }
 
 /**
@@ -650,7 +521,7 @@ function migratedArrayValue(documentClass, key, value, rootKey) {
     return undefined;
   }
   const system = migrated?.system;
-  if (!system || typeof system !== "object" || Array.isArray(system) || !isPlainObjectish(system))
+  if (!system || typeof system !== "object" || Array.isArray(system) || !isPlainObject(system))
     return undefined;
   if (!Object.hasOwn(system, rootKey) || !Array.isArray(system[rootKey])) return undefined;
   return system[rootKey];
@@ -663,8 +534,7 @@ function migratedArrayValue(documentClass, key, value, rootKey) {
  */
 function findShimmedArrayPath(source, rootKey) {
   const system = source?.system;
-  if (!system || typeof system !== "object" || Array.isArray(system) || !isPlainObjectish(system))
-    return null;
+  if (!system || typeof system !== "object" || Array.isArray(system) || !isPlainObject(system)) return null;
   if (!Object.hasOwn(system, rootKey) || !Array.isArray(system[rootKey])) return null;
   return `system.${rootKey}`;
 }
@@ -684,7 +554,7 @@ function arrayWriteLanded({ field, value, rootKey, source, preSource }) {
   if (!failure?.unresolved) return true;
 
   if (!preSource) return false;
-  return !batchValuesEqual(source[rootKey], preSource[rootKey]);
+  return !sourceValuesEqual(source[rootKey], preSource[rootKey]);
 }
 
 /**
@@ -812,7 +682,7 @@ function assertBatchEcfEntriesReflected({
   const consumedCandidates = new Set();
 
   for (const entry of /** @type {any[]} */ (value)) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry) || !isPlainObjectish(entry)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry) || !isPlainObject(entry)) {
       refuse(`one of the entries is not a plain object`, entry, null);
     }
     const entryId = /** @type {any} */ (entry)._id;
@@ -903,7 +773,7 @@ function assertBatchEcfEntriesReflected({
       }
 
       if (entryKey !== entryRoot) {
-        if (!batchValuesEqual(entryValue, readSourcePath(mergedEntry, entryKey))) {
+        if (!sourceValuesEqual(entryValue, readSourcePath(mergedEntry, entryKey))) {
           refuse(
             `entry ${entryId} writes the dotted path "${entryKey}", which the merged entry does not reflect`,
             entryValue,
@@ -915,16 +785,16 @@ function assertBatchEcfEntriesReflected({
 
       const mergedValue = mergedEntry[entryRoot];
 
-      if (batchValuesEqual(entryValue, mergedValue)) continue;
+      if (sourceValuesEqual(entryValue, mergedValue)) continue;
 
-      if (!isPlainObjectish(entryValue) && typeof elementField.clean === "function") {
+      if (!isPlainObject(entryValue) && typeof elementField.clean === "function") {
         let pinned;
         try {
           pinned = elementField.clean(structuredCloneish(entryValue));
         } catch {
           pinned = undefined;
         }
-        if (!batchValuesEqual(pinned, mergedValue)) {
+        if (!sourceValuesEqual(pinned, mergedValue)) {
           refuse(
             `entry ${entryId} sets "${entryRoot}" to a value the merged entry does not hold ` +
               `(another entry, or another key of this entry, wrote "${entryRoot}" last)`,
@@ -934,7 +804,7 @@ function assertBatchEcfEntriesReflected({
         }
       }
 
-      if (preEntry && !batchValuesEqual(mergedValue, preEntry[entryRoot])) continue;
+      if (preEntry && !sourceValuesEqual(mergedValue, preEntry[entryRoot])) continue;
 
       if (typeof elementField.validate === "function") {
         let failure = null;
@@ -960,7 +830,7 @@ function assertBatchEcfEntriesReflected({
       } catch {
         expected = undefined;
       }
-      if (!batchValuesEqual(expected, mergedValue)) {
+      if (!sourceValuesEqual(expected, mergedValue)) {
         refuse(
           `entry ${entryId} sets "${entryRoot}" to a value the merged entry does not hold`,
           entryValue,
@@ -987,7 +857,7 @@ function findEcfCreateWitness({ entry, candidates, consumed, elementSchema }) {
       const entryKey = rawEntryKey.startsWith("==") ? rawEntryKey.slice(2) : rawEntryKey;
       const requested = entry[rawEntryKey];
       const present = readSourcePath(candidate, entryKey);
-      if (batchValuesEqual(requested, present)) return true;
+      if (sourceValuesEqual(requested, present)) return true;
 
       const entryRoot = entryKey.split(".")[0];
       if (entryKey !== entryRoot) return false;
@@ -999,7 +869,7 @@ function findEcfCreateWitness({ entry, candidates, consumed, elementSchema }) {
       }
       if (typeof elementField?.clean !== "function") return false;
       try {
-        return batchValuesEqual(elementField.clean(structuredCloneish(requested)), present);
+        return sourceValuesEqual(elementField.clean(structuredCloneish(requested)), present);
       } catch {
         return false;
       }
@@ -1020,20 +890,6 @@ export function readDocumentSource(document) {
   }
   const source = document?._source;
   return source && typeof source === "object" ? source : null;
-}
-
-/**
- * @param {Record<string, any>} patch
- * @returns {string[]}
- */
-export function batchMergedConfirmationKeys(patch) {
-  const split = Object.keys(patch ?? {}).map((key) => splitPatchKeyDeep(key));
-  if (!split.some((entry) => entry.operatorTargets.length > 0)) return [];
-  const roots = new Set();
-  for (const entry of split) {
-    if (entry.root) roots.add(entry.root);
-  }
-  return [...roots];
 }
 
 /**
@@ -1081,19 +937,6 @@ export function batchEcfResidualEntries(value) {
 
     return Object.keys(entry).every((rawKey) => splitPatchKeyDeep(rawKey).operatorTargets.length === 0);
   });
-}
-
-/**
- * @param {{ document: any, mergedSource: Record<string, any>|null, mergedConfirmationKeys: string[] }} element
- * @returns {boolean|null}
- */
-export function mergedPreviewReflected(element) {
-  const merged = element.mergedSource;
-  const stored = readDocumentSource(element.document);
-  if (!merged || !stored) return null;
-  return element.mergedConfirmationKeys.every((rootKey) =>
-    batchValuesEqual(merged[rootKey], stored[rootKey])
-  );
 }
 
 function readSourcePath(source, path) {

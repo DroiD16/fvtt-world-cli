@@ -1,4 +1,4 @@
-import { renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
+import { renderProvenanceLines, renderOwnershipLines } from "./common.js";
 
 const CHAT_CAPTURE_NOTES: Record<string, string> = {
   captured: "captured (every message the macro created while the bridge waited)",
@@ -43,7 +43,7 @@ export function renderMacroDetails(macro: any) {
     `flags: ${JSON.stringify(macro?.flags ?? {}, null, 2)}`,
     `command: ${macro?.command ?? ""}`
   ];
-  lines.push(...renderCompendiumSourceLines(macro));
+  lines.push(...renderProvenanceLines(macro));
 
   if (macro && Object.hasOwn(macro, "ownership")) {
     lines.push(...renderOwnershipLines(macro.ownership));

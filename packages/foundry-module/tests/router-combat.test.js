@@ -17,7 +17,8 @@ import {
   createCombatDocument,
   createCombatantDocument,
   createRequest,
-  installFakeFoundry
+  installFakeFoundry,
+  makeDataModelValidationError
 } from "./helpers/fake-foundry.js";
 
 describe("command router", () => {
@@ -2077,7 +2078,11 @@ describe("command router", () => {
       );
       expect(vetoed.ok).toBe(false);
       expect(vetoed.error.message).toContain("preUpdateCombatant");
-      expect(vetoed.error.message).toContain("disable the module");
+      expect(vetoed.error.message).not.toContain("disable the module");
+      expect(vetoed.error.details).toMatchObject({
+        paths: [{ path: "hidden", requested: true, stored: false }],
+        changedFields: []
+      });
       expect(row._source.hidden).toBe(false);
     });
 
@@ -2694,30 +2699,18 @@ describe("command router", () => {
       expect(stored(combat)).toEqual({ round: 0, turn: null });
     });
 
-    it("combat.start raises INTERNAL_ERROR when a hook keeps round 0 (a write that landed as something else)", async () => {
-      const combat = seedCombat("cbt-start-rewritten");
-      combat.startCombat = vi.fn(async () => {
-        combat._source.turn = 0;
-        combat.turn = 0;
-        return combat;
-      });
-      const response = await router().route(
-        createRequest("combat.start", { combatId: "cbt-start-rewritten" })
-      );
-      expect(response.ok).toBe(false);
-      expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-      expect(response.error.message).toContain("was NOT started");
-      expect(response.error.details).toMatchObject({ combatId: "cbt-start-rewritten", round: 0, turn: 0 });
-      expect(stored(combat)).toEqual({ round: 0, turn: 0 });
-    });
-
     it("combat.start raises INTERNAL_ERROR when the write is vetoed (a resolved call is not evidence)", async () => {
       const combat = seedCombat("cbt-start-veto");
       combat.vetoCombatUpdates = true;
       const response = await router().route(createRequest("combat.start", { combatId: "cbt-start-veto" }));
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-      expect(response.error.message).toContain("did not change combat");
+      expect(response.error.message).toContain("cannot verify");
+      expect(response.error.details).toMatchObject({
+        combatId: "cbt-start-veto",
+        paths: [{ path: "round", requested: 1, stored: 0 }],
+        changedFields: []
+      });
       expect(stored(combat)).toEqual({ round: 0, turn: null });
     });
 
@@ -2800,7 +2793,12 @@ describe("command router", () => {
       );
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-      expect(response.error.message).toContain("is NOT active");
+      expect(response.error.details).toMatchObject({
+        combatId: "cbt-activate-rewritten",
+        fields: ["active"],
+        paths: [{ path: "active", requested: true, stored: false }],
+        changedFields: []
+      });
       expect(combat._source.active).toBe(false);
     });
 
@@ -4412,7 +4410,7 @@ describe("command router", () => {
       expect(response.result).toMatchObject({ initiativeBefore: 5, initiative: 5, changed: false });
     });
 
-    it("combat.set-initiative reports the STORED value when a system ADJUSTED it, and does not error", async () => {
+    it("combat.set-initiative reports a mismatch when a system stored a different value", async () => {
       const combat = seedCombat("cbt-set-adjusted", { round: 1, turn: 0, systemAdjustsInitiativeBy: 1 });
       const response = await router().route(
         createRequest("combat.set-initiative", {
@@ -4421,9 +4419,14 @@ describe("command router", () => {
           initiative: 12
         })
       );
-      expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
-      expect(response.result.initiative).toBe(13);
-      expect(response.result.changed).toBe(true);
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+      expect(response.error.message).toContain("cannot verify");
+      expect(response.error.details).toMatchObject({
+        paths: [{ path: "initiative", requested: 12, stored: 13 }],
+        changedFields: ["initiative"],
+        partial: true
+      });
       expect(combat.combatants.get("cbt-set-adjusted-a")._source.initiative).toBe(13);
     });
 
@@ -4439,6 +4442,12 @@ describe("command router", () => {
       );
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+      expect(response.error.details).toMatchObject({
+        combatantId: "cbt-set-veto-a",
+        fields: ["initiative"],
+        paths: [{ path: "initiative", requested: 3, stored: null }],
+        changedFields: []
+      });
       expect(combat.combatants.get("cbt-set-veto-a")._source.initiative).toBeNull();
     });
 

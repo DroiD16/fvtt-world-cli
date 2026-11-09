@@ -1,3 +1,4 @@
+import { fakeSettingDocument } from "./fake-settings.js";
 import { expect, vi } from "vitest";
 
 import {
@@ -7,6 +8,24 @@ import {
   PROTOCOL_VERSION
 } from "../../scripts/generated/protocol.js";
 import { MODULE_SETTING_KEYS } from "../../scripts/lib/validators.js";
+
+/**
+ * @param {any} value
+ * @returns {any}
+ */
+export function expandObject(value) {
+  if (Array.isArray(value)) return value.map(expandObject);
+  if (!value || typeof value !== "object") return value;
+  /** @type {Record<string, any>} */
+  const out = {};
+  for (const [key, inner] of Object.entries(value)) {
+    const segments = key.split(".");
+    let node = out;
+    for (const segment of segments.slice(0, -1)) node = node[segment] ??= {};
+    node[/** @type {string} */ (segments.at(-1))] = expandObject(inner);
+  }
+  return out;
+}
 
 function ensureFilePickerNamespace() {
   globalThis.foundry ??= {};
@@ -50,6 +69,20 @@ function isPlainMergeTarget(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+// Both cores REBUILD an array a patch descends into from the patch alone, destroying the entries
+// the patch does not name; mirror that so the guards see what Foundry would store.
+function rebuildArray(container) {
+  const rebuilt = [];
+  for (const [entryKey, entryValue] of Object.entries(container)) {
+    if (entryKey === "length") {
+      rebuilt.length = Number(entryValue) || 0;
+      continue;
+    }
+    rebuilt[Number(entryKey)] = entryValue;
+  }
+  return rebuilt;
+}
+
 function applyMergeKey(out, rawKey, value, performDeletions) {
   const dot = rawKey.indexOf(".");
   const segment = dot === -1 ? rawKey : rawKey.slice(0, dot);
@@ -73,28 +106,20 @@ function applyMergeKey(out, rawKey, value, performDeletions) {
       return;
     }
     const target = out[name];
-    if (isPlainMergeTarget(value) && isPlainMergeTarget(target)) {
-      out[name] = applyDocumentMerge(target, value, { performDeletions });
+    if (Array.isArray(target) && isPlainMergeTarget(value)) {
+      out[name] = rebuildArray(applyDocumentMerge({}, value, { performDeletions }));
+    } else if (isPlainMergeTarget(value)) {
+      out[name] = applyDocumentMerge(isPlainMergeTarget(target) ? target : {}, value, { performDeletions });
     } else {
       out[name] = value;
     }
     return;
   }
 
-  // Both cores REBUILD an array a dotted write descends into from the patch alone, destroying the
-  // entries the patch does not name; mirror that so the guards see what Foundry would store.
   if (Array.isArray(out[name])) {
     const container = {};
     applyMergeKey(container, rest, value, performDeletions);
-    const rebuilt = [];
-    for (const [entryKey, entryValue] of Object.entries(container)) {
-      if (entryKey === "length") {
-        rebuilt.length = Number(entryValue) || 0;
-        continue;
-      }
-      rebuilt[Number(entryKey)] = entryValue;
-    }
-    out[name] = rebuilt;
+    out[name] = rebuildArray(container);
     return;
   }
   const base = operator === "==" || !isPlainMergeTarget(out[name]) ? {} : out[name];
@@ -396,13 +421,17 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
         );
       if (context.dryRun) {
         const diff = {};
+        const setDiff = (/** @type {string[]} */ segments, /** @type {unknown} */ value) => {
+          /** @type {Record<string, any>} */
+          let node = diff;
+          for (const segment of segments.slice(0, -1)) node = node[segment] ??= {};
+          node[/** @type {string} */ (segments.at(-1))] = value;
+        };
         for (const key of Object.keys(patch ?? {})) {
           if (key === "id" || key === "_id") continue;
           const segments = key.split(".");
-          // Foundry re-emits a "==" forced-replacement key in every diff, so the probe can never
-          // confirm it directly; the fake must model that or the merged-preview fallback goes dark.
           if (segments.some((segment) => segment.startsWith("=="))) {
-            diff[key] = patch[key];
+            setDiff(segments, patch[key]);
             continue;
           }
           const cleanPath = segments.map((segment) =>
@@ -410,11 +439,11 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
           );
           const before = readAtPath(current, cleanPath);
           if (segments.some((segment) => segment.startsWith("-="))) {
-            if (before !== undefined) diff[key] = patch[key];
+            if (before !== undefined) setDiff(segments, patch[key]);
             continue;
           }
           const after = readAtPath(merged, cleanPath);
-          if (JSON.stringify(after) !== JSON.stringify(before)) diff[key] = after;
+          if (JSON.stringify(after) !== JSON.stringify(before)) setDiff(segments, after);
         }
         return diff;
       }
@@ -582,6 +611,7 @@ function fromCompendiumLikeCore(documentName, source, options = {}) {
 
 function makePackEntry(packId, documentName, source) {
   return {
+    id: source._id,
     documentName,
     pack: packId,
     uuid: `Compendium.${packId}.${documentName}.${source._id}`,
@@ -595,7 +625,7 @@ function makePackEntry(packId, documentName, source) {
  * @param {Record<string, any>} entries
  * @param {{ label?: string }} [options]
  */
-function makeCompendiumPack(packId, documentName, entries, { label } = {}) {
+export function makeCompendiumPack(packId, documentName, entries, { label } = {}) {
   return {
     collection: packId,
     documentName,
@@ -604,7 +634,12 @@ function makeCompendiumPack(packId, documentName, entries, { label } = {}) {
     getIndex: vi.fn(async () =>
       Object.entries(entries).map(([id, source]) => ({ _id: id, name: source.name }))
     ),
-    getDocument: vi.fn(async (id) => (entries[id] ? makePackEntry(packId, documentName, entries[id]) : null))
+    getDocument: vi.fn(async (id) => (entries[id] ? makePackEntry(packId, documentName, entries[id]) : null)),
+    getDocuments: vi.fn(async ({ _id__in: wanted } = {}) =>
+      Object.entries(entries)
+        .filter(([id]) => !Array.isArray(wanted) || wanted.includes(id))
+        .map(([, source]) => makePackEntry(packId, documentName, source))
+    )
   };
 }
 
@@ -4003,13 +4038,11 @@ export function installFakeFoundry() {
         settingRegistrations.set(id, { ...config, namespace, key, id });
       }),
       registerMenu: vi.fn(),
-      get: vi.fn((namespace, key) => {
+      get: vi.fn((namespace, key, options) => {
         const id = `${namespace}.${key}`;
-        if (settingValues.has(id)) {
-          return copySettingValue(settingValues.get(id));
-        }
-
         const registration = settingRegistrations.get(id);
+        if (options?.document) return fakeSettingDocument(settingValues, id, registration?.default ?? null);
+        if (settingValues.has(id)) return copySettingValue(settingValues.get(id));
         return registration && registration.default !== undefined
           ? copySettingValue(registration.default)
           : "";
@@ -4368,6 +4401,8 @@ export function installFakeFoundry() {
       mergeObject: (base, patch, options) => applyDocumentMerge(base, patch, options),
 
       deepClone: (value) => structuredClone(value),
+
+      expandObject,
 
       randomID: () =>
         `batchid${String((globalThis.__batchIdCounter = (globalThis.__batchIdCounter ?? 0) + 1)).padStart(8, "0")}`,

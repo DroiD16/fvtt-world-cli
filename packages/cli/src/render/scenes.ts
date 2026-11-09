@@ -1,4 +1,4 @@
-import { renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
+import { renderProvenanceLines, renderOwnershipLines } from "./common.js";
 
 export function renderSceneActivateResult(result: any) {
   return [
@@ -40,7 +40,7 @@ export function renderSceneDetails(scene: any) {
   for (const level of Array.isArray(scene?.levels) ? scene.levels : []) {
     lines.push(`level: ${renderLevelRow(level)}`);
   }
-  lines.push(...renderCompendiumSourceLines(scene));
+  lines.push(...renderProvenanceLines(scene));
 
   if (scene && Object.hasOwn(scene, "ownership")) {
     lines.push(...renderOwnershipLines(scene.ownership));
@@ -87,10 +87,32 @@ export function renderTokenDetails(sceneId: string, token: any) {
     `texture: ${JSON.stringify(token?.texture ?? null)}`
   ];
 
+  if (token && Object.hasOwn(token, "delta")) {
+    lines.push(`delta: ${token.delta === null ? "none" : "stored (use --json for values)"}`);
+  }
   if (token && Object.hasOwn(token, "prepared")) {
     lines.push(`prepared: ${Object.keys(token.prepared ?? {}).join(", ")} (use --json for values)`);
   }
   return lines.join("\n");
+}
+
+export function tokenDeltaSummaryCell(token: any) {
+  if (!token || !Object.hasOwn(token, "deltaSummary")) return "";
+  const summary = token.deltaSummary;
+  if (summary === null) return "\toverrides=none";
+  return `\toverrides=${(summary.overriddenKeys ?? []).join(",")} (item entries ${summary.itemEntries}, effect entries ${summary.effectEntries})`;
+}
+
+export function renderTokenDeltaRestore(result: any) {
+  const discarded = result.discarded;
+  const verb = result.dryRun ? "[dry-run] would discard" : "Discarded";
+  return [
+    `scene: ${result.sceneId}`,
+    `token: ${result.tokenId}`,
+    result.changed
+      ? `${verb} token overrides: ${(discarded?.overriddenKeys ?? []).join(", ")} (item entries ${discarded?.itemEntries ?? 0}, effect entries ${discarded?.effectEntries ?? 0})`
+      : "No token-level overrides; nothing to restore."
+  ].join("\n");
 }
 
 export function tokenItemPrefix(result: any) {

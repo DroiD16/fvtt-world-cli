@@ -80,6 +80,9 @@ level ids in a preview are provisional.
 Deleting a level also deletes its tokens and every placeable only on that level, and the dry run
 does not list them: read the scene's placeables (token `level`, others' `levels`) and tell the user
 what the delete removes before running it.
+An unlinked token keeps its own overrides, which edits to its world actor never reach. Before
+editing an actor that has placed tokens, read its tokens' overrides and tell the user which tokens
+the edit will not change.
 `setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
 When a setting write returns `requiresReload: true`, the change needs a GM-client reload to take
 effect; `system.reload` performs it, drops the bridge, and requires a reconnect wait before the
@@ -92,12 +95,13 @@ signal, not a failure — reconnect and continue rather than retrying the reload
 Discover → inspect schema → locate → read → smallest patch → dry-run → commit → verify. Never
 guess a command name or parameter.
 
-1. Run `fvtt-world-cli commands --json`. Continue only when `policy.applied` is `true` and the
-   required command is present. A `false` value means no bridge answered and the output is the static
-   registry, not the client's permissions. Report an absent command instead of seeking another way
-   to produce the same effect. Warn the user before a command marked `"approval": true`, and prefer
-   one `*-many` command when it can replace several approvals. Dotted protocol names map to spaced
-   CLI subcommands, such as `actor.item.update` to `actor item update`.
+1. Run `fvtt-world-cli commands --json`. Continue only when `policy.applied` (top level, beside
+   `result`) is `true` and the required command is present. A `false` value means no bridge
+   answered and the output is the static registry, not the client's permissions. Report an absent
+   command instead of seeking another way to produce the same effect. Warn the user before a
+   command marked `"approval": true`, and prefer one `*-many` command when it can replace several
+   approvals. Dotted protocol names map to spaced CLI subcommands, such as `actor.item.update` to
+   `actor item update`.
 2. `fvtt-world-cli schema <command>` shows the exact request parameters, required fields, enums,
    and whether unknown fields are accepted; `fvtt-world-cli <command path> --help` maps flags.
 3. Locate targets with the narrowest query: a family `list --name <substring> --limit <n>` when
@@ -106,8 +110,9 @@ guess a command name or parameter.
    never the basis of a write.
 4. `get` the complete target before mutating and work from the returned ids.
 5. Build the smallest valid patch. Nested objects merge recursively; plain arrays replace
-   wholesale; dotted paths reach permitted leaves; deletion operators remove permitted keys. A
-   `get` result contains read-only and derived fields, so build the patch from accepted fields only.
+   wholesale; dotted paths reach permitted leaves; `{"-=key": null}` deletes a permitted key, and
+   `{"==key": value}` replaces its whole value instead of merging. A `get` result contains
+   read-only and derived fields, so build the patch from accepted fields only.
    For arrays and extensible `system`/`flags` data: read, preserve everything that
    stays, change only the intended part.
 6. Dry-run every nontrivial mutation with the global `--dry-run` flag. It runs the same
@@ -171,6 +176,10 @@ Classify a failure before reacting:
   observed to change, not fully applied nested values. An embedded creation without a requested
   id may already exist despite an indeterminate error. Send only the remaining changes as a new
   operation with a fresh idempotency key, if using one.
+- An update `INTERNAL_ERROR` with `details.paths` is a stored-vs-requested mismatch. Compare
+  `requested` and `stored` for each path. A representation-only difference, such as HTML escaping (`&` stored as `&amp;`) or
+  whitespace, can be accepted as done. Report any other difference to the user. The same patch
+  stores the same result, so the next request is either a different patch or none.
 - Correct a structured Foundry rejection and submit the corrected content as a new operation.
 
 ## Bulk writes and actions

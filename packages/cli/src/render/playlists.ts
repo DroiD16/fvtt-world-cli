@@ -1,4 +1,4 @@
-import { renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
+import { renderProvenanceLines, renderOwnershipLines } from "./common.js";
 
 export function renderPlaylistDetails(playlist: any) {
   const lines = [
@@ -15,7 +15,7 @@ export function renderPlaylistDetails(playlist: any) {
     `flags: ${JSON.stringify(playlist?.flags ?? {}, null, 2)}`,
     `sounds: ${playlist?.sounds?.length ?? 0}`
   ];
-  lines.push(...renderCompendiumSourceLines(playlist));
+  lines.push(...renderProvenanceLines(playlist));
 
   if (playlist && Object.hasOwn(playlist, "ownership")) {
     lines.push(...renderOwnershipLines(playlist.ownership));

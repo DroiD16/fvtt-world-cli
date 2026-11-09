@@ -3,8 +3,15 @@ import { createBridgeError, toFoundryValidationError } from "./errors.js";
 
 import { getJournalById } from "./game-collections.js";
 import { previewDocumentCreate, previewDocumentUpdate, resolveEmbeddedDocumentClass } from "./world-docs.js";
-import { WORLD_VETO_REMEDY, probeRequestedState } from "./write-confirmation.js";
-import { structuredCloneish } from "./batch-guards.js";
+import {
+  WORLD_VETO_REMEDY,
+  changedRoots,
+  createMismatchError,
+  requestedRoots,
+  snapshotRoots
+} from "./mismatch-report.js";
+import { createIndeterminateError, probeRequestedState } from "./write-confirmation.js";
+import { readDocumentSource, structuredCloneish } from "./batch-guards.js";
 
 /**
  * The Journal world collection carries Foundry's two sharing entry points. Foundry 14 keeps the bare
@@ -182,6 +189,12 @@ export async function updateJournalPages(journalId, pages) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Journal page update API is not available");
   }
 
+  const before = new Map(
+    pages.map(({ _id, ...patch }) => [
+      _id,
+      snapshotRoots(readDocumentSource(journal.pages?.get?.(_id) ?? null), requestedRoots(patch))
+    ])
+  );
   const results = await journal.updateEmbeddedDocuments("JournalEntryPage", structuredCloneish(pages), {
     diff: true,
     render: true
@@ -199,11 +212,11 @@ export async function updateJournalPages(journalId, pages) {
       updatedPageIds.push(_id);
       continue;
     }
-    failure ??= { pageId: _id, patch, probe };
+    failure ??= { pageId: _id, page, patch, probe };
   }
 
   if (failure !== null) {
-    const { pageId, patch, probe } = failure;
+    const { pageId, page, patch, probe } = failure;
     const details = { journalId, pageId, updatedPageIds };
     const subject = `Journal page ${pageId} of journal ${journalId}`;
     if (probe.status === "missing") {
@@ -215,7 +228,12 @@ export async function updateJournalPages(journalId, pages) {
         details
       );
     }
-    if (probe.status === "rejected") {
+    const changedFields = changedRoots(
+      requestedRoots(patch),
+      before.get(pageId) ?? null,
+      readDocumentSource(page)
+    );
+    if (probe.status === "rejected" && changedFields !== null && changedFields.length === 0) {
       throw createBridgeError(
         ERROR_CODES.INVALID_PARAMS,
         `${subject} was NOT updated: Foundry REJECTED the patch. Foundry's client backend reports such a ` +
@@ -226,18 +244,24 @@ export async function updateJournalPages(journalId, pages) {
         { ...details, ...toFoundryValidationError(probe.error).details }
       );
     }
-    const fields =
-      probe.status === "pending" ? probe.fields : Object.keys(patch).filter((key) => key !== "_id");
-    throw createBridgeError(
-      ERROR_CODES.INTERNAL_ERROR,
-      `${subject} was NOT updated: Foundry resolved the update without applying it, which means a module's ` +
-        `preUpdateJournalEntryPage hook or a core _preUpdate refused the write, or the patch failed Foundry's ` +
-        `own client-side validation (which Foundry reports only as a UI notification). It still holds its ` +
-        `previous values for ${fields.join(", ") || "the requested fields"}. The pages in ` +
-        `details.updatedPageIds DID update — re-read the journal with journal.get before deciding what to do. ` +
-        WORLD_VETO_REMEDY,
-      { ...details, fields, validationError: probe.status === "unprovable" ? probe.probeError : null }
-    );
+    if (probe.status !== "pending") {
+      throw createIndeterminateError({
+        subject,
+        probe,
+        fields: requestedRoots(patch),
+        changedFields,
+        details,
+        note: "The pages in details.updatedPageIds DID update — re-read the journal with journal.get before deciding what to do."
+      });
+    }
+    throw createMismatchError({
+      subject,
+      report: probe.report,
+      hookName: "preUpdateJournalEntryPage",
+      remedy: `The pages in details.updatedPageIds DID update. ${WORLD_VETO_REMEDY}`,
+      changedFields,
+      details
+    });
   }
   return results;
 }
@@ -315,7 +339,7 @@ export async function deleteJournalPages(journalId, pageIds) {
 }
 
 export const JOURNAL_CATEGORY_VETO_REMEDY =
-  "There is no force flag for a world-side veto — disable the module that locks this journal (or make the change from the Foundry UI) and retry.";
+  "One possible cause is a module that locks this journal; there is no force flag to override that, and the change can also be made from the Foundry UI.";
 
 /**
  * @param {string} journalId

@@ -10,6 +10,7 @@ import {
 } from "../lib/world-docs.js";
 import { resolveBroadcastUsers } from "../lib/broadcast-targets.js";
 import { createBridgeError } from "../lib/errors.js";
+import { buildMismatchReport, createMismatchError } from "../lib/mismatch-report.js";
 import {
   applyConfirmedUpdate,
   assertDocumentDeleteCommitted,
@@ -190,13 +191,15 @@ export function createSceneHandlers() {
       await scene.activate();
       const stored = getSceneById(sceneId);
       if (!stored.active) {
-        throw createBridgeError(
-          ERROR_CODES.INTERNAL_ERROR,
-          `Foundry accepted the activation of scene ${sceneId} and still reports it as inactive, so the requested ` +
-            `state did not land: another client may have activated a different scene in the meantime. Re-read the ` +
-            `scene before retrying`,
-          { sceneId }
-        );
+        throw createMismatchError({
+          subject: `Scene ${sceneId}`,
+          report: buildMismatchReport([{ segments: ["active"], requested: true }], {
+            active: Boolean(stored.active)
+          }),
+          hookName: "preUpdateScene",
+          changedFields: [],
+          details: { sceneId }
+        });
       }
 
       return { sceneId, active: true, wasActive, changed: true };

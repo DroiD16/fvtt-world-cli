@@ -1,4 +1,4 @@
-import { renderCompendiumSourceLines, renderOwnershipLines } from "./common.js";
+import { renderProvenanceLines, renderOwnershipLines } from "./common.js";
 
 export function renderTableResultLine(result: any, ownerColumns: string[] = []): string {
   const range = Array.isArray(result?.range) ? result.range.join("-") : "";
@@ -30,7 +30,7 @@ export function renderTableDetails(table: any) {
     `results: ${results.length}`,
     ...results.map((result: any) => `  ${renderTableResultLine(result)}`)
   ];
-  lines.push(...renderCompendiumSourceLines(table));
+  lines.push(...renderProvenanceLines(table));
 
   if (table && Object.hasOwn(table, "ownership")) {
     lines.push(...renderOwnershipLines(table.ownership));

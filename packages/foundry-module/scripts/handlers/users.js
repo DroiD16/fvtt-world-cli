@@ -3,6 +3,7 @@ import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { createBridgeError, isFoundryValidationError, toFailureSummary } from "../lib/errors.js";
 import { getUserById, getUsersCollection } from "../lib/game-collections.js";
+import { buildMismatchReport, createMismatchError } from "../lib/mismatch-report.js";
 import { filterByName, paginate, serializeUser } from "../lib/serializers.js";
 import { previewDocumentCreate, previewDocumentUpdate } from "../lib/world-docs.js";
 import { applyConfirmedUpdate, assertRequestedWriteStorable } from "../lib/write-confirmation.js";
@@ -170,13 +171,19 @@ function assertPermissionsConfirmed(requested, stored, command) {
     return;
   }
 
-  throw createBridgeError(
-    ERROR_CODES.INTERNAL_ERROR,
-    `${command} was accepted by Foundry and then read back with ${unapplied
-      .map(([name]) => name)
-      .join(", ")} still unchanged, so the requested state did not land. Re-read the user before retrying`,
-    { command, unapplied: unapplied.map(([name]) => name), stored }
-  );
+  throw createMismatchError({
+    subject: command,
+    report: buildMismatchReport(
+      unapplied.map(([name, value]) =>
+        value === null
+          ? { segments: ["permissions", name], deletes: true }
+          : { segments: ["permissions", name], requested: value }
+      ),
+      { permissions: stored }
+    ),
+    hookName: "preUpdateUser",
+    details: { command, unapplied: unapplied.map(([name]) => name), stored }
+  });
 }
 
 export function createUserHandlers() {
@@ -343,13 +350,17 @@ export function createUserHandlers() {
 
       const stored = getUserById(params.userId);
       if ((stored.role ?? null) !== params.role) {
-        throw createBridgeError(
-          ERROR_CODES.INTERNAL_ERROR,
-          `Foundry accepted the role change for user ${params.userId} and then reported role ${stored.role}, so the ` +
-            `requested role did not land: the server refuses a role change it considers unauthorized. Re-read the ` +
-            `user before retrying`,
-          { command, userId: params.userId, requested: params.role, stored: stored.role ?? null }
-        );
+        throw createMismatchError({
+          subject: `User ${params.userId}`,
+          report: buildMismatchReport([{ segments: ["role"], requested: params.role }], {
+            role: stored.role ?? null
+          }),
+          hookName: "preUpdateUser",
+          changedFields: (stored.role ?? null) === previousRole ? [] : ["role"],
+          details: { command, userId: params.userId, requested: params.role, stored: stored.role ?? null },
+          remedy:
+            "The server also refuses a role change it considers unauthorized, and a module that blocks this write is another possible cause."
+        });
       }
 
       return {

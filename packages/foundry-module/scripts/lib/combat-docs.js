@@ -16,7 +16,7 @@ import {
 } from "./world-docs.js";
 
 export const COMBAT_VETO_REMEDY =
-  "There is no force flag for a world-side veto — disable the module that vetoes this combat write (or make the change from Foundry's Combat Tracker) and retry.";
+  "One possible cause is a module that vetoes this combat write; there is no force flag to override that, and the change can also be made from Foundry's Combat Tracker.";
 
 export function getCombatById(combatId) {
   const combat = getCombatsCollection().get?.(combatId) ?? null;
@@ -634,13 +634,10 @@ export async function startCombat(combat) {
   await combat.startCombat();
 }
 
-/**
- * @param {any} combat
- * @returns {Promise<any>}
- */
+/** @param {any} combat */
 export async function activateCombat(combat) {
   assertCombatMethodSupported(combat, "activate", "combat.activate");
-  return combat.activate();
+  await combat.activate();
 }
 
 export const COMBAT_ADVANCE_METHODS = Object.freeze({

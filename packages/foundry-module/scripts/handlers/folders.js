@@ -69,7 +69,7 @@ function capIds(ids) {
 }
 
 const FOLDER_VETO_REMEDY =
-  "There is no force flag for a world-side veto — disable the module that locks this folder (or edit it from the Foundry UI) and retry.";
+  "One possible cause is a module that locks this folder; there is no force flag to override that, and the folder can also be edited from the Foundry UI.";
 
 function computeDeletePlan(folder, { deleteSubfolders, deleteContents }) {
   const type = folder.type ?? folder.toObject?.().type ?? null;
@@ -394,7 +394,7 @@ export function createFolderHandlers() {
           if (!observedAnyCommit(reconciled)) {
             throw createBridgeError(
               ERROR_CODES.INTERNAL_ERROR,
-              `Folder ${folderId} was NOT deleted: Foundry resolved the delete without removing the document, which means a module's preDeleteFolder hook or a core _preDelete refused it. Nothing was deleted or re-parented. force:true does NOT override a world-side veto — disable the module that locks this folder (or delete it from the Foundry UI) and retry.`,
+              `Folder ${folderId} was NOT deleted: Foundry resolved the delete without removing the document, which means a module's preDeleteFolder hook or a core _preDelete refused it. Nothing was deleted or re-parented. force:true does NOT override a world-side veto. A module that locks this folder is one possible cause; the folder can also be deleted from the Foundry UI.`,
               { folderId, type: plan.type }
             );
           }

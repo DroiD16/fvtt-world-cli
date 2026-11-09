@@ -147,6 +147,14 @@ export async function assertClonePatchValid(document, patch = {}) {
   await computeDocumentUpdateDiff(document, patch ?? {});
 }
 
+/**
+ * @param {Record<string, any> | null | undefined} patch
+ * @returns {Record<string, any>}
+ */
+function expandLikeClient(patch) {
+  return /** @type {any} */ (globalThis).foundry.utils.expandObject(patch ?? {});
+}
+
 export async function previewDocumentUpdate(document, patch = {}) {
   if (typeof document?.clone !== "function" || typeof document?.updateSource !== "function") {
     throw createBridgeError(
@@ -160,7 +168,7 @@ export async function previewDocumentUpdate(document, patch = {}) {
     throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Document clone returned no update preview");
   }
 
-  preview.updateSource(patch ?? {});
+  preview.updateSource(expandLikeClient(patch));
   return preview;
 }
 
@@ -180,7 +188,11 @@ export async function computeDocumentUpdateDiff(document, patch = {}) {
   if (!probe || typeof probe.updateSource !== "function") {
     throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Document clone returned no update probe");
   }
-  const diff = probe.updateSource(patch ?? {}, { dryRun: true, fallback: false, clean: { partial: true } });
+  const diff = probe.updateSource(expandLikeClient(patch), {
+    dryRun: true,
+    fallback: false,
+    clean: { partial: true }
+  });
   return diff && typeof diff === "object" ? diff : {};
 }
 

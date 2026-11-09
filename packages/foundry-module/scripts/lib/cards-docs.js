@@ -13,7 +13,7 @@ import {
 } from "./world-docs.js";
 
 export const CARDS_VETO_REMEDY =
-  "There is no force flag for a world-side veto — disable the module that vetoes this cards write (or make the change from Foundry's Cards sidebar) and retry.";
+  "One possible cause is a module that vetoes this cards write; there is no force flag to override that, and the change can also be made from Foundry's Cards sidebar.";
 
 export function getCardsById(cardsId) {
   const cards = getCardsCollection().get?.(cardsId) ?? null;

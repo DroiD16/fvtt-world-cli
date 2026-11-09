@@ -17,8 +17,9 @@ becomes `scene token get`. Nested commands require the parent IDs as well as the
 
 With a bridge connected, discovery omits denied commands and marks approval requirements with
 `approval: true`. If the daemon or bridge is unavailable, it returns the static registry with
-`policy.applied: false`. Authentication and protocol errors do not trigger that fallback.
-`schema` and `--help` always describe the static registry, including denied commands.
+`policy.applied: false`; `policy` sits at the top level of the response, beside `result`.
+Authentication and protocol errors do not trigger that fallback. `schema` and `--help` always
+describe the static registry, including denied commands.
 
 ## Capability map
 
@@ -164,13 +165,15 @@ Use JSON flags such as `--data-json` and `--patch-json` for structured values. U
 
 - Nested objects merge recursively.
 - Ordinary arrays replace as a whole.
-- Dotted paths target object properties where permitted; dotted writes inside arrays are refused.
-- Foundry deletion syntax can remove permitted nested keys.
+- Dotted paths target object properties where permitted; a top-level dotted write into an array
+  field, such as `c.0`, is refused.
+- Foundry's operator keys work at any permitted nested level: `{"-=key": null}` deletes the key,
+  and `{"==key": value}` replaces the key's whole value instead of merging into it.
 - Embedded collections follow their family's Foundry semantics.
 
 Read arrays before editing and preserve unchanged values. For a wall's `c` field, send the complete
-`[x1, y1, x2, y2]`, not `c.0`. Invalid or ambiguous patch shapes return `INVALID_PARAMS` before
-mutation, including in bulk writes and dry runs. Correct the fields identified by the error.
+`[x1, y1, x2, y2]`, not `c.0`. Array writes that Foundry would discard return `INVALID_PARAMS`
+before mutation, including in bulk writes and dry runs. Correct the fields identified by the error.
 
 Prefer dedicated commands for creating embedded documents. A parent update that adds entries
 without `_id`, such as new `behaviors` in `scene.region.update`, can create them but return an
@@ -189,6 +192,12 @@ Denied commands remain denied in previews.
 A timeout or disconnect can happen after a write commits. An update error with `details.partial`
 or `details.indeterminate` can also mean that some changes persisted. Read affected state before
 retrying and send only what remains to be done.
+
+An update whose stored state differs from the request fails with `INTERNAL_ERROR`, and
+`details.paths` lists the differing paths with the requested and the stored value. Foundry core, the
+game system or a module may have changed the value; Foundry stores a raw `&` in rich text as
+`&amp;`, for example. The bridge cannot tell which, so the caller judges from the values. Sending
+the same patch again stores the same result.
 
 An idempotency key identifies one logical request and can prevent duplicate effects while its
 cached state survives. Reuse it only for the same request; a corrected or remaining patch is a

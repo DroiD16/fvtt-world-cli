@@ -868,7 +868,7 @@ describe("command router", () => {
         expect(response.ok).toBe(false);
         expect(response.error.code).toBe("INTERNAL_ERROR");
         expect(response.error.message).toContain("preUpdateJournalEntryCategory");
-        expect(response.error.message).toContain("was NOT updated");
+        expect(response.error.message).toContain("cannot verify");
 
         expect(response.error.message).toContain("locks this journal");
         expect(response.error.details.fields).toContain("name");

@@ -50,8 +50,11 @@ function identityFields(document, data) {
   return { id, _id: id };
 }
 
-function compendiumSourceField(data) {
-  return data?._stats?.compendiumSource ?? null;
+export function provenanceFields(data) {
+  return {
+    compendiumSource: data?._stats?.compendiumSource ?? null,
+    duplicateSource: data?._stats?.duplicateSource ?? null
+  };
 }
 
 function serializeOwnership(document, data) {
@@ -214,7 +217,7 @@ export function serializeJournal(journal, { ownership = false } = {}) {
 
     flags: cloneValue(data.flags ?? {}),
 
-    compendiumSource: compendiumSourceField(data),
+    ...provenanceFields(data),
     ...(ownership ? { ownership: serializeOwnership(journal, data) } : {})
   };
 }
@@ -253,7 +256,7 @@ export function serializeMacro(macro, { ownership = false } = {}) {
     scope: macro.scope ?? data.scope ?? null,
     flags: cloneValue(data.flags ?? {}),
 
-    compendiumSource: compendiumSourceField(data),
+    ...provenanceFields(data),
     ...(ownership ? { ownership: serializeOwnership(macro, data) } : {})
   };
 }
@@ -337,7 +340,7 @@ export function serializePlaylist(playlist, { ownership = false } = {}) {
     sort: playlist.sort ?? data.sort ?? 0,
     flags: cloneValue(data.flags ?? {}),
 
-    compendiumSource: compendiumSourceField(data),
+    ...provenanceFields(data),
 
     sounds: sounds.map((s) => serializePlaylistSound(s)),
     ...(ownership ? { ownership: serializeOwnership(playlist, data) } : {})
@@ -436,7 +439,7 @@ export function serializeTable(table, { ownership = false } = {}) {
     sort: table.sort ?? data.sort ?? 0,
     flags: cloneValue(data.flags ?? {}),
 
-    compendiumSource: compendiumSourceField(data),
+    ...provenanceFields(data),
     results: results.map((result) => serializeTableResult(result)),
     ...(ownership ? { ownership: serializeOwnership(table, data) } : {})
   };
@@ -745,7 +748,7 @@ export function serializeCards(cards, { ownership = false } = {}) {
     system: cloneValue(data.system ?? {}),
     flags: cloneValue(data.flags ?? {}),
 
-    compendiumSource: compendiumSourceField(data),
+    ...provenanceFields(data),
     cards: rows.map((card) => serializeCard(card)),
     ...(ownership ? { ownership: serializeOwnership(cards, data) } : {})
   };
@@ -895,7 +898,7 @@ export function serializeScene(
     ...(hasLevels && levels ? { levels: Array.from(scene.levels, serializeLevel) } : {}),
     ...(flags ? { flags: cloneValue(data.flags ?? {}) } : {}),
 
-    ...(provenance ? { compendiumSource: compendiumSourceField(data) } : {}),
+    ...(provenance ? provenanceFields(data) : {}),
     ...(counts ? { counts: sceneEmbeddedCounts(scene, data) } : {}),
     ...(ownership ? { ownership: serializeOwnership(scene, data) } : {})
   };
@@ -980,7 +983,7 @@ export function serializeItem(item, { include, ownership = false, nested = false
 
     ...(nested ? { effectCount: effects.length } : {}),
 
-    ...(nested ? {} : { compendiumSource: compendiumSourceField(data) }),
+    ...(nested ? {} : provenanceFields(data)),
     ...(ownership ? { ownership: serializeOwnership(item, data) } : {})
   };
 }
@@ -1149,12 +1152,49 @@ export function placeableName(document, data) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function holdsOverride(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value !== "object") return true;
+  return Object.keys(value).length > 0;
+}
+
+/**
+ * @param {Record<string, any> | null | undefined} delta
+ * @returns {{ itemEntries: number, effectEntries: number, overriddenKeys: string[] } | null}
+ */
+export function summarizeTokenDelta(delta) {
+  if (!delta || typeof delta !== "object") return null;
+  const overriddenKeys = Object.keys(delta).filter((key) => key !== "_id" && holdsOverride(delta[key]));
+  if (overriddenKeys.length === 0) return null;
+  return {
+    itemEntries: Array.isArray(delta.items) ? delta.items.length : 0,
+    effectEntries: Array.isArray(delta.effects) ? delta.effects.length : 0,
+    overriddenKeys
+  };
+}
+
+/**
+ * @param {any} token
+ * @param {any} [data]
+ * @returns {Record<string, any> | null}
+ */
+export function storedTokenDelta(token, data = documentData(token)) {
+  if (data.actorLink ?? token.actorLink ?? false) return null;
+  const delta = data.delta ?? null;
+  return delta && typeof delta === "object" ? cloneValue(delta) : null;
+}
+
+/**
  * @param {any} token
  * @param {{ include?: string[] }} [options]
  */
 export function serializeToken(token, { include } = {}) {
   const data = documentData(token);
   const withPrepared = Array.isArray(include) && include.includes("prepared");
+  const withDelta = Array.isArray(include) && include.includes("delta");
   return {
     ...identityFields(token, data),
     name: tokenName(token, data),
@@ -1177,12 +1217,18 @@ export function serializeToken(token, { include } = {}) {
     bar1: cloneValue(data.bar1 ?? null),
     bar2: cloneValue(data.bar2 ?? null),
     flags: cloneValue(data.flags ?? {}),
+    ...(withDelta ? { delta: storedTokenDelta(token, data) } : {}),
     ...(withPrepared ? { prepared: buildPreparedToken(token) } : {})
   };
 }
 
-export function serializeTokenSummary(token) {
+/**
+ * @param {any} token
+ * @param {{ include?: string[] }} [options]
+ */
+export function serializeTokenSummary(token, { include } = {}) {
   const data = documentData(token);
+  const withDelta = Array.isArray(include) && include.includes("delta");
   return {
     ...identityFields(token, data),
     name: tokenName(token, data),
@@ -1191,7 +1237,8 @@ export function serializeTokenSummary(token) {
     x: data.x ?? token.x ?? 0,
     y: data.y ?? token.y ?? 0,
     ...levelMembership(data, "level"),
-    hidden: data.hidden ?? token.hidden ?? false
+    hidden: data.hidden ?? token.hidden ?? false,
+    ...(withDelta ? { deltaSummary: summarizeTokenDelta(storedTokenDelta(token, data)) } : {})
   };
 }
 
@@ -1566,7 +1613,7 @@ export function serializeActor(actor, { include, ownership = false } = {}) {
     system: cloneValue(data.system ?? actor.system ?? {}),
     prototypeToken: normalizePrototypeToken(data),
 
-    compendiumSource: compendiumSourceField(data),
+    ...provenanceFields(data),
 
     itemCount: items.length,
     ...(withItems

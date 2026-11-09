@@ -7,8 +7,10 @@ import {
   buildBatchResult,
   finishThrownBatch
 } from "../lib/batch-write.js";
+import { sourceValuesEqual, structuredCloneish } from "../lib/batch-guards.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { createBridgeError, toFailureSummary } from "../lib/errors.js";
+import { buildMismatchReport, createMismatchError } from "../lib/mismatch-report.js";
 import { paginate, serializeSettingMetadata } from "../lib/serializers.js";
 import { serializeSettingValue } from "../lib/setting-values.js";
 import { MODULE_SETTING_KEYS, assertFoundryReady } from "../lib/validators.js";
@@ -297,12 +299,13 @@ function settingValidationError(id, failure) {
  */
 function validateSettingValue(id, config, value) {
   const type = config?.type;
+  serializeSettingValue(value);
 
   if (isSettingDataField(type)) {
     let cleaned;
     let failure;
     try {
-      cleaned = type.clean(value);
+      cleaned = type.clean(structuredCloneish(value));
       failure = type.validate(cleaned, { fallback: false });
     } catch (error) {
       throw settingValidationError(id, error);
@@ -317,10 +320,9 @@ function validateSettingValue(id, config, value) {
 
   if (isSettingDataModelClass(type)) {
     try {
-      const model = /** @type {any} */ (type).fromSource(value, { strict: true });
       return {
         validated: true,
-        value: typeof model?.toObject === "function" ? model.toObject() : value
+        value: /** @type {any} */ (type).fromSource(structuredCloneish(value), { strict: true })
       };
     } catch (error) {
       throw settingValidationError(id, error);
@@ -331,40 +333,22 @@ function validateSettingValue(id, config, value) {
 }
 
 /**
- * @param {unknown} left
- * @param {unknown} right
- * @returns {boolean}
+ * @param {string} namespace
+ * @param {string} key
+ * @param {string} id
+ * @returns {unknown}
  */
-function sameSettingValue(left, right) {
-  if (left === right) {
-    return true;
+function readStoredSettingJson(namespace, key, id) {
+  const game = assertFoundryReady();
+  try {
+    return JSON.parse(game.settings.get(namespace, key, { document: true })._source.value ?? "null");
+  } catch (error) {
+    throw createBridgeError(
+      ERROR_CODES.SETTING_READ_FAILED,
+      `Foundry failed to read the stored document of setting ${id}; see details.message for the underlying error`,
+      { id, message: describeForeignError(error) }
+    );
   }
-
-  if (Array.isArray(left) || Array.isArray(right)) {
-    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
-      return false;
-    }
-
-    return left.every((entry, index) => sameSettingValue(entry, right[index]));
-  }
-
-  if (typeof left !== "object" || typeof right !== "object" || left === null || right === null) {
-    return false;
-  }
-
-  const leftKeys = Object.keys(left);
-  const rightKeys = Object.keys(right);
-  return (
-    leftKeys.length === rightKeys.length &&
-    leftKeys.every(
-      (key) =>
-        Object.hasOwn(right, key) &&
-        sameSettingValue(
-          /** @type {Record<string, unknown>} */ (left)[key],
-          /** @type {Record<string, unknown>} */ (right)[key]
-        )
-    )
-  );
 }
 
 /**
@@ -413,8 +397,9 @@ function prepareSettingWrite(item) {
 
   const row = buildSettingRow(id, config);
   const previous = readSettingValue(item.namespace, item.key, id);
+  const storedBefore = readStoredSettingJson(item.namespace, item.key, id);
   const { validated, value } = validateSettingValue(id, config, item.value);
-  const serialized = serializeSettingValue(value);
+  const requested = JSON.parse(JSON.stringify(value) ?? "null");
 
   return {
     id,
@@ -423,17 +408,18 @@ function prepareSettingWrite(item) {
     scope: row.scope,
     requiresReload: row.requiresReload,
     previous,
-    value: serialized,
     validated,
-    unchanged: sameSettingValue(previous, serialized)
+    requested,
+    storedBefore,
+    unchanged: sourceValuesEqual(storedBefore, requested)
   };
 }
 
 /**
- * @param {{ id: string, namespace: string, key: string, scope: unknown, requiresReload: unknown, previous: unknown, value: unknown, validated: boolean, unchanged: boolean }} prepared
+ * @param {{ id: string, namespace: string, key: string }} prepared
  * @param {unknown} requested
  */
-async function applySettingWrite(prepared, requested) {
+async function writeSetting(prepared, requested) {
   const game = assertFoundryReady();
   if (typeof game.settings?.set !== "function") {
     throw createBridgeError(
@@ -442,23 +428,33 @@ async function applySettingWrite(prepared, requested) {
     );
   }
 
-  await game.settings.set(prepared.namespace, prepared.key, requested);
-  const stored = readSettingValue(prepared.namespace, prepared.key, prepared.id);
-  if (sameSettingValue(stored, prepared.previous)) {
-    throw createBridgeError(
-      ERROR_CODES.INTERNAL_ERROR,
-      `Foundry accepted the write to setting ${prepared.id} and then still reports the previous value, so the ` +
-        `requested state did not land: an onChange handler or the registering package rewrote it. Nothing that ` +
-        `was asked for is in effect. Re-read the setting before retrying`,
-      { id: prepared.id, previous: prepared.previous, requested: prepared.value }
-    );
-  }
-
-  return stored;
+  await game.settings.set(prepared.namespace, prepared.key, structuredCloneish(requested));
+  return {
+    stored: readStoredSettingJson(prepared.namespace, prepared.key, prepared.id),
+    value: readSettingValue(prepared.namespace, prepared.key, prepared.id)
+  };
 }
 
 /**
- * @param {{ id: string, namespace: string, key: string, scope: unknown, requiresReload: unknown, previous: unknown, value: unknown, validated: boolean }} prepared
+ * @param {{ id: string, previous: unknown, requested: unknown, storedBefore: unknown }} prepared
+ * @param {unknown} stored
+ */
+function settingMismatch(prepared, stored) {
+  if (sourceValuesEqual(stored, prepared.requested)) return null;
+  return createMismatchError({
+    subject: `Setting ${prepared.id}`,
+    report: buildMismatchReport([{ segments: ["value"], requested: prepared.requested }], {
+      value: stored
+    }),
+    changedFields: sourceValuesEqual(stored, prepared.storedBefore) ? [] : ["value"],
+    details: { id: prepared.id, previous: prepared.previous, requested: prepared.requested },
+    remedy:
+      "One possible cause is an onChange handler or the package that registered the setting; the value can also be set from Foundry's Configure Settings."
+  });
+}
+
+/**
+ * @param {{ id: string, namespace: string, key: string, scope: unknown, requiresReload: unknown, previous: unknown, validated: boolean }} prepared
  * @param {unknown} value
  * @param {boolean} changed
  */
@@ -594,15 +590,17 @@ export function createSettingHandlers() {
     async "setting.set"(params) {
       const prepared = prepareSettingWrite(params);
       if (isDryRun(params)) {
-        return dryRunResponse(settingWriteResult(prepared, prepared.value, !prepared.unchanged));
+        return dryRunResponse(settingWriteResult(prepared, prepared.requested, !prepared.unchanged));
       }
 
       if (prepared.unchanged) {
         return settingWriteResult(prepared, prepared.previous, false);
       }
 
-      const stored = await applySettingWrite(prepared, params.value);
-      return settingWriteResult(prepared, stored, true);
+      const written = await writeSetting(prepared, params.value);
+      const mismatch = settingMismatch(prepared, written.stored);
+      if (mismatch) throw mismatch;
+      return settingWriteResult(prepared, written.value, true);
     },
 
     async "setting.set-many"(params) {
@@ -627,7 +625,7 @@ export function createSettingHandlers() {
       if (isDryRun(params)) {
         return buildBatchResult({
           outcomes: elements.map((element, index) => ({
-            ...settingWriteResult(element, element.value, !element.unchanged),
+            ...settingWriteResult(element, element.requested, !element.unchanged),
             index,
             status: element.unchanged ? BATCH_STATUS.UNCHANGED : BATCH_STATUS.UPDATED
           })),
@@ -635,7 +633,7 @@ export function createSettingHandlers() {
         });
       }
 
-      /** @type {Array<{index:number,id:string|null,status:string}>} */
+      /** @type {Array<{index:number,id:string|null,status:string,paths?:unknown[]}>} */
       const outcomes = [];
       /** @type {{ code: string, message: string, error: unknown } | null} */
       let failure = null;
@@ -655,17 +653,30 @@ export function createSettingHandlers() {
           continue;
         }
 
+        let written;
         try {
-          const stored = await applySettingWrite(element, items[index].value);
-          outcomes.push({
-            ...settingWriteResult(element, stored, true),
-            index,
-            status: BATCH_STATUS.UPDATED
-          });
+          written = await writeSetting(element, items[index].value);
         } catch (error) {
           failure = { error, ...toFailureSummary(error) };
           outcomes.push({ index, id: element.id, status: BATCH_STATUS.UNKNOWN });
+          continue;
         }
+        const mismatch = settingMismatch(element, written.stored);
+        if (mismatch) {
+          failure = { error: mismatch, ...toFailureSummary(mismatch) };
+          outcomes.push({
+            index,
+            id: element.id,
+            status: BATCH_STATUS.DROPPED,
+            paths: mismatch.details.paths
+          });
+          continue;
+        }
+        outcomes.push({
+          ...settingWriteResult(element, written.value, true),
+          index,
+          status: BATCH_STATUS.UPDATED
+        });
       }
 
       if (failure) {

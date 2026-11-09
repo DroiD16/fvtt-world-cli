@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  assertBatchArrayWritesReflected,
-  assertNoAmbiguousBatchKeySpellings,
-  batchMergedConfirmationKeys,
-  batchValuesEqual
-} from "../scripts/lib/batch-guards.js";
+import { assertBatchArrayWritesReflected, sourceValuesEqual } from "../scripts/lib/batch-guards.js";
 import {
   BATCH_STATUS,
   annotateBatchElementFailure,
@@ -26,15 +21,24 @@ import {
 } from "../scripts/generated/protocol.js";
 import { BridgeError, createBridgeError, toProtocolError } from "../scripts/lib/errors.js";
 
+import { ForcedDeletion, ForcedReplacement, dataFieldOperators } from "./helpers/data-field-operators.js";
+
 const ERROR_CODES_VALUES = Object.values(ERROR_CODES);
 
+function withStoredSource(row) {
+  if (row && typeof row === "object" && "source" in row && !("_source" in row)) {
+    Object.defineProperty(row, "_source", { get: () => row.source, enumerable: false, configurable: true });
+  }
+  return row;
+}
+
 function createStore(rows = []) {
-  const byId = new Map(rows.map((row) => [row.id, row]));
+  const byId = new Map(rows.map((row) => [row.id, withStoredSource(row)]));
   return {
     byId,
     has: (id) => byId.has(id),
     get: (id) => byId.get(id) ?? null,
-    set: (row) => byId.set(row.id, row),
+    set: (row) => byId.set(row.id, withStoredSource(row)),
     delete: (id) => byId.delete(id)
   };
 }
@@ -679,39 +683,6 @@ describe("batch-write engine: update-many", () => {
     };
   };
 
-  it("refuses an AMBIGUOUS element patch before mergePreview is even called", async () => {
-    const row = { id: "wall-1", source: { c: [0, 0, 1, 1] } };
-    const rowStore = createStore([row]);
-    const mergePreview = vi.fn(async () => {
-      throw createBridgeError(ERROR_CODES.INVALID_PARAMS, "the v13 merge probe complains about [1,2]");
-    });
-    await expect(
-      executeBatchUpdate({
-        ...baseArgs(rowStore),
-        patches: [{ id: "wall-1", patch: { "==c": [1, 2], c: [1, 2, 3, 4] } }],
-        resolve: () => row,
-        mergePreview
-      })
-    ).rejects.toMatchObject({
-      code: ERROR_CODES.INVALID_PARAMS,
-      details: { index: 0, id: "wall-1", ambiguousRoot: "c", ambiguousKeys: ["==c", "c"] }
-    });
-    expect(mergePreview).not.toHaveBeenCalled();
-  });
-
-  it("refuses an AMBIGUOUS element patch under --dry-run too (one shared prevalidation path)", async () => {
-    const row = { id: "wall-1", source: { ds: 0 } };
-    const rowStore = createStore([row]);
-    await expect(
-      executeBatchUpdate({
-        ...baseArgs(rowStore),
-        dryRun: true,
-        patches: [{ id: "wall-1", patch: { ds: 1, "-=ds": null } }],
-        resolve: () => row
-      })
-    ).rejects.toMatchObject({ code: ERROR_CODES.INVALID_PARAMS, details: { ambiguousRoot: "ds" } });
-  });
-
   it("refuses the whole batch when an element's array write COLLAPSES onto the stored value", async () => {
     await expect(executeBatchUpdate(levelsArgs({ nope: 1 }, [], []))).rejects.toMatchObject({
       code: ERROR_CODES.INVALID_PARAMS,
@@ -1002,8 +973,28 @@ describe("batch-write engine: update-many", () => {
     expect(result.complete).toBe(false);
     expect(result.outcomes).toEqual([
       { index: 0, id: "wall-1", status: "updated" },
-      { index: 1, id: "wall-2", status: "dropped" }
+      { index: 1, id: "wall-2", status: "dropped", paths: [{ path: "ds", requested: 1, stored: 0 }] }
     ]);
+  });
+
+  it("lists at most the path limit on a dropped outcome and counts the rest", async () => {
+    const flags = Object.fromEntries(Array.from({ length: 23 }, (_unused, index) => [`k${index}`, index]));
+    const result = await executeBatchUpdate(
+      baseArgs(store, {
+        patches: [
+          { id: "wall-1", patch: { door: 1 } },
+          { id: "wall-2", patch: { flags } }
+        ],
+        update: async () => {
+          store.get("wall-1").source.door = 1;
+          return [store.get("wall-1"), store.get("wall-2")];
+        }
+      })
+    );
+    const outcome = /** @type {any} */ (result.outcomes[1]);
+    expect(outcome.status).toBe("dropped");
+    expect(outcome.paths).toHaveLength(20);
+    expect(outcome.pathsTruncated).toBe(3);
   });
 
   it("does NOT credit an element Foundry RETURNED whose requested key never landed", async () => {
@@ -1033,7 +1024,7 @@ describe("batch-write engine: update-many", () => {
 
     expect(result.outcomes).toEqual([
       { index: 0, id: "wall-1", status: "updated" },
-      { index: 1, id: "wall-2", status: "dropped" }
+      { index: 1, id: "wall-2", status: "dropped", paths: [{ path: "door", requested: 1, stored: 0 }] }
     ]);
   });
 
@@ -1103,7 +1094,14 @@ describe("batch-write engine: update-many", () => {
     expect(ecfStore.get("region-1").source.behaviors).toHaveLength(1);
 
     expect(siblingStripped?.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-    expect(siblingStripped?.details.outcomes).toEqual([{ index: 0, id: "region-1", status: "dropped" }]);
+    expect(siblingStripped?.details.outcomes).toEqual([
+      {
+        index: 0,
+        id: "region-1",
+        status: "dropped",
+        paths: [{ path: "name", requested: "Zone A", absent: "stored" }]
+      }
+    ]);
 
     ecfStore.get("region-1").source.behaviors = [];
     /** @type {any} */
@@ -1250,7 +1248,9 @@ describe("batch-write engine: update-many", () => {
     expect(mixedStore.get("region-1").source.behaviors).toHaveLength(2);
     expect(mixedStore.get("region-1").source.behaviors[0].disabled).toBe(false);
     expect(addressedDropped?.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-    expect(addressedDropped?.details.outcomes).toEqual([{ index: 0, id: "region-1", status: "dropped" }]);
+    expect(addressedDropped?.details.outcomes).toMatchObject([
+      { index: 0, id: "region-1", status: "dropped", paths: [{ path: "behaviors" }] }
+    ]);
 
     mixedStore.get("region-1").source.behaviors = [{ _id: B1, type: "pause", disabled: false }];
     const bothLanded = await executeBatchUpdate(
@@ -1420,7 +1420,7 @@ describe("batch-write engine: update-many", () => {
     expect(prepare.mock.calls[0][2]).toBe(store.get("wall-1"));
   });
 
-  it("reports the all-failed tally per STATUS, because a CONVERGED element can sit beside a refused one", async () => {
+  it("reports the all-failed tally per STATUS, because a CONVERGED element can sit beside a dropped one", async () => {
     /** @type {any} */
     let error = null;
     try {
@@ -1438,8 +1438,7 @@ describe("batch-write engine: update-many", () => {
     }
     expect(error?.code).toBe(ERROR_CODES.INTERNAL_ERROR);
     expect(error?.details.outcomes.map((outcome) => outcome.status)).toEqual(["unchanged", "dropped"]);
-    expect(error?.message).toContain("refused every element it was sent");
-    expect(error?.message).toContain("1 refused, 0 unestablished, 1 already converged");
+    expect(error?.message).toContain("cannot verify");
 
     expect(error?.message).not.toContain("refused every element (");
   });
@@ -1506,7 +1505,7 @@ describe("batch-write engine: update-many confirmation for OPERATOR spellings", 
     });
   });
 
-  it("confirms an embedded-collection element by comparing the by-_id MERGED preview against stored state", async () => {
+  it("confirms a by-_id embedded-collection element once the post-write probe finds nothing pending", async () => {
     const B1 = "b1b1b1b1b1b1b1b1";
     const B2 = "b2b2b2b2b2b2b2b2";
     const behaviors = () => [
@@ -1521,26 +1520,23 @@ describe("batch-write engine: update-many confirmation for OPERATOR spellings", 
       }
     };
     const regionStore = createStore([row]);
-
-    const mergePreview = async (document, patch) => {
-      const merged = structuredClone(document.source);
-      for (const entry of patch["==behaviors"] ?? patch.behaviors ?? []) {
-        const target = merged.behaviors.find((candidate) => candidate._id === entry._id);
-        if (target) Object.assign(target, entry);
-      }
-      return { toObject: () => merged };
-    };
+    const pendingEntries = (document, patch) =>
+      (patch.behaviors ?? []).filter((entry) => {
+        const target = document.source.behaviors.find((candidate) => candidate._id === entry._id);
+        return !target || Object.entries(entry).some(([key, value]) => target[key] !== value);
+      });
 
     const base = {
       command: "scene.region.update-many",
-      patches: [{ id: "region-1", patch: { "==behaviors": [{ _id: B1, disabled: true }] } }],
+      patches: [{ id: "region-1", patch: { behaviors: [{ _id: B1, disabled: true }] } }],
       dryRun: false,
       resolve: (id) => regionStore.get(id),
       prepare: (patch) => ({ ...patch }),
-
-      diff: async (_document, patch) => ({ ...patch }),
-      mergePreview,
-
+      diff: async (document, patch) => {
+        const pending = pendingEntries(document, patch);
+        return pending.length > 0 ? { behaviors: pending } : {};
+      },
+      mergePreview: async (document) => ({ toObject: () => structuredClone(document.source) }),
       documentClass: {}
     };
 
@@ -1567,7 +1563,14 @@ describe("batch-write engine: update-many confirmation for OPERATOR spellings", 
       error = thrown;
     }
     expect(error?.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-    expect(error?.details?.outcomes).toEqual([{ index: 0, id: "region-1", status: "dropped" }]);
+    expect(error?.details?.outcomes).toMatchObject([
+      {
+        index: 0,
+        id: "region-1",
+        status: "dropped",
+        paths: [{ path: "behaviors", requested: [{ _id: B1, disabled: true }], stored: behaviors() }]
+      }
+    ]);
   });
 
   it("returns the cacheable ok BODY for a landed `==` element whose batch then THREW", async () => {
@@ -1598,38 +1601,15 @@ describe("batch-write engine: update-many confirmation for OPERATOR spellings", 
       error = thrown;
     }
     expect(store.get("wall-1").source.c).toEqual([0, 0, 1, 1]);
-    expect(error?.details.outcomes).toEqual([{ index: 0, id: "wall-1", status: "dropped" }]);
-    expect(error?.message).toContain("refused every element it was sent");
-  });
-
-  it("reports `unknown`, never `dropped`, when the comparison itself cannot be made", async () => {
-    const opaque = createStore([{ id: "wall-1", source: { c: [0, 0, 1, 1] } }]);
-    /** @type {any} */
-    let error = null;
-    try {
-      await executeBatchUpdate(args(opaque, { update: async () => [] }));
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details.outcomes).toEqual([{ index: 0, id: "wall-1", status: "unknown" }]);
-    expect(error?.message).toContain("could not establish");
-  });
-
-  it("leaves a PLAIN-key element on the diff probe alone (the comparison is opt-in per patch)", () => {
-    expect(batchMergedConfirmationKeys({ door: 1, "threshold.light": 12 })).toEqual([]);
-    expect(batchMergedConfirmationKeys({})).toEqual([]);
-    expect(batchMergedConfirmationKeys(/** @type {any} */ (null))).toEqual([]);
-
-    expect(batchMergedConfirmationKeys({ "==c": [1, 2, 3, 4], ds: 1 })).toEqual(["c", "ds"]);
-    expect(batchMergedConfirmationKeys({ "-=flags": null, "flags.mod.x": 1 })).toEqual(["flags"]);
-  });
-
-  it("arms the comparison for an operator spelled on an INNER segment, which v13's diff also never confirms", () => {
-    expect(batchMergedConfirmationKeys({ "threshold.==light": 7 })).toEqual(["threshold"]);
-    expect(batchMergedConfirmationKeys({ "threshold.==light": 7, ds: 0 })).toEqual(["threshold", "ds"]);
-    expect(batchMergedConfirmationKeys({ "flags.core.-=a": null, ds: 1 })).toEqual(["flags", "ds"]);
-
-    expect(batchMergedConfirmationKeys({ "==threshold.==light": 7 })).toEqual(["threshold"]);
+    expect(error?.details.outcomes).toEqual([
+      {
+        index: 0,
+        id: "wall-1",
+        status: "dropped",
+        paths: [{ path: "c", requested: [5, 6, 7, 8], stored: [0, 0, 1, 1] }]
+      }
+    ]);
+    expect(error?.message).toContain("cannot verify");
   });
 
   describe("an INNER-segment operator element, judged end to end", () => {
@@ -1686,9 +1666,72 @@ describe("batch-write engine: update-many confirmation for OPERATOR spellings", 
         error = thrown;
       }
       expect(row.source.threshold.light).toBe(5);
-      expect(error?.details.outcomes).toEqual([{ index: 0, id: "wall-1", status: "dropped" }]);
+      expect(error?.details.outcomes).toEqual([
+        {
+          index: 0,
+          id: "wall-1",
+          status: "dropped",
+          paths: [{ path: "threshold.light", requested: 7, stored: 5 }]
+        }
+      ]);
     });
   });
+});
+
+describe("batch-write engine: update-many pre-write no-op detection", () => {
+  beforeEach(() => {
+    globalThis.foundry.data = { operators: dataFieldOperators };
+  });
+
+  const source = () => ({
+    flags: { kept: 1 },
+    system: { activities: { a1: { n: 1 } }, attrs: { a: 5, b: "dflt" } }
+  });
+
+  /** @type {Array<[string, Record<string, any>, () => Record<string, any>]>} */
+  const cases = [
+    [
+      "a legacy deletion of an absent key",
+      { flags: { "-=gone": null } },
+      () => ({ flags: { "-=gone": null } })
+    ],
+    [
+      "a v14 ForcedDeletion of an absent typed-object key",
+      { system: { activities: { "-=zz": null } } },
+      () => ({ system: { activities: { zz: new ForcedDeletion() } } })
+    ],
+    [
+      "a v13 forced replacement with the identical value",
+      { system: { "==attrs": { a: 5 } } },
+      () => ({ system: { "==attrs": { a: 5, b: "dflt" } } })
+    ],
+    [
+      "an equal nested forced replacement on a SchemaField",
+      { system: { "==attrs": { a: 5 } } },
+      () => ({ system: { attrs: new ForcedReplacement({ a: 5, b: "dflt" }) } })
+    ]
+  ];
+
+  for (const dryRun of [false, true]) {
+    for (const [label, patch, probe] of cases) {
+      it(`reports ${label} as unchanged and sends nothing (${dryRun ? "dry run" : "real"})`, async () => {
+        const store = createStore([{ id: "item-1", source: source() }]);
+        const update = vi.fn(async () => []);
+        const result = await executeBatchUpdate({
+          command: "item.update-many",
+          patches: [{ id: "item-1", patch }],
+          dryRun,
+          resolve: (id) => store.get(id),
+          prepare: (value) => ({ ...value }),
+          diff: async () => probe(),
+          mergePreview: async (document) => ({ toObject: () => structuredClone(document.source) }),
+          update
+        });
+        expect(update).not.toHaveBeenCalled();
+        expect(result.outcomes).toEqual([{ index: 0, id: "item-1", status: "unchanged" }]);
+      });
+    }
+  }
 });
 
 describe("batch-write engine: the per-element SUMMARY seam", () => {
@@ -1844,7 +1887,13 @@ describe("batch-write engine: the per-element SUMMARY seam", () => {
       expect(result.outcomes).toEqual([
         { index: 0, id: "token-1", status: "updated", name: "Renamed" },
         { index: 1, id: "token-2", status: "unchanged", name: "Unmoved" },
-        { index: 2, id: "token-3", status: "dropped", name: "Third" }
+        {
+          index: 2,
+          id: "token-3",
+          status: "dropped",
+          name: "Third",
+          paths: [{ path: "name", requested: "Refused", stored: "Third" }]
+        }
       ]);
     });
 
@@ -3139,21 +3188,21 @@ describe("batch-write: the silently-discarded ARRAY guard", () => {
   });
 
   it("compares structurally (nested arrays/objects), not by reference", () => {
-    expect(batchValuesEqual([{ a: [1] }], [{ a: [1] }])).toBe(true);
-    expect(batchValuesEqual([{ a: [1] }], [{ a: [2] }])).toBe(false);
-    expect(batchValuesEqual([1, 2], [1, 2, 3])).toBe(false);
-    expect(batchValuesEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false);
+    expect(sourceValuesEqual([{ a: [1] }], [{ a: [1] }])).toBe(true);
+    expect(sourceValuesEqual([{ a: [1] }], [{ a: [2] }])).toBe(false);
+    expect(sourceValuesEqual([1, 2], [1, 2, 3])).toBe(false);
+    expect(sourceValuesEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false);
 
-    expect(batchValuesEqual(Object.assign(Object.create(null), { a: 1 }), { a: 1 })).toBe(true);
+    expect(sourceValuesEqual(Object.assign(Object.create(null), { a: 1 }), { a: 1 })).toBe(true);
   });
 
   it("never declares two DISTINCT key-less objects equal (an equal verdict here means ALLOW)", () => {
-    expect(batchValuesEqual(new Set([1, 2]), new Set([3, 4]))).toBe(false);
-    expect(batchValuesEqual(new Date(0), new Date(1_000_000_000))).toBe(false);
-    expect(batchValuesEqual(new Map([["a", 1]]), new Map([["b", 2]]))).toBe(false);
+    expect(sourceValuesEqual(new Set([1, 2]), new Set([3, 4]))).toBe(false);
+    expect(sourceValuesEqual(new Date(0), new Date(1_000_000_000))).toBe(false);
+    expect(sourceValuesEqual(new Map([["a", 1]]), new Map([["b", 2]]))).toBe(false);
 
     const shared = new Set([1]);
-    expect(batchValuesEqual(shared, shared)).toBe(true);
+    expect(sourceValuesEqual(shared, shared)).toBe(true);
   });
 });
 
@@ -3865,244 +3914,6 @@ describe("batch-write: the array guard models EmbeddedCollectionField MERGE-BY-_
         id: "region-1"
       })
     ).not.toThrow();
-  });
-});
-
-describe("batch-write: two spellings of ONE field in one element patch", () => {
-  const B1 = "b1b1b1b1b1b1b1b1";
-
-  const behaviorsField = { getCollection: () => new Map(), schema: { get: () => null }, clean: () => [] };
-  const plainArrayField = { clean: (value) => (Array.isArray(value) ? value : []) };
-  const documentClass = {
-    schema: {
-      get: (key) =>
-        key === "behaviors"
-          ? behaviorsField
-          : key === "shapes"
-            ? plainArrayField
-            : key === "c"
-              ? plainArrayField
-              : {}
-    }
-  };
-  const scan = (patch) =>
-    assertNoAmbiguousBatchKeySpellings({
-      documentClass,
-      patch,
-      index: 3,
-      command: "scene.wall.update-many",
-      id: "wall-9"
-    });
-
-  it("REFUSES two spellings of the same TOP-LEVEL root, in both key orders", () => {
-    /** @type {any} */
-    let error = null;
-    try {
-      scan({ "==threshold": { light: 2 }, threshold: { light: 1 } });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(error?.message).toContain("scene.wall.update-many element 3 (id wall-9)");
-    expect(error?.message).toContain('"threshold"');
-    expect(error?.message).toContain("Merge them into one key and retry");
-    expect(error?.details).toMatchObject({
-      index: 3,
-      id: "wall-9",
-      field: "threshold",
-      ambiguousRoot: "threshold"
-    });
-    expect(error?.details?.ambiguousKeys).toEqual(["==threshold", "threshold"]);
-
-    expect(() => scan({ threshold: { light: 1 }, "==threshold": { light: 2 } })).toThrow(/more than one key/);
-
-    expect(() => scan({ ds: 1, "-=ds": null })).toThrow(/more than one key/);
-    expect(() => scan({ "-=ds": null, ds: 1 })).toThrow(/more than one key/);
-    expect(() => scan({ "==ds": 1, "-=ds": null })).toThrow(/more than one key/);
-    expect(() => scan({ "-=ds": null, "==ds": 1 })).toThrow(/more than one key/);
-
-    expect(() => scan({ "threshold.light": 9, "==threshold.light": 7 })).toThrow(/more than one key/);
-    expect(() => scan({ "==threshold.light": 7, "threshold.light": 9 })).toThrow(/more than one key/);
-  });
-
-  it("REFUSES an OPERATOR-spelled wholesale root beside a dotted key under it", () => {
-    expect(() => scan({ "==threshold": { light: 1 }, "threshold.light": 9 })).toThrow(/more than one key/);
-    expect(() => scan({ "threshold.light": 9, "==threshold": { light: 1 } })).toThrow(/more than one key/);
-    expect(() => scan({ "-=threshold": null, "threshold.light": 9 })).toThrow(/more than one key/);
-
-    /** @type {any} */
-    let error = null;
-    try {
-      scan({ "==threshold": { light: 1 }, "threshold.light": 9 });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details?.ambiguityRule).toBe(2);
-    expect(error?.message).toContain("Foundry 13 applies the narrower key on top of the forced replacement");
-    expect(error?.message).not.toContain("keeps the LAST spelling");
-    expect(error?.message).toContain("Merge them into one key and retry");
-
-    try {
-      scan({ threshold: { light: 1 }, "==threshold": { light: 2 } });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details?.ambiguityRule).toBe(1);
-    expect(error?.message).toContain("keeps the LAST spelling");
-    expect(error?.message).not.toContain("applies the narrower key");
-  });
-
-  it("ALLOWS ordinary patches that merely SHARE a root", () => {
-    expect(() => scan({ "threshold.light": 9, "threshold.sight": 8 })).not.toThrow();
-    expect(() => scan({ "flags.mod.a": 1, "flags.mod.b": 2 })).not.toThrow();
-
-    expect(() => scan({ threshold: { light: 1, sight: 1 }, "threshold.light": 9 })).not.toThrow();
-    expect(() => scan({ "threshold.light": 9, threshold: { light: 1, sight: 1 } })).not.toThrow();
-
-    expect(() => scan({ "==threshold": { light: 1 }, ds: 1, "-=door": null, "c.0": 5 })).not.toThrow();
-    expect(() => scan({})).not.toThrow();
-  });
-
-  it("REFUSES a nested operator spelling on an INNER segment of a top-level dotted key", () => {
-    expect(() => scan({ "threshold.light": 9, "threshold.==light": 7 })).toThrow(/more than one key/);
-    expect(() => scan({ "threshold.==light": 7, "threshold.light": 9 })).toThrow(/more than one key/);
-    expect(() => scan({ "threshold.light": 9, "threshold.-=light": null })).toThrow(/more than one key/);
-    expect(() => scan({ "flags.core.a": 1, "flags.core.==a": 7 })).toThrow(/more than one key/);
-
-    expect(() => scan({ "flags.==core.a": 1, "flags.core.==a": 7 })).toThrow(/more than one key/);
-    /** @type {any} */
-    let error = null;
-    try {
-      scan({ "flags.core.a": 1, "flags.core.==a": 7 });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details).toMatchObject({ field: "flags.core.a", ambiguousRoot: "flags", ambiguityRule: 1 });
-    expect(error?.details?.ambiguousKeys).toEqual(["flags.core.a", "flags.core.==a"]);
-
-    expect(error?.message).toContain('writes the same field "flags.core.a"');
-
-    expect(() => scan({ "==flags.core": { a: 5 }, "flags.core.b": 9 })).toThrow(/more than one key/);
-    expect(() => scan({ "flags.core.b": 9, "==flags.core": { a: 5 } })).toThrow(/more than one key/);
-    expect(() => scan({ "flags.==core": { a: 5 }, "flags.core.b": 9 })).toThrow(/more than one key/);
-    expect(() => scan({ "-=flags.core": null, "flags.core.b": 9 })).toThrow(/more than one key/);
-    error = null;
-    try {
-      scan({ "flags.==core": { a: 5 }, "flags.core.b": 9 });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details).toMatchObject({ field: "flags.core", ambiguousRoot: "flags", ambiguityRule: 2 });
-    expect(error?.details?.ambiguousKeys).toEqual(["flags.==core", "flags.core.b"]);
-
-    error = null;
-    try {
-      scan({ "==threshold.light": 7, "threshold.==light": 3 });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details?.ambiguityRule).toBe(1);
-    expect(error?.details?.field).toBe("threshold.light");
-  });
-
-  it("targets the SEGMENT the operator sits on, so only keys under THAT path collide", () => {
-    expect(() => scan({ "==threshold.light": 7, "threshold.sight": 8 })).toThrow(/more than one key/);
-
-    expect(() => scan({ "threshold.==light": 7, "threshold.sight": 8 })).not.toThrow();
-  });
-
-  it("ALLOWS a nested operator key that collides with nothing", () => {
-    expect(() => scan({ "==threshold.==light": 7 })).not.toThrow();
-
-    expect(() => scan({ "threshold.==light": 7 })).not.toThrow();
-
-    expect(() => scan({ "flags.==core": { a: 5 } })).not.toThrow();
-
-    expect(() => scan({ "flags.==core": { a: 5 }, "flags.other": 1 })).not.toThrow();
-
-    expect(() => scan({ "flags.==core": { a: 5 }, "flags.other.deep": 1 })).not.toThrow();
-
-    expect(() => scan({ "threshold.==light": 7, "threshold.==sight": 8 })).not.toThrow();
-  });
-
-  it("keeps the ECF ENTRY scan leading-only, so a nested entry key is judged by the reflection arm", () => {
-    expect(() => scan({ behaviors: [{ _id: B1, "system.keep": 3, "system.==keep": 7 }] })).not.toThrow();
-    expect(() =>
-      scan({ behaviors: [{ _id: B1, "flags.==core": { a: 5 }, "flags.core.z": 9 }] })
-    ).not.toThrow();
-
-    expect(() =>
-      scan({ behaviors: [{ _id: B1, "==flags.core": { a: 5 }, "flags.core.z": 9 }] })
-    ).not.toThrow();
-
-    expect(() =>
-      scan({ behaviors: [{ _id: B1, "==flags": { core: { a: 5 } }, "flags.core.z": 9 }] })
-    ).toThrow(/more than one key/);
-  });
-
-  it("REFUSES two spellings of one field INSIDE an embedded-collection entry", () => {
-    /** @type {any} */
-    let error = null;
-    try {
-      scan({ behaviors: [{ _id: B1, system: { bar: 2 }, "==system": { foo: 1 } }] });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.code).toBe(ERROR_CODES.INVALID_PARAMS);
-    expect(error?.message).toContain('inside one entry of the embedded collection "behaviors"');
-    expect(error?.details).toMatchObject({ field: "system", ambiguousRoot: "system" });
-
-    expect(() => scan({ behaviors: [{ _id: B1, name: "x", "==name": "y" }] })).toThrow(/more than one key/);
-    expect(() => scan({ behaviors: [{ _id: B1, "==name": "y", name: "x" }] })).toThrow(/more than one key/);
-    expect(() => scan({ behaviors: [{ _id: B1, name: "x", "-=name": null }] })).toThrow(/more than one key/);
-
-    expect(() =>
-      scan({
-        behaviors: [
-          { _id: B1, name: "ok" },
-          { name: "x", "==name": "y" }
-        ]
-      })
-    ).toThrow(/more than one key/);
-
-    expect(() => scan({ behaviors: [{ _id: B1, name: "x" }] })).not.toThrow();
-    expect(() => scan({ behaviors: [{ _id: B1, "flags.mod.a": 1, "flags.mod.b": 2 }] })).not.toThrow();
-  });
-
-  it("does NOT scan entries of a plain ArrayField, or a non-array value", () => {
-    expect(() => scan({ shapes: [{ "==type": "a", type: "b" }] })).not.toThrow();
-    expect(() => scan({ behaviors: { "==name": 1, name: 2 } })).not.toThrow();
-
-    expect(() =>
-      assertNoAmbiguousBatchKeySpellings({
-        documentClass: null,
-        patch: { behaviors: [{ _id: B1, name: "x", "==name": "y" }] },
-        index: 0,
-        command: "scene.region.update-many",
-        id: "r1"
-      })
-    ).not.toThrow();
-    expect(() =>
-      assertNoAmbiguousBatchKeySpellings({
-        documentClass: null,
-        patch: { name: "x", "==name": "y" },
-        index: 0,
-        command: "scene.region.update-many",
-        id: "r1"
-      })
-    ).toThrow(/more than one key/);
-  });
-
-  it("reports the SAME-PATH collision when a patch trips both rules (precedence is pinned)", () => {
-    /** @type {any} */
-    let error = null;
-    try {
-      scan({ "==threshold": { light: 1 }, threshold: { light: 2 }, "threshold.light": 9 });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details?.field).toBe("threshold");
-    expect(error?.details?.ambiguousKeys).toEqual(["==threshold", "threshold"]);
   });
 });
 

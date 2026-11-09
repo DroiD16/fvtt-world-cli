@@ -10,8 +10,10 @@ import { COMMAND_NAMES } from "../scripts/generated/protocol.js";
 
 import {
   applyDocumentMerge,
+  createCollection,
   createRequest,
   installFakeFoundry,
+  makeCompendiumPack,
   makeDocumentClass,
   mutateWorldSourceLikeCore,
   validateFilePathFieldPreview
@@ -922,5 +924,109 @@ describe("command router", () => {
     expect(response.result).not.toHaveProperty("preview");
     const itemCreate = actor.createEmbeddedDocuments.mock.calls.find(([type]) => type === "Item");
     expect(itemCreate).toBeUndefined();
+  });
+});
+
+describe("compendium entry reads", () => {
+  const PACK = "world.test-spells";
+  const DUPLICATE_UUID = "Compendium.world.test-spells.Item.sp-a";
+
+  beforeEach(() => {
+    installFakeFoundry();
+    const spells = makeCompendiumPack(PACK, "Item", {
+      "sp-a": { _id: "sp-a", name: "Shield", type: "spell", system: {}, effects: [] },
+      "sp-b": {
+        _id: "sp-b",
+        name: "Shield Copy",
+        type: "spell",
+        system: {},
+        effects: [{ _id: "eff-b", name: "Warded", changes: [] }],
+        _stats: { compendiumSource: "Compendium.dnd5e.spells.Item.x", duplicateSource: DUPLICATE_UUID }
+      },
+      "sp-c": { _id: "sp-c", name: "Light", type: "spell", system: {} }
+    });
+    globalThis.game.packs = createCollection([...Array.from(globalThis.game.packs), { id: PACK, ...spells }]);
+  });
+
+  const router = () => createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+
+  it("compendium.get keeps the raw source and adds id and the hoisted provenance fields", async () => {
+    const response = await router().route(createRequest("compendium.get", { pack: PACK, entryId: "sp-b" }));
+    expect(response.ok).toBe(true);
+    expect(response.result.document).toMatchObject({
+      _id: "sp-b",
+      id: "sp-b",
+      compendiumSource: "Compendium.dnd5e.spells.Item.x",
+      duplicateSource: DUPLICATE_UUID,
+      _stats: { duplicateSource: DUPLICATE_UUID }
+    });
+
+    const plain = await router().route(createRequest("compendium.get", { pack: PACK, entryId: "sp-c" }));
+    expect(plain.result.document).toMatchObject({
+      id: "sp-c",
+      compendiumSource: null,
+      duplicateSource: null
+    });
+  });
+
+  it("compendium.get-many queries distinct ids once and answers one entry per requested id, repeats included", async () => {
+    const pack = globalThis.game.packs.get(PACK);
+    const response = await router().route(
+      createRequest("compendium.get-many", { pack: PACK, ids: ["sp-c", "sp-a", "sp-c", "sp-b"] })
+    );
+    expect(response.ok).toBe(true);
+    expect(pack.getDocuments).toHaveBeenCalledTimes(1);
+    expect(pack.getDocuments).toHaveBeenCalledWith({ _id__in: ["sp-c", "sp-a", "sp-b"] });
+    expect(pack.getDocument).not.toHaveBeenCalled();
+    expect(response.result.pack).toBe(PACK);
+    expect(response.result.entries.map((entry) => entry.entryId)).toEqual(["sp-c", "sp-a", "sp-c", "sp-b"]);
+    expect(response.result.entries[2]).toEqual(response.result.entries[0]);
+  });
+
+  it("compendium.get-many serializes each entry exactly as compendium.get does, include included", async () => {
+    const many = await router().route(
+      createRequest("compendium.get-many", { pack: PACK, ids: ["sp-b", "sp-a"], include: ["effects"] })
+    );
+    for (const entry of many.result.entries) {
+      const single = await router().route(
+        createRequest("compendium.get", { pack: PACK, entryId: entry.entryId, include: ["effects"] })
+      );
+      expect(entry).toEqual(single.result);
+    }
+    expect(many.result.entries[0].effects).toHaveLength(1);
+  });
+
+  it("compendium.get-many fails whole on the first unknown id in request order, like item.get-many", async () => {
+    const response = await router().route(
+      createRequest("compendium.get-many", { pack: PACK, ids: ["sp-a", "ghost-2", "ghost-1"] })
+    );
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe("COMPENDIUM_ENTRY_NOT_FOUND");
+    expect(response.error.details).toEqual({ pack: PACK, entryId: "ghost-2" });
+    expect(response.error.message).toContain("compendium.index");
+
+    const itemMany = await router().route(
+      createRequest("item.get-many", { ids: ["item-1", "ghost-2", "ghost-1"] })
+    );
+    expect(itemMany.ok).toBe(false);
+    expect(itemMany.error.code).toBe("ITEM_NOT_FOUND");
+    expect(Object.values(itemMany.error.details)).toContain("ghost-2");
+  });
+
+  it("compendium.get-many refuses more than 100 ids before reading the pack", async () => {
+    const pack = globalThis.game.packs.get(PACK);
+    const ids = Array.from({ length: 101 }, (_, index) => `sp-${index}`);
+    const response = await router().route(createRequest("compendium.get-many", { pack: PACK, ids }));
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe("INVALID_PARAMS");
+    expect(response.error.details).toEqual({ max: 100, received: 101 });
+    expect(pack.getDocuments).not.toHaveBeenCalled();
+  });
+
+  it("compendium.get-many reports an unknown pack", async () => {
+    const missingPack = await router().route(
+      createRequest("compendium.get-many", { pack: "world.nope", ids: ["a"] })
+    );
+    expect(missingPack.error.code).toBe("COMPENDIUM_NOT_FOUND");
   });
 });

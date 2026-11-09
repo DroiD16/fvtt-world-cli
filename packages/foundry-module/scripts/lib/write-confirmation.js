@@ -1,10 +1,7 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import {
   assertBatchArrayWritesReflected,
-  assertNoAmbiguousBatchKeySpellings,
   batchEmbeddedCreateKeys,
-  batchMergedConfirmationKeys,
-  batchValuesEqual,
   readDocumentSource,
   structuredCloneish
 } from "./batch-guards.js";
@@ -14,10 +11,15 @@ import {
   isFoundryValidationError,
   toFoundryValidationError
 } from "./errors.js";
+import {
+  WORLD_VETO_REMEDY,
+  changedRoots,
+  createMismatchError,
+  evaluateRequestedDiff,
+  requestedRoots,
+  snapshotRoots
+} from "./mismatch-report.js";
 import { computeDocumentUpdateDiff, previewDocumentUpdate } from "./world-docs.js";
-
-export const WORLD_VETO_REMEDY =
-  "There is no force flag for a world-side veto — disable the module that blocks this write (or make the change from the Foundry UI) and retry.";
 
 /**
  * @param {unknown} result
@@ -28,10 +30,8 @@ export function writeCommitted(result) {
 }
 
 /**
- * @typedef {{ status: "confirmed", fields: [] }
- *   | { status: "pending", fields: string[] }
- *   | { status: "rejected", error: unknown }
- *   | { status: "unprovable", probeError: string }} RequestedStateProbe
+ * @typedef {import("./mismatch-report.js").RequestedDiffEvaluation
+ *   | { status: "rejected", error: unknown }} RequestedStateProbe
  */
 
 /**
@@ -42,8 +42,7 @@ export function writeCommitted(result) {
 export async function probeRequestedState(document, requested) {
   try {
     const diff = await computeDocumentUpdateDiff(document, structuredCloneish(requested ?? {}));
-    const fields = Object.keys(diff).filter((key) => key !== "_id");
-    return fields.length === 0 ? { status: "confirmed", fields: [] } : { status: "pending", fields };
+    return evaluateRequestedDiff(diff, () => readDocumentSource(document));
   } catch (error) {
     if (isFoundryValidationError(error)) {
       return { status: "rejected", error };
@@ -69,19 +68,52 @@ function throwUpdateRejected({ subject, hookName, details }, error) {
 }
 
 /**
- * @param {{ subject: string, hookName: string, details: Record<string, any>, remedy: string }} coordinates
- * @param {string[]} fields
- * @param {string | null} probeError
- * @returns {never}
+ * @param {object} args
+ * @param {string} args.subject
+ * @param {RequestedStateProbe} args.probe
+ * @param {string[]} args.fields
+ * @param {string[] | null} args.changedFields
+ * @param {Record<string, any>} args.details
+ * @param {string} [args.note]
  */
-function throwUpdateNotCommitted({ subject, hookName, details, remedy }, fields, probeError) {
-  throw createBridgeError(
+export function createIndeterminateError({
+  subject,
+  probe,
+  fields,
+  changedFields,
+  details,
+  note = "Re-read the document before retrying."
+}) {
+  return createBridgeError(
     ERROR_CODES.INTERNAL_ERROR,
-    `${subject} was NOT updated: Foundry resolved the update without applying it, which means a module's ${hookName} hook or a core _preUpdate refused the write, or the patch failed Foundry's own client-side validation (which Foundry reports only as a UI notification). It still holds its previous values for ${
-      fields.join(", ") || "the requested fields"
-    }. ${remedy}`,
-    { ...details, fields, validationError: probeError }
+    `${subject}: the requested update could not be confirmed. Foundry may have persisted some or all of the change. ${note}`,
+    {
+      ...details,
+      fields,
+      ...(probe.status === "pending"
+        ? {
+            paths: probe.report.paths,
+            ...(probe.report.pathsTruncated ? { pathsTruncated: probe.report.pathsTruncated } : {})
+          }
+        : {}),
+      changedFields,
+      indeterminate: true,
+      validationError: probeFailureMessage(probe)
+    }
   );
+}
+
+/**
+ * @param {RequestedStateProbe} probe
+ * @returns {string | null}
+ */
+function probeFailureMessage(probe) {
+  if (probe.status === "unprovable") return probe.probeError;
+  if (probe.status === "rejected") {
+    const error = /** @type {any} */ (probe.error);
+    return String(error?.message ?? error);
+  }
+  return null;
 }
 
 /**
@@ -89,78 +121,28 @@ function throwUpdateNotCommitted({ subject, hookName, details, remedy }, fields,
  * @param {any} args.document
  * @param {Record<string, any>} args.patch
  * @param {string} args.subject
- * @param {string} args.hookName
- * @param {Record<string, any>} args.details
- * @param {string} [args.remedy]
+ * @param {Record<string, any>} [args.details]
  * @returns {Promise<void>}
  */
-export async function assertDocumentUpdateCommitted({
-  document,
-  patch,
-  subject,
-  hookName,
-  details,
-  remedy = WORLD_VETO_REMEDY
-}) {
-  const probe = await probeRequestedState(document, patch ?? {});
-  if (probe.status === "confirmed") return;
-  if (probe.status === "rejected") throwUpdateRejected({ subject, hookName, details }, probe.error);
-
-  const fields =
-    probe.status === "pending" ? probe.fields : Object.keys(patch ?? {}).filter((key) => key !== "_id");
-  throwUpdateNotCommitted(
-    { subject, hookName, details, remedy },
-    fields,
-    probe.status === "unprovable" ? probe.probeError : null
-  );
-}
-
-/**
- * @param {string} key
- * @returns {string}
- */
-function patchKeyRoot(key) {
-  const first = key.split(".")[0] ?? "";
-  return first.startsWith("==") || first.startsWith("-=") ? first.slice(2) : first;
-}
-
-/**
- * Foundry 14 silently discards several array-write shapes — a dotted path into an array field, an
- * invalid array value, an ambiguous dual spelling — without an error, a diff, or any trace the
- * post-write probe could see, so these shapes must be refused before the write, exactly as the
- * batch commands refuse them.
- * @param {object} args
- * @param {any} args.document
- * @param {any} args.documentClass
- * @param {Record<string, any>} args.requested
- * @param {any} args.mergedPreview
- * @param {string} args.subject
- * @param {Record<string, any>} args.details
- * @returns {void}
- */
-function assertPatchShapeStorable({ document, documentClass, requested, mergedPreview, subject, details }) {
-  const id = typeof document?.id === "string" ? document.id : "";
+export async function assertRequestedWriteStorable({ document, patch, subject, details = {} }) {
+  let mergedPreview = null;
   try {
-    assertNoAmbiguousBatchKeySpellings({
-      documentClass,
-      patch: requested,
+    mergedPreview = await previewDocumentUpdate(document, structuredCloneish(patch ?? {}));
+  } catch {
+    mergedPreview = null;
+  }
+  if (mergedPreview === null) return;
+  try {
+    assertBatchArrayWritesReflected({
+      documentClass: document?.constructor,
+      patch: patch ?? {},
+      merged: mergedPreview,
+      stored: document,
       index: 0,
       command: subject,
-      id,
+      id: typeof document?.id === "string" ? document.id : "",
       coordinate: subject
     });
-    if (mergedPreview !== null) {
-      assertBatchArrayWritesReflected({
-        documentClass,
-        patch: requested,
-        merged: mergedPreview,
-        stored: document,
-        index: 0,
-        command: subject,
-        id,
-        coordinate: subject
-      });
-    }
   } catch (error) {
     if (error instanceof BridgeError) {
       const { index: _index, id: _entryId, ...guardDetails } = error.details ?? {};
@@ -174,34 +156,6 @@ function assertPatchShapeStorable({ document, documentClass, requested, mergedPr
     }
     throw error;
   }
-}
-
-/**
- * The preview-time face of the shape guard: a dry run must refuse exactly the patches the real
- * write refuses, before reporting a preview.
- * @param {object} args
- * @param {any} args.document
- * @param {Record<string, any>} args.patch
- * @param {string} args.subject
- * @param {Record<string, any>} [args.details]
- * @returns {Promise<void>}
- */
-export async function assertRequestedWriteStorable({ document, patch, subject, details = {} }) {
-  const requested = structuredCloneish(patch ?? {});
-  let mergedPreview = null;
-  try {
-    mergedPreview = await previewDocumentUpdate(document, structuredCloneish(requested));
-  } catch {
-    mergedPreview = null;
-  }
-  assertPatchShapeStorable({
-    document,
-    documentClass: document?.constructor,
-    requested,
-    mergedPreview,
-    subject,
-    details
-  });
 }
 
 /**
@@ -227,88 +181,46 @@ export async function applyConfirmedUpdate({
   remedy = WORLD_VETO_REMEDY
 }) {
   const requested = structuredCloneish(patch ?? {});
-  const documentClass = document?.constructor;
-
-  const mergedConfirmationKeys = batchMergedConfirmationKeys(requested);
-  const embeddedCreateKeys = batchEmbeddedCreateKeys(documentClass, requested);
-
-  let mergedPreview = null;
-  try {
-    mergedPreview = await previewDocumentUpdate(document, structuredCloneish(requested));
-  } catch {
-    mergedPreview = null;
-  }
-  assertPatchShapeStorable({ document, documentClass, requested, mergedPreview, subject, details });
-  const mergedSource =
-    mergedConfirmationKeys.length > 0 && mergedPreview !== null ? readDocumentSource(mergedPreview) : null;
-
-  const requestedRoots = [...new Set(Object.keys(requested).map((key) => patchKeyRoot(key)))];
-  const source = readDocumentSource(document);
-  const beforeSource =
-    source === null
-      ? null
-      : structuredCloneish(Object.fromEntries(requestedRoots.map((root) => [root, source[root]])));
+  await assertRequestedWriteStorable({ document, patch: requested, subject, details });
+  const embeddedCreateKeys = batchEmbeddedCreateKeys(document?.constructor, requested);
+  const roots = requestedRoots(requested);
+  const beforeSource = snapshotRoots(readDocumentSource(document), roots);
   const returned = await write(structuredCloneish(requested));
   const current = await readDocument();
   const after = await probeRequestedState(current, requested);
-  const stored = readDocumentSource(current);
-  const changedFields =
-    beforeSource !== null && stored !== null
-      ? requestedRoots.filter((key) => key !== "_id" && !batchValuesEqual(beforeSource[key], stored[key]))
-      : null;
+  if (after.status === "confirmed" && embeddedCreateKeys.length === 0) return returned;
 
-  let unprovable = after.status === "unprovable";
-  /** @type {string[] | null} */
-  let pending = after.status === "confirmed" ? [] : after.status === "pending" ? [...after.fields] : null;
+  const changedFields = changedRoots(roots, beforeSource, readDocumentSource(current));
 
-  if (pending !== null && pending.length > 0 && mergedConfirmationKeys.length > 0) {
-    if (mergedSource === null || stored === null) {
-      unprovable = true;
-    } else {
-      const reflected = new Set(
-        mergedConfirmationKeys.filter((root) => batchValuesEqual(mergedSource[root], stored[root]))
-      );
-      pending = pending.filter((key) => !reflected.has(patchKeyRoot(key)));
-    }
+  const pendingFields =
+    after.status === "pending" ? after.report.fields : after.status === "confirmed" ? [] : roots;
+  const fields = [...new Set([...pendingFields, ...embeddedCreateKeys])].filter((key) => key !== "_id");
+
+  if (after.status === "rejected" && changedFields !== null && changedFields.length === 0) {
+    throwUpdateRejected({ subject, hookName, details }, after.error);
   }
 
-  if (pending !== null && pending.length === 0 && embeddedCreateKeys.length === 0) return returned;
-
-  const fields = [...new Set([...(pending ?? Object.keys(requested)), ...embeddedCreateKeys])].filter(
-    (key) => key !== "_id"
-  );
-
-  if (unprovable || changedFields === null || embeddedCreateKeys.length > 0) {
-    throw createBridgeError(
-      ERROR_CODES.INTERNAL_ERROR,
-      `${subject}: the requested update could not be confirmed. Foundry may have persisted some or all ` +
-        `of the change. ${embeddedCreateKeys.length > 0 ? "Embedded creations without requested ids cannot be confirmed from the parent update result. " : ""}` +
-        `Re-read the document before retrying, especially before creating embedded documents again.`,
-      {
-        ...details,
-        fields,
-        changedFields,
-        indeterminate: true,
-        validationError: after.status === "unprovable" ? after.probeError : null
-      }
-    );
+  if (after.status !== "pending" || changedFields === null || embeddedCreateKeys.length > 0) {
+    throw createIndeterminateError({
+      subject,
+      probe: after,
+      fields,
+      changedFields,
+      details,
+      note:
+        `${embeddedCreateKeys.length > 0 ? "Embedded creations without requested ids cannot be confirmed from the parent update result. " : ""}` +
+        "Re-read the document before retrying, especially before creating embedded documents again."
+    });
   }
 
-  if (changedFields.length > 0) {
-    const pendingRoots = new Set(fields.map((key) => patchKeyRoot(key)));
-    const appliedFields = changedFields.filter((root) => !pendingRoots.has(root));
-    throw createBridgeError(
-      ERROR_CODES.INTERNAL_ERROR,
-      `${subject} was updated only in PART or rewritten: stored data changed in ${changedFields.join(", ")}, ` +
-        `but the requested state is not confirmed for ${fields.join(", ")}. A module's ${hookName} hook, ` +
-        `core _preUpdate, or another concurrent write may have changed the outcome. Re-read the document ` +
-        `before deciding what remains to apply. ${remedy}`,
-      { ...details, fields, changedFields, appliedFields, partial: true }
-    );
-  }
-
-  if (after.status === "rejected") throwUpdateRejected({ subject, hookName, details }, after.error);
-  throwUpdateNotCommitted({ subject, hookName, details, remedy }, fields, null);
+  throw createMismatchError({
+    subject,
+    report: after.report,
+    hookName,
+    changedFields,
+    details,
+    remedy
+  });
 }
 
 /**

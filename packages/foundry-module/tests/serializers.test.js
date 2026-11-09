@@ -62,6 +62,7 @@ import {
   serializeTileSummary,
   serializeToken,
   serializeTokenSummary,
+  summarizeTokenDelta,
   placeableName,
   tokenName,
   worldDocumentName,
@@ -590,7 +591,8 @@ describe("serializeMacro", () => {
       scope: "global",
       flags: { "midi-qol": { onUseMacroName: "heal" } },
 
-      compendiumSource: null
+      compendiumSource: null,
+      duplicateSource: null
     });
     assertStructuredCloneable(result);
   });
@@ -4459,8 +4461,9 @@ describe("serializeCardSummary / storedCardName", () => {
   });
 });
 
-describe("compendiumSource", () => {
+describe("provenance: compendiumSource and duplicateSource", () => {
   const UUID = "Compendium.dnd5e.items.Item.abcdefghij123456";
+  const DUPLICATE_UUID = "Item.abcdefghij654321";
 
   /** @type {[string, (document: any, options?: any) => any, any][]} */
   const FULL = [
@@ -4476,13 +4479,17 @@ describe("compendiumSource", () => {
   ];
 
   it.each(FULL)(
-    "%s FULL projection reports the stored compendiumSource and never raw _stats",
+    "%s FULL projection reports the stored compendiumSource and duplicateSource and never raw _stats",
     (_name, serialize, source) => {
       const imported = serialize({
         id: source._id,
-        toObject: () => ({ ...source, _stats: { compendiumSource: UUID, coreVersion: "13.351" } })
+        toObject: () => ({
+          ...source,
+          _stats: { compendiumSource: UUID, duplicateSource: DUPLICATE_UUID, coreVersion: "13.351" }
+        })
       });
       expect(imported.compendiumSource).toBe(UUID);
+      expect(imported.duplicateSource).toBe(DUPLICATE_UUID);
 
       expect(imported._stats).toBeUndefined();
       expect(imported.coreVersion).toBeUndefined();
@@ -4499,13 +4506,15 @@ describe("compendiumSource", () => {
 
       expect(Object.hasOwn(authored, "compendiumSource")).toBe(true);
       expect(authored.compendiumSource).toBeNull();
+      expect(Object.hasOwn(authored, "duplicateSource")).toBe(true);
+      expect(authored.duplicateSource).toBeNull();
     }
   );
 
   it("stays OFF the lean list projections and OFF actor.get's nested items[] rows", () => {
     const withStats = (source) => ({
       id: source._id,
-      toObject: () => ({ ...source, _stats: { compendiumSource: UUID } })
+      toObject: () => ({ ...source, _stats: { compendiumSource: UUID, duplicateSource: DUPLICATE_UUID } })
     });
     /** @type {{ name: string, summary: (document: any) => any, source: any }[]} */
     const LEAN = [
@@ -4532,7 +4541,9 @@ describe("compendiumSource", () => {
       { name: "scene", summary: (document) => serializeScene(document), source: { _id: "s1", name: "S" } }
     ];
     for (const { name, summary, source } of LEAN) {
-      expect(Object.hasOwn(summary(withStats(source)), "compendiumSource"), `${name} list row`).toBe(false);
+      const row = summary(withStats(source));
+      expect(Object.hasOwn(row, "compendiumSource"), `${name} list row`).toBe(false);
+      expect(Object.hasOwn(row, "duplicateSource"), `${name} list row`).toBe(false);
     }
 
     expect(
@@ -4548,12 +4559,140 @@ describe("compendiumSource", () => {
           name: "A",
           type: "npc",
           effects: [],
-          items: [{ _id: "i1", name: "I", type: "loot", effects: [], _stats: { compendiumSource: UUID } }]
+          items: [
+            {
+              _id: "i1",
+              name: "I",
+              type: "loot",
+              effects: [],
+              _stats: { compendiumSource: UUID, duplicateSource: DUPLICATE_UUID }
+            }
+          ]
         })
       },
       { include: ["items"] }
     );
     expect(actor.compendiumSource).toBeNull();
     expect(Object.hasOwn(actor.items[0], "compendiumSource")).toBe(false);
+    expect(Object.hasOwn(actor.items[0], "duplicateSource")).toBe(false);
+  });
+});
+
+describe("token delta reads", () => {
+  const V13_EMPTY_DELTA = { _id: "d1", system: {}, items: [], effects: [], flags: {} };
+  const OVERRIDING_DELTA = {
+    _id: "d1",
+    name: "Renamed",
+    system: { attributes: { hp: { value: 1 } } },
+    items: [{ _id: "item-1", name: "Talons OVR", type: "weapon" }],
+    effects: [],
+    flags: {}
+  };
+  const token = (source) => ({
+    id: "tok-1",
+    toObject: () => ({ _id: "tok-1", name: "T", actorId: "actor-1", ...source })
+  });
+
+  it("returns the stored delta source only when asked for it", () => {
+    const unlinked = token({ actorLink: false, delta: OVERRIDING_DELTA });
+    expect(Object.hasOwn(serializeToken(unlinked), "delta")).toBe(false);
+    const read = serializeToken(unlinked, { include: ["delta"] });
+    expect(read.delta).toEqual(OVERRIDING_DELTA);
+    expect(read.delta).not.toBe(OVERRIDING_DELTA);
+    assertStructuredCloneable(read);
+  });
+
+  it("reports null for a linked token even when a dormant delta is stored, and when none is stored", () => {
+    expect(
+      serializeToken(token({ actorLink: true, delta: OVERRIDING_DELTA }), { include: ["delta"] }).delta
+    ).toBeNull();
+    expect(serializeToken(token({ actorLink: false, delta: null }), { include: ["delta"] }).delta).toBeNull();
+    expect(
+      serializeToken(token({ actorLink: false, delta: V13_EMPTY_DELTA }), { include: ["delta"] }).delta
+    ).toEqual(V13_EMPTY_DELTA);
+  });
+
+  it("summarizes a stored delta per list row as derived counts and overridden keys", () => {
+    const row = serializeTokenSummary(token({ actorLink: false, delta: OVERRIDING_DELTA }), {
+      include: ["delta"]
+    });
+    expect(row.deltaSummary).toEqual({
+      itemEntries: 1,
+      effectEntries: 0,
+      overriddenKeys: ["name", "system", "items"]
+    });
+    expect(Object.hasOwn(row, "delta")).toBe(false);
+    expect(
+      Object.hasOwn(
+        serializeTokenSummary(token({ actorLink: false, delta: OVERRIDING_DELTA })),
+        "deltaSummary"
+      )
+    ).toBe(false);
+  });
+
+  it("summarizes no delta, an empty delta, a null-valued delta and a linked token alike as no overrides", () => {
+    const summaryOf = (source) => serializeTokenSummary(token(source), { include: ["delta"] }).deltaSummary;
+    expect(summaryOf({ actorLink: false, delta: null })).toBeNull();
+    expect(summaryOf({ actorLink: false, delta: V13_EMPTY_DELTA })).toBeNull();
+    expect(
+      summaryOf({
+        actorLink: false,
+        delta: { ...V13_EMPTY_DELTA, name: null, type: null, img: null, ownership: null }
+      })
+    ).toBeNull();
+    expect(summaryOf({ actorLink: true, delta: OVERRIDING_DELTA })).toBeNull();
+    expect(
+      summaryOf({
+        actorLink: false,
+        delta: { ...V13_EMPTY_DELTA, flags: { mod: {} }, system: { attributes: { hp: { temp: null } } } }
+      })?.overriddenKeys
+    ).toEqual(["system", "flags"]);
+  });
+});
+
+describe("summarizeTokenDelta", () => {
+  const EMPTY = { _id: "d1", system: {}, items: [], effects: [], flags: {} };
+
+  it("reports no overrides for a missing delta and for top-level values that are null, [] or {}", () => {
+    expect(summarizeTokenDelta(null)).toBeNull();
+    expect(summarizeTokenDelta(EMPTY)).toBeNull();
+    expect(summarizeTokenDelta({ ...EMPTY, name: null, img: null, ownership: null })).toBeNull();
+  });
+
+  it("counts any content below the top level as an override, nested null, [] and {} included", () => {
+    expect(
+      summarizeTokenDelta({ ...EMPTY, system: { attributes: { hp: { temp: null } } } })?.overriddenKeys
+    ).toEqual(["system"]);
+    expect(
+      summarizeTokenDelta({ ...EMPTY, system: { traits: { dr: { value: [] } } } })?.overriddenKeys
+    ).toEqual(["system"]);
+    expect(summarizeTokenDelta({ ...EMPTY, flags: { world: { x: {} } } })?.overriddenKeys).toEqual(["flags"]);
+    expect(summarizeTokenDelta({ ...EMPTY, flags: { mod: {} } })?.overriddenKeys).toEqual(["flags"]);
+  });
+
+  it("names every top-level key holding a value and counts delta entries, deletion markers included", () => {
+    expect(
+      summarizeTokenDelta({
+        ...EMPTY,
+        name: "Aarakocra Skirmisher",
+        system: { attributes: { hp: { value: 0 } } },
+        flags: { mod: { enabled: false } },
+        items: [
+          { _id: "i1", name: "Talons" },
+          { _id: "i2", _tombstone: true }
+        ],
+        effects: [{ _id: "e1", _tombstone: true }]
+      })
+    ).toEqual({
+      itemEntries: 2,
+      effectEntries: 1,
+      overriddenKeys: ["system", "items", "effects", "flags", "name"]
+    });
+  });
+
+  it("treats empty strings, zero and false as override values", () => {
+    expect(summarizeTokenDelta({ ...EMPTY, name: "" })?.overriddenKeys).toEqual(["name"]);
+    expect(summarizeTokenDelta({ ...EMPTY, system: { hp: 0 } })?.overriddenKeys).toEqual(["system"]);
+    expect(summarizeTokenDelta({ ...EMPTY, flags: { m: { on: false } } })?.overriddenKeys).toEqual(["flags"]);
   });
 });

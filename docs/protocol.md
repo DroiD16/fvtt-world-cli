@@ -181,6 +181,9 @@ filters apply before pagination. Previewed documents have no persistent identity
 observed during a preview must not be reused. Some result fields depend on the connected Foundry
 version; [Foundry compatibility](compatibility.md) lists them.
 
+World document reads carry `compendiumSource` and `duplicateSource`, hoisted from Foundry's
+`_stats` and `null` when absent.
+
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.
 
@@ -196,10 +199,12 @@ world state when the return value does not establish the effect.
 
 ### Setting results
 
-Setting writes return the observed `value` and its `previous` value. Registered types or callbacks
-may normalize the input. Confirmation establishes that the previous value changed, not that the
-requested value was stored exactly. Writing an already-stored value succeeds as unchanged without
-calling Foundry. `requiresReload: true` indicates that the GM client needs a reload.
+Setting writes return the observed `value` and its `previous` value, as `game.settings.get`
+returns them after the registered type's cast. Confirmation compares the JSON Foundry stores with
+the JSON of the validated request; a different stored value, for example one rewritten by an
+`onChange` callback, is a mismatch error with a `paths` entry for `value`. Writing an
+already-stored value succeeds as unchanged without calling Foundry. `requiresReload: true`
+indicates that the GM client needs a reload.
 
 ## Write confirmation
 
@@ -207,11 +212,24 @@ Document writes report success only after confirmation. Foundry can resolve a ve
 write without throwing, and hooks can remove or rewrite part of a patch. Single and bulk updates
 pass Foundry a private copy, then compare stored state with the original request.
 
+Confirmation compares each requested leaf path that survives Foundry's cleaning with the stored
+source. Foundry drops a key the document's schema does not declare without an error before that
+comparison, so a write made only of undeclared keys reports success with nothing stored. A deletion (`-=key` or
+Foundry 14's `ForcedDeletion`) is confirmed when the key is absent. A forced replacement (`==key`
+or Foundry 14's `ForcedReplacement`) is confirmed when the whole stored value at that path equals the requested
+value after Foundry's cleaning.
+
 A valid patch whose requested state is already stored remains a successful no-op. A validation
 failure recovered after an unwritten update returns `INVALID_PARAMS`. Unconfirmed, partial, or
 indeterminate updates can return `INTERNAL_ERROR` with these details:
 
-- `fields`: requested fields whose state was not confirmed.
+- `fields`: requested top-level fields whose state was not confirmed.
+- `paths`: up to 20 entries `{ path, requested, stored }`, one per leaf path where the stored value
+  differs from the request. `absent: "stored"` replaces `stored` when the key is missing from the
+  stored source, and `absent: "requested"` replaces `requested` for a deletion that did not land.
+  A long string, or an object or array whose JSON is long, is shortened to a window around the
+  first differing character; `truncated` then carries `format` (`text` or `json`), `offset`, and
+  the full `requestedLength` and `storedLength`. `pathsTruncated` counts the entries beyond 20.
 - `partial: true`: stored data changed in a requested field, but the full requested state was
   not reached. A hook may have applied only part of a nested object or replaced a value.
 - `changedFields`: requested top-level fields observed to change, including fields that changed
@@ -220,6 +238,12 @@ indeterminate updates can return `INTERNAL_ERROR` with these details:
   even when `partial` is true.
 - `indeterminate: true`: confirmation could not establish the outcome. Some or all of the write
   may have persisted. `changedFields` is `null` when the before/after comparison was unavailable.
+
+When stored differs from requested, the message says that the bridge cannot verify whether Foundry
+core, the game system or a module normalized the value, or whether a hook rewrote, dropped or vetoed
+the change. A blocking module is listed as one possible cause, never as the diagnosis. Resending the
+same patch does not change the result. Every confirmed write that can report a mismatch carries the
+same `paths`, and so does a `dropped` bulk outcome when the stored state was compared.
 
 Parent patches that create embedded entries without `_id`, such as new `behaviors` in
 `scene.region.update`, return an indeterminate error after writing because parent update results
@@ -231,10 +255,10 @@ new operation with a fresh idempotency key if using one.
 
 ### Patch shape checks
 
-Single updates, bulk updates, and dry runs reject ambiguous field spellings, invalid or discarded
-array values, and dotted writes inside arrays with `INVALID_PARAMS` before mutation. Recognized
-legacy fields are checked against their migrated destinations as well. Send whole arrays; ordinary
-dotted object-property writes remain supported where the schema permits them.
+Single updates, bulk updates, and dry runs reject invalid or discarded array values, top-level
+dotted writes into array fields, and writes to legacy fields the running core moved, with
+`INVALID_PARAMS` before mutation. Send whole arrays; ordinary dotted object-property writes remain
+supported where the schema permits them. Other key spellings reach Foundry as written.
 
 Errors identify the `field` and may include `arrayField`, `requested`, `stored`, or migration
 destination details. Bulk failures add the entry's `index` and `id`; single failures use document

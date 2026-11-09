@@ -623,6 +623,11 @@ const DANGEROUS_SEGMENT_BRANCHES = Object.freeze([
     branch: "a registered core setting is written, confirmed, and restored"
   },
   {
+    step: "dangerous.setting.set(type cast)",
+    branch:
+      "a setting whose registered type casts on read reports its read form and is confirmed on stored JSON, even when the cast is lossy"
+  },
+  {
     step: "dangerous.user.lifecycle",
     branch: "a scratch user is created, re-roled, permission-overridden, updated, and deleted"
   },
@@ -1806,6 +1811,81 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
       );
     }
 
+    const castNamespace = "fvtt-world-cli-smoke";
+    const castSettings = [`${castNamespace}.color`, `${castNamespace}.flag`];
+    let castRegistered = null;
+    let castColorRun = null;
+    let castFlagRun = null;
+    let castFlagStored = null;
+    try {
+      castRegistered = await evaluateInGmPage(
+        gmControlUrl,
+        `const ns = ${JSON.stringify(castNamespace)};
+        game.settings.register(ns, "color", { scope: "client", config: false, type: foundry.utils.Color, default: "#000000" });
+        game.settings.register(ns, "flag", { scope: "world", config: false, type: Boolean, default: true });
+        return true;`
+      );
+      castColorRun = runFoundryctl([
+        "setting",
+        "set",
+        "--namespace",
+        castNamespace,
+        "--key",
+        "color",
+        "--value-json",
+        "16711680"
+      ]);
+      castFlagRun = runFoundryctl([
+        "setting",
+        "set",
+        "--namespace",
+        castNamespace,
+        "--key",
+        "flag",
+        "--value-json",
+        JSON.stringify("false")
+      ]);
+      castFlagStored = await evaluateInGmPage(
+        gmControlUrl,
+        `return game.settings.get(${JSON.stringify(castNamespace)}, "flag", { document: true })._source.value;`
+      );
+    } finally {
+      await evaluateInGmPage(
+        gmControlUrl,
+        `const doc = game.settings.get(${JSON.stringify(castNamespace)}, "flag", { document: true });
+        if (doc?.id) await doc.delete();
+        return true;`
+      ).catch(() => null);
+      await evaluateInGmPage(
+        gmControlUrl,
+        `for (const id of ${JSON.stringify(castSettings)}) {
+          game.settings.storage.get("client").removeItem(id);
+          game.settings.settings.delete(id);
+        }
+        return true;`
+      ).catch(() => null);
+    }
+    markAndPush(
+      summary,
+      "dangerous.setting.set(type cast)",
+      Boolean(
+        castRegistered === true &&
+        castColorRun?.response?.ok &&
+        castColorRun.response.result?.value === "#ff0000" &&
+        castFlagRun?.response?.ok &&
+        castFlagRun.response.result?.changed === true &&
+        castFlagRun.response.result?.value === true &&
+        castFlagStored === JSON.stringify("false")
+      ),
+      {
+        color: castColorRun ? summarizeCommand(castColorRun) : null,
+        colorValue: castColorRun?.response?.result?.value ?? null,
+        flag: castFlagRun ? summarizeCommand(castFlagRun) : null,
+        flagResult: castFlagRun?.response?.result ?? null,
+        flagStoredJson: castFlagStored
+      }
+    );
+
     const userCreateRun = runFoundryctl(["user", "create", "--name", `CLI Smoke User ${stamp}`]);
     userId = userCreateRun.response?.result?.user?.id || null;
     const roleSetRun = userId
@@ -2613,6 +2693,262 @@ function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created, actorI
   );
 }
 
+function runCompendiumGetManyCoverage(summary, stamp) {
+  const packList = expectOk(
+    summary,
+    "compendium.list(get-many preflight)",
+    runFoundryctl(["compendium", "list", "--limit", "500"])
+  );
+  let probe = null;
+  for (const candidate of Array.isArray(packList?.packs) ? packList.packs : []) {
+    if (!candidate?.id) continue;
+    const index = runFoundryctl(["compendium", "index", "--pack", candidate.id, "--limit", "2"]);
+    const ids = (index.response?.result?.entries ?? []).map((entry) => entry?.id).filter(Boolean);
+    if (ids.length >= 2) {
+      probe = { pack: candidate.id, ids };
+      break;
+    }
+  }
+  if (!probe) {
+    summary.notes.push(
+      "compendium.get-many: this world has no compendium pack with two entries; the command is covered by unit/router tests only for this run"
+    );
+    return;
+  }
+
+  const [first, second] = probe.ids;
+  const many = expectOk(
+    summary,
+    "compendium.get-many",
+    runFoundryctl(["compendium", "get-many", "--pack", probe.pack, "--ids", `${second},${first},${second}`])
+  );
+  const entries = Array.isArray(many?.entries) ? many.entries : [];
+  markAndPush(
+    summary,
+    "compendium.get-many(one entry per requested id in request order, id and provenance on each)",
+    entries.map((entry) => entry?.entryId).join(",") === `${second},${first},${second}` &&
+      JSON.stringify(entries[2]) === JSON.stringify(entries[0]) &&
+      entries.every(
+        (entry) =>
+          entry?.document?.id === entry.entryId &&
+          entry.document._id === entry.entryId &&
+          Object.hasOwn(entry.document, "compendiumSource") &&
+          Object.hasOwn(entry.document, "duplicateSource")
+      ),
+    { pack: probe.pack, requested: [second, first, second], returned: entries.map((entry) => entry?.entryId) }
+  );
+
+  const single = expectOk(
+    summary,
+    "compendium.get(id and provenance fields)",
+    runFoundryctl(["compendium", "get", "--pack", probe.pack, "--entry-id", second])
+  );
+  markAndPush(
+    summary,
+    "compendium.get-many(entry equals the compendium.get result)",
+    Boolean(single) && JSON.stringify(entries[0]) === JSON.stringify(single),
+    {
+      singleKeys: Object.keys(single?.document ?? {}).length,
+      manyKeys: Object.keys(entries[0]?.document ?? {}).length
+    }
+  );
+
+  const missingId = createMissingId("entry", stamp);
+  const missing = runFoundryctl([
+    "compendium",
+    "get-many",
+    "--pack",
+    probe.pack,
+    "--ids",
+    `${first},${missingId}`
+  ]);
+  expectErr(summary, "compendium.get-many(unknown id)", missing, ERROR_CODES.COMPENDIUM_ENTRY_NOT_FOUND, {
+    detailsEntryId: missing.response?.error?.details?.entryId ?? null
+  });
+  markAndPush(
+    summary,
+    "compendium.get-many(unknown id names the missing entry)",
+    missing.response?.error?.details?.entryId === missingId &&
+      missing.response?.error?.details?.pack === probe.pack,
+    { details: missing.response?.error?.details ?? null }
+  );
+}
+
+function runTokenDeltaCoverage(summary, { targetSceneId, actorId, stamp, created }) {
+  const tokenArgs = (verb, tokenId, extra = []) => [
+    "scene",
+    "token",
+    verb,
+    "--scene-id",
+    targetSceneId,
+    "--token-id",
+    tokenId,
+    ...extra
+  ];
+  const sortedItems = (items) =>
+    (Array.isArray(items) ? items : [])
+      .map((item) => `${item?.id}:${item?.name}`)
+      .sort()
+      .join("|");
+
+  const restoreCreate = expectOk(
+    summary,
+    "scene.token.create(restore-delta scratch, unlinked)",
+    runFoundryctl([
+      "scene",
+      "token",
+      "create",
+      "--scene-id",
+      targetSceneId,
+      "--actor-id",
+      actorId,
+      "--x",
+      "1700",
+      "--y",
+      "1500",
+      "--unlinked"
+    ])
+  );
+  const tokenId = restoreCreate?.token?.id ?? null;
+  if (!tokenId) return;
+  created.tokens.push({ sceneId: targetSceneId, tokenId });
+
+  const inherited = runFoundryctl([
+    "scene",
+    "token",
+    "item",
+    "list",
+    "--scene-id",
+    targetSceneId,
+    "--token-id",
+    tokenId
+  ]);
+  const inheritedItem = inherited.response?.result?.items?.[0] ?? null;
+  if (!inheritedItem?.id) {
+    summary.notes.push(
+      `scene.token.restore-delta: actor ${actorId} owns no item, so no inherited item could be overridden on a token; restore is covered by unit/router tests only for this run`
+    );
+    return;
+  }
+  const overrideName = `${inheritedItem.name} Smoke Override ${stamp}`;
+  expectOk(
+    summary,
+    "scene.token.item.update(override an inherited item)",
+    runFoundryctl([
+      "scene",
+      "token",
+      "item",
+      "update",
+      "--scene-id",
+      targetSceneId,
+      "--token-id",
+      tokenId,
+      "--item-id",
+      inheritedItem.id,
+      "--name",
+      overrideName
+    ])
+  );
+
+  const withDelta = expectOk(
+    summary,
+    "scene.token.get(--include delta)",
+    runFoundryctl(tokenArgs("get", tokenId, ["--include", "delta"]))
+  );
+  const deltaItems = Array.isArray(withDelta?.token?.delta?.items) ? withDelta.token.delta.items : [];
+  markAndPush(
+    summary,
+    "scene.token.get(delta holds the item override)",
+    deltaItems.some((item) => item?._id === inheritedItem.id && item?.name === overrideName),
+    {
+      deltaKeys: Object.keys(withDelta?.token?.delta ?? {}),
+      deltaItemIds: deltaItems.map((item) => item?._id)
+    }
+  );
+
+  const listRow = () => {
+    const listed = runFoundryctl([
+      "scene",
+      "token",
+      "list",
+      "--scene-id",
+      targetSceneId,
+      "--include",
+      "delta",
+      "--limit",
+      "500"
+    ]);
+    return { run: listed, row: findById(listed.response?.result?.tokens, tokenId) };
+  };
+  const before = listRow();
+  markAndPush(
+    summary,
+    "scene.token.list(--include delta summarizes the override)",
+    isCommandSuccess(before.run) &&
+      (before.row?.deltaSummary?.itemEntries ?? 0) >= 1 &&
+      (before.row?.deltaSummary?.overriddenKeys ?? []).includes("items"),
+    { deltaSummary: before.row?.deltaSummary ?? null }
+  );
+
+  const preview = expectOk(
+    summary,
+    "scene.token.restore-delta(--dry-run)",
+    runFoundryctl(["--dry-run", ...tokenArgs("restore-delta", tokenId)])
+  );
+  const afterPreview = runFoundryctl(tokenArgs("get", tokenId, ["--include", "delta"]));
+  markAndPush(
+    summary,
+    "scene.token.restore-delta(dry run reports what it would discard and discards nothing)",
+    preview?.dryRun === true &&
+      preview?.changed === true &&
+      JSON.stringify(preview?.discarded) === JSON.stringify(before.row?.deltaSummary) &&
+      (afterPreview.response?.result?.token?.delta?.items ?? []).some(
+        (item) => item?._id === inheritedItem.id
+      ),
+    { discarded: preview?.discarded ?? null }
+  );
+
+  const restored = expectOk(
+    summary,
+    "scene.token.restore-delta",
+    runFoundryctl(tokenArgs("restore-delta", tokenId))
+  );
+  markAndPush(
+    summary,
+    "scene.token.restore-delta(changed, discarded summary)",
+    restored?.changed === true &&
+      JSON.stringify(restored?.discarded) === JSON.stringify(before.row?.deltaSummary),
+    { result: restored }
+  );
+
+  const after = listRow();
+  const storedAfter = runFoundryctl(tokenArgs("get", tokenId, ["--include", "delta"]));
+  const tokenItems = runFoundryctl([
+    "scene",
+    "token",
+    "item",
+    "list",
+    "--scene-id",
+    targetSceneId,
+    "--token-id",
+    tokenId
+  ]);
+  const actorItems = runFoundryctl(["actor", "item", "list", "--actor-id", actorId]);
+  markAndPush(
+    summary,
+    "scene.token.restore-delta(no overrides remain; token items equal the actor's)",
+    after.row?.deltaSummary === null &&
+      isCommandSuccess(tokenItems) &&
+      isCommandSuccess(actorItems) &&
+      sortedItems(tokenItems.response?.result?.items) === sortedItems(actorItems.response?.result?.items),
+    {
+      storedDeltaAfterRestore: storedAfter.response?.result?.token?.delta ?? null,
+      tokenItems: sortedItems(tokenItems.response?.result?.items),
+      actorItems: sortedItems(actorItems.response?.result?.items)
+    }
+  );
+}
+
 function runExtendedCoverage(
   summary,
   { actorId, targetSceneId, targetSceneActive, gmUserId, stamp, worldId, isV14 = false }
@@ -2828,6 +3164,8 @@ function runExtendedCoverage(
       });
     }
 
+    runCompendiumGetManyCoverage(summary, stamp);
+
     const itemCreate = expectOk(
       summary,
       "item.create(extended)",
@@ -2843,6 +3181,137 @@ function runExtendedCoverage(
       );
       if (itemClone?.item?.id) {
         created.items.push(itemClone.item.id);
+      }
+      markAndPush(
+        summary,
+        "item.clone(compendiumSource and duplicateSource reported, both null on a bridge clone)",
+        Boolean(itemClone?.item) &&
+          Object.hasOwn(itemClone.item, "compendiumSource") &&
+          Object.hasOwn(itemClone.item, "duplicateSource") &&
+          itemClone.item.compendiumSource === null &&
+          itemClone.item.duplicateSource === null,
+        {
+          compendiumSource: itemClone?.item?.compendiumSource,
+          duplicateSource: itemClone?.item?.duplicateSource
+        }
+      );
+      summary.notes.push(
+        "duplicateSource: the live run checks that world reads report the field; a non-null value (set only by Foundry's own duplicate action) is covered by unit tests only"
+      );
+
+      const ampersandDescription = `<p>Smoke A & B ${stamp}</p>`;
+      const ampersandRun = runFoundryctl([
+        "item",
+        "update",
+        "--item-id",
+        createdItemId,
+        "--system-json",
+        JSON.stringify({ description: { value: ampersandDescription } })
+      ]);
+      const ampersandPath = ampersandRun.response?.error?.details?.paths?.find(
+        (entry) => entry?.path === "system.description.value"
+      );
+      markAndPush(
+        summary,
+        "item.update(raw & in an HTML field → INTERNAL_ERROR listing requested vs stored at system.description.value)",
+        isExpectedError(ampersandRun, ERROR_CODES.INTERNAL_ERROR) &&
+          ampersandPath?.requested === ampersandDescription &&
+          typeof ampersandPath?.stored === "string" &&
+          ampersandPath.stored.includes("&amp;") &&
+          !/disable the module/i.test(ampersandRun.response?.error?.message ?? ""),
+        { ...summarizeCommand(ampersandRun), path: ampersandPath ?? null }
+      );
+
+      const forcedDescription = `<p>Smoke forced ${stamp}</p>`;
+      expectOk(
+        summary,
+        'item.update(nested {system: {"==description": …}} forced replacement confirms)',
+        runFoundryctl([
+          "item",
+          "update",
+          "--item-id",
+          createdItemId,
+          "--system-json",
+          JSON.stringify({ "==description": { value: forcedDescription } })
+        ])
+      );
+      const afterForced = expectOk(
+        summary,
+        "item.get(after the nested forced replacement)",
+        runFoundryctl(["item", "get", "--item-id", createdItemId])
+      );
+      markAndPush(
+        summary,
+        "item.update(the nested forced replacement is stored)",
+        afterForced?.item?.system?.description?.value === forcedDescription,
+        { observed: afterForced?.item?.system?.description?.value ?? null, expected: forcedDescription }
+      );
+
+      const activityId = "smokeActivity001";
+      const absentActivityId = "smokeActivity002";
+      const weaponRun = runFoundryctl([
+        "item",
+        "create",
+        "--name",
+        `Smoke Weapon ${stamp}`,
+        "--type",
+        "weapon",
+        "--system-json",
+        JSON.stringify({ activities: { [activityId]: { _id: activityId, type: "attack" } } })
+      ]);
+      const weapon = expectOk(summary, "item.create(weapon with one activity)", weaponRun)?.item ?? null;
+      if (weapon?.id) created.items.push(weapon.id);
+      const storedActivity = weapon?.system?.activities?.[activityId];
+      if (!weapon?.id) {
+        markAndPush(summary, "item.update(typed-object deletion: no weapon to delete from)", false, {
+          ...summarizeCommand(weaponRun)
+        });
+      } else if (!storedActivity) {
+        markAndPush(summary, "item.update(typed-object deletion: skipped, no activities field)", true, {
+          ...summarizeCommand(weaponRun),
+          reason:
+            "the world's system stored no TypedObjectField activity on a weapon; the deletion cases are covered by the local confirmation harness only"
+        });
+        summary.notes.push(
+          "Typed-object deletion (system.activities) was not exercised live: the system stored no activity on a weapon. The local confirmation harness covers it on v13 and v14."
+        );
+      } else {
+        expectOk(
+          summary,
+          "item.update(delete a present key of a TypedObjectField: system.activities.-=<id>)",
+          runFoundryctl([
+            "item",
+            "update",
+            "--item-id",
+            weapon.id,
+            "--system-json",
+            JSON.stringify({ activities: { [`-=${activityId}`]: null } })
+          ])
+        );
+        expectOk(
+          summary,
+          "item.update(delete an absent key of a TypedObjectField confirms)",
+          runFoundryctl([
+            "item",
+            "update",
+            "--item-id",
+            weapon.id,
+            "--system-json",
+            JSON.stringify({ activities: { [`-=${absentActivityId}`]: null } })
+          ])
+        );
+        const afterDeletion = expectOk(
+          summary,
+          "item.get(after the typed-object deletions)",
+          runFoundryctl(["item", "get", "--item-id", weapon.id])
+        );
+        markAndPush(
+          summary,
+          "item.update(the typed-object deletion is stored)",
+          afterDeletion?.item?.system?.activities !== undefined &&
+            !Object.hasOwn(afterDeletion.item.system.activities ?? {}, activityId),
+          { observed: Object.keys(afterDeletion?.item?.system?.activities ?? {}) }
+        );
       }
 
       const bulkItemA = expectOk(
@@ -5373,6 +5842,8 @@ function runExtendedCoverage(
             ])
           );
         }
+
+        runTokenDeltaCoverage(summary, { targetSceneId, actorId, stamp, created });
 
         const tokenEffectName = `Smoke Token Buff ${stamp}`;
         const tokenEffectCreate = expectOk(

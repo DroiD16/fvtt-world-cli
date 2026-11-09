@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createCommandRouter } from "../scripts/command-router.js";
 import { ERROR_CODES } from "../scripts/generated/protocol.js";
 
-import { COMBAT_GROUP_A, createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
+import {
+  COMBAT_GROUP_A,
+  createRequest,
+  installFakeFoundry,
+  makeDataModelValidationError
+} from "./helpers/fake-foundry.js";
 
 /** @type {any} */
 let router;
@@ -33,13 +38,15 @@ function vetoDelete(document) {
 
 /**
  * @param {any} response
- * @param {RegExp} hookPattern
+ * @param {string} path
  */
-function expectUpdateVetoError(response, hookPattern) {
+function expectUpdateVetoError(response, path) {
   expect(response.ok).toBe(false);
   expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-  expect(response.error.message).toMatch(/was NOT updated/);
-  expect(response.error.message).toMatch(hookPattern);
+  expect(response.error.message).toContain("cannot verify");
+  expect(response.error.details).toMatchObject({ changedFields: [] });
+  expect(response.error.details.partial).toBeUndefined();
+  expect(response.error.details.paths.map((/** @type {any} */ entry) => entry.path)).toContain(path);
 }
 
 /**
@@ -60,7 +67,7 @@ describe("a vetoed single world-document update is reported instead of a false s
 
     const response = await send("actor.update", { actorId: "actor-1", patch: { name: "Renamed" } });
 
-    expectUpdateVetoError(response, /preUpdateActor/);
+    expectUpdateVetoError(response, "name");
     expect(actor.name).toBe("Valeros");
   });
 
@@ -79,7 +86,7 @@ describe("a vetoed single world-document update is reported instead of a false s
 
     const response = await send("item.update", { itemId: "item-1", patch: { name: "Renamed" } });
 
-    expectUpdateVetoError(response, /preUpdateItem/);
+    expectUpdateVetoError(response, "name");
   });
 
   it("macro.update", async () => {
@@ -87,7 +94,7 @@ describe("a vetoed single world-document update is reported instead of a false s
 
     const response = await send("macro.update", { macroId: "macro-1", patch: { name: "Renamed" } });
 
-    expectUpdateVetoError(response, /preUpdateMacro/);
+    expectUpdateVetoError(response, "name");
   });
 
   it("scene.update", async () => {
@@ -95,7 +102,7 @@ describe("a vetoed single world-document update is reported instead of a false s
 
     const response = await send("scene.update", { sceneId: "scene-2", patch: { name: "Renamed" } });
 
-    expectUpdateVetoError(response, /preUpdateScene/);
+    expectUpdateVetoError(response, "name");
   });
 
   it("playlist.update", async () => {
@@ -103,7 +110,7 @@ describe("a vetoed single world-document update is reported instead of a false s
 
     const response = await send("playlist.update", { playlistId: "playlist-1", patch: { name: "Renamed" } });
 
-    expectUpdateVetoError(response, /preUpdatePlaylist/);
+    expectUpdateVetoError(response, "name");
   });
 
   it("journal.update on the entry's own fields", async () => {
@@ -111,7 +118,7 @@ describe("a vetoed single world-document update is reported instead of a false s
 
     const response = await send("journal.update", { journalId: "journal-1", patch: { name: "Renamed" } });
 
-    expectUpdateVetoError(response, /preUpdateJournalEntry/);
+    expectUpdateVetoError(response, "name");
   });
 
   it("user.update", async () => {
@@ -119,7 +126,7 @@ describe("a vetoed single world-document update is reported instead of a false s
 
     const response = await send("user.update", { userId: "player-1", patch: { color: "#ff0000" } });
 
-    expectUpdateVetoError(response, /preUpdateUser/);
+    expectUpdateVetoError(response, "color");
   });
 
   it("journal.ownership.set", async () => {
@@ -127,7 +134,7 @@ describe("a vetoed single world-document update is reported instead of a false s
 
     const response = await send("journal.ownership.set", { journalId: "journal-1", default: 2 });
 
-    expectUpdateVetoError(response, /preUpdateJournalEntry/);
+    expectUpdateVetoError(response, "ownership.default");
   });
 });
 
@@ -141,7 +148,7 @@ describe("a hook that rewrites the payload it is handed cannot fake the confirma
 
     const response = await send("actor.update", { actorId: "actor-1", patch: { name: "Renamed" } });
 
-    expectUpdateVetoError(response, /preUpdateActor/);
+    expectUpdateVetoError(response, "name");
     expect(actor.name).toBe("Valeros");
   });
 });
@@ -263,9 +270,10 @@ describe("a write that landed only in part is reported as partial, not as succes
 
     expect(response.ok).toBe(false);
     expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-    expect(response.error.message).toMatch(/updated only in PART/);
+    expect(response.error.message).toContain("cannot verify");
     expect(response.error.details).toMatchObject({
       fields: ["name"],
+      paths: [{ path: "name", requested: "Renamed", stored: "Valeros" }],
       appliedFields: ["img"],
       partial: true
     });
@@ -289,8 +297,77 @@ describe("a write that landed only in part is reported as partial, not as succes
     });
 
     expect(response.ok).toBe(false);
-    expect(response.error.message).toMatch(/updated only in PART/);
-    expect(response.error.details).toMatchObject({ fields: ["name"], appliedFields: ["alpha"] });
+    expect(response.error.message).toContain("cannot verify");
+    expect(response.error.details).toMatchObject({
+      fields: ["name"],
+      paths: [{ path: "name", requested: "Renamed" }],
+      appliedFields: ["alpha"]
+    });
+  });
+});
+
+describe("a dotted key inside an embedded-collection entry is previewed the way the client expands it", () => {
+  it("lands through scene.region.update and scene.region.update-many, real and dry run, sent as written", async () => {
+    const scene = globalThis.game.scenes.get("scene-1");
+    const region = scene.regions.get("region-lava");
+    const behavior = Array.from(region.behaviors)[0];
+    const behaviorId = behavior._id ?? behavior.id;
+    const regionSchema = region.constructor.schema;
+    region.constructor.schema = {
+      get: (root) => {
+        const field = regionSchema.get(root);
+        return (
+          field && {
+            ...field,
+            schema: { get: (key) => (key === "flags" ? { clean: (value) => value } : {}) }
+          }
+        );
+      }
+    };
+    const innerClone = region.clone.bind(region);
+    region.clone = async (...args) => {
+      const preview = await innerClone(...args);
+      const innerUpdateSource = preview.updateSource.bind(preview);
+      preview.updateSource = (patch = {}, options) => {
+        const behaviors = Array.isArray(patch.behaviors)
+          ? patch.behaviors.map((entry) =>
+              Object.fromEntries(Object.entries(entry).filter(([key]) => !key.includes(".")))
+            )
+          : patch.behaviors;
+        return innerUpdateSource(behaviors === undefined ? patch : { ...patch, behaviors }, options);
+      };
+      return preview;
+    };
+    const sent = vi.spyOn(scene, "updateEmbeddedDocuments");
+    for (const [command, params] of /** @type {Array<[string, Record<string, any>]>} */ ([
+      [
+        "scene.region.update",
+        {
+          sceneId: "scene-1",
+          regionId: "region-lava",
+          patch: { behaviors: [{ _id: behaviorId, "flags.mod.k": 1 }] }
+        }
+      ],
+      [
+        "scene.region.update-many",
+        {
+          sceneId: "scene-1",
+          patches: [{ id: "region-lava", patch: { behaviors: [{ _id: behaviorId, "flags.mod.j": 2 }] } }]
+        }
+      ]
+    ])) {
+      const dry = await send(command, { ...params, dryRun: true });
+      expect(dry.ok, `${command} dry run: ${JSON.stringify(dry.error)}`).toBe(true);
+      sent.mockClear();
+      const real = await send(command, params);
+      expect(real.ok, `${command}: ${JSON.stringify(real.error)}`).toBe(true);
+      const regionEntry = sent.mock.calls.find((call) => call[0] === "Region")?.[1]?.[0];
+      expect(regionEntry.behaviors).toEqual(
+        command === "scene.region.update" ? params.patch.behaviors : params.patches[0].patch.behaviors
+      );
+    }
+    const stored = Array.from(region.behaviors).find((entry) => (entry._id ?? entry.id) === behaviorId);
+    expect(stored.toObject().flags.mod).toMatchObject({ k: 1, j: 2 });
   });
 });
 
@@ -319,7 +396,28 @@ describe("an embedded creation without a requested id needs independent confirma
     expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
     expect(response.error.details).toMatchObject({ fields: ["behaviors"], indeterminate: true });
     expect(response.error.message).toMatch(/Re-read/);
-    expect(response.error.message).not.toMatch(/was NOT updated/);
+    expect(response.error.message).not.toContain("cannot verify");
+  });
+
+  it("lists at most the path limit on an indeterminate result and counts the rest", async () => {
+    const scene = globalThis.game.scenes.get("scene-1");
+    const update = scene.updateEmbeddedDocuments.bind(scene);
+    scene.updateEmbeddedDocuments = vi.fn(async (type, entries, options) => {
+      for (const entry of entries) delete entry.flags;
+      return update(type, entries, options);
+    });
+    const mod = Object.fromEntries(Array.from({ length: 22 }, (_unused, index) => [`k${index}`, index]));
+
+    const response = await send("scene.region.update", {
+      sceneId: "scene-1",
+      regionId: "region-lava",
+      patch: { flags: { mod }, behaviors: [{ type: "damage", system: { damage: "4d6" } }] }
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.details).toMatchObject({ indeterminate: true });
+    expect(response.error.details.paths).toHaveLength(20);
+    expect(response.error.details.pathsTruncated).toBe(3);
   });
 });
 
@@ -394,7 +492,7 @@ describe("a vetoed embedded-document write is reported instead of a false succes
       patch: { name: "Renamed" }
     });
 
-    expectUpdateVetoError(response, /preUpdateItem/);
+    expectUpdateVetoError(response, "name");
   });
 
   it("actor.item.delete", async () => {
@@ -426,7 +524,7 @@ describe("a vetoed embedded-document write is reported instead of a false succes
       patch: { name: "Dimmed" }
     });
 
-    expectUpdateVetoError(response, /preUpdateActiveEffect/);
+    expectUpdateVetoError(response, "name");
   });
 
   it("actor.item.effect.delete", async () => {
@@ -459,7 +557,7 @@ describe("a vetoed embedded-document write is reported instead of a false succes
       patch: { volume: 0.25 }
     });
 
-    expectUpdateVetoError(response, /preUpdatePlaylistSound/);
+    expectUpdateVetoError(response, "volume");
   });
 
   it("playlist.sound.delete", async () => {
@@ -481,7 +579,7 @@ describe("a vetoed embedded-document write is reported instead of a false succes
       patch: { name: "Renamed" }
     });
 
-    expectUpdateVetoError(response, /preUpdateToken/);
+    expectUpdateVetoError(response, "name");
   });
 
   it("scene.token.delete", async () => {
@@ -620,7 +718,7 @@ describe("a patch shape Foundry stores nothing for is refused before the write",
   });
 });
 
-describe("an operator-key patch confirms through the merged preview, not the raw diff", () => {
+describe("an operator-key patch confirms against stored state, not the raw diff", () => {
   it("a forced-replacement flag write succeeds and lands the value", async () => {
     const response = await send("scene.token.update", {
       sceneId: "scene-1",
@@ -647,8 +745,9 @@ describe("an operator-key patch confirms through the merged preview, not the raw
     });
 
     expect(response.ok).toBe(false);
-    expect(response.error.message).toMatch(/was NOT updated/);
-    expect(response.error.message).not.toMatch(/PART/);
+    expect(response.error.message).toContain("cannot verify");
+    expect(response.error.details).toMatchObject({ fields: ["alpha"], changedFields: [] });
+    expect(response.error.details.paths.map((/** @type {any} */ entry) => entry.path)).toEqual(["alpha"]);
     expect(response.error.details.partial).toBeUndefined();
   });
 
@@ -668,9 +767,10 @@ describe("an operator-key patch confirms through the merged preview, not the raw
     });
 
     expect(response.ok).toBe(false);
-    expect(response.error.message).toMatch(/updated only in PART/);
+    expect(response.error.message).toContain("cannot verify");
     expect(response.error.details).toMatchObject({
       fields: ["name"],
+      paths: [{ path: "name", requested: "Renamed" }],
       appliedFields: ["flags"],
       partial: true
     });
@@ -689,11 +789,38 @@ describe("a vetoed journal page write inside journal.update is reported per page
       patch: { pages: [{ id: "page-1", name: "Renamed Page" }] }
     });
 
-    expectUpdateVetoError(response, /preUpdateJournalEntryPage/);
+    expectUpdateVetoError(response, "name");
     expect(response.error.details).toMatchObject({
       journalId: "journal-1",
       pageId: "page-1",
       updatedPageIds: []
+    });
+  });
+
+  it("page update with a rejected re-probe after the page changed is indeterminate", async () => {
+    const journal = globalThis.game.journal.get("journal-1");
+    const page = journal.pages.get("page-1");
+    journal.updateEmbeddedDocuments = vi.fn(async () => {
+      page.applyStoredWrite({ name: "Rewritten Page" });
+      page.clone = vi.fn(async () => ({
+        updateSource() {
+          throw makeDataModelValidationError("name: may not be set");
+        }
+      }));
+      return [page];
+    });
+
+    const response = await send("journal.update", {
+      journalId: "journal-1",
+      patch: { pages: [{ id: "page-1", name: "Renamed Page" }] }
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.details).toMatchObject({
+      pageId: "page-1",
+      changedFields: ["name"],
+      indeterminate: true
     });
   });
 
@@ -722,12 +849,13 @@ describe("a vetoed journal page write inside journal.update is reported per page
       }
     });
 
-    expectUpdateVetoError(response, /preUpdateJournalEntryPage/);
+    expectUpdateVetoError(response, "name");
     expect(response.error.details).toMatchObject({
       journalId: "journal-1",
       pageId: "page-1",
       updatedPageIds: [secondId]
     });
+    expect(response.error.message).toContain("details.updatedPageIds");
   });
 
   it("page create", async () => {
