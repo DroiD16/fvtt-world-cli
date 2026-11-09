@@ -266,11 +266,9 @@ indeterminate updates can return `INTERNAL_ERROR` with these details:
 When stored differs from requested, the message says that the bridge cannot verify whether Foundry
 core, the game system or a module normalized the value, or whether a hook rewrote, dropped or vetoed
 the change. A blocking module is listed as one possible cause, never as the diagnosis. Resending the
-same patch does not change the result. `scene.activate` and `combat.activate` are the exceptions:
-another client activating a different scene or combat fits the same observation, so their messages
-leave out the resend sentence. The same `paths` entries appear on `journal.update` page writes, on
-scene and combat activation, on `combat.start`, on combat initiative, on setting and user role or
-permission writes, on `scene.token.restore-delta` (one `delta.<key>` path per override left after
+same patch does not change the result. The same `paths` entries appear on `journal.update` page
+writes, on scene and combat activation, on `combat.start`, on combat initiative, on setting and
+user role or permission writes, on `scene.token.restore-delta` (one `delta.<key>` path per override left after
 the restore), and on a `dropped` outcome of a bulk update when the stored state was compared. A
 bulk element whose embedded creation without `_id` cannot be confirmed is `dropped` without `paths`.
 

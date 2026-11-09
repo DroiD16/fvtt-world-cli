@@ -1576,8 +1576,6 @@ describe("broadcast and maintenance commands", () => {
 
     expect(response.ok).toBe(false);
     expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-    expect(response.error.message).toContain("Another client");
-    expect(response.error.message).not.toContain("will not change the result");
     expect(response.error.details).toMatchObject({
       sceneId: "scene-2",
       paths: [{ path: "active", requested: true, stored: false }],

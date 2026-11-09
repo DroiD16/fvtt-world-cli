@@ -179,9 +179,6 @@ function createCombatAdvanceHandlers() {
   return handlers;
 }
 
-const CONCURRENT_ACTIVATION_NOTE =
-  "Another client activating a different combat in the meantime fits the same observation.";
-
 export function createCombatHandlers() {
   return {
     async "combat.list"(params) {
@@ -385,8 +382,7 @@ export function createCombatHandlers() {
             hookName: "preUpdateCombat",
             changedFields: changedRoots(["active"], { active: alreadyActive }, { active: storedActive }),
             details: { combatId },
-            remedy: COMBAT_VETO_REMEDY,
-            tail: CONCURRENT_ACTIVATION_NOTE
+            remedy: COMBAT_VETO_REMEDY
           });
         }
         return {

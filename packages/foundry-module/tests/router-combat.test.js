@@ -2818,8 +2818,6 @@ describe("command router", () => {
       );
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-      expect(response.error.message).toContain("Another client");
-      expect(response.error.message).not.toContain("will not change the result");
       expect(response.error.details).toMatchObject({
         combatId: "cbt-activate-rewritten",
         fields: ["active"],
@@ -2827,32 +2825,6 @@ describe("command router", () => {
         changedFields: []
       });
       expect(combat._source.active).toBe(false);
-    });
-
-    it("combat.activate without a result leaves the resend question open, alone or beside a concurrent activation", async () => {
-      for (const concurrent of [false, true]) {
-        const combat = seedCombat(`cbt-activate-falsy-${concurrent}`);
-        combat.activate = vi.fn(async () => {
-          if (concurrent) {
-            const other = globalThis.game.combats.get("combat-1");
-            other._source.active = true;
-            other.active = true;
-          }
-          return undefined;
-        });
-        const response = await router().route(
-          createRequest("combat.activate", { combatId: `cbt-activate-falsy-${concurrent}` })
-        );
-        expect(response.ok).toBe(false);
-        expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-        expect(response.error.message).toContain("Another client");
-        expect(response.error.message).not.toContain("will not change the result");
-        expect(response.error.details).toMatchObject({
-          paths: [{ path: "active", requested: true, stored: false }],
-          changedFields: []
-        });
-        expect(combat._source.active).toBe(false);
-      }
     });
 
     it("combat.activate raises INTERNAL_ERROR when the activation is vetoed", async () => {

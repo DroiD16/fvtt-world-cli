@@ -196,9 +196,7 @@ Classify a failure before reacting:
   `requested` and `stored` for each path (`absent` marks a missing side, `truncated` a shortened
   window). A representation-only difference, such as HTML escaping (`&` stored as `&amp;`) or
   whitespace, can be accepted as done. Report any other difference to the user. The same patch
-  stores the same result, so the next request is either a different patch or none. For
-  `scene.activate` and `combat.activate`, read which scene or combat is active first: another client
-  may have activated a different one, and activating again can then succeed.
+  stores the same result, so the next request is either a different patch or none.
 - A success confirms only the requested paths the document's schema declares: Foundry drops an
   undeclared key, such as a misspelled field, without an error before confirmation. After writing
   a key you are not sure the schema declares, read the document and check that the key is stored.
