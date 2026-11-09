@@ -4704,13 +4704,4 @@ describe("token actor deltas", () => {
     });
     expect(response.error.message).toContain("cannot verify");
   });
-
-  it("reports a missing restore API before writing", async () => {
-    const token = globalThis.game.scenes.get("scene-1").tokens.get("token-a");
-    attachDelta("token-a", OVERRIDES);
-    Object.defineProperty(token, "delta", { value: {}, configurable: true, enumerable: false });
-    const response = await restore();
-    expect(response.ok).toBe(false);
-    expect(response.error.code).toBe("BRIDGE_NOT_READY");
-  });
 });

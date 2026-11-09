@@ -183,9 +183,6 @@ export function evaluateRequestedDiff(diff, readStored) {
   const source = diff && typeof diff === "object" ? diff : {};
   if (Object.keys(source).every((key) => key === "_id")) return { status: "confirmed" };
   const stored = readStored();
-  if (stored === null || typeof stored !== "object") {
-    return { status: "unprovable", probeError: "the stored document source is not readable" };
-  }
   /** @type {RequestedLeaf[]} */
   const leaves = [];
   collectLeaves(source, [], leaves);

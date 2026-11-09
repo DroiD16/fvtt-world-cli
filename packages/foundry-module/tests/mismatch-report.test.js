@@ -222,10 +222,6 @@ describe("evaluateRequestedDiff", () => {
       status: "confirmed"
     });
   });
-
-  it("cannot confirm a non-empty diff when the stored source is unreadable", () => {
-    expect(evaluate({ name: "B" }, null)).toMatchObject({ status: "unprovable" });
-  });
 });
 
 describe("buildMismatchReport", () => {

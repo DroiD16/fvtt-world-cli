@@ -59,13 +59,8 @@ export async function getCompendiumDocument(packId, entryId) {
  * @returns {Promise<Map<string, any>>}
  */
 export async function getCompendiumDocuments(packId, entryIds) {
-  const pack = getCompendiumPack(packId);
-  if (typeof pack.getDocuments !== "function") {
-    throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Compendium getDocuments API is not available");
-  }
-
-  const documents = await pack.getDocuments({ _id__in: entryIds });
-  const byId = new Map(Array.from(documents ?? [], (document) => [document.id, document]));
+  const documents = await getCompendiumPack(packId).getDocuments({ _id__in: entryIds });
+  const byId = new Map(documents.map((document) => [document.id, document]));
   const missing = entryIds.find((entryId) => !byId.has(entryId));
   if (missing !== undefined) {
     throw compendiumEntryNotFound(packId, missing);

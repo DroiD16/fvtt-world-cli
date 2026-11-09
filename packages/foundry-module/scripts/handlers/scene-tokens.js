@@ -67,7 +67,7 @@ export function createSceneTokenHandlers() {
 
     async "scene.token.restore-delta"(params) {
       const { token } = getSceneTokenActor(params.sceneId, params.tokenId);
-      const tokenId = token.id ?? params.tokenId;
+      const tokenId = params.tokenId;
       if (token.actorLink) {
         throw createBridgeError(
           ERROR_CODES.INVALID_PARAMS,
@@ -80,13 +80,6 @@ export function createSceneTokenHandlers() {
       if (!discarded) {
         const result = { sceneId: params.sceneId, tokenId, changed: false, discarded: null };
         return isDryRun(params) ? dryRunResponse(result) : result;
-      }
-
-      if (typeof token.delta?.restore !== "function") {
-        throw createBridgeError(
-          ERROR_CODES.BRIDGE_NOT_READY,
-          "Foundry actor delta restore API (ActorDelta#restore) is not available; reload the GM client"
-        );
       }
 
       if (isDryRun(params)) {

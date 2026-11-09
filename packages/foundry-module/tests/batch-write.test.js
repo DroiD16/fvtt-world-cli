@@ -1658,19 +1658,6 @@ describe("batch-write engine: update-many confirmation for OPERATOR spellings", 
     expect(error?.message).toContain("cannot verify");
   });
 
-  it("reports `unknown`, never `dropped`, when the comparison itself cannot be made", async () => {
-    const opaque = createStore([{ id: "wall-1", source: { c: [0, 0, 1, 1] }, _source: null }]);
-    /** @type {any} */
-    let error = null;
-    try {
-      await executeBatchUpdate(args(opaque, { update: async () => [] }));
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details.outcomes).toEqual([{ index: 0, id: "wall-1", status: "unknown" }]);
-    expect(error?.message).toContain("could not establish");
-  });
-
   describe("an INNER-segment operator element, judged end to end", () => {
     const nestedArgs = (row, overrides = {}) => ({
       command: "scene.wall.update-many",

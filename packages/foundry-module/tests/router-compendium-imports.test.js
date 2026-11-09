@@ -1023,14 +1023,10 @@ describe("compendium entry reads", () => {
     expect(pack.getDocuments).not.toHaveBeenCalled();
   });
 
-  it("compendium.get-many reports an unknown pack and a missing getDocuments API", async () => {
+  it("compendium.get-many reports an unknown pack", async () => {
     const missingPack = await router().route(
       createRequest("compendium.get-many", { pack: "world.nope", ids: ["a"] })
     );
     expect(missingPack.error.code).toBe("COMPENDIUM_NOT_FOUND");
-
-    delete globalThis.game.packs.get(PACK).getDocuments;
-    const noApi = await router().route(createRequest("compendium.get-many", { pack: PACK, ids: ["sp-a"] }));
-    expect(noApi.error.code).toBe("BRIDGE_NOT_READY");
   });
 });
