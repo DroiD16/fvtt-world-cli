@@ -64,7 +64,7 @@ daemon for `cli-daemon`. Compare the reported versions for `unknown`.
 ## Disabled commands
 
 Some commands ship denied. A command that `schema <command>` or `--help` knows but a
-`commands --json` listing whose `.policy.applied` is `true` omits is disabled by the GM of this bridge:
+`commands --json` listing with `policy.applied: true` omits is disabled by the GM of this bridge:
 report that it needs enabling in the Command permissions window instead of hunting for an
 equivalent. `macro.execute` is the only way to run code and is not a workaround for a missing
 command.
@@ -150,11 +150,8 @@ details}}`, alongside `protocolVersion`, `type`, and the correlation `id` (echoi
 Documents live under a type-named key inside `result` that varies between commands but is stable
 for each one. `id` is the public identifier; a `_id` mirror may accompany it. Values requested
 through `include` flags may be derived or version-dependent. Write them back only when the
-update schema explicitly accepts them. When a module may explain a behaviour or a
-mismatch, check the installed modules that `system info` reports.
-
-Read in bulk: a family's `get-many` and the `--include` projections listed in each command's
-`--help` usually replace one `get` per document.
+update schema explicitly accepts them. Actor reads return `itemCount` in place of owned items; add
+`--include items` when the task needs them, or use `actor item list` and `actor item get`.
 
 ## Retry classification
 
@@ -189,9 +186,6 @@ Classify a failure before reacting:
   window). A representation-only difference, such as HTML escaping (`&` stored as `&amp;`) or
   whitespace, can be accepted as done. Report any other difference to the user. The same patch
   stores the same result, so the next request is either a different patch or none.
-- A success confirms only the requested paths the document's schema declares: Foundry drops an
-  undeclared key, such as a misspelled field, without an error before confirmation. After writing
-  a key you are not sure the schema declares, read the document and check that the key is stored.
 - Correct a structured Foundry rejection and submit the corrected content as a new operation.
 
 ## Bulk writes and actions
@@ -200,8 +194,7 @@ Bulk commands (`create-many`, `update-many`, `delete-many`) share single-command
 are not transactions: check the top-level `complete` flag and inspect every entry in `outcomes`.
 Persisted statuses such as `created`, `updated`, and `deleted` mean something different from
 `unchanged`, `alreadyDeleted`, `dropped`, and `unknown`; the authoritative status set lives in the
-protocol constants, not here. A `dropped` update outcome carries the same `paths` entries as a single
-update's mismatch error when the stored state was compared. Action commands
+protocol constants, not here. Action commands
 (playback, draws, deals, combat transitions, thumbnails, fog) call fixed typed Foundry methods and
 can trigger hooks, chat output, and system automation; read the schema, dry-run first, and
 interpret confirmation fields literally rather than assuming an ordinary update happened.
@@ -217,7 +210,7 @@ missing assets; it is not an orphan-file collector.
 ## Context hygiene
 
 Large worlds overflow agent context fast. Use server-side filters and small pages, project
-responses with targeted `jq` expressions, use the bulk reads above, and send
+responses with targeted `jq` expressions, fetch bounded id sets with `get-many`, and send
 independent batches through `exec --stdin` (one NDJSON response per request, each judged on its
 own). Request derived fields only when needed, and never dump a whole world, search index, or
 binary file into context.

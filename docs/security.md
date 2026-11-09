@@ -49,11 +49,6 @@ sanitize protected metadata on every write and preview. Identity, statistics, au
 ownership cannot be set through ordinary content payloads. Foundry also applies its own DataModel
 and permission checks.
 
-Patch keys reach Foundry as written; the bridge does not expand them into objects itself. Foundry's
-own path helpers (`expandObject`, `setProperty`, `mergeObject`) skip the names `__proto__`,
-`constructor` and `prototype`, so such a key cannot write to a shared JavaScript object prototype in
-the GM client.
-
 ### Document ownership
 
 Dedicated `<family>.ownership.set` commands change supported default or per-user access levels.

@@ -15,20 +15,11 @@ fvtt-world-cli actor update --help
 shows CLI flags. Protocol names use dots; CLI commands use spaces. For example, `scene.token.get`
 becomes `scene token get`. Nested commands require the parent IDs as well as the target's ID.
 
-In `commands --json`, `result` is the list of commands, each `{command, mutation}` plus
-`approval: true` where it applies. The policy is reported beside `result` in a top-level `policy`
-object, not inside it. With a bridge connected, discovery omits denied commands, marks approval
-requirements and reports `"policy": {"applied": true, "source": "bridge"}`. If the daemon or bridge
-is unavailable, it returns the static registry with `applied: false`, `source: "static"` and a
-`reason` such as `DAEMON_UNAVAILABLE` or `BRIDGE_NOT_READY`. Authentication and protocol errors do not trigger that
-fallback. `schema` and `--help` always describe the static registry, including denied commands.
-
-This check prints `true` and exits 0 only when the client's permissions were read and
-`actor.update` is available to it:
-
-```bash
-fvtt-world-cli commands --json | jq -e '.policy.applied == true and any(.result[]; .command == "actor.update")'
-```
+With a bridge connected, discovery omits denied commands and marks approval requirements with
+`approval: true`. If the daemon or bridge is unavailable, it returns the static registry with
+`policy.applied: false`; `policy` sits at the top level of the response, beside `result`.
+Authentication and protocol errors do not trigger that fallback. `schema` and `--help` always
+describe the static registry, including denied commands.
 
 ## Capability map
 
@@ -166,8 +157,7 @@ update. Reads return authored state; some commands accept `include` options for 
 data. Check the command's help for available projections and filters.
 
 Actor results carry `itemCount` in place of the owned items; `actor get` and `actor get-many`
-return the items with `--include items`. Each command's `--help` lists its `--include` options, and
-[result conventions](protocol.md#result-conventions) describes the fields they add.
+return the items with `--include items`. `system info --include modules` lists installed modules.
 
 ### Updates and merge semantics
 
@@ -175,22 +165,15 @@ Use JSON flags such as `--data-json` and `--patch-json` for structured values. U
 
 - Nested objects merge recursively.
 - Ordinary arrays replace as a whole.
-- Dotted paths target object properties where permitted. The bridge sends them to Foundry as
-  written. A top-level dotted key into an array field, such as `c.0`, is refused.
+- Dotted paths target object properties where permitted; a top-level dotted write into an array
+  field, such as `c.0`, is refused.
 - Foundry's operator keys work at any permitted nested level: `{"-=key": null}` deletes the key,
   and `{"==key": value}` replaces the key's whole value instead of merging into it.
 - Embedded collections follow their family's Foundry semantics.
 
-Both operators also work in a dotted key, `{"flags": {"my-module.==config": {…}}}`. Families with
-closed patch fields, such as `item.update`, refuse a top-level dotted key like `"system.hp.value"`.
-
-Foundry 14 logs a deprecation warning for both operator spellings; [Compatibility](compatibility.md)
-lists the details.
-
 Read arrays before editing and preserve unchanged values. For a wall's `c` field, send the complete
-`[x1, y1, x2, y2]`, not `c.0`. Array writes that Foundry would discard or rebuild return
-`INVALID_PARAMS` before mutation, including in bulk writes and dry runs; the error names the field.
-Other unusual key spellings are not checked before the write.
+`[x1, y1, x2, y2]`, not `c.0`. Array writes that Foundry would discard return `INVALID_PARAMS`
+before mutation, including in bulk writes and dry runs. Correct the fields identified by the error.
 
 Prefer dedicated commands for creating embedded documents. A parent update that adds entries
 without `_id`, such as new `behaviors` in `scene.region.update`, can create them but return an
@@ -210,13 +193,11 @@ A timeout or disconnect can happen after a write commits. An update error with `
 or `details.indeterminate` can also mean that some changes persisted. Read affected state before
 retrying and send only what remains to be done.
 
-An update whose stored state differs from the request fails with `INTERNAL_ERROR`.
-`details.paths` lists up to 20 differing paths, each with the requested and the stored value, and
-`details.pathsTruncated` counts the rest. Foundry core, the game system and modules can all change
-a value on its way into the world. Foundry's HTML sanitizer, for example, stores a raw `&` in a
-rich-text field as `&amp;`. The bridge cannot tell such
-a normalization from a hook that rewrote, dropped or vetoed the write, so the error reports the
-values and leaves that judgment to the caller. Sending the same patch again stores the same result.
+An update whose stored state differs from the request fails with `INTERNAL_ERROR`, and
+`details.paths` lists the differing paths with the requested and the stored value. Foundry core, the
+game system or a module may have changed the value; Foundry stores a raw `&` in rich text as
+`&amp;`, for example. The bridge cannot tell which, so the caller judges from the values. Sending
+the same patch again stores the same result.
 
 An idempotency key identifies one logical request and can prevent duplicate effects while its
 cached state survives. Reuse it only for the same request; a corrected or remaining patch is a

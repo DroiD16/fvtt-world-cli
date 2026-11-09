@@ -182,17 +182,7 @@ observed during a preview must not be reused. Some result fields depend on the c
 version; [Foundry compatibility](compatibility.md) lists them.
 
 World document reads carry `compendiumSource` and `duplicateSource`, hoisted from Foundry's
-`_stats` and `null` when absent. `compendium.get` and each `compendium.get-many` entry return the
-raw source under `document` with `id`, `compendiumSource` and `duplicateSource` added beside `_id`.
-
-`scene.token.get` with `include: ["delta"]` returns `token.delta`, the stored `ActorDelta` source,
-or `null` for a linked token or when none is stored. `scene.token.list` with `include: ["delta"]`
-returns a derived `deltaSummary` per row, `{ itemEntries, effectEntries, overriddenKeys }`. The two
-counts are the lengths of the delta's `items` and `effects` arrays, deletion markers included.
-`overriddenKeys` lists every top-level key other than `_id` whose value is not `null`, `[]` or `{}`,
-and `deltaSummary` is `null` when that list is empty. `scene.token.restore-delta` uses the same rule.
-`scene.token.restore-delta` returns `{ sceneId, tokenId, changed, discarded }`, where `discarded` is
-that summary taken before the restore, or `null` for a no-op.
+`_stats` and `null` when absent.
 
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.
@@ -209,17 +199,12 @@ world state when the return value does not establish the effect.
 
 ### Setting results
 
-Setting writes return the observed `value` and its `previous` value, both in the form
-`game.settings.get` returns after the setting's registered type cast. For example, `16711680`
-written to a `Color` setting reports `value: "#ff0000"`. A dry run returns the validated request as
-`value`. Change detection and confirmation compare the JSON Foundry stores for the setting with the
-JSON of the validated request.
-
-A stored value other than the requested one, for example from an `onChange` callback, turns the
-write into an `INTERNAL_ERROR` with a `paths` entry for `value` that shows the requested and stored
-JSON values. In `setting.set-many` that element becomes a `dropped` outcome carrying the same
-`paths`. Writing an already-stored value succeeds as unchanged without calling Foundry.
-`requiresReload: true` indicates that the GM client needs a reload.
+Setting writes return the observed `value` and its `previous` value, as `game.settings.get`
+returns them after the registered type's cast. Confirmation compares the JSON Foundry stores with
+the JSON of the validated request; a different stored value, for example one rewritten by an
+`onChange` callback, is a mismatch error with a `paths` entry for `value`. Writing an
+already-stored value succeeds as unchanged without calling Foundry. `requiresReload: true`
+indicates that the GM client needs a reload.
 
 ## Write confirmation
 
@@ -230,15 +215,9 @@ pass Foundry a private copy, then compare stored state with the original request
 Confirmation compares each requested leaf path that survives Foundry's cleaning with the stored
 source. Foundry drops a key the document's schema does not declare without an error before that
 comparison, so a write made only of undeclared keys reports success with nothing stored. A deletion (`-=key` or
-Foundry 14's `ForcedDeletion`) is confirmed when the key is absent, including a key that never
-existed. A forced replacement (`==key` at any depth, dotted or nested, or Foundry 14's
-`ForcedReplacement`) is confirmed when the whole stored value at that path equals the requested
+Foundry 14's `ForcedDeletion`) is confirmed when the key is absent. A forced replacement (`==key`
+or Foundry 14's `ForcedReplacement`) is confirmed when the whole stored value at that path equals the requested
 value after Foundry's cleaning.
-
-A patch that deletes or force-replaces a key and also writes it, such as
-`{"flags": {"-=mod": null, "mod": {…}}}`, reaches Foundry as written. Foundry 13 and 14 resolve it
-differently, and the write can end in a mismatch error. `{"flags": {"==mod": {…}}}` does the same
-in one key.
 
 A valid patch whose requested state is already stored remains a successful no-op. A validation
 failure recovered after an unwritten update returns `INVALID_PARAMS`. Unconfirmed, partial, or
@@ -247,8 +226,7 @@ indeterminate updates can return `INTERNAL_ERROR` with these details:
 - `fields`: requested top-level fields whose state was not confirmed.
 - `paths`: up to 20 entries `{ path, requested, stored }`, one per leaf path where the stored value
   differs from the request. `absent: "stored"` replaces `stored` when the key is missing from the
-  stored source, and `absent: "requested"` replaces `requested` for a deletion that did not land,
-  including a `null` or `""` that Foundry cleans to no value.
+  stored source, and `absent: "requested"` replaces `requested` for a deletion that did not land.
   A long string, or an object or array whose JSON is long, is shortened to a window around the
   first differing character; `truncated` then carries `format` (`text` or `json`), `offset`, and
   the full `requestedLength` and `storedLength`. `pathsTruncated` counts the entries beyond 20.
@@ -264,11 +242,8 @@ indeterminate updates can return `INTERNAL_ERROR` with these details:
 When stored differs from requested, the message says that the bridge cannot verify whether Foundry
 core, the game system or a module normalized the value, or whether a hook rewrote, dropped or vetoed
 the change. A blocking module is listed as one possible cause, never as the diagnosis. Resending the
-same patch does not change the result. The same `paths` entries appear on `journal.update` page
-writes, on scene and combat activation, on `combat.start`, on combat initiative, on setting and
-user role or permission writes, on `scene.token.restore-delta` (one `delta.<key>` path per override left after
-the restore), and on a `dropped` outcome of a bulk update when the stored state was compared. A
-bulk element whose embedded creation without `_id` cannot be confirmed is `dropped` without `paths`.
+same patch does not change the result. Every confirmed write that can report a mismatch carries the
+same `paths`, and so does a `dropped` bulk outcome when the stored state was compared.
 
 Parent patches that create embedded entries without `_id`, such as new `behaviors` in
 `scene.region.update`, return an indeterminate error after writing because parent update results
@@ -278,22 +253,16 @@ or use a dedicated embedded create command. Dry runs can still preview these pat
 After partial or indeterminate errors, read stored state and submit only remaining changes as a
 new operation with a fresh idempotency key if using one.
 
-### Patch shapes
+### Patch shape checks
 
-The bridge sends an update patch, a clone patch and the overrides of a compendium import to Foundry
-as written. It does not expand or merge dotted keys, and apart from the array checks below it does
-not refuse a patch for the way its keys are spelled. A patch that Foundry cannot apply as meant can
-end in a mismatch error or an unconfirmed result after the write instead of an error before it.
+Single updates, bulk updates, and dry runs reject invalid or discarded array values, top-level
+dotted writes into array fields, and writes to legacy fields the running core moved, with
+`INVALID_PARAMS` before mutation. Send whole arrays; ordinary dotted object-property writes remain
+supported where the schema permits them. Other key spellings reach Foundry as written.
 
-A dotted key below a field, such as `{"system": {"hp.value": 5}}`, works on both cores for updates.
-On Foundry 13 a clone ignores it, because `Document#clone` expands only top-level dotted keys.
-
-Single updates and bulk updates, real and dry run, return `INVALID_PARAMS` before mutation for array
-values Foundry would discard, a top-level dotted key into an array field such as a wall's `c.0`, and
-writes to a legacy field that the running core moved and would discard. Errors identify the `field` and may include
-`arrayField`, `requested`, `stored`, or migration destination details. Bulk failures add the
-entry's `index` and `id`; single failures use document coordinates. These details describe a
-rejected patch, not a write result.
+Errors identify the `field` and may include `arrayField`, `requested`, `stored`, or migration
+destination details. Bulk failures add the entry's `index` and `id`; single failures use document
+coordinates. These details describe a rejected patch, not a write result.
 
 ## Dry run
 
@@ -336,11 +305,8 @@ Its input ids and line indexes belong to CLI output, not the wire contract.
 Bulk writes accept bounded arrays and prevalidate their elements. Persistence is not transactional;
 results report `complete` and per-element `outcomes`, all of which the caller must inspect.
 
-`get-many` fails the request if any requested id cannot be read, naming the first such id in request
-order. `setting.get-many` is the exception; it reports an unregistered key as `SETTING_NOT_FOUND` on
-that row without failing the whole request. Results hold one element per requested id in request
-order, repeats included. `compendium.get-many` takes a `pack` and reads the distinct ids with one
-Foundry `getDocuments` query.
+`get-many` fails the request if any requested id cannot be read. `setting.get-many` is the exception;
+it reports an unregistered key as `SETTING_NOT_FOUND` on that row without failing the whole request.
 
 ## Error model
 
