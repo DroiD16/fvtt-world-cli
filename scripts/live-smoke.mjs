@@ -630,7 +630,7 @@ const DANGEROUS_SEGMENT_BRANCHES = Object.freeze([
   {
     step: "dangerous.setting.set(defaults)",
     branch:
-      "re-sending the default of an unset world setting is a no-op, and a DataField whose clean yields no value stores its default"
+      "re-sending the default of an unset world setting stores it and is confirmed, and a DataField whose clean yields no value stores its default"
   },
   {
     step: "dangerous.user.lifecycle",
@@ -2003,8 +2003,8 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
       Boolean(
         castRegistered === true &&
         defaultLimitRun?.response?.ok &&
-        defaultLimitRun.response.result?.changed === false &&
-        defaultLimitDocumentId === null &&
+        defaultLimitRun.response.result?.changed === true &&
+        defaultLimitDocumentId !== null &&
         defaultCountSeedRun?.response?.ok &&
         defaultCountRun?.response?.ok &&
         defaultCountRun.response.result?.outcomes?.[0]?.status === "updated" &&
