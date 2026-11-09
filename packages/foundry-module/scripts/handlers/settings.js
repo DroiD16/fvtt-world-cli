@@ -315,42 +315,21 @@ function validateSettingValue(id, config, value) {
       throw settingValidationError(id, failure);
     }
 
-    return { validated: true, value: cleaned === undefined ? config?.default : cleaned };
+    return { validated: true, value: cleaned };
   }
 
   if (isSettingDataModelClass(type)) {
     try {
       return {
         validated: true,
-        value: /** @type {any} */ (type).fromSource(structuredCloneish(value || {}), { strict: true })
+        value: /** @type {any} */ (type).fromSource(structuredCloneish(value), { strict: true })
       };
     } catch (error) {
       throw settingValidationError(id, error);
     }
   }
 
-  return { validated: false, value: value === undefined ? config?.default : value };
-}
-
-/**
- * @param {unknown} json
- * @returns {unknown}
- */
-function parseSettingJson(json) {
-  if (typeof json !== "string") return json ?? null;
-  try {
-    return JSON.parse(json);
-  } catch {
-    return json;
-  }
-}
-
-/**
- * @param {unknown} value
- * @returns {string}
- */
-function settingJson(value) {
-  return JSON.stringify(value) ?? "null";
+  return { validated: false, value };
 }
 
 /**
@@ -362,7 +341,7 @@ function settingJson(value) {
 function readStoredSettingJson(namespace, key, id) {
   const game = assertFoundryReady();
   try {
-    return parseSettingJson(game.settings.get(namespace, key, { document: true })?._source?.value);
+    return JSON.parse(game.settings.get(namespace, key, { document: true })._source.value ?? "null");
   } catch (error) {
     throw createBridgeError(
       ERROR_CODES.SETTING_READ_FAILED,
@@ -420,7 +399,7 @@ function prepareSettingWrite(item) {
   const previous = readSettingValue(item.namespace, item.key, id);
   const storedBefore = readStoredSettingJson(item.namespace, item.key, id);
   const { validated, value } = validateSettingValue(id, config, item.value);
-  const requested = parseSettingJson(settingJson(value));
+  const requested = JSON.parse(JSON.stringify(value) ?? "null");
 
   return {
     id,

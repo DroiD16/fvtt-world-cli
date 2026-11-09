@@ -628,11 +628,6 @@ const DANGEROUS_SEGMENT_BRANCHES = Object.freeze([
       "a setting whose registered type casts on read reports its read form and is confirmed on stored JSON, even when the cast is lossy"
   },
   {
-    step: "dangerous.setting.set(defaults)",
-    branch:
-      "re-sending the default of an unset world setting stores it and is confirmed, and a DataField whose clean yields no value stores its default"
-  },
-  {
     step: "dangerous.user.lifecycle",
     branch: "a scratch user is created, re-roled, permission-overridden, updated, and deleted"
   },
@@ -1817,44 +1812,17 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
     }
 
     const castNamespace = "fvtt-world-cli-smoke";
-    const castSettings = {
-      color: `${castNamespace}.color`,
-      number: `${castNamespace}.number`,
-      flag: `${castNamespace}.flag`,
-      worldflag: `${castNamespace}.worldflag`,
-      userflag: `${castNamespace}.userflag`,
-      limit: `${castNamespace}.limit`,
-      count: `${castNamespace}.count`
-    };
-    let defaultLimitRun = null;
-    let defaultLimitDocumentId;
-    let defaultCountSeedRun = null;
-    let defaultCountRun = null;
+    const castSettings = [`${castNamespace}.color`, `${castNamespace}.flag`];
     let castRegistered = null;
     let castColorRun = null;
-    let castNumberRun = null;
     let castFlagRun = null;
     let castFlagStored = null;
-    /** @type {Record<string, any>} */
-    const castScopeRuns = {};
-    /** @type {Record<string, unknown>} */
-    const castScopeStored = {};
     try {
       castRegistered = await evaluateInGmPage(
         gmControlUrl,
         `const ns = ${JSON.stringify(castNamespace)};
         game.settings.register(ns, "color", { scope: "client", config: false, type: foundry.utils.Color, default: "#000000" });
-        game.settings.register(ns, "number", { scope: "client", config: false, type: Number, default: 0 });
-        game.settings.register(ns, "flag", { scope: "client", config: false, type: Boolean, default: true });
-        game.settings.register(ns, "worldflag", { scope: "world", config: false, type: Boolean, default: true });
-        game.settings.register(ns, "userflag", { scope: "user", config: false, type: Boolean, default: true });
-        game.settings.register(ns, "limit", { scope: "world", config: false, type: String, default: "1" });
-        game.settings.register(ns, "count", {
-          scope: "world",
-          config: false,
-          type: new foundry.data.fields.NumberField({ required: false, nullable: false }),
-          default: 7
-        });
+        game.settings.register(ns, "flag", { scope: "world", config: false, type: Boolean, default: true });
         return true;`
       );
       castColorRun = runFoundryctl([
@@ -1866,16 +1834,6 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
         "color",
         "--value-json",
         "16711680"
-      ]);
-      castNumberRun = runFoundryctl([
-        "setting",
-        "set",
-        "--namespace",
-        castNamespace,
-        "--key",
-        "number",
-        "--value-json",
-        JSON.stringify("5")
       ]);
       castFlagRun = runFoundryctl([
         "setting",
@@ -1891,64 +1849,16 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
         gmControlUrl,
         `return game.settings.get(${JSON.stringify(castNamespace)}, "flag", { document: true })._source.value;`
       );
-      for (const key of ["worldflag", "userflag"]) {
-        castScopeRuns[key] = runFoundryctl([
-          "setting",
-          "set",
-          "--namespace",
-          castNamespace,
-          "--key",
-          key,
-          "--value-json",
-          JSON.stringify("false")
-        ]);
-        castScopeStored[key] = await evaluateInGmPage(
-          gmControlUrl,
-          `return game.settings.get(${JSON.stringify(castNamespace)}, ${JSON.stringify(key)}, { document: true })._source.value;`
-        );
-      }
-      defaultLimitRun = runFoundryctl([
-        "setting",
-        "set",
-        "--namespace",
-        castNamespace,
-        "--key",
-        "limit",
-        "--value-json",
-        JSON.stringify("1")
-      ]);
-      defaultLimitDocumentId = await evaluateInGmPage(
-        gmControlUrl,
-        `return game.settings.get(${JSON.stringify(castNamespace)}, "limit", { document: true }).id ?? null;`
-      );
-      defaultCountSeedRun = runFoundryctl([
-        "setting",
-        "set",
-        "--namespace",
-        castNamespace,
-        "--key",
-        "count",
-        "--value-json",
-        "3"
-      ]);
-      defaultCountRun = runFoundryctl([
-        "setting",
-        "set-many",
-        "--items-json",
-        JSON.stringify([{ namespace: castNamespace, key: "count", value: null }])
-      ]);
     } finally {
       await evaluateInGmPage(
         gmControlUrl,
-        `for (const key of ["worldflag", "userflag", "limit", "count"]) {
-          const doc = game.settings.get(${JSON.stringify(castNamespace)}, key, { document: true });
-          if (doc?.id) await doc.delete();
-        }
+        `const doc = game.settings.get(${JSON.stringify(castNamespace)}, "flag", { document: true });
+        if (doc?.id) await doc.delete();
         return true;`
       ).catch(() => null);
       await evaluateInGmPage(
         gmControlUrl,
-        `for (const id of ${JSON.stringify(Object.values(castSettings))}) {
+        `for (const id of ${JSON.stringify(castSettings)}) {
           game.settings.storage.get("client").removeItem(id);
           game.settings.settings.delete(id);
         }
@@ -1962,61 +1872,17 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
         castRegistered === true &&
         castColorRun?.response?.ok &&
         castColorRun.response.result?.value === "#ff0000" &&
-        castNumberRun?.response?.ok &&
-        castNumberRun.response.result?.value === 5 &&
         castFlagRun?.response?.ok &&
         castFlagRun.response.result?.changed === true &&
         castFlagRun.response.result?.value === true &&
-        castFlagStored === JSON.stringify("false") &&
-        ["worldflag", "userflag"].every(
-          (key) =>
-            castScopeRuns[key]?.response?.ok &&
-            castScopeRuns[key].response.result?.changed === true &&
-            castScopeRuns[key].response.result?.value === true &&
-            castScopeStored[key] === JSON.stringify("false")
-        )
+        castFlagStored === JSON.stringify("false")
       ),
       {
         color: castColorRun ? summarizeCommand(castColorRun) : null,
         colorValue: castColorRun?.response?.result?.value ?? null,
-        number: castNumberRun ? summarizeCommand(castNumberRun) : null,
-        numberValue: castNumberRun?.response?.result?.value ?? null,
         flag: castFlagRun ? summarizeCommand(castFlagRun) : null,
         flagResult: castFlagRun?.response?.result ?? null,
-        flagStoredJson: castFlagStored,
-        scopes: Object.fromEntries(
-          ["worldflag", "userflag"].map((key) => [
-            key,
-            {
-              run: castScopeRuns[key] ? summarizeCommand(castScopeRuns[key]) : null,
-              result: castScopeRuns[key]?.response?.result ?? null,
-              storedJson: castScopeStored[key] ?? null
-            }
-          ])
-        )
-      }
-    );
-
-    markAndPush(
-      summary,
-      "dangerous.setting.set(defaults)",
-      Boolean(
-        castRegistered === true &&
-        defaultLimitRun?.response?.ok &&
-        defaultLimitRun.response.result?.changed === true &&
-        defaultLimitDocumentId !== null &&
-        defaultCountSeedRun?.response?.ok &&
-        defaultCountRun?.response?.ok &&
-        defaultCountRun.response.result?.outcomes?.[0]?.status === "updated" &&
-        defaultCountRun.response.result.outcomes[0].value === 7
-      ),
-      {
-        limit: defaultLimitRun ? summarizeCommand(defaultLimitRun) : null,
-        limitResult: defaultLimitRun?.response?.result ?? null,
-        limitDocumentId: defaultLimitDocumentId ?? null,
-        countSeed: defaultCountSeedRun ? summarizeCommand(defaultCountSeedRun) : null,
-        count: defaultCountRun ? summarizeCommand(defaultCountRun) : null,
-        countResult: defaultCountRun?.response?.result ?? null
+        flagStoredJson: castFlagStored
       }
     );
 

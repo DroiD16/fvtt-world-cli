@@ -4,7 +4,15 @@
  */
 function jsonFieldSource(value) {
   if (value === null || value === undefined) return null;
-  return typeof value === "string" ? value : JSON.stringify(value);
+  if (typeof value === "string") {
+    try {
+      JSON.parse(value);
+      return value;
+    } catch {
+      return JSON.stringify(value);
+    }
+  }
+  return JSON.stringify(value);
 }
 
 /**

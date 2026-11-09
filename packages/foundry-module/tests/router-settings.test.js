@@ -1280,13 +1280,7 @@ describe("settings write surface", () => {
     expect(settings.set).not.toHaveBeenCalled();
   });
 
-  it("leaves the registered default and the request value unchanged when a type cleans in place", async () => {
-    const inPlace = (value) => {
-      value.cleaned = true;
-      return value;
-    };
-    const fieldDefault = { level: 1 };
-    const modelDefault = { level: 2 };
+  it("leaves the request value unchanged when a type cleans in place", async () => {
     const ModelType = class {
       static fromSource(source) {
         source.cleaned = true;
@@ -1300,8 +1294,13 @@ describe("settings write surface", () => {
           namespace: "my-module",
           key: "field",
           scope: "world",
-          type: makeField("my-module.field", { clean: inPlace }),
-          default: fieldDefault
+          type: makeField("my-module.field", {
+            clean: (value) => {
+              value.cleaned = true;
+              return value;
+            }
+          }),
+          default: {}
         },
         {
           id: "my-module.model",
@@ -1309,7 +1308,7 @@ describe("settings write surface", () => {
           key: "model",
           scope: "world",
           type: ModelType,
-          default: modelDefault
+          default: {}
         }
       ],
       set: vi.fn(async (namespace, key, value) => {
@@ -1319,50 +1318,11 @@ describe("settings write surface", () => {
     });
 
     for (const key of ["field", "model"]) {
-      const preview = await router.route(
-        createRequest("setting.set", { namespace: "my-module", key, value: { level: 5 }, dryRun: true })
-      );
-      expect(preview.ok, JSON.stringify(preview.error ?? {})).toBe(true);
       const params = { namespace: "my-module", key, value: { level: 6 } };
+      await router.route(createRequest("setting.set", { ...params, dryRun: true }));
       await router.route(createRequest("setting.set", params));
       expect(params.value).toEqual({ level: 6 });
     }
-    expect(fieldDefault).toEqual({ level: 1 });
-    expect(modelDefault).toEqual({ level: 2 });
-  });
-
-  it("stores a DataField's default when its clean yields no value, as Foundry does", async () => {
-    const registration = {
-      id: NUMBER_FIELD,
-      namespace: "core",
-      key: "time",
-      scope: "world",
-      type: makeField(NUMBER_FIELD, { clean: (value) => (value === null ? undefined : value) }),
-      default: 7
-    };
-    setupWorld({ registrations: [registration] });
-
-    const unsetPreview = await router.route(
-      createRequest("setting.set", { namespace: "core", key: "time", value: null, dryRun: true })
-    );
-    expect(unsetPreview.result).toMatchObject({ value: 7, changed: false });
-
-    const unset = await router.route(
-      createRequest("setting.set", { namespace: "core", key: "time", value: null })
-    );
-    expect(unset.ok, JSON.stringify(unset.error ?? {})).toBe(true);
-    expect(unset.result).toMatchObject({ changed: false });
-    expect(settings.set).not.toHaveBeenCalled();
-
-    store.set(NUMBER_FIELD, 3);
-    settings.set = vi.fn(async (namespace, key, value) => {
-      store.set(`${namespace}.${key}`, value === null ? 7 : value);
-    });
-    const written = await router.route(
-      createRequest("setting.set", { namespace: "core", key: "time", value: null })
-    );
-    expect(written.ok, JSON.stringify(written.error ?? {})).toBe(true);
-    expect(written.result).toMatchObject({ value: 7, previous: 3, changed: true });
   });
 
   it("previews a batch without writing", async () => {

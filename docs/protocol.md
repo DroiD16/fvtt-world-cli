@@ -215,8 +215,7 @@ Setting writes return the observed `value` and its `previous` value, both in the
 `game.settings.get` returns after the setting's registered type cast. For example, `16711680`
 written to a `Color` setting reports `value: "#ff0000"`. A dry run returns the validated request as
 `value`. Change detection and confirmation compare the JSON Foundry stores for the setting with the
-JSON of the validated request. When a DataField's `clean` yields no value, Foundry stores the
-registered default, and the request is compared and previewed as that default.
+JSON of the validated request.
 
 A stored value other than the requested one, for example from an `onChange` callback, turns the
 write into an `INTERNAL_ERROR` with a `paths` entry for `value` that shows the requested and stored
