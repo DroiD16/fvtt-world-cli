@@ -74,32 +74,6 @@ fvtt-world-cli scene token list --scene-id <sceneId> --json
 fvtt-world-cli scene token get --scene-id <sceneId> --token-id <tokenId> --json
 ```
 
-### Token overrides
-
-An unlinked token keeps its own copy of the actor's data in an actor delta: overridden items,
-effects, system data, name and other fields. Edits to the world actor do not reach a value the
-delta overrides, and `scene token item` commands on an unlinked token write into the delta.
-
-```bash
-fvtt-world-cli scene token list --scene-id <sceneId> --include delta --json
-fvtt-world-cli scene token get --scene-id <sceneId> --token-id <tokenId> --include delta --json
-fvtt-world-cli --dry-run scene token restore-delta --scene-id <sceneId> --token-id <tokenId> --json
-fvtt-world-cli scene token restore-delta --scene-id <sceneId> --token-id <tokenId> --json
-```
-
-`scene token get --include delta` returns the stored delta under `token.delta`, or `null` for a
-linked token or a token that stores none. `scene token list --include delta` adds a derived
-`deltaSummary` to each row, described in [result conventions](protocol.md#result-conventions). Its
-counts are delta entries, not the token's items or effects.
-
-`scene token restore-delta` discards every override of an unlinked token through Foundry's
-`ActorDelta#restore()`, so the token follows its actor again. The token keeps its own `name` field,
-while the actor-side name a delta overrode goes back to the world actor's name. The result reports
-`changed` and, under `discarded`, the summary of what was removed; the dry run reports the same
-summary without writing. A token without overrides returns `changed: false`, and a linked token is
-refused with `INVALID_PARAMS`. The command succeeds only when a re-read finds no overrides left;
-otherwise it fails with `INTERNAL_ERROR` and `details.paths` entries under `delta.<key>`.
-
 ### Build a scene with levels
 
 On Foundry v14 a scene's maps live on its levels. Pass the levels when you create the scene:
@@ -192,26 +166,8 @@ update. Reads return authored state; some commands accept `include` options for 
 data. Check the command's help for available projections and filters.
 
 Actor results carry `itemCount` in place of the owned items; `actor get` and `actor get-many`
-return the items with `--include items`. Those items leave out their `flags` and `effects`;
-`--include items.flags,items.effects` adds them and implies `items`, so one call returns every
-owned item with its flags and effects. `actor item list --include flags,effects` adds both to its
-rows, which carry no `system`.
-
-`system info --include modules` lists every installed module as `{id, title, version, active}`,
-inactive ones included. Without the option the result still reports `moduleCount` and
-`activeModuleCount`.
-
-World document reads report two provenance fields from Foundry's `_stats`: `compendiumSource`, the
-compendium entry a document was imported from, and `duplicateSource`, the document it was
-duplicated from. Each is `null` when Foundry stored none. List rows and items nested in an actor
-result carry neither.
-
-`compendium get` returns Foundry's raw source of the entry under `document`, with `id`,
-`compendiumSource` and `duplicateSource` added next to its `_id`. `compendium get-many --pack <id>
---ids <list>` reads several entries of one pack in a single call. Each element of its `entries`
-has the shape of a `compendium get` result. As with the other `get-many` commands, `entries` holds
-one element per requested id in request order, and an unknown id fails the whole request, here
-with `COMPENDIUM_ENTRY_NOT_FOUND`.
+return the items with `--include items`. Each command's `--help` lists its `--include` options, and
+[result conventions](protocol.md#result-conventions) describes the fields they add.
 
 ### Updates and merge semantics
 
@@ -228,19 +184,8 @@ Use JSON flags such as `--data-json` and `--patch-json` for structured values. U
 Both operators also work in a dotted key, `{"flags": {"my-module.==config": {…}}}`. Families with
 closed patch fields, such as `item.update`, refuse a top-level dotted key like `"system.hp.value"`.
 
-This patch replaces an item's whole description and deletes one module flag:
-
-```bash
-fvtt-world-cli item update --item-id <id> --json \
-  --patch-json '{"system":{"==description":{"value":"New text"}},"flags":{"my-module":{"-=draft":null}}}'
-```
-
-A plain `{"system": {"description": {"value": "New text"}}}` would merge into the stored
-description and keep its other keys. A deletion confirms when the key is absent afterwards, and a
-forced replacement when the whole stored value equals the request after Foundry's cleaning (see
-[write confirmation](protocol.md#write-confirmation)). Foundry 14 logs a deprecation warning for
-both spellings; [Compatibility](compatibility.md) lists that and a v13 difference for single
-typed-object entries.
+Foundry 14 logs a deprecation warning for both operator spellings; [Compatibility](compatibility.md)
+lists that and the other version differences.
 
 Read arrays before editing and preserve unchanged values. For a wall's `c` field, send the complete
 `[x1, y1, x2, y2]`, not `c.0`. Array writes that Foundry would discard or rebuild return

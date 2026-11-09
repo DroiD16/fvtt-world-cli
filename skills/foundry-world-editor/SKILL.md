@@ -80,12 +80,9 @@ level ids in a preview are provisional.
 Deleting a level also deletes its tokens and every placeable only on that level, and the dry run
 does not list them: read the scene's placeables (token `level`, others' `levels`) and tell the user
 what the delete removes before running it.
-An unlinked token holds overrides (items, effects, system data, name) that edits to its world
-actor never reach. Before editing an actor that has placed tokens, run `scene token list
---scene-id <id> --include delta` on each scene and read `deltaSummary`: a derived summary, `null`
-when the token has no overrides. Change a token's own items only with `scene token item *`.
-`scene token restore-delta` discards every override of that token: dry-run it, show the user the
-`discarded` summary, and run it only when the user wants the token to follow its actor again.
+An unlinked token keeps its own overrides, which edits to its world actor never reach. Before
+editing an actor that has placed tokens, read its tokens' overrides and tell the user which tokens
+the edit will not change.
 `setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
 When a setting write returns `requiresReload: true`, the change needs a GM-client reload to take
 effect; `system.reload` performs it, drops the bridge, and requires a reconnect wait before the
@@ -153,16 +150,11 @@ details}}`, alongside `protocolVersion`, `type`, and the correlation `id` (echoi
 Documents live under a type-named key inside `result` that varies between commands but is stable
 for each one. `id` is the public identifier; a `_id` mirror may accompany it. Values requested
 through `include` flags may be derived or version-dependent. Write them back only when the
-update schema explicitly accepts them. `system info --include modules` lists each installed module
-with `version` and `active`; check it when a module may explain a behaviour or a stored-vs-requested
-mismatch.
+update schema explicitly accepts them. When a module may explain a behaviour or a
+mismatch, check the installed modules that `system info` reports.
 
-Read in bulk. Actor reads return `itemCount` in place of owned items: `actor get` or `actor
-get-many` with `--include items.flags,items.effects` returns every owned item with its `system`,
-flags, and effects in one call (`--include items` alone leaves out flags and effects). `actor item
-list --include flags,effects` adds flags and effects to its rows, which carry no `system`. A family's
-`get-many` fetches a bounded id set, and `compendium get-many --pack <id> --ids <list>` reads many
-entries of one pack. Fall back to one `get` per document only when no bulk read covers the data.
+Read in bulk: a family's `get-many` and the `--include` projections listed in each command's
+`--help` usually replace one `get` per document.
 
 ## Retry classification
 
