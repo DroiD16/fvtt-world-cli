@@ -634,13 +634,10 @@ export async function startCombat(combat) {
   await combat.startCombat();
 }
 
-/**
- * @param {any} combat
- * @returns {Promise<any>}
- */
+/** @param {any} combat */
 export async function activateCombat(combat) {
   assertCombatMethodSupported(combat, "activate", "combat.activate");
-  return combat.activate();
+  await combat.activate();
 }
 
 export const COMBAT_ADVANCE_METHODS = Object.freeze({

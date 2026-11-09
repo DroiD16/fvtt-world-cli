@@ -69,51 +69,6 @@ function throwUpdateRejected({ subject, hookName, details }, error) {
 
 /**
  * @param {object} args
- * @param {any} args.document
- * @param {Record<string, any>} args.patch
- * @param {string} args.subject
- * @param {string} args.hookName
- * @param {Record<string, any>} args.details
- * @param {Record<string, any> | null} args.before
- * @param {string} [args.remedy]
- * @param {string} [args.note]
- * @param {boolean} [args.resendDeterministic]
- * @returns {Promise<void>}
- */
-export async function assertDocumentUpdateCommitted({
-  document,
-  patch,
-  subject,
-  hookName,
-  details,
-  before,
-  remedy = WORLD_VETO_REMEDY,
-  note = "",
-  resendDeterministic = true
-}) {
-  const probe = await probeRequestedState(document, patch ?? {});
-  if (probe.status === "confirmed") return;
-  const changedFields = changedRoots(requestedRoots(patch), before, readDocumentSource(document));
-  if (probe.status === "rejected" && changedFields !== null && changedFields.length === 0) {
-    throwUpdateRejected({ subject, hookName, details }, probe.error);
-  }
-  if (probe.status !== "pending") {
-    throw createIndeterminateError({ subject, probe, fields: requestedRoots(patch), changedFields, details });
-  }
-  throw createMismatchError({
-    subject,
-    report: probe.report,
-    hookName,
-    changedFields,
-    details,
-    note,
-    remedy,
-    resendDeterministic
-  });
-}
-
-/**
- * @param {object} args
  * @param {string} args.subject
  * @param {RequestedStateProbe} args.probe
  * @param {string[]} args.fields

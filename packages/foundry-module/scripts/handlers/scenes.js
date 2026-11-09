@@ -199,8 +199,7 @@ export function createSceneHandlers() {
           hookName: "preUpdateScene",
           changedFields: [],
           details: { sceneId },
-          note: "Another client activating a different scene in the meantime fits the same observation.",
-          resendDeterministic: false
+          tail: "Another client activating a different scene in the meantime fits the same observation."
         });
       }
 

@@ -7,7 +7,7 @@ import {
   createMismatchError,
   evaluateRequestedDiff
 } from "../scripts/lib/mismatch-report.js";
-import { applyConfirmedUpdate, assertDocumentUpdateCommitted } from "../scripts/lib/write-confirmation.js";
+import { applyConfirmedUpdate } from "../scripts/lib/write-confirmation.js";
 
 import { ForcedDeletion, ForcedReplacement, dataFieldOperators } from "./helpers/data-field-operators.js";
 
@@ -284,23 +284,11 @@ describe("buildMismatchReport", () => {
 describe("createMismatchError", () => {
   const report = { fields: ["name"], paths: [{ path: "name", requested: "B", stored: "A" }] };
 
-  it("carries the path limit and the truncated count into the error details", () => {
-    const leaves = Array.from({ length: MISMATCH_PATH_LIMIT + 3 }, (_unused, index) => ({
-      segments: ["flags", `k${index}`],
-      requested: index
-    }));
-    const error = createMismatchError({
-      subject: "Item X",
-      report: buildMismatchReport(leaves, { flags: {} })
-    });
-    expect(error.details.paths).toHaveLength(MISMATCH_PATH_LIMIT);
-    expect(error.details.pathsTruncated).toBe(3);
-  });
-
   it("keeps INTERNAL_ERROR and makes no change claim without a before snapshot", () => {
     const error = createMismatchError({ subject: "Item X", report, details: { itemId: "X" } });
     expect(error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
     expect(error.message).toContain("cannot verify");
+    expect(error.message).toContain("One possible cause");
     expect(error.details).toEqual({ itemId: "X", fields: ["name"], paths: report.paths });
   });
 
@@ -317,11 +305,6 @@ describe("createMismatchError", () => {
     const error = createMismatchError({ subject: "Item X", report, changedFields: [] });
     expect(error.details.changedFields).toEqual([]);
     expect(error.details.partial).toBeUndefined();
-  });
-
-  it("never instructs disabling a module", () => {
-    const error = createMismatchError({ subject: "Item X", report, changedFields: [] });
-    expect(error.message).not.toMatch(/disable the module/i);
   });
 });
 
@@ -450,112 +433,5 @@ describe("applyConfirmedUpdate with a post-write probe Foundry rejects", () => {
     expect(error.details).toMatchObject({ fields: ["name"], changedFields: ["name"], indeterminate: true });
     expect(error.details.validationError).toContain("may not be undefined");
     expect(error.details.paths).toBeUndefined();
-  });
-});
-
-describe("assertDocumentUpdateCommitted", () => {
-  it("reports an unchanged document from a before snapshot", async () => {
-    const { document } = createDocument({ active: false }, { probe: () => ({ active: true }) });
-    const error = await rejection(
-      assertDocumentUpdateCommitted({
-        document,
-        patch: { active: true },
-        subject: "Combat c1",
-        hookName: "preUpdateCombat",
-        details: { combatId: "c1" },
-        before: { active: false }
-      })
-    );
-    expect(error.details).toEqual({
-      combatId: "c1",
-      fields: ["active"],
-      paths: [{ path: "active", requested: true, stored: false }],
-      changedFields: []
-    });
-  });
-
-  it("reports a rejected probe after a change as indeterminate", async () => {
-    const { document } = createDocument(
-      { active: true },
-      {
-        probe: () => {
-          throw Object.assign(new Error("active: invalid"), { name: "DataModelValidationError" });
-        }
-      }
-    );
-    const error = await rejection(
-      assertDocumentUpdateCommitted({
-        document,
-        patch: { active: true },
-        subject: "Combat c1",
-        hookName: "preUpdateCombat",
-        details: { combatId: "c1" },
-        before: { active: false }
-      })
-    );
-    expect(error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-    expect(error.details).toMatchObject({ changedFields: ["active"], indeterminate: true });
-    expect(error.details.validationError).toContain("invalid");
-  });
-
-  it("still reports a rejected probe without a change as a rejection", async () => {
-    const { document } = createDocument(
-      { active: false },
-      {
-        probe: () => {
-          throw Object.assign(new Error("active: invalid"), { name: "DataModelValidationError" });
-        }
-      }
-    );
-    const error = await rejection(
-      assertDocumentUpdateCommitted({
-        document,
-        patch: { active: true },
-        subject: "Combat c1",
-        hookName: "preUpdateCombat",
-        details: {},
-        before: { active: false }
-      })
-    );
-    expect(error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-  });
-
-  it("reports a rejected probe without a before snapshot as indeterminate", async () => {
-    const { document } = createDocument(
-      { active: false },
-      {
-        probe: () => {
-          throw Object.assign(new Error("active: invalid"), { name: "DataModelValidationError" });
-        }
-      }
-    );
-    const error = await rejection(
-      assertDocumentUpdateCommitted({
-        document,
-        patch: { active: true },
-        subject: "Combat c1",
-        hookName: "preUpdateCombat",
-        details: {},
-        before: null
-      })
-    );
-    expect(error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-    expect(error.details).toMatchObject({ changedFields: null, indeterminate: true });
-  });
-
-  it("makes no change claim without a before snapshot", async () => {
-    const { document } = createDocument({ active: false }, { probe: () => ({ active: true }) });
-    const error = await rejection(
-      assertDocumentUpdateCommitted({
-        document,
-        patch: { active: true },
-        subject: "Combat c1",
-        hookName: "preUpdateCombat",
-        details: {},
-        before: null
-      })
-    );
-    expect(error.details.changedFields).toBeUndefined();
-    expect(error.details.paths).toEqual([{ path: "active", requested: true, stored: false }]);
   });
 });

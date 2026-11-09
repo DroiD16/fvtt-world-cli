@@ -230,7 +230,7 @@ export function snapshotRoots(source, roots) {
  * @param {string | null} [hookName]
  * @returns {string}
  */
-export function unverifiableCauseSentence(hookName = null, { resendDeterministic = true } = {}) {
+export function unverifiableCauseSentence(hookName = null, resendDeterministic = true) {
   return (
     `The bridge cannot verify whether Foundry core, the game system or a module normalized the value, or ` +
     `whether a ${hookName ? `${hookName} ` : ""}hook rewrote, dropped or vetoed the change` +
@@ -256,10 +256,9 @@ function describeLocation(report, pathsAt) {
  * @param {string | null} [args.hookName]
  * @param {string[] | null} [args.changedFields]
  * @param {Record<string, any>} [args.details]
- * @param {string} [args.note]
  * @param {string} [args.pathsAt]
  * @param {string} [args.remedy]
- * @param {boolean} [args.resendDeterministic]
+ * @param {string} [args.tail]
  */
 export function createMismatchError({
   subject,
@@ -267,10 +266,9 @@ export function createMismatchError({
   hookName = null,
   changedFields = null,
   details = {},
-  note = "",
   pathsAt = "details.paths",
   remedy = WORLD_VETO_REMEDY,
-  resendDeterministic = true
+  tail = ""
 }) {
   /** @type {Record<string, any>} */
   const change = {};
@@ -289,8 +287,8 @@ export function createMismatchError({
   return createBridgeError(
     ERROR_CODES.INTERNAL_ERROR,
     `${subject}: Foundry stored a different value than requested ${describeLocation(report, pathsAt)}. ` +
-      `${unverifiableCauseSentence(hookName, { resendDeterministic })} ${changeSentence}` +
-      `Compare the requested and stored values and re-read the stored state before deciding what remains to apply. ${note ? `${note} ` : ""}${remedy}`,
+      `${unverifiableCauseSentence(hookName, !tail)} ${changeSentence}` +
+      `Compare the requested and stored values and re-read the stored state before deciding what remains to apply. ${tail ? `${tail} ` : ""}${remedy}`,
     {
       ...details,
       fields: report.fields,

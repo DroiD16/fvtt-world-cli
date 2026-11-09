@@ -2884,27 +2884,6 @@ describe("command router", () => {
       });
     });
 
-    it("combat.activate reports a rejected re-probe of an unchanged encounter as a rejection", async () => {
-      const combat = seedCombat("cbt-activate-rejected");
-      combat.vetoCombatUpdates = true;
-      combat.clone = vi.fn(async () => ({
-        updateSource() {
-          throw makeDataModelValidationError("active: may not be set");
-        },
-        toObject: () => structuredClone(combat._source)
-      }));
-      const response = await router().route(
-        createRequest("combat.activate", { combatId: "cbt-activate-rejected" })
-      );
-      expect(response.ok).toBe(false);
-      expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
-      expect(response.error.details).toMatchObject({
-        combatId: "cbt-activate-rejected",
-        reason: "foundry_validation"
-      });
-      expect(combat._source.active).toBe(false);
-    });
-
     it("combat.next-turn advances the turn inside the round", async () => {
       const combat = seedCombat("cbt-next-turn", { round: 2, turn: 0 });
       const response = await router().route(

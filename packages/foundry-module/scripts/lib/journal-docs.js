@@ -258,7 +258,7 @@ export async function updateJournalPages(journalId, pages) {
       subject,
       report: probe.report,
       hookName: "preUpdateJournalEntryPage",
-      note: "The pages in details.updatedPageIds DID update.",
+      remedy: `The pages in details.updatedPageIds DID update. ${WORLD_VETO_REMEDY}`,
       changedFields,
       details
     });

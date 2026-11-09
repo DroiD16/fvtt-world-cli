@@ -50,7 +50,6 @@ import { getCombatsCollection } from "../lib/game-collections.js";
 import {
   applyConfirmedUpdate,
   assertDocumentDeleteCommitted,
-  assertDocumentUpdateCommitted,
   assertRequestedWriteStorable
 } from "../lib/write-confirmation.js";
 import { deleteDocument, previewDocumentUpdate } from "../lib/world-docs.js";
@@ -335,8 +334,7 @@ export function createCombatHandlers() {
             hookName: "preUpdateCombat",
             changedFields: changedRoots(["round", "turn"], before, after),
             details: { combatId, round: after.round, turn: after.turn },
-            note: "startCombat() issues update({round: 1, turn: 0}).",
-            remedy: COMBAT_VETO_REMEDY
+            remedy: `startCombat() issues update({round: 1, turn: 0}). ${COMBAT_VETO_REMEDY}`
           });
         }
         return {
@@ -373,20 +371,7 @@ export function createCombatHandlers() {
           });
         }
 
-        const updated = await activateCombat(combat);
-        if (!updated) {
-          await assertDocumentUpdateCommitted({
-            document: combat,
-            patch: { active: true },
-            subject: `Combat ${combatId}`,
-            hookName: "preUpdateCombat",
-            details: { combatId },
-            before: { active: alreadyActive },
-            note: CONCURRENT_ACTIVATION_NOTE,
-            remedy: COMBAT_VETO_REMEDY,
-            resendDeterministic: false
-          });
-        }
+        await activateCombat(combat);
         const parent = rereadCombat(combatId, combat);
         const activeAfter = activeCombatIds(combatId);
 
@@ -400,9 +385,8 @@ export function createCombatHandlers() {
             hookName: "preUpdateCombat",
             changedFields: changedRoots(["active"], { active: alreadyActive }, { active: storedActive }),
             details: { combatId },
-            note: CONCURRENT_ACTIVATION_NOTE,
             remedy: COMBAT_VETO_REMEDY,
-            resendDeterministic: false
+            tail: CONCURRENT_ACTIVATION_NOTE
           });
         }
         return {
