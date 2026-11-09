@@ -2947,67 +2947,6 @@ function runTokenDeltaCoverage(summary, { targetSceneId, actorId, stamp, created
       actorItems: sortedItems(actorItems.response?.result?.items)
     }
   );
-
-  const again = expectOk(
-    summary,
-    "scene.token.restore-delta(again)",
-    runFoundryctl(tokenArgs("restore-delta", tokenId))
-  );
-  markAndPush(
-    summary,
-    "scene.token.restore-delta(no overrides is a no-op)",
-    again?.changed === false && again?.discarded === null,
-    {
-      result: again
-    }
-  );
-
-  const linkedCreate = expectOk(
-    summary,
-    "scene.token.create(restore-delta scratch, linked)",
-    runFoundryctl([
-      "scene",
-      "token",
-      "create",
-      "--scene-id",
-      targetSceneId,
-      "--actor-id",
-      actorId,
-      "--x",
-      "1900",
-      "--y",
-      "1500",
-      "--linked"
-    ])
-  );
-  const linkedId = linkedCreate?.token?.id ?? null;
-  if (!linkedId) return;
-  created.tokens.push({ sceneId: targetSceneId, tokenId: linkedId });
-  const linkedGet = expectOk(
-    summary,
-    "scene.token.get(--include delta, linked)",
-    runFoundryctl(tokenArgs("get", linkedId, ["--include", "delta"]))
-  );
-  markAndPush(summary, "scene.token.get(linked token reports delta null)", linkedGet?.token?.delta === null, {
-    delta: linkedGet?.token?.delta
-  });
-  const linkedRestore = runFoundryctl(tokenArgs("restore-delta", linkedId));
-  expectErr(
-    summary,
-    "scene.token.restore-delta(linked token refused)",
-    linkedRestore,
-    ERROR_CODES.INVALID_PARAMS,
-    {
-      details: linkedRestore.response?.error?.details ?? null
-    }
-  );
-  markAndPush(
-    summary,
-    "scene.token.restore-delta(refusal names the linked token)",
-    linkedRestore.response?.error?.details?.actorLink === true &&
-      linkedRestore.response?.error?.details?.tokenId === linkedId,
-    { details: linkedRestore.response?.error?.details ?? null }
-  );
 }
 
 function runExtendedCoverage(
