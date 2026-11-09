@@ -9,6 +9,24 @@ import {
 } from "../../scripts/generated/protocol.js";
 import { MODULE_SETTING_KEYS } from "../../scripts/lib/validators.js";
 
+/**
+ * @param {any} value
+ * @returns {any}
+ */
+export function expandObject(value) {
+  if (Array.isArray(value)) return value.map(expandObject);
+  if (!value || typeof value !== "object") return value;
+  /** @type {Record<string, any>} */
+  const out = {};
+  for (const [key, inner] of Object.entries(value)) {
+    const segments = key.split(".");
+    let node = out;
+    for (const segment of segments.slice(0, -1)) node = node[segment] ??= {};
+    node[/** @type {string} */ (segments.at(-1))] = expandObject(inner);
+  }
+  return out;
+}
+
 function ensureFilePickerNamespace() {
   globalThis.foundry ??= {};
   globalThis.foundry.applications ??= {};
@@ -51,6 +69,20 @@ function isPlainMergeTarget(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+// Both cores REBUILD an array a patch descends into from the patch alone, destroying the entries
+// the patch does not name; mirror that so the guards see what Foundry would store.
+function rebuildArray(container) {
+  const rebuilt = [];
+  for (const [entryKey, entryValue] of Object.entries(container)) {
+    if (entryKey === "length") {
+      rebuilt.length = Number(entryValue) || 0;
+      continue;
+    }
+    rebuilt[Number(entryKey)] = entryValue;
+  }
+  return rebuilt;
+}
+
 function applyMergeKey(out, rawKey, value, performDeletions) {
   const dot = rawKey.indexOf(".");
   const segment = dot === -1 ? rawKey : rawKey.slice(0, dot);
@@ -74,7 +106,9 @@ function applyMergeKey(out, rawKey, value, performDeletions) {
       return;
     }
     const target = out[name];
-    if (isPlainMergeTarget(value)) {
+    if (Array.isArray(target) && isPlainMergeTarget(value)) {
+      out[name] = rebuildArray(applyDocumentMerge({}, value, { performDeletions }));
+    } else if (isPlainMergeTarget(value)) {
       out[name] = applyDocumentMerge(isPlainMergeTarget(target) ? target : {}, value, { performDeletions });
     } else {
       out[name] = value;
@@ -82,20 +116,10 @@ function applyMergeKey(out, rawKey, value, performDeletions) {
     return;
   }
 
-  // Both cores REBUILD an array a dotted write descends into from the patch alone, destroying the
-  // entries the patch does not name; mirror that so the guards see what Foundry would store.
   if (Array.isArray(out[name])) {
     const container = {};
     applyMergeKey(container, rest, value, performDeletions);
-    const rebuilt = [];
-    for (const [entryKey, entryValue] of Object.entries(container)) {
-      if (entryKey === "length") {
-        rebuilt.length = Number(entryValue) || 0;
-        continue;
-      }
-      rebuilt[Number(entryKey)] = entryValue;
-    }
-    out[name] = rebuilt;
+    out[name] = rebuildArray(container);
     return;
   }
   const base = operator === "==" || !isPlainMergeTarget(out[name]) ? {} : out[name];
@@ -4379,6 +4403,8 @@ export function installFakeFoundry() {
       mergeObject: (base, patch, options) => applyDocumentMerge(base, patch, options),
 
       deepClone: (value) => structuredClone(value),
+
+      expandObject,
 
       randomID: () =>
         `batchid${String((globalThis.__batchIdCounter = (globalThis.__batchIdCounter ?? 0) + 1)).padStart(8, "0")}`,

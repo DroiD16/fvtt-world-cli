@@ -308,21 +308,6 @@ describe("a write that landed only in part is reported as partial, not as succes
 
 describe("a dotted key inside an embedded-collection entry is previewed the way the client expands it", () => {
   it("lands through scene.region.update and scene.region.update-many, real and dry run, sent as written", async () => {
-    /** @param {any} value @returns {any} */
-    const expandObject = (value) => {
-      if (Array.isArray(value)) return value.map(expandObject);
-      if (!value || typeof value !== "object") return value;
-      /** @type {Record<string, any>} */
-      const out = {};
-      for (const [key, inner] of Object.entries(value)) {
-        const segments = key.split(".");
-        let node = out;
-        for (const segment of segments.slice(0, -1)) node = node[segment] ??= {};
-        node[/** @type {string} */ (segments.at(-1))] = expandObject(inner);
-      }
-      return out;
-    };
-    globalThis.foundry.utils.expandObject = expandObject;
     const scene = globalThis.game.scenes.get("scene-1");
     const region = scene.regions.get("region-lava");
     const behavior = Array.from(region.behaviors)[0];

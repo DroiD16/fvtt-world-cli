@@ -65,7 +65,7 @@ export async function getCompendiumDocuments(packId, entryIds) {
   }
 
   const documents = await pack.getDocuments({ _id__in: entryIds });
-  const byId = new Map(Array.from(documents ?? [], (document) => [document.id ?? document._id, document]));
+  const byId = new Map(Array.from(documents ?? [], (document) => [document.id, document]));
   const missing = entryIds.find((entryId) => !byId.has(entryId));
   if (missing !== undefined) {
     throw compendiumEntryNotFound(packId, missing);

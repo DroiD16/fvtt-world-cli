@@ -152,8 +152,7 @@ export async function assertClonePatchValid(document, patch = {}) {
  * @returns {Record<string, any>}
  */
 function expandLikeClient(patch) {
-  const expandObject = globalThis.foundry?.utils?.expandObject;
-  return typeof expandObject === "function" ? expandObject(patch ?? {}) : (patch ?? {});
+  return /** @type {any} */ (globalThis).foundry.utils.expandObject(patch ?? {});
 }
 
 export async function previewDocumentUpdate(document, patch = {}) {

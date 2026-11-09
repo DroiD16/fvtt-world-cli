@@ -10,10 +10,11 @@ import {
 import { applyConfirmedUpdate } from "../scripts/lib/write-confirmation.js";
 
 import { ForcedDeletion, ForcedReplacement, dataFieldOperators } from "./helpers/data-field-operators.js";
+import { expandObject } from "./helpers/fake-foundry.js";
 
 beforeEach(() => {
   globalThis.foundry = /** @type {any} */ ({
-    utils: { deepClone: (/** @type {unknown} */ value) => structuredClone(value) },
+    utils: { deepClone: (/** @type {unknown} */ value) => structuredClone(value), expandObject },
     data: { operators: dataFieldOperators }
   });
 });
