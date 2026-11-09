@@ -95,14 +95,8 @@ signal, not a failure — reconnect and continue rather than retrying the reload
 Discover → inspect schema → locate → read → smallest patch → dry-run → commit → verify. Never
 guess a command name or parameter.
 
-1. Run `fvtt-world-cli commands --json`. `policy` sits at the top level beside `result` (the
-   command rows), never inside it. Continue only when this gate prints `true`:
-
-   ```bash
-   fvtt-world-cli commands --json | jq -e '.policy.applied == true and any(.result[]; .command == "<name>")'
-   ```
-
-   A `false` `.policy.applied` means no bridge answered and the output is the static
+1. Run `fvtt-world-cli commands --json`. Continue only when `policy.applied` (top level, beside
+   `result`) is `true` and the required command is present. A `false` value means no bridge answered and the output is the static
    registry, not the client's permissions. Report an absent command instead of seeking another way
    to produce the same effect. Warn the user before a command marked `"approval": true`, and prefer
    one `*-many` command when it can replace several approvals. Dotted protocol names map to spaced
