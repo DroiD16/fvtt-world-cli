@@ -96,11 +96,12 @@ Discover → inspect schema → locate → read → smallest patch → dry-run �
 guess a command name or parameter.
 
 1. Run `fvtt-world-cli commands --json`. Continue only when `policy.applied` (top level, beside
-   `result`) is `true` and the required command is present. A `false` value means no bridge answered and the output is the static
-   registry, not the client's permissions. Report an absent command instead of seeking another way
-   to produce the same effect. Warn the user before a command marked `"approval": true`, and prefer
-   one `*-many` command when it can replace several approvals. Dotted protocol names map to spaced
-   CLI subcommands, such as `actor.item.update` to `actor item update`.
+   `result`) is `true` and the required command is present. A `false` value means no bridge
+   answered and the output is the static registry, not the client's permissions. Report an absent
+   command instead of seeking another way to produce the same effect. Warn the user before a
+   command marked `"approval": true`, and prefer one `*-many` command when it can replace several
+   approvals. Dotted protocol names map to spaced CLI subcommands, such as `actor.item.update` to
+   `actor item update`.
 2. `fvtt-world-cli schema <command>` shows the exact request parameters, required fields, enums,
    and whether unknown fields are accepted; `fvtt-world-cli <command path> --help` maps flags.
 3. Locate targets with the narrowest query: a family `list --name <substring> --limit <n>` when
@@ -176,8 +177,7 @@ Classify a failure before reacting:
   id may already exist despite an indeterminate error. Send only the remaining changes as a new
   operation with a fresh idempotency key, if using one.
 - An update `INTERNAL_ERROR` with `details.paths` is a stored-vs-requested mismatch. Compare
-  `requested` and `stored` for each path (`absent` marks a missing side, `truncated` a shortened
-  window). A representation-only difference, such as HTML escaping (`&` stored as `&amp;`) or
+  `requested` and `stored` for each path. A representation-only difference, such as HTML escaping (`&` stored as `&amp;`) or
   whitespace, can be accepted as done. Report any other difference to the user. The same patch
   stores the same result, so the next request is either a different patch or none.
 - Correct a structured Foundry rejection and submit the corrected content as a new operation.
