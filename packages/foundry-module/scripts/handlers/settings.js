@@ -354,49 +354,14 @@ function settingJson(value) {
 }
 
 /**
- * @param {string} id
- * @param {string} json
- * @returns {unknown}
- */
-function settingReadForm(id, json) {
-  const SettingClass = /** @type {any} */ (globalThis).foundry?.documents?.Setting;
-  if (typeof SettingClass !== "function") return parseSettingJson(json);
-  try {
-    return new SettingClass({ key: id, value: json }).value;
-  } catch {
-    return parseSettingJson(json);
-  }
-}
-
-/**
- * @param {string} id
- * @param {any} config
- * @returns {string}
- */
-function settingDefaultJson(id, config) {
-  try {
-    return settingJson(validateSettingValue(id, config, config?.default).value);
-  } catch {
-    return JSON.stringify(config?.default ?? null);
-  }
-}
-
-/**
  * @param {string} namespace
  * @param {string} key
  * @param {string} id
- * @param {any} config
  * @returns {unknown}
  */
-function readStoredSettingJson(namespace, key, id, config) {
+function readStoredSettingJson(namespace, key, id) {
   const game = assertFoundryReady();
   try {
-    const storage = game.settings.storage?.get?.(config?.scope);
-    const stored =
-      config?.scope === "client"
-        ? (storage?.getItem?.(id) ?? null) !== null
-        : Boolean(storage?.getSetting?.(id, config?.scope === "user" ? game.userId : null));
-    if (!stored) return parseSettingJson(settingDefaultJson(id, config));
     return parseSettingJson(game.settings.get(namespace, key, { document: true })?._source?.value);
   } catch (error) {
     throw createBridgeError(
@@ -453,10 +418,9 @@ function prepareSettingWrite(item) {
 
   const row = buildSettingRow(id, config);
   const previous = readSettingValue(item.namespace, item.key, id);
-  const storedBefore = readStoredSettingJson(item.namespace, item.key, id, config);
+  const storedBefore = readStoredSettingJson(item.namespace, item.key, id);
   const { validated, value } = validateSettingValue(id, config, item.value);
-  const json = settingJson(value);
-  const requested = parseSettingJson(json);
+  const requested = parseSettingJson(settingJson(value));
 
   return {
     id,
@@ -465,9 +429,7 @@ function prepareSettingWrite(item) {
     scope: row.scope,
     requiresReload: row.requiresReload,
     previous,
-    value: serializeSettingValue(settingReadForm(id, json)),
     validated,
-    config,
     requested,
     storedBefore,
     unchanged: sourceValuesEqual(storedBefore, requested)
@@ -475,7 +437,7 @@ function prepareSettingWrite(item) {
 }
 
 /**
- * @param {{ id: string, namespace: string, key: string, scope: unknown, requiresReload: unknown, previous: unknown, value: unknown, validated: boolean, unchanged: boolean, config: any }} prepared
+ * @param {{ id: string, namespace: string, key: string }} prepared
  * @param {unknown} requested
  */
 async function writeSetting(prepared, requested) {
@@ -489,7 +451,7 @@ async function writeSetting(prepared, requested) {
 
   await game.settings.set(prepared.namespace, prepared.key, structuredCloneish(requested));
   return {
-    stored: readStoredSettingJson(prepared.namespace, prepared.key, prepared.id, prepared.config),
+    stored: readStoredSettingJson(prepared.namespace, prepared.key, prepared.id),
     value: readSettingValue(prepared.namespace, prepared.key, prepared.id)
   };
 }
@@ -515,7 +477,7 @@ function settingMismatch(prepared, stored, pathsAt) {
 }
 
 /**
- * @param {{ id: string, namespace: string, key: string, scope: unknown, requiresReload: unknown, previous: unknown, value: unknown, validated: boolean }} prepared
+ * @param {{ id: string, namespace: string, key: string, scope: unknown, requiresReload: unknown, previous: unknown, validated: boolean }} prepared
  * @param {unknown} value
  * @param {boolean} changed
  */
@@ -651,7 +613,7 @@ export function createSettingHandlers() {
     async "setting.set"(params) {
       const prepared = prepareSettingWrite(params);
       if (isDryRun(params)) {
-        return dryRunResponse(settingWriteResult(prepared, prepared.value, !prepared.unchanged));
+        return dryRunResponse(settingWriteResult(prepared, prepared.requested, !prepared.unchanged));
       }
 
       if (prepared.unchanged) {
@@ -686,7 +648,7 @@ export function createSettingHandlers() {
       if (isDryRun(params)) {
         return buildBatchResult({
           outcomes: elements.map((element, index) => ({
-            ...settingWriteResult(element, element.value, !element.unchanged),
+            ...settingWriteResult(element, element.requested, !element.unchanged),
             index,
             status: element.unchanged ? BATCH_STATUS.UNCHANGED : BATCH_STATUS.UPDATED
           })),

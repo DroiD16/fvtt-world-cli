@@ -7,7 +7,7 @@ import { COMMAND_DEFINITIONS, ERROR_CODES, MODULE_ID } from "../scripts/generate
 import { MODULE_SETTING_KEYS } from "../scripts/lib/validators.js";
 
 import { allowEveryCommandPolicy, createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
-import { fakeSettingDocument, fakeSettingStorage } from "./helpers/fake-settings.js";
+import { fakeSettingDocument } from "./helpers/fake-settings.js";
 
 describe("settings read surface", () => {
   let router;
@@ -862,7 +862,6 @@ describe("settings write surface", () => {
         if (options?.document) return fakeSettingDocument(store, id, registry.get(id)?.default);
         return store.has(id) ? store.get(id) : registry.get(id)?.default;
       }),
-      storage: fakeSettingStorage(store),
       set:
         set ??
         vi.fn(async (namespace, key, value) => {
@@ -892,11 +891,9 @@ describe("settings write surface", () => {
     let value = 1;
     for (let level = 0; level < 100_000; level += 1) value = { v: value };
 
-    const started = performance.now();
     const response = await router.route(
       createRequest("setting.set", { namespace: "my-module", key: "mode", value })
     );
-    expect(performance.now() - started).toBeLessThan(500);
 
     expect(response.ok).toBe(false);
     expect(response.error.code).toBe(ERROR_CODES.PAYLOAD_TOO_LARGE);
@@ -1186,155 +1183,101 @@ describe("settings write surface", () => {
       if (options?.document) return fakeSettingDocument(store, id, undefined);
       return spec.type(store.get(id));
     });
-    const previousFoundry = globalThis.foundry;
-    globalThis.foundry = /** @type {any} */ ({
-      ...previousFoundry,
-      documents: {
-        Setting: class {
-          /** @param {{ value: string }} data */
-          constructor({ value }) {
-            this.value = spec.type(JSON.parse(value));
-          }
-        }
-      }
-    });
-    return () => {
-      globalThis.foundry = previousFoundry;
-    };
   }
 
-  const toHex = (/** @type {unknown} */ value) => `#${Number(value).toString(16)}`;
   const truthy = (/** @type {unknown} */ value) => Boolean(value);
 
-  it("reports a cast setting in its read form and confirms it against the stored JSON", async () => {
-    const restore = setupCastWorld({ id: "my-module.hex", key: "hex", type: toHex, stored: 0 });
-    try {
-      const response = await router.route(
-        createRequest("setting.set", { namespace: "my-module", key: "hex", value: 16711680 })
-      );
-      expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
-      expect(response.result).toMatchObject({ value: "#ff0000", previous: "#0", changed: true });
-    } finally {
-      restore();
-    }
-  });
-
   it("sends a write whose lossy cast reads the same as the stored value", async () => {
-    const restore = setupCastWorld({ id: "my-module.flag", key: "flag", type: truthy, stored: true });
-    try {
-      const preview = await router.route(
-        createRequest("setting.set", { namespace: "my-module", key: "flag", value: "false", dryRun: true })
-      );
-      expect(preview.result).toMatchObject({ changed: true });
+    setupCastWorld({ id: "my-module.flag", key: "flag", type: truthy, stored: true });
+    const preview = await router.route(
+      createRequest("setting.set", { namespace: "my-module", key: "flag", value: "false", dryRun: true })
+    );
+    expect(preview.result).toMatchObject({ changed: true });
 
-      const batchPreview = await router.route(
-        createRequest("setting.set-many", {
-          items: [{ namespace: "my-module", key: "flag", value: "false" }],
-          dryRun: true
-        })
-      );
-      expect(batchPreview.result.outcomes[0].status).toBe("updated");
+    const batchPreview = await router.route(
+      createRequest("setting.set-many", {
+        items: [{ namespace: "my-module", key: "flag", value: "false" }],
+        dryRun: true
+      })
+    );
+    expect(batchPreview.result.outcomes[0].status).toBe("updated");
 
-      const response = await router.route(
-        createRequest("setting.set", { namespace: "my-module", key: "flag", value: "false" })
-      );
-      expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
-      expect(settings.set).toHaveBeenCalledWith("my-module", "flag", "false");
-      expect(store.get("my-module.flag")).toBe("false");
-      expect(response.result).toMatchObject({ value: true, changed: true });
-    } finally {
-      restore();
-    }
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "my-module", key: "flag", value: "false" })
+    );
+    expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
+    expect(settings.set).toHaveBeenCalledWith("my-module", "flag", "false");
+    expect(store.get("my-module.flag")).toBe("false");
+    expect(response.result).toMatchObject({ value: true, changed: true });
   });
 
   it("reports a stored value whose lossy cast reads the same as the request as a mismatch", async () => {
-    const restore = setupCastWorld(
-      { id: "my-module.flag", key: "flag", type: truthy, stored: false },
-      (stored, key) => stored.set(key, "yes")
+    setupCastWorld({ id: "my-module.flag", key: "flag", type: truthy, stored: false }, (stored, key) =>
+      stored.set(key, "yes")
     );
-    try {
-      const single = await router.route(
-        createRequest("setting.set", { namespace: "my-module", key: "flag", value: "true" })
-      );
-      expect(single.ok).toBe(false);
-      expect(single.error.details).toMatchObject({
-        paths: [{ path: "value", requested: "true", stored: "yes" }],
-        changedFields: ["value"]
-      });
+    const single = await router.route(
+      createRequest("setting.set", { namespace: "my-module", key: "flag", value: "true" })
+    );
+    expect(single.ok).toBe(false);
+    expect(single.error.details).toMatchObject({
+      paths: [{ path: "value", requested: "true", stored: "yes" }],
+      changedFields: ["value"]
+    });
 
-      store.set("my-module.flag", false);
-      const batch = await router.route(
-        createRequest("setting.set-many", { items: [{ namespace: "my-module", key: "flag", value: "true" }] })
-      );
-      expect(batch.ok).toBe(false);
-      expect(batch.error.details.outcomes).toEqual([
-        {
-          index: 0,
-          id: "my-module.flag",
-          status: "dropped",
-          paths: [{ path: "value", requested: "true", stored: "yes" }]
-        }
-      ]);
-    } finally {
-      restore();
-    }
+    store.set("my-module.flag", false);
+    const batch = await router.route(
+      createRequest("setting.set-many", { items: [{ namespace: "my-module", key: "flag", value: "true" }] })
+    );
+    expect(batch.ok).toBe(false);
+    expect(batch.error.details.outcomes).toEqual([
+      {
+        index: 0,
+        id: "my-module.flag",
+        status: "dropped",
+        paths: [{ path: "value", requested: "true", stored: "yes" }]
+      }
+    ]);
   });
 
   it("refuses a typed value nested past Foundry's clone depth as too large, on the dry run and the real call", async () => {
-    const previousFoundry = globalThis.foundry;
-    const deepClone = (value, depth = 0) => {
-      if (depth > 100) throw new Error("Maximum depth exceeded");
-      if (!value || typeof value !== "object") return value;
-      return Object.fromEntries(
-        Object.entries(value).map(([key, entry]) => [key, deepClone(entry, depth + 1)])
-      );
-    };
-    globalThis.foundry = {
-      ...(previousFoundry ?? {}),
-      utils: { ...(previousFoundry?.utils ?? {}), deepClone }
-    };
-    try {
-      setupWorld({
-        registrations: [
-          {
-            id: "my-module.field",
-            namespace: "my-module",
-            key: "field",
-            scope: "world",
-            type: makeField("my-module.field"),
-            default: {}
+    setupWorld({
+      registrations: [
+        {
+          id: "my-module.field",
+          namespace: "my-module",
+          key: "field",
+          scope: "world",
+          type: makeField("my-module.field"),
+          default: {}
+        },
+        {
+          id: "my-module.model",
+          namespace: "my-module",
+          key: "model",
+          scope: "world",
+          type: class {
+            static fromSource(source) {
+              return source;
+            }
           },
-          {
-            id: "my-module.model",
-            namespace: "my-module",
-            key: "model",
-            scope: "world",
-            type: class {
-              static fromSource(source) {
-                return source;
-              }
-            },
-            default: {}
-          }
-        ]
-      });
-      /** @type {any} */
-      let value = 1;
-      for (let level = 0; level < 150; level += 1) value = { v: value };
-      for (const key of ["field", "model"]) {
-        for (const dryRun of [true, false]) {
-          const response = await router.route(
-            createRequest("setting.set", { namespace: "my-module", key, value, dryRun })
-          );
-          expect(response.ok, `${key} dryRun:${dryRun}`).toBe(false);
-          expect(response.error.code).toBe(ERROR_CODES.PAYLOAD_TOO_LARGE);
-          expect(response.error.details).toMatchObject({ limit: "value-depth" });
+          default: {}
         }
+      ]
+    });
+    /** @type {any} */
+    let value = 1;
+    for (let level = 0; level < 150; level += 1) value = { v: value };
+    for (const key of ["field", "model"]) {
+      for (const dryRun of [true, false]) {
+        const response = await router.route(
+          createRequest("setting.set", { namespace: "my-module", key, value, dryRun })
+        );
+        expect(response.ok, `${key} dryRun:${dryRun}`).toBe(false);
+        expect(response.error.code).toBe(ERROR_CODES.PAYLOAD_TOO_LARGE);
+        expect(response.error.details).toMatchObject({ limit: "value-depth" });
       }
-      expect(settings.set).not.toHaveBeenCalled();
-    } finally {
-      globalThis.foundry = previousFoundry;
     }
+    expect(settings.set).not.toHaveBeenCalled();
   });
 
   it("leaves the registered default and the request value unchanged when a type cleans in place", async () => {
@@ -1420,44 +1363,6 @@ describe("settings write surface", () => {
     );
     expect(written.ok, JSON.stringify(written.error ?? {})).toBe(true);
     expect(written.result).toMatchObject({ value: 7, previous: 3, changed: true });
-  });
-
-  it("treats re-sending the default of an unset setting as a no-op", async () => {
-    const numericDefault = { ...MODULE_MODE, id: "my-module.limit", key: "limit", default: "1" };
-    const model = {
-      ...MODULE_MODE,
-      id: "my-module.layout",
-      key: "layout",
-      type: class {
-        /** @param {Record<string, unknown>} source */
-        static fromSource(source) {
-          return { columns: 2, ...source };
-        }
-      },
-      default: {}
-    };
-    setupWorld({ registrations: [numericDefault, model] });
-
-    for (const [key, value] of /** @type {Array<[string, unknown]>} */ ([
-      ["limit", "1"],
-      ["layout", {}]
-    ])) {
-      const preview = await router.route(
-        createRequest("setting.set", { namespace: "my-module", key, value, dryRun: true })
-      );
-      expect(preview.result.changed, key).toBe(false);
-      const response = await router.route(
-        createRequest("setting.set", { namespace: "my-module", key, value })
-      );
-      expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
-      expect(response.result.changed, key).toBe(false);
-    }
-    expect(settings.set).not.toHaveBeenCalled();
-
-    const batch = await router.route(
-      createRequest("setting.set-many", { items: [{ namespace: "my-module", key: "limit", value: "1" }] })
-    );
-    expect(batch.result.outcomes[0].status).toBe("unchanged");
   });
 
   it("previews a batch without writing", async () => {

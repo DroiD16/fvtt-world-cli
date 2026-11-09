@@ -25,20 +25,3 @@ export function fakeSettingDocument(values, id, defaultValue) {
     ? storedDocument(values, id)
     : { id: null, _source: { value: jsonFieldSource(defaultValue) } };
 }
-
-/** @param {Map<string, unknown>} values */
-export function fakeSettingStorage(values) {
-  const world = {
-    getSetting: (/** @type {string} */ id) => (values.has(id) ? storedDocument(values, id) : undefined)
-  };
-  return new Map(
-    /** @type {Array<[string, any]>} */ ([
-      [
-        "client",
-        { getItem: (/** @type {string} */ id) => (values.has(id) ? JSON.stringify(values.get(id)) : null) }
-      ],
-      ["world", world],
-      ["user", world]
-    ])
-  );
-}

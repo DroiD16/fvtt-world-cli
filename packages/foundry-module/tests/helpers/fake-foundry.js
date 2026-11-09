@@ -1,4 +1,4 @@
-import { fakeSettingDocument, fakeSettingStorage } from "./fake-settings.js";
+import { fakeSettingDocument } from "./fake-settings.js";
 import { expect, vi } from "vitest";
 
 import {
@@ -4025,7 +4025,6 @@ export function installFakeFoundry() {
           ? copySettingValue(registration.default)
           : "";
       }),
-      storage: fakeSettingStorage(settingValues),
       set: vi.fn(async (namespace, key, value) => {
         const stored = copySettingValue(value);
         settingValues.set(`${namespace}.${key}`, stored);
