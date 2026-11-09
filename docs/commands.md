@@ -88,11 +88,9 @@ fvtt-world-cli scene token restore-delta --scene-id <sceneId> --token-id <tokenI
 ```
 
 `scene token get --include delta` returns the stored delta under `token.delta`, or `null` for a
-linked token or a token that stores none. `scene token list --include delta` adds `deltaSummary` to
-each row instead, a summary the bridge derives from the stored delta. Its `itemEntries` and
-`effectEntries` count delta entries, deletion markers included, not the token's items or effects.
-[Result conventions](protocol.md#result-conventions) give the rule for `overriddenKeys`, which
-`restore-delta` also uses.
+linked token or a token that stores none. `scene token list --include delta` adds a derived
+`deltaSummary` to each row, described in [result conventions](protocol.md#result-conventions). Its
+counts are delta entries, not the token's items or effects.
 
 `scene token restore-delta` discards every override of an unlinked token through Foundry's
 `ActorDelta#restore()`, so the token follows its actor again. The token keeps its own `name` field,
@@ -227,11 +225,8 @@ Use JSON flags such as `--data-json` and `--patch-json` for structured values. U
   and `{"==key": value}` replaces the key's whole value instead of merging into it.
 - Embedded collections follow their family's Foundry semantics.
 
-Both operators come in a nested form, `{"system": {"==description": {…}}}`, and a dotted form,
-`{"flags": {"my-module.==config": {…}}}`. Families with closed patch fields, such as `item.update`
-and `actor.update`, accept only their named top-level fields, so any dotted key, operator or not,
-sits below one of them; a top-level `"system.==description"` or `"system.hp.value"` is refused
-there.
+Both operators also work in a dotted key, `{"flags": {"my-module.==config": {…}}}`. Families with
+closed patch fields, such as `item.update`, refuse a top-level dotted key like `"system.hp.value"`.
 
 This patch replaces an item's whole description and deletes one module flag:
 
@@ -270,13 +265,11 @@ A timeout or disconnect can happen after a write commits. An update error with `
 or `details.indeterminate` can also mean that some changes persisted. Read affected state before
 retrying and send only what remains to be done.
 
-An update whose stored state differs from the request fails with `INTERNAL_ERROR`. The comparison
-covers each requested path that survives Foundry's cleaning: Foundry drops a key the document's
-schema does not declare without an error, so such a key is never compared and a write made only of
-undeclared keys reports success with nothing stored. `details.paths` lists up to 20 differing paths, each with the requested and the stored value, and
+An update whose stored state differs from the request fails with `INTERNAL_ERROR`.
+`details.paths` lists up to 20 differing paths, each with the requested and the stored value, and
 `details.pathsTruncated` counts the rest. Foundry core, the game system and modules can all change
-a value on its way into the world. Foundry's HTML
-sanitizer, for example, stores a raw `&` in a rich-text field as `&amp;`. The bridge cannot tell such
+a value on its way into the world. Foundry's HTML sanitizer, for example, stores a raw `&` in a
+rich-text field as `&amp;`. The bridge cannot tell such
 a normalization from a hook that rewrote, dropped or vetoed the write, so the error reports the
 values and leaves that judgment to the caller. Sending the same patch again stores the same result.
 

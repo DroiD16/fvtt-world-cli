@@ -187,12 +187,10 @@ raw source under `document` with `id`, `compendiumSource` and `duplicateSource` 
 
 `scene.token.get` with `include: ["delta"]` returns `token.delta`, the stored `ActorDelta` source,
 or `null` for a linked token or when none is stored. `scene.token.list` with `include: ["delta"]`
-returns `deltaSummary` per row, a derived value of the form `{ itemEntries, effectEntries,
-overriddenKeys }`. The two counts are the lengths of the delta's `items` and `effects` arrays,
-deletion markers (`_tombstone` entries) included. `overriddenKeys` lists every key other than `_id`
-whose value is not `null`, `[]` or `{}` at the top level; content below the top level, nested
-`null`, `[]` and `{}` included, counts as an override. `deltaSummary` is `null` when that list is
-empty. The no-op check, dry run and confirmation of `scene.token.restore-delta` use the same rule.
+returns a derived `deltaSummary` per row, `{ itemEntries, effectEntries, overriddenKeys }`. The two
+counts are the lengths of the delta's `items` and `effects` arrays, deletion markers included.
+`overriddenKeys` lists every top-level key other than `_id` whose value is not `null`, `[]` or `{}`,
+and `deltaSummary` is `null` when that list is empty. `scene.token.restore-delta` uses the same rule.
 `scene.token.restore-delta` returns `{ sceneId, tokenId, changed, discarded }`, where `discarded` is
 that summary taken before the restore, or `null` for a no-op.
 
@@ -239,8 +237,8 @@ value after Foundry's cleaning.
 
 A patch that deletes or force-replaces a key and also writes it, such as
 `{"flags": {"-=mod": null, "mod": {…}}}`, reaches Foundry as written. Foundry 13 and 14 resolve it
-differently, and the write can end in a mismatch error. A forced replacement
-`{"flags": {"==mod": {…}}}` replaces the value in one key.
+differently, and the write can end in a mismatch error. `{"flags": {"==mod": {…}}}` does the same
+in one key.
 
 A valid patch whose requested state is already stored remains a successful no-op. A validation
 failure recovered after an unwritten update returns `INVALID_PARAMS`. Unconfirmed, partial, or
