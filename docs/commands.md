@@ -89,14 +89,10 @@ fvtt-world-cli scene token restore-delta --scene-id <sceneId> --token-id <tokenI
 
 `scene token get --include delta` returns the stored delta under `token.delta`, or `null` for a
 linked token or a token that stores none. `scene token list --include delta` adds `deltaSummary` to
-each row instead. The bridge derives it from the stored delta. `itemEntries` and `effectEntries`
-count the entries of the delta's `items` and `effects`, including deletion markers (tombstones)
-for items or effects the token removes; they are not the token's item or effect count.
-`overriddenKeys` lists the top-level keys that hold an override. Only a top-level value of `null`,
-`[]` or `{}` overrides nothing. Any content below the top level counts, including a nested `null`,
-`[]` or `{}`, because Foundry merges such a value into the actor and can replace what the actor
-holds there. `deltaSummary` is `null` when no key holds an override, and `restore-delta` uses the
-same rule.
+each row instead, a summary the bridge derives from the stored delta. Its `itemEntries` and
+`effectEntries` count delta entries, deletion markers included, not the token's items or effects.
+[Result conventions](protocol.md#result-conventions) give the rule for `overriddenKeys`, which
+`restore-delta` also uses.
 
 `scene token restore-delta` discards every override of an unlinked token through Foundry's
 `ActorDelta#restore()`, so the token follows its actor again. The token keeps its own `name` field,
@@ -226,8 +222,7 @@ Use JSON flags such as `--data-json` and `--patch-json` for structured values. U
 - Nested objects merge recursively.
 - Ordinary arrays replace as a whole.
 - Dotted paths target object properties where permitted. The bridge sends them to Foundry as
-  written, and Foundry expands them in key order. A top-level dotted key into an array field, such
-  as `c.0`, is refused.
+  written. A top-level dotted key into an array field, such as `c.0`, is refused.
 - Foundry's operator keys work at any permitted nested level: `{"-=key": null}` deletes the key,
   and `{"==key": value}` replaces the key's whole value instead of merging into it.
 - Embedded collections follow their family's Foundry semantics.
@@ -236,20 +231,17 @@ Both operators come in a nested form, `{"system": {"==description": {…}}}`, an
 `{"flags": {"my-module.==config": {…}}}`. Families with closed patch fields, such as `item.update`
 and `actor.update`, accept only their named top-level fields, so any dotted key, operator or not,
 sits below one of them; a top-level `"system.==description"` or `"system.hp.value"` is refused
-there. A patch that deletes or replaces a key and also writes the same key reaches Foundry as
-written. Foundry 13 and 14 resolve it differently, and the write can end in a mismatch error.
+there.
 
-On a dnd5e item whose description is `{"value": "Old text", "chat": "Old chat"}`, this patch
-replaces the description and deletes one module flag:
+This patch replaces an item's whole description and deletes one module flag:
 
 ```bash
 fvtt-world-cli item update --item-id <id> --json \
   --patch-json '{"system":{"==description":{"value":"New text"}},"flags":{"my-module":{"-=draft":null}}}'
 ```
 
-The stored description becomes `{"value": "New text", "chat": ""}`. The replacement drops the old
-`chat`, and Foundry fills in the field's default. A plain `{"system": {"description": {"value": "New
-text"}}}` would have kept `"Old chat"`. A deletion confirms when the key is absent afterwards, and a
+A plain `{"system": {"description": {"value": "New text"}}}` would merge into the stored
+description and keep its other keys. A deletion confirms when the key is absent afterwards, and a
 forced replacement when the whole stored value equals the request after Foundry's cleaning (see
 [write confirmation](protocol.md#write-confirmation)). Foundry 14 logs a deprecation warning for
 both spellings; [Compatibility](compatibility.md) lists that and a v13 difference for single

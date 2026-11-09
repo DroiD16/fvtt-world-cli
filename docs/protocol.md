@@ -213,12 +213,10 @@ world state when the return value does not establish the effect.
 
 Setting writes return the observed `value` and its `previous` value, both in the form
 `game.settings.get` returns after the setting's registered type cast. For example, `16711680`
-written to a `Color` setting reports `value: "#ff0000"`. Change detection and confirmation compare
-the JSON Foundry stores for the setting with the JSON of the validated request, so two requests
-that cast to the same value are still different writes. A setting that has never been stored compares as
-its registered default prepared the same way, so re-sending the default is unchanged. When a
-DataField's `clean` yields no value, Foundry stores the registered default, and the request is
-compared and previewed as that default.
+written to a `Color` setting reports `value: "#ff0000"`. A dry run returns the validated request as
+`value`. Change detection and confirmation compare the JSON Foundry stores for the setting with the
+JSON of the validated request. When a DataField's `clean` yields no value, Foundry stores the
+registered default, and the request is compared and previewed as that default.
 
 A stored value other than the requested one, for example from an `onChange` callback, turns the
 write into an `INTERNAL_ERROR` with a `paths` entry for `value` that shows the requested and stored
@@ -252,7 +250,8 @@ indeterminate updates can return `INTERNAL_ERROR` with these details:
 - `fields`: requested top-level fields whose state was not confirmed.
 - `paths`: up to 20 entries `{ path, requested, stored }`, one per leaf path where the stored value
   differs from the request. `absent: "stored"` replaces `stored` when the key is missing from the
-  stored source, and `absent: "requested"` replaces `requested` for a deletion that did not land.
+  stored source, and `absent: "requested"` replaces `requested` for a deletion that did not land,
+  including a `null` or `""` that Foundry cleans to no value.
   A long string, or an object or array whose JSON is long, is shortened to a window around the
   first differing character; `truncated` then carries `format` (`text` or `json`), `offset`, and
   the full `requestedLength` and `storedLength`. `pathsTruncated` counts the entries beyond 20.
@@ -276,10 +275,6 @@ permission writes, on `scene.token.restore-delta` (one `delta.<key>` path per ov
 the restore), and on a `dropped` outcome of a bulk update when the stored state was compared. A
 bulk element whose embedded creation without `_id` cannot be confirmed is `dropped` without `paths`.
 
-Clearing a field counts as a deletion: when Foundry cleans `null` or `""` on a field that does not
-accept it to "no value", the request is confirmed when the key is absent, and a mismatch reports it
-with `absent: "requested"`.
-
 Parent patches that create embedded entries without `_id`, such as new `behaviors` in
 `scene.region.update`, return an indeterminate error after writing because parent update results
 cannot confirm those creations. A retry may duplicate them. Read the embedded collection first,
@@ -292,21 +287,11 @@ new operation with a fresh idempotency key if using one.
 
 The bridge sends an update patch, a clone patch and the overrides of a compendium import to Foundry
 as written. It does not expand or merge dotted keys, and apart from the array checks below it does
-not refuse a patch for the way its keys are spelled. A patch that Foundry cannot apply as meant can end in a mismatch error or an
-unconfirmed result after the write instead of an error before it.
+not refuse a patch for the way its keys are spelled. A patch that Foundry cannot apply as meant can
+end in a mismatch error or an unconfirmed result after the write instead of an error before it.
 
-Foundry expands dotted keys itself, in the order they appear in the object. A later dotted key
-writes into an object that an earlier key set, and a later plain object replaces what earlier
-dotted keys set under it: `{"system": {"hp": {"value": 1}}, "system.hp.value": 5}` writes 5, and
-`{"system.hp.value": 5, "system": {"hp": {"value": 1}}}` writes 1. Families with closed patch fields,
-such as `actor.update` and `item.update`, refuse top-level dotted keys in protocol validation, so
-these two examples apply only to open-schema families. A dotted key below a field, such as
-`{"system": {"hp.value": 5}}`, works on both cores for updates. On Foundry 13 a clone ignores it,
-because `Document#clone` expands only top-level dotted keys.
-
-The dry-run preview and the post-write confirmation expand dotted keys with Foundry's own
-`expandObject`, as the Foundry 13 client does before it writes. The patch sent to Foundry is not
-changed by that.
+A dotted key below a field, such as `{"system": {"hp.value": 5}}`, works on both cores for updates.
+On Foundry 13 a clone ignores it, because `Document#clone` expands only top-level dotted keys.
 
 Single updates and bulk updates, real and dry run, return `INVALID_PARAMS` before mutation for array
 values Foundry would discard, a top-level dotted key into an array field such as a wall's `c.0`, and

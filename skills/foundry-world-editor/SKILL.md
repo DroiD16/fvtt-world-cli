@@ -86,9 +86,6 @@ actor never reach. Before editing an actor that has placed tokens, run `scene to
 when the token has no overrides. Change a token's own items only with `scene token item *`.
 `scene token restore-delta` discards every override of that token: dry-run it, show the user the
 `discarded` summary, and run it only when the user wants the token to follow its actor again.
-On Foundry v14, `overriddenKeys: ["name"]` alone is usually the name the token was placed with;
-restoring resets the token's actor-side name to the world actor's name, while the token keeps its
-own name.
 `setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
 When a setting write returns `requiresReload: true`, the change needs a GM-client reload to take
 effect; `system.reload` performs it, drops the bridge, and requires a reconnect wait before the
@@ -122,9 +119,7 @@ guess a command name or parameter.
 4. `get` the complete target before mutating and work from the returned ids.
 5. Build the smallest valid patch. Nested objects merge recursively; plain arrays replace
    wholesale; dotted paths reach permitted leaves; `{"-=key": null}` deletes a permitted key, and
-   `{"==key": value}` replaces its whole value instead of merging. Write each field through one
-   key: the patch reaches Foundry as written, and v13 and v14 resolve two keys for one field
-   differently. A `get` result contains
+   `{"==key": value}` replaces its whole value instead of merging. A `get` result contains
    read-only and derived fields, so build the patch from accepted fields only.
    For arrays and extensible `system`/`flags` data: read, preserve everything that
    stays, change only the intended part.
