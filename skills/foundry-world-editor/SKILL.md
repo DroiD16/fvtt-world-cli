@@ -64,7 +64,7 @@ daemon for `cli-daemon`. Compare the reported versions for `unknown`.
 ## Disabled commands
 
 Some commands ship denied. A command that `schema <command>` or `--help` knows but a
-`commands --json` listing with `policy.applied: true` omits is disabled by the GM of this bridge:
+`commands --json` listing whose `.policy.applied` is `true` omits is disabled by the GM of this bridge:
 report that it needs enabling in the Command permissions window instead of hunting for an
 equivalent. `macro.execute` is the only way to run code and is not a workaround for a missing
 command.
@@ -101,8 +101,14 @@ signal, not a failure — reconnect and continue rather than retrying the reload
 Discover → inspect schema → locate → read → smallest patch → dry-run → commit → verify. Never
 guess a command name or parameter.
 
-1. Run `fvtt-world-cli commands --json`. Continue only when `policy.applied` is `true` and the
-   required command is present. A `false` value means no bridge answered and the output is the static
+1. Run `fvtt-world-cli commands --json`. `policy` sits at the top level beside `result` (the
+   command rows), never inside it. Continue only when this gate prints `true`:
+
+   ```bash
+   fvtt-world-cli commands --json | jq -e '.policy.applied == true and any(.result[]; .command == "<name>")'
+   ```
+
+   A `false` `.policy.applied` means no bridge answered and the output is the static
    registry, not the client's permissions. Report an absent command instead of seeking another way
    to produce the same effect. Warn the user before a command marked `"approval": true`, and prefer
    one `*-many` command when it can replace several approvals. Dotted protocol names map to spaced
@@ -115,8 +121,9 @@ guess a command name or parameter.
    never the basis of a write.
 4. `get` the complete target before mutating and work from the returned ids.
 5. Build the smallest valid patch. Nested objects merge recursively; plain arrays replace
-   wholesale; dotted paths reach permitted leaves; deletion operators remove permitted keys. A
-   `get` result contains read-only and derived fields, so build the patch from accepted fields only.
+   wholesale; dotted paths reach permitted leaves; `{"-=key": null}` deletes a permitted key, and
+   `{"==key": value}` replaces its whole value instead of merging. A `get` result contains
+   read-only and derived fields, so build the patch from accepted fields only.
    For arrays and extensible `system`/`flags` data: read, preserve everything that
    stays, change only the intended part.
 6. Dry-run every nontrivial mutation with the global `--dry-run` flag. It runs the same
@@ -149,8 +156,16 @@ details}}`, alongside `protocolVersion`, `type`, and the correlation `id` (echoi
 Documents live under a type-named key inside `result` that varies between commands but is stable
 for each one. `id` is the public identifier; a `_id` mirror may accompany it. Values requested
 through `include` flags may be derived or version-dependent. Write them back only when the
-update schema explicitly accepts them. Actor reads return `itemCount` in place of owned items; add
-`--include items` when the task needs them, or use `actor item list` and `actor item get`.
+update schema explicitly accepts them. `system info --include modules` lists each installed module
+with `version` and `active`; check it when a module may explain a behaviour or a stored-vs-requested
+mismatch.
+
+Read in bulk. Actor reads return `itemCount` in place of owned items: `actor get` or `actor
+get-many` with `--include items.flags,items.effects` returns every owned item with its `system`,
+flags, and effects in one call (`--include items` alone leaves out flags and effects). `actor item
+list --include flags,effects` adds flags and effects to its rows, which carry no `system`. A family's
+`get-many` fetches a bounded id set, and `compendium get-many --pack <id> --ids <list>` reads many
+entries of one pack. Fall back to one `get` per document only when no bulk read covers the data.
 
 ## Retry classification
 
@@ -215,7 +230,7 @@ missing assets; it is not an orphan-file collector.
 ## Context hygiene
 
 Large worlds overflow agent context fast. Use server-side filters and small pages, project
-responses with targeted `jq` expressions, fetch bounded id sets with `get-many`, and send
+responses with targeted `jq` expressions, use the bulk reads above, and send
 independent batches through `exec --stdin` (one NDJSON response per request, each judged on its
 own). Request derived fields only when needed, and never dump a whole world, search index, or
 binary file into context.
