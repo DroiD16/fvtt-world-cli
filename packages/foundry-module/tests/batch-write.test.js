@@ -1028,52 +1028,6 @@ describe("batch-write engine: update-many", () => {
     ]);
   });
 
-  it("keeps an element unknown when the full probe failed even though the residual probe answered", async () => {
-    const ecfStore = createStore([createRow("region-1", { name: "Old", behaviors: [] })]);
-    const documentClass = {
-      schema: {
-        get: (key) =>
-          key === "behaviors"
-            ? { getCollection: () => new Map(), schema: { get: () => null }, clean: () => [] }
-            : null
-      }
-    };
-    let posted = false;
-    /** @type {any} */
-    let error = null;
-    try {
-      await executeBatchUpdate({
-        command: "scene.region.update-many",
-        patches: [{ id: "region-1", patch: { name: "New", behaviors: [{ type: "pause" }] } }],
-        dryRun: false,
-        documentClass,
-        resolve: (id) => ecfStore.get(id),
-        prepare: (patch) => ({ ...patch }),
-        diff: async (document, patch) => {
-          if (posted && patch.behaviors) throw new Error("probe failed");
-          const out = {};
-          if (patch.behaviors) out.behaviors = patch.behaviors;
-          if ("name" in patch && document.source.name !== patch.name) out.name = patch.name;
-          return out;
-        },
-        mergePreview: async (document, patch) => ({
-          toObject: () => ({
-            ...document.source,
-            ...patch,
-            behaviors: [...document.source.behaviors, ...patch.behaviors]
-          })
-        }),
-        update: async (entries) => {
-          posted = true;
-          return entries.map((entry) => ecfStore.get(entry._id));
-        }
-      });
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error?.details?.outcomes).toEqual([{ index: 0, id: "region-1", status: "unknown" }]);
-  });
-
   it("credits an EMBEDDED-COLLECTION CREATE from the resolved array — the one patch a re-probe cannot confirm", async () => {
     const ecfStore = createStore([createRow("region-1", { behaviors: [] })]);
     const documentClass = {

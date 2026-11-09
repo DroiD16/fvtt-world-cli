@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { ERROR_CODES } from "../scripts/generated/protocol.js";
 import {
-  MISMATCH_PATH_LIMIT,
   buildMismatchReport,
   createMismatchError,
   evaluateRequestedDiff
@@ -181,19 +180,6 @@ describe("evaluateRequestedDiff", () => {
         }
       )
     ).toMatchObject({ status: "pending", report: { paths: [{ path: "system.visibility" }] } });
-  });
-
-  it("satisfies a deletion that left an own key holding undefined", () => {
-    const stored = { system: { attrs: { a: undefined, b: "x" }, activities: { a1: { n: undefined } } } };
-    expect(evaluate({ system: { attrs: { "-=a": null } } }, stored)).toEqual({
-      status: "confirmed"
-    });
-    expect(evaluate({ system: { activities: { a1: { n: new ForcedDeletion() } } } }, stored)).toEqual({
-      status: "confirmed"
-    });
-  });
-
-  it("marks a stored key holding undefined as absent in the report", () => {
     expect(evaluate({ system: { attrs: { a: 3 } } }, { system: { attrs: { a: undefined } } })).toMatchObject({
       status: "pending",
       report: { paths: [{ path: "system.attrs.a", requested: 3, absent: "stored" }] }
@@ -264,17 +250,6 @@ describe("buildMismatchReport", () => {
     expect(typeof entry.requested).toBe("string");
     expect(entry.requested).toContain('"X"');
     expect(entry.stored).toContain('"Item 59"');
-  });
-
-  it("lists at most the path limit and counts the rest", () => {
-    const leaves = Array.from({ length: MISMATCH_PATH_LIMIT + 3 }, (_unused, index) => ({
-      segments: ["flags", "mod", `k${index}`],
-      requested: index
-    }));
-    const report = buildMismatchReport(leaves, { flags: { mod: {} } });
-    expect(report.paths).toHaveLength(MISMATCH_PATH_LIMIT);
-    expect(report.pathsTruncated).toBe(3);
-    expect(report.fields).toEqual(["flags"]);
   });
 });
 

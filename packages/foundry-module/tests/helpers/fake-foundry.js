@@ -430,8 +430,6 @@ export function createDocument(id, data, { validatePreview, swallowPatchKeys } =
         for (const key of Object.keys(patch ?? {})) {
           if (key === "id" || key === "_id") continue;
           const segments = key.split(".");
-          // Foundry re-emits a "==" forced-replacement key in every diff, so the probe can never
-          // confirm it directly; the fake must model that or the merged-preview fallback goes dark.
           if (segments.some((segment) => segment.startsWith("=="))) {
             setDiff(segments, patch[key]);
             continue;

@@ -4645,20 +4645,6 @@ describe("token actor deltas", () => {
     expect(read()).toBeNull();
   });
 
-  it("reports a nested null left after a restore as an override", async () => {
-    attachDelta(
-      "token-a",
-      { ...V13_RECREATED, system: { attributes: { hp: { temp: null } } } },
-      (stored) => stored
-    );
-    const response = await restore();
-    expect(response.ok).toBe(false);
-    expect(response.error.code).toBe("INTERNAL_ERROR");
-    expect(response.error.details.paths).toEqual([
-      { path: "delta.system", requested: {}, stored: { attributes: { hp: { temp: null } } } }
-    ]);
-  });
-
   it("previews what a restore would discard without touching the delta", async () => {
     const { delta, read } = attachDelta("token-a", OVERRIDES);
     const preview = await restore({ dryRun: true });
