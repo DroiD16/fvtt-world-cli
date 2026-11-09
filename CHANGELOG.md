@@ -2,6 +2,16 @@
 
 All notable user-visible changes to fvtt-world-cli will be recorded in this file.
 
+## [1.2.1] - 2026-11-09
+
+- When Foundry stores something other than what was requested, the error now shows both values for
+  each field and no longer tells you to disable modules.
+- Fixed false "not updated" errors when deleting or replacing fields.
+- Setting changes that Foundry or a module altered are now reported instead of passing as success.
+- You can see what an unlinked token overrides from its actor and make it follow the actor again.
+- Several compendium entries can be read in one call, and reads show where a document was imported
+  or duplicated from.
+
 ## [1.2.0] - 2026-11-03
 
 Foundry v14 moved scene maps onto levels, and until now a scene created through the CLI there could
