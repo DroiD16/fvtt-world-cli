@@ -2186,9 +2186,9 @@ describe("user write surface", () => {
       paths: [
         { path: "permissions.TOKEN_CREATE", requested: true, absent: "stored" },
         { path: "permissions.FILES_UPLOAD", absent: "requested", stored: true }
-      ],
-      changedFields: []
+      ]
     });
+    expect(response.error.details.changedFields).toBeUndefined();
   });
 
   it("previews a permission write without changing the stored overrides", async () => {

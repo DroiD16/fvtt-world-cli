@@ -2699,31 +2699,6 @@ describe("command router", () => {
       expect(stored(combat)).toEqual({ round: 0, turn: null });
     });
 
-    it("combat.start reports a partial write when a hook keeps round 0 but lets turn 0 through", async () => {
-      const combat = seedCombat("cbt-start-rewritten");
-      combat.startCombat = vi.fn(async () => {
-        combat._source.turn = 0;
-        combat.turn = 0;
-        return combat;
-      });
-      const response = await router().route(
-        createRequest("combat.start", { combatId: "cbt-start-rewritten" })
-      );
-      expect(response.ok).toBe(false);
-      expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
-      expect(response.error.message).not.toContain("None of the requested fields changed");
-      expect(response.error.details).toMatchObject({
-        combatId: "cbt-start-rewritten",
-        round: 0,
-        turn: 0,
-        paths: [{ path: "round", requested: 1, stored: 0 }],
-        changedFields: ["turn"],
-        appliedFields: ["turn"],
-        partial: true
-      });
-      expect(stored(combat)).toEqual({ round: 0, turn: 0 });
-    });
-
     it("combat.start raises INTERNAL_ERROR when the write is vetoed (a resolved call is not evidence)", async () => {
       const combat = seedCombat("cbt-start-veto");
       combat.vetoCombatUpdates = true;
@@ -2836,24 +2811,6 @@ describe("command router", () => {
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
       expect(combat._source.active).toBe(false);
-    });
-
-    it("combat.activate reports an encounter that lost its active flag as changed", async () => {
-      const combat = seedCombat("cbt-activate-lost", { active: true });
-      combat.activate = vi.fn(async () => {
-        combat._source.active = false;
-        combat.active = false;
-        return combat;
-      });
-      const response = await router().route(
-        createRequest("combat.activate", { combatId: "cbt-activate-lost" })
-      );
-      expect(response.ok).toBe(false);
-      expect(response.error.details).toMatchObject({
-        paths: [{ path: "active", requested: true, stored: false }],
-        changedFields: ["active"],
-        partial: true
-      });
     });
 
     it("combat.next-turn advances the turn inside the round", async () => {

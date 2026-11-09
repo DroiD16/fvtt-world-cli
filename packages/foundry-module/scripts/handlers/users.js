@@ -3,7 +3,7 @@ import { canonicalizeFilePathFields } from "../lib/file-access.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { createBridgeError, isFoundryValidationError, toFailureSummary } from "../lib/errors.js";
 import { getUserById, getUsersCollection } from "../lib/game-collections.js";
-import { buildMismatchReport, changedRoots, createMismatchError } from "../lib/mismatch-report.js";
+import { buildMismatchReport, createMismatchError } from "../lib/mismatch-report.js";
 import { filterByName, paginate, serializeUser } from "../lib/serializers.js";
 import { previewDocumentCreate, previewDocumentUpdate } from "../lib/world-docs.js";
 import { applyConfirmedUpdate, assertRequestedWriteStorable } from "../lib/write-confirmation.js";
@@ -161,10 +161,9 @@ function permissionsResult(user, known) {
 /**
  * @param {Record<string, boolean | null>} requested
  * @param {Record<string, unknown>} stored
- * @param {Record<string, unknown>} before
  * @param {string} command
  */
-function assertPermissionsConfirmed(requested, stored, before, command) {
+function assertPermissionsConfirmed(requested, stored, command) {
   const unapplied = Object.entries(requested).filter(([name, value]) =>
     value === null ? Object.hasOwn(stored, name) : stored[name] !== value
   );
@@ -183,7 +182,6 @@ function assertPermissionsConfirmed(requested, stored, before, command) {
       { permissions: stored }
     ),
     hookName: "preUpdateUser",
-    changedFields: changedRoots(["permissions"], { permissions: before }, { permissions: stored }),
     details: { command, unapplied: unapplied.map(([name]) => name), stored }
   });
 }
@@ -389,8 +387,6 @@ export function createUserHandlers() {
         });
       }
 
-      const before = readStoredPermissions(user);
-
       try {
         await user.update({ permissions: patch }, { diff: false, render: true });
       } catch (error) {
@@ -398,7 +394,7 @@ export function createUserHandlers() {
       }
 
       const stored = getUserById(params.userId);
-      assertPermissionsConfirmed(params.permissions, readStoredPermissions(stored), before, command);
+      assertPermissionsConfirmed(params.permissions, readStoredPermissions(stored), command);
       return permissionsResult(stored, known);
     }
   };

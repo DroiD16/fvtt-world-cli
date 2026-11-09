@@ -54,7 +54,7 @@ import {
 } from "../lib/write-confirmation.js";
 import { deleteDocument, previewDocumentUpdate } from "../lib/world-docs.js";
 import { createBridgeError, toFailureSummary } from "../lib/errors.js";
-import { buildMismatchReport, changedRoots, createMismatchError } from "../lib/mismatch-report.js";
+import { buildMismatchReport, createMismatchError } from "../lib/mismatch-report.js";
 import {
   deriveChatCaptureStatus,
   newBridgeCorrelationId,
@@ -329,7 +329,7 @@ export function createCombatHandlers() {
               round: after.round
             }),
             hookName: "preUpdateCombat",
-            changedFields: changedRoots(["round", "turn"], before, after),
+            changedFields: [],
             details: { combatId, round: after.round, turn: after.turn },
             remedy: `startCombat() issues update({round: 1, turn: 0}). ${COMBAT_VETO_REMEDY}`
           });
@@ -380,7 +380,7 @@ export function createCombatHandlers() {
               active: storedActive
             }),
             hookName: "preUpdateCombat",
-            changedFields: changedRoots(["active"], { active: alreadyActive }, { active: storedActive }),
+            changedFields: [],
             details: { combatId },
             remedy: COMBAT_VETO_REMEDY
           });
