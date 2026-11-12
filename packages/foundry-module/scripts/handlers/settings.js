@@ -12,7 +12,7 @@ import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { createBridgeError, toFailureSummary } from "../lib/errors.js";
 import { buildMismatchReport, createMismatchError } from "../lib/mismatch-report.js";
 import { paginate, serializeSettingMetadata } from "../lib/serializers.js";
-import { serializeSettingValue } from "../lib/setting-values.js";
+import { serializeSettingValue, serializeValueWithOmissions } from "../lib/setting-values.js";
 import { MODULE_SETTING_KEYS, assertFoundryReady } from "../lib/validators.js";
 
 function getSettingsRegistry() {
@@ -355,12 +355,12 @@ function readStoredSettingJson(namespace, key, id) {
  * @param {string} namespace
  * @param {string} key
  * @param {string} id
- * @returns {unknown}
+ * @returns {ReturnType<typeof serializeValueWithOmissions>}
  */
 function readSettingValue(namespace, key, id) {
   const game = assertFoundryReady();
   try {
-    return serializeSettingValue(game.settings.get(namespace, key));
+    return serializeValueWithOmissions(game.settings.get(namespace, key));
   } catch (error) {
     if (/** @type {any} */ (error)?.code) {
       throw error;
@@ -373,6 +373,26 @@ function readSettingValue(namespace, key, id) {
       { id, message: describeForeignError(error) }
     );
   }
+}
+
+/**
+ * @param {{ requested: unknown }} prepared
+ * @returns {ReturnType<typeof serializeValueWithOmissions>}
+ */
+function requestedRead(prepared) {
+  return { value: prepared.requested, omissions: [], omissionsTruncated: false };
+}
+
+/**
+ * @param {string} prefix
+ * @param {ReturnType<typeof serializeValueWithOmissions>} read
+ */
+function omissionFields(prefix, read) {
+  if (read.omissions.length === 0) return {};
+  return {
+    [`${prefix}Omissions`]: read.omissions,
+    ...(read.omissionsTruncated ? { [`${prefix}OmissionsTruncated`]: true } : {})
+  };
 }
 
 /**
@@ -396,7 +416,7 @@ function prepareSettingWrite(item) {
   }
 
   const row = buildSettingRow(id, config);
-  const previous = readSettingValue(item.namespace, item.key, id);
+  const previousRead = readSettingValue(item.namespace, item.key, id);
   const storedBefore = readStoredSettingJson(item.namespace, item.key, id);
   const { validated, value } = validateSettingValue(id, config, item.value);
   const requested = JSON.parse(JSON.stringify(value) ?? "null");
@@ -407,7 +427,7 @@ function prepareSettingWrite(item) {
     key: item.key,
     scope: row.scope,
     requiresReload: row.requiresReload,
-    previous,
+    previousRead,
     validated,
     requested,
     storedBefore,
@@ -431,12 +451,12 @@ async function writeSetting(prepared, requested) {
   await game.settings.set(prepared.namespace, prepared.key, structuredCloneish(requested));
   return {
     stored: readStoredSettingJson(prepared.namespace, prepared.key, prepared.id),
-    value: readSettingValue(prepared.namespace, prepared.key, prepared.id)
+    read: readSettingValue(prepared.namespace, prepared.key, prepared.id)
   };
 }
 
 /**
- * @param {{ id: string, previous: unknown, requested: unknown, storedBefore: unknown }} prepared
+ * @param {{ id: string, previousRead: ReturnType<typeof serializeValueWithOmissions>, requested: unknown, storedBefore: unknown }} prepared
  * @param {unknown} stored
  */
 function settingMismatch(prepared, stored) {
@@ -447,25 +467,32 @@ function settingMismatch(prepared, stored) {
       value: stored
     }),
     changedFields: sourceValuesEqual(stored, prepared.storedBefore) ? [] : ["value"],
-    details: { id: prepared.id, previous: prepared.previous, requested: prepared.requested },
+    details: {
+      id: prepared.id,
+      previous: prepared.previousRead.value,
+      ...omissionFields("previous", prepared.previousRead),
+      requested: prepared.requested
+    },
     remedy:
       "One possible cause is an onChange handler or the package that registered the setting; the value can also be set from Foundry's Configure Settings."
   });
 }
 
 /**
- * @param {{ id: string, namespace: string, key: string, scope: unknown, requiresReload: unknown, previous: unknown, validated: boolean }} prepared
- * @param {unknown} value
+ * @param {{ id: string, namespace: string, key: string, scope: unknown, requiresReload: unknown, previousRead: ReturnType<typeof serializeValueWithOmissions>, validated: boolean }} prepared
+ * @param {ReturnType<typeof serializeValueWithOmissions>} read
  * @param {boolean} changed
  */
-function settingWriteResult(prepared, value, changed) {
+function settingWriteResult(prepared, read, changed) {
   return {
     namespace: prepared.namespace,
     key: prepared.key,
     id: prepared.id,
     scope: prepared.scope,
-    previous: prepared.previous,
-    value,
+    previous: prepared.previousRead.value,
+    ...omissionFields("previous", prepared.previousRead),
+    value: read.value,
+    ...omissionFields("value", read),
     requiresReload: prepared.requiresReload,
     validated: prepared.validated,
     changed
@@ -528,12 +555,12 @@ export function createSettingHandlers() {
         );
       }
 
-      const value = serializeSettingValue(rawValue);
+      const read = serializeValueWithOmissions(rawValue);
       return {
         setting: {
           ...row,
-
-          value
+          value: read.value,
+          ...omissionFields("value", read)
         }
       };
     },
@@ -571,14 +598,12 @@ export function createSettingHandlers() {
         }
 
         try {
-          return {
-            ...row,
-            value: readSettingValue(
-              /** @type {string} */ (identity.namespace),
-              /** @type {string} */ (identity.key),
-              id
-            )
-          };
+          const read = readSettingValue(
+            /** @type {string} */ (identity.namespace),
+            /** @type {string} */ (identity.key),
+            id
+          );
+          return { ...row, value: read.value, ...omissionFields("value", read) };
         } catch (error) {
           return { ...row, error: toFailureSummary(error) };
         }
@@ -590,17 +615,17 @@ export function createSettingHandlers() {
     async "setting.set"(params) {
       const prepared = prepareSettingWrite(params);
       if (isDryRun(params)) {
-        return dryRunResponse(settingWriteResult(prepared, prepared.requested, !prepared.unchanged));
+        return dryRunResponse(settingWriteResult(prepared, requestedRead(prepared), !prepared.unchanged));
       }
 
       if (prepared.unchanged) {
-        return settingWriteResult(prepared, prepared.previous, false);
+        return settingWriteResult(prepared, prepared.previousRead, false);
       }
 
       const written = await writeSetting(prepared, params.value);
       const mismatch = settingMismatch(prepared, written.stored);
       if (mismatch) throw mismatch;
-      return settingWriteResult(prepared, written.value, true);
+      return settingWriteResult(prepared, written.read, true);
     },
 
     async "setting.set-many"(params) {
@@ -625,7 +650,7 @@ export function createSettingHandlers() {
       if (isDryRun(params)) {
         return buildBatchResult({
           outcomes: elements.map((element, index) => ({
-            ...settingWriteResult(element, element.requested, !element.unchanged),
+            ...settingWriteResult(element, requestedRead(element), !element.unchanged),
             index,
             status: element.unchanged ? BATCH_STATUS.UNCHANGED : BATCH_STATUS.UPDATED
           })),
@@ -641,7 +666,7 @@ export function createSettingHandlers() {
         const element = elements[index];
         if (element.unchanged) {
           outcomes.push({
-            ...settingWriteResult(element, element.previous, false),
+            ...settingWriteResult(element, element.previousRead, false),
             index,
             status: BATCH_STATUS.UNCHANGED
           });
@@ -673,7 +698,7 @@ export function createSettingHandlers() {
           continue;
         }
         outcomes.push({
-          ...settingWriteResult(element, written.value, true),
+          ...settingWriteResult(element, written.read, true),
           index,
           status: BATCH_STATUS.UPDATED
         });

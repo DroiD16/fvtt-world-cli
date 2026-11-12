@@ -210,6 +210,13 @@ itself gets no row and counts toward `selfReferences`. A lookup with more than
 observation: `captured` for all expected messages, `not-created` when a chat macro created none,
 `partial` for incomplete capture, or `unknown` when the client could not observe the chat log.
 
+A node of the return value that has no JSON form, such as a function, an own accessor property or
+a circular reference, is replaced by `{"$unserializable": "<reason>"}` and listed with its path in
+`returnedOmissions`. The list holds at most `SERIALIZE_OMISSIONS_MAX` entries; a longer one sets
+`returnedOmissionsTruncated: true`, while every replaced node still carries its marker. The bridge
+reads property descriptors and never calls a getter. A return value
+over the size limits is dropped whole and explained in `returnedOmitted`.
+
 `MACRO_TIMEOUT` is indeterminate because the macro keeps running. A thrown error can follow partial
 effects, while a macro that catches its own errors may return normally. Consumers must verify
 world state when the return value does not establish the effect.
@@ -219,7 +226,10 @@ world state when the return value does not establish the effect.
 Setting writes return the observed `value` and its `previous` value, as `game.settings.get`
 returns them after the registered type's cast. Confirmation compares the JSON Foundry stores with
 the JSON of the validated request; a different stored value, for example one rewritten by an
-`onChange` callback, is a mismatch error with a `paths` entry for `value`. Writing an
+`onChange` callback, is a mismatch error with a `paths` entry for `value`. Setting reads and write
+results use the same `$unserializable` marker as macro results, listed in `valueOmissions` and
+`previousOmissions`, capped the same way with `valueOmissionsTruncated` and
+`previousOmissionsTruncated`; a value read with omissions is incomplete and is not safe to write back. Writing an
 already-stored value succeeds as unchanged without calling Foundry. `requiresReload: true`
 indicates that the GM client needs a reload.
 

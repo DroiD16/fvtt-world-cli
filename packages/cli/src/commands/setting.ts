@@ -1,3 +1,4 @@
+import { SERIALIZE_OMISSIONS_MAX } from "@fvtt-world-cli/protocol";
 import { Option } from "commander";
 
 import { createSettingSetParams, resolveSettingItems } from "../params.js";
@@ -47,6 +48,10 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
     .command("get")
     .requiredOption("--namespace <namespace>", 'Setting namespace (e.g. "core" or a module id)')
     .requiredOption("--key <key>", "Setting key within the namespace")
+    .addHelpText(
+      "after",
+      `\nA value node the bridge cannot serialize (an accessor property, a function, a circular reference) comes back as {"$unserializable": "<reason>"} and is listed in .result.setting.valueOmissions (at most ${SERIALIZE_OMISSIONS_MAX} entries; valueOmissionsTruncated marks a longer list); the bridge never calls the accessor. Such a value is incomplete: writing it back with setting set would store the markers as data.`
+    )
     .action(async function getSetting(options: { namespace: string; key: string }) {
       await executeRemoteCommand({
         commandName: "setting.get",

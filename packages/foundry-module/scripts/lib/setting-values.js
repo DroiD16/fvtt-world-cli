@@ -1,5 +1,6 @@
 import {
   ERROR_CODES,
+  SERIALIZE_OMISSIONS_MAX,
   SETTING_VALUE_MAX_BYTES,
   SETTING_VALUE_MAX_DEPTH,
   SETTING_VALUE_MAX_NODES
@@ -205,12 +206,43 @@ function dataModelToObject(value) {
   }
 }
 
+export const UNSERIALIZABLE_MARKER_KEY = "$unserializable";
+
 /**
  * @param {unknown} value
  * @param {{ maxDepth?: number, maxNodes?: number, maxBytes?: number }} [limits]
  * @returns {unknown}
  */
 export function serializeSettingValue(value, limits = {}) {
+  return serializeValue(value, limits, null);
+}
+
+/**
+ * @param {unknown} value
+ * @param {{ maxDepth?: number, maxNodes?: number, maxBytes?: number }} [limits]
+ * @returns {{ value: unknown, omissions: Array<{ path: string, reason: string }>, omissionsTruncated: boolean }}
+ */
+export function serializeValueWithOmissions(value, limits = {}) {
+  /** @type {Array<{ path: string, reason: string }>} */
+  const omissions = [];
+  let omissionsTruncated = false;
+  const serialized = serializeValue(value, limits, (reason, path) => {
+    if (omissions.length < SERIALIZE_OMISSIONS_MAX) {
+      omissions.push({ path: boundPath(path), reason });
+    } else {
+      omissionsTruncated = true;
+    }
+  });
+  return { value: serialized, omissions, omissionsTruncated };
+}
+
+/**
+ * @param {unknown} value
+ * @param {{ maxDepth?: number, maxNodes?: number, maxBytes?: number }} limits
+ * @param {((reason: string, path: string) => void) | null} omit
+ * @returns {unknown}
+ */
+function serializeValue(value, limits, omit) {
   const maxDepth = limits.maxDepth ?? SETTING_VALUE_MAX_DEPTH;
   const maxNodes = limits.maxNodes ?? SETTING_VALUE_MAX_NODES;
   const maxBytes = limits.maxBytes ?? SETTING_VALUE_MAX_BYTES;
@@ -221,6 +253,19 @@ export function serializeSettingValue(value, limits = {}) {
   const ancestors = new Set();
 
   const ColorClass = getColorClass();
+
+  /**
+   * @param {string} reason
+   * @param {string} path
+   */
+  const unserializable = (reason, path) => {
+    if (omit === null) {
+      throw notSerializable(reason, path);
+    }
+    omit(reason, path);
+    chargeBytes(jsonStringByteLength(UNSERIALIZABLE_MARKER_KEY) + jsonStringByteLength(reason) + 3, path);
+    return { [UNSERIALIZABLE_MARKER_KEY]: reason };
+  };
 
   /**
    * @param {number} amount
@@ -282,11 +327,11 @@ export function serializeSettingValue(value, limits = {}) {
     }
 
     if (kind === "bigint" || kind === "function" || kind === "symbol") {
-      throw notSerializable(kind, path);
+      return unserializable(kind, path);
     }
 
     if (ancestors.has(/** @type {object} */ (node))) {
-      throw notSerializable("circular-reference", path);
+      return unserializable("circular-reference", path);
     }
 
     ancestors.add(/** @type {object} */ (node));
@@ -380,7 +425,7 @@ export function serializeSettingValue(value, limits = {}) {
       if (isDataModelInstance(node)) {
         const source = dataModelToObject(node);
         if (!source.ok) {
-          throw notSerializable("data-model-read", path);
+          return unserializable("data-model-read", path);
         }
 
         return walk(source.value, path, depth, wrapperHops + 1);
@@ -389,7 +434,7 @@ export function serializeSettingValue(value, limits = {}) {
       if (Array.isArray(node)) {
         chargeBytes(2, path);
 
-        if (node.length <= maxNodes) {
+        if (omit === null && node.length <= maxNodes) {
           for (let index = 0; index < node.length; index += 1) {
             const descriptor = Object.getOwnPropertyDescriptor(node, index);
             if (
@@ -399,7 +444,7 @@ export function serializeSettingValue(value, limits = {}) {
               throw notSerializable("accessor-property", `${path}[${index}]`);
             }
           }
-        } else {
+        } else if (omit === null) {
           for (const name of Object.getOwnPropertyNames(node)) {
             if (!/^(?:0|[1-9][0-9]*)$/.test(name) || Number(name) >= node.length) {
               continue;
@@ -424,7 +469,8 @@ export function serializeSettingValue(value, limits = {}) {
           const descriptor = Object.getOwnPropertyDescriptor(node, index);
           const elementPath = `${path}[${index}]`;
           if (descriptor && (typeof descriptor.get === "function" || typeof descriptor.set === "function")) {
-            throw notSerializable("accessor-property", elementPath);
+            items.push(unserializable("accessor-property", elementPath));
+            continue;
           }
 
           items.push(walk(descriptor ? descriptor.value : undefined, elementPath, depth + 1));
@@ -435,10 +481,12 @@ export function serializeSettingValue(value, limits = {}) {
 
       chargeBytes(2, path);
 
-      for (const key of Object.getOwnPropertyNames(/** @type {object} */ (node))) {
-        const descriptor = Object.getOwnPropertyDescriptor(node, key);
-        if (descriptor && (typeof descriptor.get === "function" || typeof descriptor.set === "function")) {
-          throw notSerializable("accessor-property", `${path}.${key}`);
+      if (omit === null) {
+        for (const key of Object.getOwnPropertyNames(/** @type {object} */ (node))) {
+          const descriptor = Object.getOwnPropertyDescriptor(node, key);
+          if (descriptor && (typeof descriptor.get === "function" || typeof descriptor.set === "function")) {
+            throw notSerializable("accessor-property", `${path}.${key}`);
+          }
         }
       }
 
@@ -456,8 +504,11 @@ export function serializeSettingValue(value, limits = {}) {
         chargeBytes(jsonStringByteLength(key) + 1 + (first ? 0 : 1), childPath);
         first = false;
 
+        const isAccessor = typeof descriptor.get === "function" || typeof descriptor.set === "function";
         Object.defineProperty(result, key, {
-          value: walk(descriptor.value, childPath, depth + 1),
+          value: isAccessor
+            ? unserializable("accessor-property", childPath)
+            : walk(descriptor.value, childPath, depth + 1),
           writable: true,
           enumerable: true,
           configurable: true

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ERROR_CODES,
+  SERIALIZE_OMISSIONS_MAX,
   SETTING_VALUE_MAX_BYTES,
   SETTING_VALUE_MAX_DEPTH,
   SETTING_VALUE_MAX_NODES
@@ -9,6 +10,7 @@ import {
 import {
   jsonStringByteLength,
   serializeSettingValue,
+  serializeValueWithOmissions,
   utf8ByteLength
 } from "../scripts/lib/setting-values.js";
 
@@ -1070,5 +1072,40 @@ describe("utf8ByteLength", () => {
     if (text !== "\ud800") {
       expect(utf8ByteLength(text)).toBe(new TextEncoder().encode(text).length);
     }
+  });
+});
+
+describe("serializeValueWithOmissions", () => {
+  it("replaces an accessor array element and keeps its neighbours", () => {
+    const array = [1, 2, 3];
+    const getter = vi.fn(() => 9);
+    Object.defineProperty(array, 1, { get: getter, enumerable: true });
+
+    const result = serializeValueWithOmissions({ list: array });
+
+    expect(getter).not.toHaveBeenCalled();
+    expect(result.value).toEqual({ list: [1, { $unserializable: "accessor-property" }, 3] });
+    expect(result.omissions).toEqual([{ path: "$.list[1]", reason: "accessor-property" }]);
+    expect(result.omissionsTruncated).toBe(false);
+  });
+
+  it("caps the omission list and says so, while every node keeps its marker", () => {
+    const value = Object.fromEntries(
+      Array.from({ length: SERIALIZE_OMISSIONS_MAX + 5 }, (_, index) => [`f${index}`, () => index])
+    );
+
+    const result = serializeValueWithOmissions(value);
+
+    expect(result.omissions).toHaveLength(SERIALIZE_OMISSIONS_MAX);
+    expect(result.omissionsTruncated).toBe(true);
+    expect(
+      Object.values(/** @type {any} */ (result.value)).every((node) => node.$unserializable === "function")
+    ).toBe(true);
+  });
+
+  it("still refuses a value over the size limits", () => {
+    expect(() => serializeValueWithOmissions({ blob: "z".repeat(64) }, { maxBytes: 16 })).toThrow(
+      expect.objectContaining({ code: ERROR_CODES.PAYLOAD_TOO_LARGE })
+    );
   });
 });
