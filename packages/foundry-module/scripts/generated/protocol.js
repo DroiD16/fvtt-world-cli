@@ -5815,6 +5815,17 @@ function editDistance(a, b) {
   }
   return previous[cols - 1];
 }
+function childPath(path, key) {
+  return key.includes(".") ? `${path}[${JSON.stringify(key)}]` : `${path}.${key}`;
+}
+function describeDottedKey(key, properties) {
+  const root = key.split(".")[0];
+  if (!key.includes(".") || !Object.hasOwn(properties, root)) {
+    return "";
+  }
+  const rest = key.slice(root.length + 1);
+  return `; a top-level key must be one of the listed field names, so move the rest of the path inside "${root}": {"${root}": {"${rest}": ...}}`;
+}
 function describeAllowedFields(key, allowedFields) {
   if (allowedFields.length === 0) {
     return "";
@@ -5864,7 +5875,7 @@ function validateObjectSchema(schema, value, path, errors) {
   const additionalProperties = schema.additionalProperties ?? true;
   for (const key of required) {
     if (!Object.hasOwn(value, key)) {
-      errors.push(`${path}.${key} is required`);
+      errors.push(`${childPath(path, key)} is required`);
     }
   }
   const ownKeys = Object.keys(value);
@@ -5876,25 +5887,27 @@ function validateObjectSchema(schema, value, path, errors) {
     for (const key of ownKeys) {
       if (namePattern === null) {
         errors.push(
-          `${path}.${key} cannot be validated: ${schema.propertyNames.pattern} is not a valid unicode-mode pattern`
+          `${childPath(path, key)} cannot be validated: ${schema.propertyNames.pattern} is not a valid unicode-mode pattern`
         );
       } else if (!namePattern.test(key)) {
-        errors.push(`${path}.${key} is not an allowed property name`);
+        errors.push(`${childPath(path, key)} is not an allowed property name`);
       }
     }
   }
   for (const [key, propertyValue] of Object.entries(value)) {
     const propertySchema = properties[key];
     if (propertySchema) {
-      validateSchema(propertySchema, propertyValue, `${path}.${key}`, errors);
+      validateSchema(propertySchema, propertyValue, `${childPath(path, key)}`, errors);
       continue;
     }
     if (additionalProperties === false) {
-      errors.push(`${path}.${key} is not allowed${describeAllowedFields(key, Object.keys(properties))}`);
+      errors.push(
+        `${childPath(path, key)} is not allowed${describeAllowedFields(key, Object.keys(properties))}` + describeDottedKey(key, properties)
+      );
       continue;
     }
     if (isPlainObject(additionalProperties)) {
-      validateSchema(additionalProperties, propertyValue, `${path}.${key}`, errors);
+      validateSchema(additionalProperties, propertyValue, `${childPath(path, key)}`, errors);
     }
   }
 }

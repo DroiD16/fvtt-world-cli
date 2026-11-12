@@ -986,6 +986,29 @@ const MUTATION_BASES = Object.freeze({
   "combat.set-initiative": { combatId: "cbt-1", combatantId: "cmb-1", initiative: 12 }
 });
 
+describe("schema validator paths for keys that contain dots", () => {
+  it("quotes a dotted top-level patch key and points to the nested form", () => {
+    expectRejected(
+      "actor.item.update",
+      { actorId: "a1", itemId: "i1", patch: { "system.activities.x1.profiles": [] } },
+      '$.params.patch["system.activities.x1.profiles"] is not allowed'
+    );
+    expectRejected(
+      "actor.item.update",
+      { actorId: "a1", itemId: "i1", patch: { "system.activities.x1.profiles": [] } },
+      '{"system": {"activities.x1.profiles": ...}}'
+    );
+  });
+
+  it("adds no nesting hint when the key's first segment is not an allowed field", () => {
+    const result = validate("actor.item.update", { actorId: "a1", itemId: "i1", patch: { "bogus.key": 1 } });
+    expect(result.errors).toContainEqual(
+      expect.stringContaining('$.params.patch["bogus.key"] is not allowed')
+    );
+    expect(result.errors.join("\n")).not.toContain("move the rest of the path");
+  });
+});
+
 describe("schema validator `pattern` keyword", () => {
   const CONTROL_FREE = [
     "^[^",
