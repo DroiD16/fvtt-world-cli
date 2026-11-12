@@ -20,7 +20,7 @@ import {
 } from "./shared.js";
 
 const tokenWriteProperties = {
-  actorId: { type: "string", minLength: 1 },
+  actorId: { type: ["string", "null"], minLength: 1 },
   actorLink: { type: "boolean" },
   name: { type: "string", minLength: 1 },
   x: { type: "number" },
@@ -98,7 +98,7 @@ const tilePatchSchema = {
 };
 
 const soundWriteProperties = {
-  path: { type: "string", minLength: 1 },
+  path: { type: ["string", "null"], minLength: 1 },
   x: { type: "number" },
   y: { type: "number" },
   radius: { type: "number" },
@@ -207,7 +207,7 @@ const drawingWriteProperties = {
   strokeWidth: { type: "number" },
   strokeColor: { type: "string" },
   strokeAlpha: { type: "number" },
-  texture: { type: "string" },
+  texture: nullableStringSchema,
   text: { type: "string" },
   fontFamily: { type: "string" },
   fontSize: { type: "number" },
@@ -275,7 +275,7 @@ const templateWriteProperties = {
   width: { type: "number" },
   borderColor: { type: "string" },
   fillColor: { type: "string" },
-  texture: { type: "string" },
+  texture: nullableStringSchema,
   hidden: { type: "boolean" },
   flags: freeformObjectSchema
 };

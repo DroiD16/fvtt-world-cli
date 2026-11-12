@@ -483,7 +483,7 @@ function compendiumImportSchema(patchSchema) {
 var effectWriteProperties = {
   name: { type: "string", minLength: 1 },
   type: { type: "string", minLength: 1 },
-  img: { type: "string", minLength: 1 },
+  img: { type: ["string", "null"], minLength: 1 },
   origin: nullableStringSchema,
   disabled: { type: "boolean" },
   transfer: { type: "boolean" },
@@ -517,7 +517,7 @@ var itemDataSchema = {
   properties: {
     name: { type: "string", minLength: 1 },
     type: { type: "string", minLength: 1 },
-    img: { type: "string", minLength: 1 },
+    img: { type: ["string", "null"], minLength: 1 },
     folder: nullableStringSchema,
     sort: { type: "number" },
     system: freeformObjectSchema,
@@ -667,7 +667,7 @@ var actorDataSchema = {
   properties: {
     name: { type: "string", minLength: 1 },
     type: { type: "string", minLength: 1 },
-    img: { type: "string", minLength: 1 },
+    img: { type: ["string", "null"], minLength: 1 },
     folder: nullableStringSchema,
     sort: { type: "number" },
     system: freeformObjectSchema,
@@ -1410,7 +1410,7 @@ var chatMessageCreateSchema = {
     style: { type: "number", enum: [0, 1, 2, 3] },
     // CHAT_MESSAGE_STYLES (verified v13)
     flavor: { type: "string" },
-    sound: { type: "string", minLength: 1 },
+    sound: { type: ["string", "null"], minLength: 1 },
     flags: freeformObjectSchema
   },
   additionalProperties: false
@@ -2298,7 +2298,7 @@ var journalPageCreateSchema = {
     title: journalPageTitleSchema,
     image: journalPageImageSchema,
     video: journalPageVideoSchema,
-    src: { type: "string", minLength: 1 },
+    src: { type: ["string", "null"], minLength: 1 },
     category: nullableStringSchema,
     system: freeformObjectSchema,
     flags: freeformObjectSchema
@@ -2601,7 +2601,7 @@ var macroDataSchema = {
     name: { type: "string", minLength: 1 },
     type: macroTypeSchema,
     command: { type: "string" },
-    img: { type: "string", minLength: 1 },
+    img: { type: ["string", "null"], minLength: 1 },
     folder: nullableStringSchema,
     scope: macroScopeSchema,
     flags: freeformObjectSchema
@@ -2722,14 +2722,14 @@ var playlistSoundCreateSchema = {
   properties: {
     name: { type: "string", minLength: 1 },
     description: { type: "string" },
-    path: { type: "string", minLength: 1 },
+    path: { type: ["string", "null"], minLength: 1 },
     channel: { type: ["string", "null"], enum: ["music", "environment", "interface", null] },
     playing: { type: "boolean" },
-    pausedTime: { type: "number" },
+    pausedTime: { type: ["number", "null"] },
     repeat: { type: "boolean" },
     volume: { type: "number" },
     // linear 0–1; scaling verified live
-    fade: { type: "number" },
+    fade: { type: ["number", "null"] },
     sort: { type: "number" },
     flags: freeformObjectSchema
   },
@@ -2754,12 +2754,12 @@ var playlistDataSchema = {
     mode: { type: "number", enum: [-1, 0, 1, 2] },
     // PLAYLIST_MODES (verified v13)
     playing: { type: "boolean" },
-    fade: { type: "number" },
+    fade: { type: ["number", "null"] },
     channel: { type: "string", enum: ["music", "environment", "interface"] },
     // AUDIO_CHANNELS keys (verified v13)
     sorting: { type: "string", enum: ["a", "m"] },
     // PLAYLIST_SORT_MODES (verified v13)
-    seed: { type: "number" },
+    seed: { type: ["number", "null"] },
     folder: nullableStringSchema,
     sort: { type: "number" },
     flags: freeformObjectSchema,
@@ -2975,7 +2975,7 @@ var playlistCommands = {
 
 // packages/protocol/src/schemas/scene-embedded.js
 var tokenWriteProperties = {
-  actorId: { type: "string", minLength: 1 },
+  actorId: { type: ["string", "null"], minLength: 1 },
   actorLink: { type: "boolean" },
   name: { type: "string", minLength: 1 },
   x: { type: "number" },
@@ -3046,7 +3046,7 @@ var tilePatchSchema = {
   minProperties: 1
 };
 var soundWriteProperties = {
-  path: { type: "string", minLength: 1 },
+  path: { type: ["string", "null"], minLength: 1 },
   x: { type: "number" },
   y: { type: "number" },
   radius: { type: "number" },
@@ -3146,7 +3146,7 @@ var drawingWriteProperties = {
   strokeWidth: { type: "number" },
   strokeColor: { type: "string" },
   strokeAlpha: { type: "number" },
-  texture: { type: "string" },
+  texture: nullableStringSchema,
   text: { type: "string" },
   fontFamily: { type: "string" },
   fontSize: { type: "number" },
@@ -3208,7 +3208,7 @@ var templateWriteProperties = {
   width: { type: "number" },
   borderColor: { type: "string" },
   fillColor: { type: "string" },
-  texture: { type: "string" },
+  texture: nullableStringSchema,
   hidden: { type: "boolean" },
   flags: freeformObjectSchema
 };
@@ -4582,7 +4582,7 @@ var sceneBackgroundSchema = {
   type: "object",
   required: [],
   properties: {
-    src: { type: "string", minLength: 1 },
+    src: { type: ["string", "null"], minLength: 1 },
     offsetX: { type: "number" },
     offsetY: { type: "number" },
     scaleX: { type: "number" },
@@ -4622,16 +4622,16 @@ var sceneCreateSchema = {
     active: { type: "boolean" },
     navigation: { type: "boolean" },
     navOrder: { type: "number" },
-    width: { type: "number" },
-    height: { type: "number" },
+    width: { type: ["number", "null"] },
+    height: { type: ["number", "null"] },
     grid: sceneGridSchema,
     background: sceneBackgroundSchema,
     backgroundColor: { type: "string", minLength: 1 },
     tokenVision: { type: "boolean" },
     weather: nullableStringSchema,
     padding: { type: "number" },
-    shiftX: { type: "number" },
-    shiftY: { type: "number" },
+    shiftX: { type: ["number", "null"] },
+    shiftY: { type: ["number", "null"] },
     navName: nullableStringSchema,
     thumb: nullableStringSchema,
     sort: { type: "number" },

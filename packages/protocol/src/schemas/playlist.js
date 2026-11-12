@@ -19,14 +19,14 @@ const playlistSoundCreateSchema = {
   properties: {
     name: { type: "string", minLength: 1 },
     description: { type: "string" },
-    path: { type: "string", minLength: 1 },
+    path: { type: ["string", "null"], minLength: 1 },
 
     channel: { type: ["string", "null"], enum: ["music", "environment", "interface", null] },
     playing: { type: "boolean" },
-    pausedTime: { type: "number" },
+    pausedTime: { type: ["number", "null"] },
     repeat: { type: "boolean" },
     volume: { type: "number" }, // linear 0–1; scaling verified live
-    fade: { type: "number" },
+    fade: { type: ["number", "null"] },
     sort: { type: "number" },
     flags: freeformObjectSchema
   },
@@ -53,10 +53,10 @@ const playlistDataSchema = {
     description: { type: "string" },
     mode: { type: "number", enum: [-1, 0, 1, 2] }, // PLAYLIST_MODES (verified v13)
     playing: { type: "boolean" },
-    fade: { type: "number" },
+    fade: { type: ["number", "null"] },
     channel: { type: "string", enum: ["music", "environment", "interface"] }, // AUDIO_CHANNELS keys (verified v13)
     sorting: { type: "string", enum: ["a", "m"] }, // PLAYLIST_SORT_MODES (verified v13)
-    seed: { type: "number" },
+    seed: { type: ["number", "null"] },
     folder: nullableStringSchema,
     sort: { type: "number" },
     flags: freeformObjectSchema,

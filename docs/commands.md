@@ -176,6 +176,10 @@ Use JSON flags such as `--data-json` and `--patch-json` for structured values. U
   and `{"==key": value}` replaces the key's whole value instead of merging into it.
 - Embedded collections follow their family's Foundry semantics.
 
+Fields that Foundry's document schema declares nullable accept `null`, such as an item's `img`, a
+drawing's `texture`, an ambient sound's `path` or a token's `actorId`, so data copied out of Foundry,
+for example from an Adventure, can be written back as it is.
+
 Read arrays before editing and preserve unchanged values. For a wall's `c` field, send the complete
 `[x1, y1, x2, y2]`, not `c.0`. Array writes that Foundry would discard return `INVALID_PARAMS`
 before mutation, including in bulk writes and dry runs. Correct the fields identified by the error.

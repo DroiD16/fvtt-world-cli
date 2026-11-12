@@ -5634,7 +5634,7 @@ describe("protocol contract", () => {
 
       expect(
         COMMAND_DEFINITIONS["scene.token.create-many"].paramsSchema.properties.data.items.properties.actorId
-      ).toEqual({ type: "string", minLength: 1 });
+      ).toEqual({ type: ["string", "null"], minLength: 1 });
       expectValid("scene.token.create-many", {
         sceneId: "scene-1",
         data: [
@@ -6636,6 +6636,30 @@ describe("protocol contract", () => {
         "$.params.idempotencyKey is not allowed"
       );
     });
+  });
+
+  it("accepts null where Foundry's document schema declares the field nullable", () => {
+    /** @type {Array<[string, Record<string, unknown>]>} */
+    const cases = [
+      ["scene.drawing.create-many", { sceneId: "s", data: [{ x: 0, texture: null }] }],
+      ["scene.template.update", { sceneId: "s", templateId: "t", patch: { texture: null } }],
+      ["scene.sound.create", { sceneId: "s", data: { path: null, x: 0 } }],
+      ["scene.token.update", { sceneId: "s", tokenId: "t", patch: { actorId: null } }],
+      ["actor.update", { actorId: "a", patch: { img: null } }],
+      ["item.create", { data: { name: "Torch", type: "loot", img: null } }],
+      ["actor.effect.update", { actorId: "a", effectId: "e", patch: { img: null } }],
+      ["macro.update", { macroId: "m", patch: { img: null } }],
+      ["chat.create", { data: { content: "Hi", sound: null } }],
+      ["journal.page.update", { journalId: "j", pageId: "p", patch: { src: null } }],
+      ["playlist.update", { playlistId: "p", patch: { fade: null, seed: null } }],
+      [
+        "playlist.sound.update",
+        { playlistId: "p", soundId: "s", patch: { path: null, fade: null, pausedTime: null } }
+      ],
+      ["scene.update", { sceneId: "s", patch: { width: null, height: null, shiftX: null, shiftY: null } }],
+      ["scene.update", { sceneId: "s", patch: { background: { src: null } } }]
+    ];
+    for (const [command, params] of cases) expectValid(command, params);
   });
 
   describe("include opt-in on detailed reads", () => {

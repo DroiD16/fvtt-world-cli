@@ -23,7 +23,7 @@ const macroDataSchema = {
     name: { type: "string", minLength: 1 },
     type: macroTypeSchema,
     command: { type: "string" },
-    img: { type: "string", minLength: 1 },
+    img: { type: ["string", "null"], minLength: 1 },
     folder: nullableStringSchema,
     scope: macroScopeSchema,
     flags: freeformObjectSchema

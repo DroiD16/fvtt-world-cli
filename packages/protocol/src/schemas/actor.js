@@ -28,7 +28,7 @@ const actorDataSchema = {
   properties: {
     name: { type: "string", minLength: 1 },
     type: { type: "string", minLength: 1 },
-    img: { type: "string", minLength: 1 },
+    img: { type: ["string", "null"], minLength: 1 },
     folder: nullableStringSchema,
     sort: { type: "number" },
     system: freeformObjectSchema,
