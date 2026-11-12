@@ -1029,6 +1029,7 @@ describe("command router", () => {
       limitBytes: READ_ENCODING_CEILING_BYTES,
       sizeBytes: declared
     });
+    expect(Math.ceil(READ_ENCODING_CEILING_BYTES / 3) * 4).toBeLessThan(536_870_888);
   });
 
   it("checks the actual byte count when the server declares no length", async () => {

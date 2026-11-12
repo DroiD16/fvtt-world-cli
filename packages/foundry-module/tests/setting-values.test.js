@@ -975,7 +975,7 @@ describe("serializeValueWithOmissions", () => {
   it("replaces an accessor array element and keeps its neighbours", () => {
     const array = [1, 2, 3];
     const getter = vi.fn(() => 9);
-    Object.defineProperty(array, 1, { get: getter, enumerable: true });
+    Object.defineProperty(array, 1, { get: getter });
 
     const result = serializeValueWithOmissions({ list: array });
 
