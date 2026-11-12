@@ -103,7 +103,7 @@ export function registerWorld({ program, dependencies }: RegistrationContext) {
           "Not found: compendium contents, client settings, bare ids outside foreign-key fields (system data, object",
           "keys, chat whisper lists) or in fields Foundry maintains itself (_stats.lastModifiedBy), name-based links",
           "(@Actor[Goblin]), relative links in other fields. References inside the target itself are counted in",
-          "selfReferences."
+          "selfReferences. target.exists is null for a compendium target, whose pack is not loaded."
         ].join("\n")
       )
   ).action(async function findReferences(options: WorldReferencesOptions) {
