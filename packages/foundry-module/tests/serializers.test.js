@@ -1829,6 +1829,34 @@ describe("serializeActor", () => {
     assertStructuredCloneable(withPrepared);
   });
 
+  it("reports a prepared colour in the stored #rrggbb form Foundry's Color#toJSON gives", () => {
+    class Color extends Number {
+      toJSON() {
+        return `#${this.toString(16).padStart(6, "0")}`;
+      }
+    }
+    const actor = {
+      id: "actor-1",
+      name: "Valeros",
+      type: "character",
+      items: [],
+      system: null,
+      prototypeToken: {
+        toObject() {
+          return { light: { color: new Color(0xff0000) } };
+        }
+      },
+      detectionModes: null,
+      toObject() {
+        return { _id: "actor-1", name: "Valeros", type: "character", system: {} };
+      }
+    };
+
+    const prepared = /** @type {any} */ (serializeActor(actor, { include: ["prepared"] }).prepared);
+
+    expect(prepared.prototypeToken.light.color).toBe("#ff0000");
+  });
+
   it("degrades a derived subtree to null when its toObject(false) throws, without crashing", () => {
     const actor = {
       id: "actor-1",
