@@ -2068,12 +2068,6 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
         flagStoredJson: castFlagStored
       }
     );
-    await runReferenceGmCoverage(summary, {
-      gmControlUrl,
-      gmUserId,
-      scriptMacroId,
-      actorId: options.actorId
-    });
     const lazyOmission = JSON.stringify([{ path: "$.lazy", reason: "accessor-property" }]);
     const partialGot = partialGetRun?.response?.result?.setting ?? null;
     const partialSet = partialSetRun?.response?.result ?? null;
@@ -2097,6 +2091,13 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
         setResult: partialSet
       }
     );
+
+    await runReferenceGmCoverage(summary, {
+      gmControlUrl,
+      gmUserId,
+      scriptMacroId,
+      actorId: options.actorId
+    });
 
     const userCreateRun = runFoundryctl(["user", "create", "--name", `CLI Smoke User ${stamp}`]);
     userId = userCreateRun.response?.result?.user?.id || null;
