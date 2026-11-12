@@ -441,6 +441,37 @@ describe("serializeItem", () => {
     });
   });
 
+  it("serializes a stored operator that structuredClone would copy as an empty object in its JSON form", () => {
+    const VALUE = Symbol("DataFieldOperatorValue");
+    class ForcedDeletion {
+      constructor() {
+        this[VALUE] = undefined;
+      }
+      toJSON() {
+        return { __$OPERATOR$__: "ForcedDeletion", value: this[VALUE] };
+      }
+    }
+    const operator = new ForcedDeletion();
+    expect(structuredClone(operator)).toEqual({});
+    const item = {
+      id: "item-1",
+      name: "Fighter",
+      type: "class",
+      toObject() {
+        return {
+          _id: "item-1",
+          name: "Fighter",
+          type: "class",
+          system: { advancement: { hp: { chosen: operator } } }
+        };
+      }
+    };
+
+    expect(serializeItem(item).system).toEqual({
+      advancement: { hp: { chosen: { __$OPERATOR$__: "ForcedDeletion" } } }
+    });
+  });
+
   it("prefers the persisted source system from toObject() over the prepared live system", () => {
     const item = {
       id: "item-1",

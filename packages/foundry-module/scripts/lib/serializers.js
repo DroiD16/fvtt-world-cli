@@ -2,13 +2,7 @@ import { hasSceneLevels } from "./foundry-capabilities.js";
 export { paginate, filterByName, filterByPath } from "./pagination.js";
 
 export function cloneValue(value) {
-  if (typeof globalThis.structuredClone === "function") {
-    try {
-      return globalThis.structuredClone(value);
-    } catch {}
-  }
-
-  return JSON.parse(JSON.stringify(value));
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
 function safeDerived(modelOrDoc) {
