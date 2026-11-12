@@ -747,6 +747,35 @@ describe("command router", () => {
       expect(response.result.category._id).toBe(response.result.category.id);
     });
 
+    it("marks a page create that stores no page with the shared returned-nothing reason", async () => {
+      const journal = /** @type {any} */ (globalThis.game.journal.get("journal-categories"));
+      vi.spyOn(journal, "createEmbeddedDocuments").mockResolvedValueOnce([]);
+      const response = await run("journal.update", {
+        journalId: "journal-categories",
+        patch: { pages: [{ name: "Vetoed", type: "text" }] }
+      });
+      expect(response.error.code).toBe("INTERNAL_ERROR");
+      expect(response.error.details).toMatchObject({
+        journalId: "journal-categories",
+        createdPageIds: [],
+        reason: "create_returned_nothing"
+      });
+    });
+
+    it("marks a category create that returns no document with the shared returned-nothing reason", async () => {
+      const journal = /** @type {any} */ (globalThis.game.journal.get("journal-categories"));
+      vi.spyOn(journal, "createEmbeddedDocuments").mockResolvedValueOnce([]);
+      const response = await run("journal.category.create", {
+        journalId: "journal-categories",
+        data: { name: "Vetoed" }
+      });
+      expect(response.error.code).toBe("INTERNAL_ERROR");
+      expect(response.error.details).toMatchObject({
+        journalId: "journal-categories",
+        reason: "create_returned_nothing"
+      });
+    });
+
     it('creates a BLANK-named category and reports the STORED "", not the derived name', async () => {
       const response = await run("journal.category.create", {
         journalId: "journal-categories",
