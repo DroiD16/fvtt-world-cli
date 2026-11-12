@@ -8380,9 +8380,12 @@ function runExtendedCoverage(
       );
 
       if (actorId) {
+        const fixtureLink =
+          runFoundryctl(["actor", "get", "--actor-id", actorId]).response?.result?.actor?.prototypeToken
+            ?.actorLink ?? null;
         const bulkTokenCreate = expectOk(
           summary,
-          "scene.token.create-many(2 actor-backed + 1 raw, ONE call)",
+          "scene.token.create-many(2 actor-backed + 1 raw, one command)",
           runFoundryctl([
             "scene",
             "token",
@@ -8392,7 +8395,7 @@ function runExtendedCoverage(
             "--data-json",
             JSON.stringify([
               { actorId, x: 1800, y: 100 },
-              { actorId, x: 1800, y: 250, actorLink: true },
+              { actorId, x: 1800, y: 250, actorLink: !fixtureLink },
               { name: `Bulk marker ${stamp}`, x: 1800, y: 400 }
             ]),
             "--idempotency-key",
@@ -8418,9 +8421,6 @@ function runExtendedCoverage(
           );
           const tokens = reads.map((run) => run.response?.result?.token ?? null);
 
-          const fixtureLink =
-            runFoundryctl(["actor", "get", "--actor-id", actorId]).response?.result?.actor?.prototypeToken
-              ?.actorLink ?? null;
           markAndPush(
             summary,
             "scene.token.create-many(element 0: actor resolved, actorLink follows the prototype token)",
@@ -8435,8 +8435,13 @@ function runExtendedCoverage(
           markAndPush(
             summary,
             "scene.token.create-many(element 1: explicit actorLink override wins for THAT element)",
-            tokens[1]?.actorId === actorId && tokens[1]?.actorLink === true,
-            { observed: { actorId: tokens[1]?.actorId, actorLink: tokens[1]?.actorLink } }
+            typeof fixtureLink === "boolean" &&
+              tokens[1]?.actorId === actorId &&
+              tokens[1]?.actorLink === !fixtureLink,
+            {
+              observed: { actorId: tokens[1]?.actorId, actorLink: tokens[1]?.actorLink },
+              requested: !fixtureLink
+            }
           );
           markAndPush(
             summary,
