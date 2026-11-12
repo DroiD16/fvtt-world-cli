@@ -144,20 +144,23 @@ export function registerJournal({ program, dependencies }: RegistrationContext) 
       .requiredOption("--journal-id <journalId>", "Source journal id")
       .option("--name <name>", "Name override for the clone"),
     "clone"
-  ).action(async function cloneJournal(options: {
-    journalId: string;
-    name?: string;
-    folder?: string;
-    clearFolder?: boolean;
-    sort?: number;
-  }) {
-    await executeRemoteCommand({
-      commandName: "journal.clone",
-      params: createJournalCloneParams(options),
-      command: this,
-      dependencies
+  )
+    .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
+    .action(async function cloneJournal(options: {
+      journalId: string;
+      name?: string;
+      folder?: string;
+      clearFolder?: boolean;
+      sort?: number;
+      patchJson?: string;
+    }) {
+      await executeRemoteCommand({
+        commandName: "journal.clone",
+        params: createJournalCloneParams(options),
+        command: this,
+        dependencies
+      });
     });
-  });
   journal
     .command("delete")
     .requiredOption("--journal-id <journalId>", "Journal id")

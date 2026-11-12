@@ -128,26 +128,29 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
       .requiredOption("--macro-id <macroId>", "Source macro id")
       .option("--name <name>", "Name override for the clone"),
     "clone"
-  ).action(async function cloneMacroCommand(options: {
-    macroId: string;
-    name?: string;
-    type?: string;
-    command?: string;
-    commandFile?: string;
-    commandStdin?: boolean;
-    img?: string;
-    folder?: string;
-    clearFolder?: boolean;
-    scope?: string;
-  }) {
-    const command = await resolveMacroCommandBody(options, dependencies);
-    await executeRemoteCommand({
-      commandName: "macro.clone",
-      params: createMacroCloneParams({ ...options, command }),
-      command: this,
-      dependencies
+  )
+    .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
+    .action(async function cloneMacroCommand(options: {
+      macroId: string;
+      name?: string;
+      type?: string;
+      command?: string;
+      commandFile?: string;
+      commandStdin?: boolean;
+      img?: string;
+      folder?: string;
+      clearFolder?: boolean;
+      scope?: string;
+      patchJson?: string;
+    }) {
+      const command = await resolveMacroCommandBody(options, dependencies);
+      await executeRemoteCommand({
+        commandName: "macro.clone",
+        params: createMacroCloneParams({ ...options, command }),
+        command: this,
+        dependencies
+      });
     });
-  });
   macro
     .command("delete")
     .requiredOption("--macro-id <macroId>", "Macro id")

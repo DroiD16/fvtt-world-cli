@@ -305,6 +305,7 @@ command scene clone
   opt --transition-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene transition config as JSON object
   opt --grid-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene grid override as JSON object
   opt --background-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene background override as JSON object (Foundry v13)
+  opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Override fields for the clone as a JSON object (merged last)
 
 command scene delete
   aliases=[]
@@ -505,6 +506,7 @@ command scene token item clone
   opt --img <img> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Image override
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort override
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system override as JSON object
+  opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Override fields for the clone as a JSON object (merged last)
 
 command scene token item delete
   aliases=[]
@@ -1549,6 +1551,7 @@ command item clone
   opt --clear-folder | parser=- | conflicts=["folder"] | choices=- | required=false | hidden=false | default=- | help=Explicitly set folder to null
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort override
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system override as JSON object
+  opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Override fields for the clone as a JSON object (merged last)
 
 command item delete
   aliases=[]
@@ -1724,6 +1727,7 @@ command journal clone
   opt --folder <folder> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Folder id override
   opt --clear-folder | parser=- | conflicts=["folder"] | choices=- | required=false | hidden=false | default=- | help=Explicitly set folder to null
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort override
+  opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Override fields for the clone as a JSON object (merged last)
 
 command journal delete
   aliases=[]
@@ -1867,6 +1871,7 @@ command macro clone
   opt --folder <folder> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Folder id override
   opt --clear-folder | parser=- | conflicts=["folder"] | choices=- | required=false | hidden=false | default=- | help=Explicitly set folder to null
   opt --scope <scope> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scope override (global | actors | actor)
+  opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Override fields for the clone as a JSON object (merged last)
 
 command macro delete
   aliases=[]
@@ -2891,6 +2896,7 @@ command actor clone
   opt --clear-folder | parser=- | conflicts=["folder"] | choices=- | required=false | hidden=false | default=- | help=Explicitly set folder to null
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort override
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Actor system override as JSON object
+  opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Override fields for the clone as a JSON object (merged last)
 
 command actor delete
   aliases=[]
@@ -2967,6 +2973,7 @@ command actor item clone
   opt --img <img> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Image override
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort override
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system override as JSON object
+  opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Override fields for the clone as a JSON object (merged last)
 
 command actor item import-from-compendium
   aliases=[]

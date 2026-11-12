@@ -1185,6 +1185,73 @@ describe("fvtt-world-cli commands", () => {
       { actorId: "actor-1", patch: { name: "Valeros Copy" } }
     ],
     [["actor", "clone", "--actor-id", "actor-1"], "actor.clone", { actorId: "actor-1" }],
+    [
+      [
+        "actor",
+        "clone",
+        "--actor-id",
+        "actor-1",
+        "--name",
+        "Copy",
+        "--patch-json",
+        '{"name":"Patched","prototypeToken":{"name":"Patched"}}'
+      ],
+      "actor.clone",
+      { actorId: "actor-1", patch: { name: "Patched", prototypeToken: { name: "Patched" } } }
+    ],
+    [
+      [
+        "actor",
+        "item",
+        "clone",
+        "--actor-id",
+        "actor-1",
+        "--item-id",
+        "item-1",
+        "--patch-json",
+        '{"flags":{"m":1}}'
+      ],
+      "actor.item.clone",
+      { actorId: "actor-1", itemId: "item-1", patch: { flags: { m: 1 } } }
+    ],
+    [
+      ["item", "clone", "--item-id", "item-1", "--patch-json", '{"flags":{"m":1}}'],
+      "item.clone",
+      { itemId: "item-1", patch: { flags: { m: 1 } } }
+    ],
+    [
+      ["journal", "clone", "--journal-id", "journal-1", "--patch-json", '{"flags":{"m":1}}'],
+      "journal.clone",
+      { journalId: "journal-1", patch: { flags: { m: 1 } } }
+    ],
+    [
+      ["macro", "clone", "--macro-id", "macro-1", "--patch-json", '{"flags":{"m":1}}'],
+      "macro.clone",
+      { macroId: "macro-1", patch: { flags: { m: 1 } } }
+    ],
+    [
+      ["scene", "clone", "--scene-id", "scene-1", "--patch-json", '{"navName":"Copy"}'],
+      "scene.clone",
+      { sceneId: "scene-1", patch: { navName: "Copy" } }
+    ],
+    [
+      [
+        "scene",
+        "token",
+        "item",
+        "clone",
+        "--scene-id",
+        "scene-1",
+        "--token-id",
+        "token-1",
+        "--item-id",
+        "item-1",
+        "--patch-json",
+        '{"flags":{"m":1}}'
+      ],
+      "scene.token.item.clone",
+      { sceneId: "scene-1", tokenId: "token-1", itemId: "item-1", patch: { flags: { m: 1 } } }
+    ],
     [["actor", "delete", "--actor-id", "actor-1"], "actor.delete", { actorId: "actor-1" }],
     [
       ["actor", "delete", "--actor-id", "actor-1", "--force"],

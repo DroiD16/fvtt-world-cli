@@ -228,10 +228,13 @@ export function createSceneCreateParams(options: SceneFieldOptions & { name: str
   };
 }
 
-export function createSceneCloneParams(options: SceneFieldOptions & { sceneId: string }) {
+export function createSceneCloneParams(options: SceneFieldOptions & { sceneId: string; patchJson?: string }) {
   return {
     sceneId: options.sceneId,
-    ...optionalPatch(buildScenePatch(options))
+    ...optionalPatch({
+      ...buildScenePatch(options),
+      ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+    })
   };
 }
 
@@ -243,13 +246,15 @@ export function createItemCloneParams(options: {
   clearFolder?: boolean;
   sort?: number;
   systemJson?: string;
+  patchJson?: string;
 }) {
   const patch = {
     ...stringField("name", options.name),
     ...stringField("img", options.img),
     ...folderField(options),
     ...numberField("sort", options.sort),
-    ...jsonObjectField("system", options.systemJson, "--system-json")
+    ...jsonObjectField("system", options.systemJson, "--system-json"),
+    ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
   };
   return {
     itemId: options.itemId,
@@ -263,11 +268,13 @@ export function createJournalCloneParams(options: {
   folder?: string;
   clearFolder?: boolean;
   sort?: number;
+  patchJson?: string;
 }) {
   const patch = {
     ...stringField("name", options.name),
     ...folderField(options),
-    ...numberField("sort", options.sort)
+    ...numberField("sort", options.sort),
+    ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
   };
   return {
     journalId: options.journalId,
@@ -395,6 +402,7 @@ export function createMacroCloneParams(options: {
   folder?: string;
   clearFolder?: boolean;
   scope?: string;
+  patchJson?: string;
 }) {
   const patch = {
     ...stringField("name", options.name),
@@ -402,7 +410,8 @@ export function createMacroCloneParams(options: {
     ...stringField("command", options.command),
     ...stringField("img", options.img),
     ...folderField(options),
-    ...stringField("scope", options.scope)
+    ...stringField("scope", options.scope),
+    ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
   };
   return {
     macroId: options.macroId,
@@ -1101,12 +1110,14 @@ export function createActorItemCloneParams(options: {
   img?: string;
   sort?: number;
   systemJson?: string;
+  patchJson?: string;
 }) {
   const patch = {
     ...stringField("name", options.name),
     ...stringField("img", options.img),
     ...numberField("sort", options.sort),
-    ...jsonObjectField("system", options.systemJson, "--system-json")
+    ...jsonObjectField("system", options.systemJson, "--system-json"),
+    ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
   };
   return {
     actorId: options.actorId,
@@ -1225,10 +1236,13 @@ export function createActorUpdateParams(
   };
 }
 
-export function createActorCloneParams(options: ActorFieldOptions & { actorId: string }) {
+export function createActorCloneParams(options: ActorFieldOptions & { actorId: string; patchJson?: string }) {
   return {
     actorId: options.actorId,
-    ...optionalPatch(buildActorPatch(options))
+    ...optionalPatch({
+      ...buildActorPatch(options),
+      ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+    })
   };
 }
 

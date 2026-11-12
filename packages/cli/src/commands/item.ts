@@ -142,22 +142,25 @@ export function registerItem({ program, dependencies }: RegistrationContext) {
       .requiredOption("--item-id <itemId>", "Source item id")
       .option("--name <name>", "Name override for the clone"),
     "clone"
-  ).action(async function cloneItem(options: {
-    itemId: string;
-    name?: string;
-    img?: string;
-    folder?: string;
-    clearFolder?: boolean;
-    sort?: number;
-    systemJson?: string;
-  }) {
-    await executeRemoteCommand({
-      commandName: "item.clone",
-      params: createItemCloneParams(options),
-      command: this,
-      dependencies
+  )
+    .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
+    .action(async function cloneItem(options: {
+      itemId: string;
+      name?: string;
+      img?: string;
+      folder?: string;
+      clearFolder?: boolean;
+      sort?: number;
+      systemJson?: string;
+      patchJson?: string;
+    }) {
+      await executeRemoteCommand({
+        commandName: "item.clone",
+        params: createItemCloneParams(options),
+        command: this,
+        dependencies
+      });
     });
-  });
   item
     .command("delete")
     .requiredOption("--item-id <itemId>", "Item id")
