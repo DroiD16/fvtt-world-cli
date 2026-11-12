@@ -2048,12 +2048,6 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
         return true;`
       ).catch(() => null);
     }
-    await runReferenceGmCoverage(summary, {
-      gmControlUrl,
-      gmUserId,
-      scriptMacroId,
-      actorId: options.actorId
-    });
     markAndPush(
       summary,
       "dangerous.setting.set(type cast)",
@@ -2074,6 +2068,12 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
         flagStoredJson: castFlagStored
       }
     );
+    await runReferenceGmCoverage(summary, {
+      gmControlUrl,
+      gmUserId,
+      scriptMacroId,
+      actorId: options.actorId
+    });
     const lazyOmission = JSON.stringify([{ path: "$.lazy", reason: "accessor-property" }]);
     const partialGot = partialGetRun?.response?.result?.setting ?? null;
     const partialSet = partialSetRun?.response?.result ?? null;
