@@ -70,6 +70,10 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
       'Comma-separated setting ids in "namespace.key" form (e.g. core.chatBubbles,my-module.apiKey)',
       parseIdList
     )
+    .addHelpText(
+      "after",
+      "\nEach row reports unserializable value parts the way setting get does, in valueOmissions."
+    )
     .action(async function getManySettings(options: { ids: string[] }) {
       await executeRemoteCommand({
         commandName: "setting.get-many",
@@ -87,6 +91,10 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
       "--value-json <json>",
       'New value as a JSON literal — true, 42, "text", [..] or {..}; a quoted string stays distinct from a boolean or a number',
       (value: string) => parseJsonValue(value, "--value-json")
+    )
+    .addHelpText(
+      "after",
+      '\nprevious and value are reported like setting get, with previousOmissions/valueOmissions for parts replaced by {"$unserializable": "<reason>"}. A value copied from a read with omissions carries those markers: writing it stores them as data, so rebuild the value without them first.'
     )
     .action(async function setSetting(options: { namespace: string; key: string; valueJson: unknown }) {
       await executeRemoteCommand({
