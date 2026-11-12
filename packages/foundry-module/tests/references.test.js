@@ -643,6 +643,21 @@ describe("world.references lookup", () => {
     ]);
   });
 
+  it("reports a nested key path that continues below the target once, at the target's id", () => {
+    globalThis.game.items = collection("Item", [
+      {
+        _id: "dddddddddddddddd",
+        name: "Tracker",
+        flags: { world: { Actor: { [ACTOR_ID]: { Item: { itemaaaaaaaaaaaa: 1 } } } } },
+        effects: []
+      }
+    ]);
+
+    expect(rows(runReferenceLookup({ uuid: `Actor.${ACTOR_ID}`, scope: ["item"] }))).toEqual([
+      ["Item.dddddddddddddddd", `flags.world.Actor.${ACTOR_ID}`, "key", null]
+    ]);
+  });
+
   it("matches no key that only contains the id or spells a longer UUID", () => {
     globalThis.game.items = collection("Item", [
       {

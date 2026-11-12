@@ -198,8 +198,11 @@ owning document by `uuid`, the dotted `field` path inside its stored source, and
 - `link`: the UUID sits in an `@UUID[...]` or legacy content link.
 - `embedded`: a string holds the UUID of a document embedded in the target, carried in `matchedUuid`.
 - `key`: an object key names the target. Foundry stores a dotted key such as `flags.mod["Actor.<id>"]`
-  as nested keys, so `field` ends at the id (`flags.mod.Actor.<id>`) in both storage forms. A key
-  naming a document embedded in the target carries it in `matchedUuid`.
+  as nested keys, and the lookup reports that key path at the target's id (`flags.mod.Actor.<id>`),
+  the same `field` a literal `"Actor.<id>"` key gets. A nested key path that continues below the
+  target, such as `flags.mod.Actor.<id>.Item.<itemId>`, gets that one row at the target's id. Only a
+  literal key, as kept inside a setting's JSON, names an embedded document whole: it is reported at
+  that key with the document in `matchedUuid`.
 - `relative`: a relative link (`@UUID[.<id>]`, `@Embed[.<id>]`) names the target once resolved
   against the document that stores it, with the connected Foundry version's own rules. `matchedUuid`
   is the resolved UUID. Only the fields Foundry resolves that way are read: a journal page's
