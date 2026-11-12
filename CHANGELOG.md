@@ -2,6 +2,39 @@
 
 All notable user-visible changes to fvtt-world-cli will be recorded in this file.
 
+## [1.3.0] - 2026-11-12
+
+### New
+
+- Journal pages have their own commands to list, read, create, edit and delete one page at a
+  time. Listing pages no longer returns every page body.
+- `world references` shows every place in the world that points at a document, so you can check
+  before a delete or relink. It covers UUIDs and content links, token actors and other id fields,
+  module flags, folders, world and user settings, hotbar slots, and relative links between journal
+  pages and roll table results. It also finds an actor's tokens across all scenes. Chat messages
+  are searched only on request.
+- Actor items can be created, updated and deleted in bulk.
+- Every `clone` command accepts `--patch-json` to change fields of the copy.
+
+### Improvements
+
+- `file read` handles files up to the transfer limit (100 MiB by default) instead of 1 MiB.
+- A setting value or macro result with a part that has no JSON form, such as a getter or a
+  circular reference, now comes back with that part marked and listed. Before, the whole read
+  failed.
+- Documents that hold a stored Foundry 14 delete or replace operator can be read again.
+- Clearer errors for dotted patch keys, uploads the server rejects, and creates that Foundry
+  silently drops.
+- The agent skill tells agents to reuse a running daemon and to check references before deleting
+  a document.
+
+### Changes that affect scripts
+
+- Colours in `--include prepared` reads are `#rrggbb` strings, the form Foundry stores, instead of
+  numbers.
+- The `SETTING_VALUE_NOT_SERIALIZABLE` error code is removed. Setting reads return a partial value
+  instead.
+
 ## [1.2.1] - 2026-11-09
 
 - When Foundry stores something other than what was requested, the error now shows both values for

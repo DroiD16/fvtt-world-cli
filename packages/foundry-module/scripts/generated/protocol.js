@@ -3,7 +3,7 @@
 // The bundler strips the JSDoc that types the canonical source, so this copy is not type-checked.
 
 // packages/protocol/src/constants.js
-var PROTOCOL_VERSION = "1.2.1";
+var PROTOCOL_VERSION = "1.3.0";
 var PROTOCOL_COMPONENTS = Object.freeze({
   MODULE: "module",
   CLI_DAEMON: "cli-daemon",
