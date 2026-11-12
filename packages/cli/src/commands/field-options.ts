@@ -448,6 +448,30 @@ export function addJournalCategoryFieldOptions(command: Command, verb: "create" 
   return addFieldOptions(command, verb, ordered);
 }
 
+const JOURNAL_PAGE_FIELDS: readonly FieldSpec[] = [
+  {
+    flag: "--sort <sort>",
+    help: { create: "Page sort value", update: "New page sort value" },
+    parser: parseNumber
+  },
+  {
+    flag: "--category <categoryId>",
+    help: {
+      create: "Category id from journal category list",
+      update: "New category id from journal category list"
+    }
+  },
+  { flag: "--clear-category", help: "Explicitly set category to null", conflicts: "category" },
+  {
+    flag: "--src <src>",
+    help: { create: "Media path of an image, pdf or video page", update: "New media path" }
+  }
+];
+
+export function addJournalPageFieldOptions(command: Command, verb: "create" | "update"): Command {
+  return addFieldOptions(command, verb, JOURNAL_PAGE_FIELDS);
+}
+
 const PLAYLIST_FIELDS: readonly FieldSpec[] = [
   {
     flag: "--description <description>",

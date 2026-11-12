@@ -76,6 +76,9 @@ function resolveEffectiveLimits(uploadLimitBytes = DEFAULT_UPLOAD_SIZE_LIMIT_BYT
     wsMaxPayloadBytes: Math.max(wsMaxPayloadForUploadLimit(uploadLimitBytes), DEFAULT_WS_MAX_PAYLOAD_BYTES)
   };
 }
+var BROWSER_STRING_MAX_LENGTH = 536870888;
+var READ_RESPONSE_ENVELOPE_RESERVE_CHARS = 1024 * 1024;
+var READ_ENCODING_CEILING_BYTES = Math.floor((BROWSER_STRING_MAX_LENGTH - READ_RESPONSE_ENVELOPE_RESERVE_CHARS) / 4) * 3;
 var BATCH_GET_MAX_IDS = 100;
 var BATCH_WRITE_MAX_ITEMS = 100;
 var BATCH_WRITE_STATUSES = Object.freeze([
@@ -97,6 +100,7 @@ var BATCH_WRITE_SUCCESS_STATUSES = Object.freeze([
 var BATCH_WRITE_PERSISTED_STATUSES = Object.freeze(["created", "updated", "deleted"]);
 var CARDS_PASS_MAX_IDS = 100;
 var AUDIT_FILES_MAX_DIRS = 500;
+var REFERENCES_MAX_MATCHES = 1e4;
 var SCENE_THUMBNAIL_MIN_DIMENSION = 16;
 var SCENE_THUMBNAIL_MAX_DIMENSION = 1024;
 var SCENE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
@@ -107,6 +111,7 @@ var TABLE_DRAW_MAX_COUNT = 100;
 var SETTING_VALUE_MAX_DEPTH = 32;
 var SETTING_VALUE_MAX_NODES = 2e4;
 var SETTING_VALUE_MAX_BYTES = 256 * 1024;
+var SERIALIZE_OMISSIONS_MAX = 100;
 var MACRO_EXECUTE_TIMEOUT_DEFAULT_MS = 3e4;
 var MACRO_EXECUTE_TIMEOUT_MAX_MS = 3e5;
 var SEARCH_MODES = Object.freeze(["name", "full"]);
@@ -210,6 +215,7 @@ var ERROR_CODES = Object.freeze({
   PLAYLIST_NOT_FOUND: "PLAYLIST_NOT_FOUND",
   PLAYLIST_SOUND_NOT_FOUND: "PLAYLIST_SOUND_NOT_FOUND",
   JOURNAL_CATEGORY_NOT_FOUND: "JOURNAL_CATEGORY_NOT_FOUND",
+  JOURNAL_PAGE_NOT_FOUND: "JOURNAL_PAGE_NOT_FOUND",
   CHAT_MESSAGE_NOT_FOUND: "CHAT_MESSAGE_NOT_FOUND",
   TABLE_NOT_FOUND: "TABLE_NOT_FOUND",
   TABLE_RESULT_NOT_FOUND: "TABLE_RESULT_NOT_FOUND",
@@ -836,6 +842,11 @@ var actorCommands = {
     },
     { mutation: true }
   ),
+  ...batchWriteCommands("actor.item", {
+    scopeProperties: actorScopeProperties,
+    createSchema: embeddedItemDataSchema,
+    patchSchema: itemPatchSchema
+  }),
   ...batchWriteCommands("actor", {
     scopeProperties: emptyScopeProperties,
     patchSchema: actorPatchSchema,
@@ -1831,6 +1842,16 @@ var auditFilesSchema = {
   },
   additionalProperties: false
 };
+var worldReferencesSchema = {
+  type: "object",
+  required: ["uuid"],
+  properties: {
+    uuid: { type: "string", minLength: 1 },
+    scope: auditFilesSchema.properties.scope,
+    ...paginationProperties
+  },
+  additionalProperties: false
+};
 var fileCommands = {
   "file.list": cmd({
     type: "object",
@@ -1918,7 +1939,8 @@ var fileCommands = {
   )
 };
 var worldAuditCommands = {
-  "world.audit-files": cmd(auditFilesSchema)
+  "world.audit-files": cmd(auditFilesSchema),
+  "world.references": cmd(worldReferencesSchema)
 };
 
 // packages/protocol/src/schemas/folder.js
@@ -2274,6 +2296,16 @@ var journalPageCreateSchema = {
 var journalPagePatchSchema = patchFrom(journalPageCreateSchema, {
   prepend: { id: { type: "string", minLength: 1 } }
 });
+var journalPageOwnPatchSchema = patchFrom(journalPageCreateSchema);
+var journalPageIdSchema = {
+  type: "object",
+  required: ["journalId", "pageId"],
+  properties: {
+    journalId: { type: "string", minLength: 1 },
+    pageId: { type: "string", minLength: 1 }
+  },
+  additionalProperties: false
+};
 var journalDataSchema = {
   type: "object",
   required: ["name"],
@@ -2441,6 +2473,58 @@ var journalCommands = {
     patchSchema: journalDocumentPatchSchema,
     verbs: ["update-many", "delete-many"]
   }),
+  "journal.page.list": cmd({
+    type: "object",
+    required: ["journalId"],
+    properties: {
+      journalId: { type: "string", minLength: 1 },
+      ...nameFilterProperty,
+      ...paginationProperties
+    },
+    additionalProperties: false
+  }),
+  "journal.page.get": cmd(journalPageIdSchema),
+  "journal.page.create": cmd(
+    {
+      type: "object",
+      required: ["journalId", "data"],
+      properties: {
+        journalId: { type: "string", minLength: 1 },
+        data: journalPageCreateSchema,
+        ...dryRunProperty,
+        ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "journal.page.update": cmd(
+    {
+      type: "object",
+      required: ["journalId", "pageId", "patch"],
+      properties: {
+        journalId: { type: "string", minLength: 1 },
+        pageId: { type: "string", minLength: 1 },
+        patch: journalPageOwnPatchSchema,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "journal.page.delete": cmd(
+    {
+      type: "object",
+      required: ["journalId", "pageId"],
+      properties: {
+        journalId: { type: "string", minLength: 1 },
+        pageId: { type: "string", minLength: 1 },
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
   "journal.category.list": cmd({
     type: "object",
     required: ["journalId"],
@@ -5555,6 +5639,11 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "journal.ownership.set": "allow",
   "journal.update-many": "allow",
   "journal.delete-many": "approve",
+  "journal.page.list": "allow",
+  "journal.page.get": "allow",
+  "journal.page.create": "allow",
+  "journal.page.update": "allow",
+  "journal.page.delete": "approve",
   "journal.category.list": "allow",
   "journal.category.get": "allow",
   "journal.category.create": "allow",
@@ -5671,6 +5760,9 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "actor.item.delete": "approve",
   "actor.item.clone": "allow",
   "actor.item.import-from-compendium": "allow",
+  "actor.item.create-many": "allow",
+  "actor.item.update-many": "allow",
+  "actor.item.delete-many": "approve",
   "actor.update-many": "allow",
   "actor.delete-many": "approve",
   "actor.effect.list": "allow",
@@ -5724,6 +5816,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "setting.set-many": "deny",
   "actor.import-from-compendium": "allow",
   "world.audit-files": "allow",
+  "world.references": "allow",
   "world.search": "allow",
   "approval.await": "allow",
   "approval.cancel": "allow",
@@ -5823,8 +5916,8 @@ function describeDottedKey(key, properties) {
   if (!key.includes(".") || !Object.hasOwn(properties, root)) {
     return "";
   }
-  const rest = key.slice(root.length + 1);
-  return `; a top-level key must be one of the listed field names, so move the rest of the path inside "${root}": {"${root}": {"${rest}": ...}}`;
+  const nested = key.split(".").reduceRight((inner, segment) => `{${JSON.stringify(segment)}: ${inner}}`, "...");
+  return `; a key at this level must be one of the listed field names, so nest the rest of the path inside "${root}": ${nested}`;
 }
 function describeAllowedFields(key, allowedFields) {
   if (allowedFields.length === 0) {
@@ -5897,7 +5990,7 @@ function validateObjectSchema(schema, value, path, errors) {
   for (const [key, propertyValue] of Object.entries(value)) {
     const propertySchema = properties[key];
     if (propertySchema) {
-      validateSchema(propertySchema, propertyValue, `${childPath(path, key)}`, errors);
+      validateSchema(propertySchema, propertyValue, childPath(path, key), errors);
       continue;
     }
     if (additionalProperties === false) {
@@ -5907,7 +6000,7 @@ function validateObjectSchema(schema, value, path, errors) {
       continue;
     }
     if (isPlainObject(additionalProperties)) {
-      validateSchema(additionalProperties, propertyValue, `${childPath(path, key)}`, errors);
+      validateSchema(additionalProperties, propertyValue, childPath(path, key), errors);
     }
   }
 }
@@ -6314,8 +6407,10 @@ export {
   PROTOCOL_COMPONENTS,
   PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
+  READ_ENCODING_CEILING_BYTES,
   RECONNECT_BASE_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
+  REFERENCES_MAX_MATCHES,
   REQUEST_SCHEMA,
   SCENE_THUMBNAIL_MAX_BYTES,
   SCENE_THUMBNAIL_MAX_DIMENSION,
@@ -6346,6 +6441,7 @@ export {
   SEARCH_SYSTEM_WALK_MAX_NODES,
   SEARCH_WORLD_INDEX_MAX_BYTES,
   SEARCH_WORLD_INDEX_MAX_ENTRIES,
+  SERIALIZE_OMISSIONS_MAX,
   SETTING_VALUE_MAX_BYTES,
   SETTING_VALUE_MAX_DEPTH,
   SETTING_VALUE_MAX_NODES,

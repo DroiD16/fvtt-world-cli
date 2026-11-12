@@ -150,6 +150,7 @@ const BATCH_SCOPE_KEYS = Object.freeze({
   "actor.effect": ["actorId"],
   "item.effect": ["itemId"],
   "actor.item.effect": ["actorId", "itemId"],
+  "actor.item": ["actorId"],
   "scene.token.effect": ["sceneId", "tokenId"],
   "scene.token.item.effect": ["sceneId", "tokenId", "itemId"],
   item: [],
@@ -217,8 +218,10 @@ const EXPECTED_CLOSED_PAYLOADS = Object.freeze([
   "actor.create.data",
   "actor.import-from-compendium.patch",
   "actor.item.clone.patch",
+  "actor.item.create-many.data[]",
   "actor.item.create.data",
   "actor.item.import-from-compendium.patch",
+  "actor.item.update-many.patches[].patch",
   "actor.item.update.patch",
   "actor.update-many.patches[].patch",
   "actor.update.patch",
@@ -246,6 +249,8 @@ const EXPECTED_CLOSED_PAYLOADS = Object.freeze([
   "item.update.patch",
   "journal.category.create.data",
   "journal.category.update.patch",
+  "journal.page.create.data",
+  "journal.page.update.patch",
   "journal.clone.patch",
   "journal.create.data",
   "journal.import-from-compendium.patch",
@@ -388,6 +393,32 @@ const EXPECTED_FAMILY_FIELDS = Object.freeze({
   "item.update.patch": ["flags", "folder", "img", "name", "sort", "system"],
   "journal.category.create.data": ["flags", "name", "sort"],
   "journal.category.update.patch": ["flags", "name", "sort"],
+  "journal.page.create.data": [
+    "category",
+    "flags",
+    "image",
+    "name",
+    "sort",
+    "src",
+    "system",
+    "text",
+    "title",
+    "type",
+    "video"
+  ],
+  "journal.page.update.patch": [
+    "category",
+    "flags",
+    "image",
+    "name",
+    "sort",
+    "src",
+    "system",
+    "text",
+    "title",
+    "type",
+    "video"
+  ],
   "journal.create.data": ["flags", "folder", "name", "pages", "sort"],
   "journal.update.patch": ["deletePageIds", "flags", "folder", "name", "pages", "sort"],
   "macro.create.data": ["command", "flags", "folder", "img", "name", "scope", "type"],
@@ -764,6 +795,9 @@ const MUTATION_BASES = Object.freeze({
     patches: [{ id: "eff-1", patch: { disabled: true } }]
   },
   "actor.item.effect.delete-many": { actorId: "actor-1", itemId: "item-1", ids: ["eff-1"] },
+  "actor.item.create-many": { actorId: "actor-1", data: [{ name: "Torch", type: "loot" }] },
+  "actor.item.update-many": { actorId: "actor-1", patches: [{ id: "item-1", patch: { name: "Lamp" } }] },
+  "actor.item.delete-many": { actorId: "actor-1", ids: ["item-1"] },
   "scene.token.effect.create-many": { sceneId: "scene-1", tokenId: "token-1", data: [{ name: "Bless" }] },
   "scene.token.effect.update-many": {
     sceneId: "scene-1",
@@ -905,6 +939,10 @@ const MUTATION_BASES = Object.freeze({
   "journal.category.update": { journalId: "j-1", categoryId: "cat-1", patch: { name: "X" } },
   "journal.category.delete": { journalId: "j-1", categoryId: "cat-1" },
 
+  "journal.page.create": { journalId: "j-1", data: { name: "Intro", type: "text" } },
+  "journal.page.update": { journalId: "j-1", pageId: "p-1", patch: { name: "Intro" } },
+  "journal.page.delete": { journalId: "j-1", pageId: "p-1" },
+
   "scene.region.behavior.create": {
     sceneId: "scene-1",
     regionId: "region-1",
@@ -996,8 +1034,18 @@ describe("schema validator paths for keys that contain dots", () => {
     expectRejected(
       "actor.item.update",
       { actorId: "a1", itemId: "i1", patch: { "system.activities.x1.profiles": [] } },
-      '{"system": {"activities.x1.profiles": ...}}'
+      '{"system": {"activities": {"x1": {"profiles": ...}}}}'
     );
+  });
+
+  it("gives the nesting hint for a dotted key inside a nested closed object", () => {
+    const result = validate("journal.update", {
+      journalId: "j1",
+      patch: { pages: [{ id: "p1", "text.content": "<p>x</p>" }] }
+    });
+    const message = result.errors.find((error) => error.includes('pages[0]["text.content"]'));
+    expect(message).toContain("a key at this level");
+    expect(message).toContain('{"text": {"content": ...}}');
   });
 
   it("adds no nesting hint when the key's first segment is not an allowed field", () => {
@@ -1005,7 +1053,7 @@ describe("schema validator paths for keys that contain dots", () => {
     expect(result.errors).toContainEqual(
       expect.stringContaining('$.params.patch["bogus.key"] is not allowed')
     );
-    expect(result.errors.join("\n")).not.toContain("move the rest of the path");
+    expect(result.errors.join("\n")).not.toContain("nest the rest of the path");
   });
 });
 
@@ -1901,6 +1949,21 @@ describe("protocol contract", () => {
     });
   });
 
+  describe("world.references params", () => {
+    it("is a read that requires a uuid and shares the audit scope enum", () => {
+      expect(COMMAND_DEFINITIONS["world.references"].mutation).toBe(false);
+      expect(validate("world.references", {}).ok).toBe(false);
+      expect(
+        validate("world.references", { uuid: "Actor.abc", scope: ["scene"], limit: 5, offset: 0 }).ok
+      ).toBe(true);
+      expect(COMMAND_DEFINITIONS["world.references"].paramsSchema.properties.scope).toEqual(
+        COMMAND_DEFINITIONS["world.audit-files"].paramsSchema.properties.scope
+      );
+      expectRejected("world.references", { uuid: "Actor.abc", scope: ["chat"] }, "$.params.scope[0]");
+      expectRejected("world.references", { uuid: "Actor.abc", path: "x" }, "$.params.path is not allowed");
+    });
+  });
+
   describe("world.audit-files params", () => {
     const validateAudit = (params) => validate("world.audit-files", params);
 
@@ -2547,7 +2610,7 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 61 approve-listed, 8 denied and 277 self-running commands in a registry of 346", () => {
+    it("counts 63 approve-listed, 8 denied and 284 self-running commands in a registry of 355", () => {
       const bucket = (behavior) =>
         COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
@@ -2559,10 +2622,10 @@ describe("protocol contract", () => {
           allow: bucket("allow")
         },
         "the totals moved: re-check the default-policy prose in docs/commands.md and docs/security.md (they name the buckets, not the counts) in the same change"
-      ).toEqual({ commands: 346, approve: 61, deny: 8, allow: 277 });
+      ).toEqual({ commands: 355, approve: 63, deny: 8, allow: 284 });
     });
 
-    it("leaves 341 governed commands in 19 top-level groups once the exempt ones are removed", () => {
+    it("leaves 350 governed commands in 19 top-level groups once the exempt ones are removed", () => {
       const exempt = new Set(POLICY_EXEMPT_COMMANDS);
       const governed = COMMAND_NAMES.filter((command) => !exempt.has(command));
 
@@ -2572,7 +2635,7 @@ describe("protocol contract", () => {
           groups: new Set(governed.map((command) => command.split(".")[0])).size
         },
         "the window totals moved: the permissions window renders one section per top-level group, so re-check its rendering assumptions in the same change"
-      ).toEqual({ governed: 341, groups: 19 });
+      ).toEqual({ governed: 350, groups: 19 });
     });
 
     it("cannot be mutated in place", () => {
@@ -3109,6 +3172,49 @@ describe("protocol contract", () => {
           patch: { pages: [{ id: "x", video: { volume: 1.5 } }] }
         }).ok
       ).toBe(false);
+    });
+  });
+
+  describe("journal.page embedded family", () => {
+    it("declares list, get, create, update and delete and no page bulk verbs", () => {
+      expect(COMMAND_NAMES.filter((name) => name.startsWith("journal.page.")).sort()).toEqual([
+        "journal.page.create",
+        "journal.page.delete",
+        "journal.page.get",
+        "journal.page.list",
+        "journal.page.update"
+      ]);
+    });
+
+    it("reuses the journal page schema of journal.create, and the patch carries no id", () => {
+      expect(COMMAND_DEFINITIONS["journal.page.create"].paramsSchema.properties.data).toEqual(
+        COMMAND_DEFINITIONS["journal.create"].paramsSchema.properties.data.properties.pages.items
+      );
+      const patch = COMMAND_DEFINITIONS["journal.page.update"].paramsSchema.properties.patch;
+      expect(patch.properties).not.toHaveProperty("id");
+      expect(patch.minProperties).toBe(1);
+      expectRejected(
+        "journal.page.update",
+        { journalId: "j-1", pageId: "p-1", patch: { id: "p-2" } },
+        "$.params.patch.id is not allowed"
+      );
+      expectRejected(
+        "journal.page.create",
+        { journalId: "j-1", data: { name: "N", type: "text", text: { content: "x", bogus: 1 } } },
+        "$.params.data.text.bogus is not allowed"
+      );
+    });
+
+    it("requires the page id on get, update and delete", () => {
+      for (const command of ["journal.page.get", "journal.page.delete"]) {
+        expect(validate(command, { journalId: "j-1" }).ok, command).toBe(false);
+        expect(validate(command, { journalId: "j-1", pageId: "p-1" }).ok, command).toBe(true);
+      }
+      expect(validate("journal.page.update", { journalId: "j-1", pageId: "p-1" }).ok).toBe(false);
+    });
+
+    it("exposes JOURNAL_PAGE_NOT_FOUND", () => {
+      expect(ERROR_CODES.JOURNAL_PAGE_NOT_FOUND).toBe("JOURNAL_PAGE_NOT_FOUND");
     });
   });
 
@@ -5346,6 +5452,7 @@ describe("protocol contract", () => {
     it("pins BOTH batched-family SETS by name so the derived pins below cannot shrink", () => {
       expect(BATCHED_FAMILIES).toEqual([
         "actor.effect",
+        "actor.item",
         "actor.item.effect",
         "item.effect",
         "scene.drawing",
@@ -5862,6 +5969,7 @@ describe("protocol contract", () => {
       "item.effect.list",
       "journal.list",
       "journal.category.list",
+      "journal.page.list",
       "macro.list",
       "actor.list",
       "actor.item.list",
@@ -5887,6 +5995,8 @@ describe("protocol contract", () => {
       "setting.list",
 
       "world.audit-files",
+
+      "world.references",
 
       "world.search"
     ]);
@@ -5936,6 +6046,7 @@ describe("protocol contract", () => {
       "cards.card.list": { cardsId: "cards-1" },
 
       "journal.category.list": { journalId: "j-1" },
+      "journal.page.list": { journalId: "j-1" },
 
       "scene.region.behavior.list": { sceneId: "scene-1", regionId: "region-1" },
       "user.list": {},
@@ -6136,6 +6247,7 @@ describe("protocol contract", () => {
       "journal.import-from-compendium": { pack: "world.x", entryId: "e-1" },
 
       "journal.category.create": { journalId: "j-1", data: { name: "Chapter One" } },
+      "journal.page.create": { journalId: "j-1", data: { name: "Intro", type: "text" } },
 
       "scene.region.behavior.create": {
         sceneId: "scene-1",
@@ -6234,6 +6346,9 @@ describe("protocol contract", () => {
         patches: [{ id: "eff-1", patch: { disabled: true } }]
       },
       "actor.item.effect.delete-many": { actorId: "actor-1", itemId: "item-1", ids: ["eff-1"] },
+      "actor.item.create-many": { actorId: "actor-1", data: [{ name: "Torch", type: "loot" }] },
+      "actor.item.update-many": { actorId: "actor-1", patches: [{ id: "item-1", patch: { name: "Lamp" } }] },
+      "actor.item.delete-many": { actorId: "actor-1", ids: ["item-1"] },
       "scene.token.effect.create-many": { sceneId: "scene-1", tokenId: "token-1", data: [{ name: "Bless" }] },
       "scene.token.effect.update-many": {
         sceneId: "scene-1",
@@ -6353,10 +6468,13 @@ describe("protocol contract", () => {
         "actor.effect.delete-many",
         "actor.effect.update-many",
         "actor.import-from-compendium",
+        "actor.item.create-many",
+        "actor.item.delete-many",
         "actor.item.effect.create-many",
         "actor.item.effect.delete-many",
         "actor.item.effect.update-many",
         "actor.item.import-from-compendium",
+        "actor.item.update-many",
         "actor.update-many",
 
         "cards.deal",
@@ -6891,6 +7009,9 @@ describe("protocol contract", () => {
       "actor.item.effect.create-many",
       "actor.item.effect.update-many",
       "actor.item.effect.delete-many",
+      "actor.item.create-many",
+      "actor.item.update-many",
+      "actor.item.delete-many",
       "scene.token.effect.create-many",
       "scene.token.effect.update-many",
       "scene.token.effect.delete-many",
@@ -7003,6 +7124,9 @@ describe("protocol contract", () => {
       "journal.category.create",
       "journal.category.update",
       "journal.category.delete",
+      "journal.page.create",
+      "journal.page.update",
+      "journal.page.delete",
 
       "table.create",
       "table.update",

@@ -22,7 +22,7 @@ export function registerBridge({ program, dependencies }: RegistrationContext) {
     .option("--request-timeout-ms <ms>", "Response timeout for forwarded Foundry requests", parsePositiveInt)
     .option(
       "--upload-limit-bytes <size>",
-      "Override the file.upload size limit as bytes or a size like 100MiB (max 512MiB)"
+      "Override the file.upload and file.read size limit for this run, as bytes or a size like 100MiB (max 512MiB); CLI commands size their receive limit from the persisted value (config set-upload-limit) only"
     )
     .action(async function serveBridge(options: { requestTimeoutMs?: number; uploadLimitBytes?: string }) {
       const bridgeConfig = getBridgeDaemonConfig(this, options, dependencies);

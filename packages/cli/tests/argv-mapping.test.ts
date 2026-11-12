@@ -946,6 +946,63 @@ describe("fvtt-world-cli commands", () => {
       { combatId: "cbt-1", combatantId: "cmb-1", initiative: null }
     ],
 
+    [["journal", "page", "list", "--journal-id", "j-1"], "journal.page.list", { journalId: "j-1" }],
+    [
+      ["journal", "page", "get", "--journal-id", "j-1", "--page-id", "p-1"],
+      "journal.page.get",
+      { journalId: "j-1", pageId: "p-1" }
+    ],
+    [
+      [
+        "journal",
+        "page",
+        "create",
+        "--journal-id",
+        "j-1",
+        "--name",
+        "Map",
+        "--type",
+        "image",
+        "--src",
+        "worlds/w/map.webp",
+        "--category",
+        "cat-1",
+        "--data-json",
+        '{"image":{"caption":"Old map"}}'
+      ],
+      "journal.page.create",
+      {
+        journalId: "j-1",
+        data: {
+          name: "Map",
+          type: "image",
+          src: "worlds/w/map.webp",
+          category: "cat-1",
+          image: { caption: "Old map" }
+        }
+      }
+    ],
+    [
+      [
+        "journal",
+        "page",
+        "update",
+        "--journal-id",
+        "j-1",
+        "--page-id",
+        "p-1",
+        "--clear-category",
+        "--patch-json",
+        '{"text":{"content":"<p>x</p>"}}'
+      ],
+      "journal.page.update",
+      { journalId: "j-1", pageId: "p-1", patch: { category: null, text: { content: "<p>x</p>" } } }
+    ],
+    [
+      ["journal", "page", "delete", "--journal-id", "j-1", "--page-id", "p-1"],
+      "journal.page.delete",
+      { journalId: "j-1", pageId: "p-1" }
+    ],
     [["journal", "category", "list", "--journal-id", "j-1"], "journal.category.list", { journalId: "j-1" }],
     [
       [
@@ -1998,6 +2055,38 @@ describe("fvtt-world-cli commands", () => {
       ["scene", "wall", "delete", "--scene-id", "scene-1", "--wall-id", "wall-a"],
       "scene.wall.delete",
       { sceneId: "scene-1", wallId: "wall-a" }
+    ],
+
+    [
+      [
+        "actor",
+        "item",
+        "create-many",
+        "--actor-id",
+        "actor-1",
+        "--data-json",
+        '[{"name":"Torch","type":"loot"}]'
+      ],
+      "actor.item.create-many",
+      { actorId: "actor-1", data: [{ name: "Torch", type: "loot" }] }
+    ],
+    [
+      [
+        "actor",
+        "item",
+        "update-many",
+        "--actor-id",
+        "actor-1",
+        "--patches-json",
+        '[{"id":"item-1","patch":{"name":"Lamp"}}]'
+      ],
+      "actor.item.update-many",
+      { actorId: "actor-1", patches: [{ id: "item-1", patch: { name: "Lamp" } }] }
+    ],
+    [
+      ["actor", "item", "delete-many", "--actor-id", "actor-1", "--ids", "item-1,item-2"],
+      "actor.item.delete-many",
+      { actorId: "actor-1", ids: ["item-1", "item-2"] }
     ],
 
     [

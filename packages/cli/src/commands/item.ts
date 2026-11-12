@@ -21,6 +21,17 @@ import {
 } from "./shared.js";
 import { write } from "../deps.js";
 
+interface ItemCloneOptions {
+  itemId: string;
+  name?: string;
+  img?: string;
+  folder?: string;
+  clearFolder?: boolean;
+  sort?: number;
+  systemJson?: string;
+  patchJson?: string;
+}
+
 export function registerItem({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerCompendiumImport, registerBatchWriteCommands } =
     createSharedRegistrars(dependencies);
@@ -144,16 +155,7 @@ export function registerItem({ program, dependencies }: RegistrationContext) {
     "clone"
   )
     .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
-    .action(async function cloneItem(options: {
-      itemId: string;
-      name?: string;
-      img?: string;
-      folder?: string;
-      clearFolder?: boolean;
-      sort?: number;
-      systemJson?: string;
-      patchJson?: string;
-    }) {
+    .action(async function cloneItem(options: ItemCloneOptions) {
       await executeRemoteCommand({
         commandName: "item.clone",
         params: createItemCloneParams(options),

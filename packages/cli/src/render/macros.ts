@@ -1,4 +1,5 @@
 import { renderProvenanceLines, renderOwnershipLines } from "./common.js";
+import { renderOmissionLines } from "./settings.js";
 
 const CHAT_CAPTURE_NOTES: Record<string, string> = {
   captured: "captured (every message the macro created while the bridge waited)",
@@ -21,6 +22,9 @@ export function renderMacroExecuteResult(result: any) {
     `type: ${result?.type ?? "(unknown)"}`,
     `returned: ${JSON.stringify(result?.returned ?? null, null, 2)}`
   ];
+  lines.push(
+    ...renderOmissionLines("returned", result?.returnedOmissions, result?.returnedOmissionsTruncated)
+  );
   if (result?.returnedOmitted) {
     lines.push(`returned omitted: ${result.returnedOmitted.code} — ${result.returnedOmitted.message}`);
   }

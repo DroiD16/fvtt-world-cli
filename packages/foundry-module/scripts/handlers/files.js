@@ -28,8 +28,11 @@ export function createFileHandlers() {
       };
     },
 
-    async "file.read"(params) {
-      return readDataFile(params.path, params.encoding);
+    async "file.read"(params, context) {
+      const uploadLimitBytes = context?.bridgeClient?.getEffectiveLimits?.()?.uploadBytes;
+      return readDataFile(params.path, params.encoding, {
+        ...(typeof uploadLimitBytes === "number" ? { uploadLimitBytes } : {})
+      });
     },
 
     async "file.mkdir"(params) {

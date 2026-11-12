@@ -2,24 +2,44 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ERROR_CODES,
+  SERIALIZE_OMISSIONS_MAX,
   SETTING_VALUE_MAX_BYTES,
   SETTING_VALUE_MAX_DEPTH,
   SETTING_VALUE_MAX_NODES
 } from "../scripts/generated/protocol.js";
 import {
   jsonStringByteLength,
-  serializeSettingValue,
+  serializeValueWithOmissions,
   utf8ByteLength
 } from "../scripts/lib/setting-values.js";
 
+const OMITTED = "omitted";
+
+/**
+ * @param {unknown} value
+ * @param {Record<string, number>} [limits]
+ */
+function serialize(value, limits) {
+  return serializeValueWithOmissions(value, limits).value;
+}
+
+/**
+ * @param {unknown} value
+ * @param {Record<string, number>} [limits]
+ * @returns {any}
+ */
 function expectThrown(value, limits) {
+  let result;
   try {
-    serializeSettingValue(value, limits);
+    result = serializeValueWithOmissions(value, limits);
   } catch (error) {
     return /** @type {any} */ (error);
   }
 
-  throw new Error("expected serializeSettingValue to throw");
+  if (result.omissions.length > 0) {
+    return { code: OMITTED, details: result.omissions[0], value: result.value };
+  }
+  throw new Error("expected the serializer to refuse or omit a node");
 }
 
 afterEach(() => {
@@ -27,44 +47,42 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("serializeSettingValue — plain kinds", () => {
+describe("value serializer — plain kinds", () => {
   it("maps undefined to null at the root, in a property and in an array hole", () => {
-    expect(serializeSettingValue(undefined)).toBeNull();
-    expect(serializeSettingValue({ a: undefined })).toEqual({ a: null });
+    expect(serialize(undefined)).toBeNull();
+    expect(serialize({ a: undefined })).toEqual({ a: null });
 
-    expect(serializeSettingValue([1, , 3])).toEqual([1, null, 3]);
+    expect(serialize([1, , 3])).toEqual([1, null, 3]);
   });
 
   it("passes null/boolean/string/finite-number through unchanged", () => {
-    expect(serializeSettingValue(null)).toBeNull();
-    expect(serializeSettingValue(true)).toBe(true);
-    expect(serializeSettingValue("hello")).toBe("hello");
-    expect(serializeSettingValue(0)).toBe(0);
-    expect(serializeSettingValue(-2.5)).toBe(-2.5);
+    expect(serialize(null)).toBeNull();
+    expect(serialize(true)).toBe(true);
+    expect(serialize("hello")).toBe("hello");
+    expect(serialize(0)).toBe(0);
+    expect(serialize(-2.5)).toBe(-2.5);
   });
 
   it("maps NaN/Infinity to null (matching how a setting value is PERSISTED)", () => {
-    expect(serializeSettingValue(Number.NaN)).toBeNull();
-    expect(serializeSettingValue(Number.POSITIVE_INFINITY)).toBeNull();
-    expect(serializeSettingValue({ n: Number.NaN })).toEqual({ n: null });
+    expect(serialize(Number.NaN)).toBeNull();
+    expect(serialize(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(serialize({ n: Number.NaN })).toEqual({ n: null });
   });
 
   it("walks nested plain objects and arrays, preserving key insertion order", () => {
     const value = { b: 1, a: { deep: [1, "two", { three: false }] } };
-    const result = serializeSettingValue(value);
+    const result = serialize(value);
     expect(result).toEqual({ b: 1, a: { deep: [1, "two", { three: false }] } });
     expect(Object.keys(/** @type {any} */ (result))).toEqual(["b", "a"]);
   });
 
   it("ignores symbol-keyed properties (as JSON.stringify does)", () => {
     const value = { kept: 1, [Symbol("dropped")]: 2 };
-    expect(serializeSettingValue(value)).toEqual({ kept: 1 });
+    expect(serialize(value)).toEqual({ kept: 1 });
   });
 
   it("REPORTS a `__proto__` key as an own property instead of dropping it into Object.prototype's setter", () => {
-    const leaked = /** @type {any} */ (
-      serializeSettingValue(JSON.parse('{"a":1,"__proto__":{"secret":"leak"},"b":2}'))
-    );
+    const leaked = /** @type {any} */ (serialize(JSON.parse('{"a":1,"__proto__":{"secret":"leak"},"b":2}')));
     expect(Object.getOwnPropertyNames(leaked)).toEqual(["a", "__proto__", "b"]);
     expect(Object.getOwnPropertyDescriptor(leaked, "__proto__")).toMatchObject({
       enumerable: true,
@@ -76,16 +94,12 @@ describe("serializeSettingValue — plain kinds", () => {
     expect(Object.getPrototypeOf(leaked)).toBe(Object.prototype);
     expect(JSON.stringify(leaked)).toBe('{"a":1,"__proto__":{"secret":"leak"},"b":2}');
 
-    const stringValued = /** @type {any} */ (
-      serializeSettingValue(JSON.parse('{"__proto__":"plain-string"}'))
-    );
+    const stringValued = /** @type {any} */ (serialize(JSON.parse('{"__proto__":"plain-string"}')));
     expect(Object.getOwnPropertyNames(stringValued)).toEqual(["__proto__"]);
     expect(Object.getOwnPropertyDescriptor(stringValued, "__proto__")?.value).toBe("plain-string");
     expect(Object.getPrototypeOf(stringValued)).toBe(Object.prototype);
 
-    const nested = /** @type {any} */ (
-      serializeSettingValue(JSON.parse('{"cfg":{"__proto__":{"x":1},"keep":true}}'))
-    );
+    const nested = /** @type {any} */ (serialize(JSON.parse('{"cfg":{"__proto__":{"x":1},"keep":true}}')));
     expect(Object.getOwnPropertyNames(nested)).toEqual(["cfg"]);
     expect(Object.getOwnPropertyNames(nested.cfg)).toEqual(["__proto__", "keep"]);
     expect(Object.getPrototypeOf(nested.cfg)).toBe(Object.prototype);
@@ -93,14 +107,14 @@ describe("serializeSettingValue — plain kinds", () => {
   });
 });
 
-describe("serializeSettingValue — refused kinds", () => {
+describe("value serializer — omitted kinds", () => {
   it.each([
     ["bigint", 42n, "$"],
     ["function", () => 1, "$"],
     ["symbol", Symbol("s"), "$"]
-  ])("refuses a %s with SETTING_VALUE_NOT_SERIALIZABLE and a path", (reason, value, path) => {
+  ])("marks a %s with its reason and path", (reason, value, path) => {
     const error = expectThrown(value);
-    expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+    expect(error.code).toBe(OMITTED);
     expect(error.details).toMatchObject({ reason, path });
   });
 
@@ -109,31 +123,31 @@ describe("serializeSettingValue — refused kinds", () => {
     expect(error.details).toMatchObject({ reason: "bigint", path: "$.outer[0].inner" });
   });
 
-  it("refuses a circular reference but allows the same object twice as SIBLINGS", () => {
+  it("marks a circular reference but keeps the same object twice as SIBLINGS", () => {
     const cyclic = /** @type {any} */ ({ name: "root" });
     cyclic.self = cyclic;
     const error = expectThrown(cyclic);
-    expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+    expect(error.code).toBe(OMITTED);
     expect(error.details).toMatchObject({ reason: "circular-reference", path: "$.self" });
 
     const shared = { shared: true };
-    expect(serializeSettingValue({ a: shared, b: shared })).toEqual({
+    expect(serialize({ a: shared, b: shared })).toEqual({
       a: { shared: true },
       b: { shared: true }
     });
   });
 
-  it("refuses an own ACCESSOR property instead of invoking, dropping or nulling it", () => {
+  it("marks an own ACCESSOR property instead of invoking, dropping or nulling it", () => {
     const getter = vi.fn(() => "invoked");
     const value = {};
     Object.defineProperty(value, "secret", { get: getter, enumerable: true, configurable: true });
     const error = expectThrown(value);
-    expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+    expect(error.code).toBe(OMITTED);
     expect(error.details).toMatchObject({ reason: "accessor-property", path: "$.secret" });
     expect(getter).not.toHaveBeenCalled();
   });
 
-  it("refuses an own accessor on an ARRAY INDEX too", () => {
+  it("marks an own accessor on an ARRAY INDEX too", () => {
     const getter = vi.fn(() => "invoked");
     const value = [1];
     Object.defineProperty(value, 1, { get: getter, enumerable: true, configurable: true });
@@ -142,21 +156,21 @@ describe("serializeSettingValue — refused kinds", () => {
     expect(getter).not.toHaveBeenCalled();
   });
 
-  it("refuses a SET-ONLY accessor on an ARRAY INDEX (it has no `value` to walk)", () => {
+  it("marks a SET-ONLY accessor on an ARRAY INDEX (it has no `value` to walk)", () => {
     const value = [1, 2];
     Object.defineProperty(value, 1, { set: () => {}, enumerable: true, configurable: true });
     const error = expectThrown(value);
-    expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+    expect(error.code).toBe(OMITTED);
     expect(error.details).toMatchObject({ reason: "accessor-property", path: "$[1]" });
   });
 
-  it("refuses a NON-ENUMERABLE own accessor too — the v13 lazy-subfield shape", () => {
+  it("marks a NON-ENUMERABLE own accessor too — the v13 lazy-subfield shape", () => {
     const getter = vi.fn(() => "resolved-document");
     const value = { n: 2 };
     Object.defineProperty(value, "user", { get: getter, set() {}, configurable: true });
     expect(Object.keys(value)).toEqual(["n"]);
     const error = expectThrown(value);
-    expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+    expect(error.code).toBe(OMITTED);
     expect(error.details).toMatchObject({ reason: "accessor-property", path: "$.user" });
     expect(getter).not.toHaveBeenCalled();
   });
@@ -167,23 +181,23 @@ describe("serializeSettingValue — refused kinds", () => {
     v13Shape.n = 5;
     expect(Object.keys(v13Shape)).toEqual(["n"]);
     expect(JSON.stringify(v13Shape)).toBe('{"n":5}');
-    expect(serializeSettingValue(v13Shape)).toEqual({ ro: "locked", n: 5 });
+    expect(serialize(v13Shape)).toEqual({ ro: "locked", n: 5 });
 
     const v14Shape = {};
     Object.defineProperty(v14Shape, "ro", { value: "locked", writable: false, enumerable: true });
     v14Shape.n = 5;
     expect(Object.keys(v14Shape)).toEqual(["ro", "n"]);
-    expect(serializeSettingValue(v14Shape)).toEqual({ ro: "locked", n: 5 });
+    expect(serialize(v14Shape)).toEqual({ ro: "locked", n: 5 });
   });
 
-  it("refuses a NON-ENUMERABLE data property holding a FUNCTION — the v13 readonly-thunk shape", () => {
+  it("marks a NON-ENUMERABLE data property holding a FUNCTION — the v13 readonly-thunk shape", () => {
     const thunk = vi.fn(() => ({ id: "abcdefghij123456" }));
     const value = /** @type {any} */ ({});
     Object.defineProperty(value, "ro", { value: thunk, writable: false });
     value.n = 5;
     expect(Object.keys(value)).toEqual(["n"]);
     const error = expectThrown(value);
-    expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+    expect(error.code).toBe(OMITTED);
     expect(error.details).toMatchObject({ reason: "function", path: "$.ro" });
     expect(thunk).not.toHaveBeenCalled();
   });
@@ -191,25 +205,25 @@ describe("serializeSettingValue — refused kinds", () => {
   it("does NOT report a non-index own property of an ARRAY (JSON parity for an index-shaped value)", () => {
     const value = /** @type {any} */ ([1, 2]);
     value.extra = "not-an-index";
-    expect(serializeSettingValue(value)).toEqual([1, 2]);
+    expect(serialize(value)).toEqual([1, 2]);
   });
 
-  it("refuses a LAZY-THUNK root value — the ForeignDocumentField-typed setting shape", () => {
+  it("marks a LAZY-THUNK root value — the ForeignDocumentField-typed setting shape", () => {
     const thunk = vi.fn(() => ({ id: "abcdefghij123456" }));
     const error = expectThrown(thunk);
-    expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+    expect(error.code).toBe(OMITTED);
     expect(error.details).toMatchObject({ reason: "function", path: "$" });
     expect(thunk).not.toHaveBeenCalled();
   });
 
-  it("refuses a SETTER-only own property (it can hold no readable value either)", () => {
+  it("marks a SETTER-only own property (it can hold no readable value either)", () => {
     const value = {};
     Object.defineProperty(value, "writeOnly", { set: () => {}, enumerable: true, configurable: true });
     expect(expectThrown(value).details).toMatchObject({ reason: "accessor-property", path: "$.writeOnly" });
   });
 });
 
-describe("serializeSettingValue — never executes foreign code", () => {
+describe("value serializer — never executes foreign code", () => {
   it("does NOT call a user toJSON/valueOf/toString, and serializes own data fields instead", () => {
     const toJSON = vi.fn(() => ({ hijacked: true }));
     const valueOf = vi.fn(() => "hijacked");
@@ -229,7 +243,7 @@ describe("serializeSettingValue — never executes foreign code", () => {
     Constructed.prototype.valueOf = valueOf;
     Constructed.prototype.toString = toString;
 
-    expect(serializeSettingValue(new Constructed())).toEqual({ raw: "v", derived: "d:v" });
+    expect(serialize(new Constructed())).toEqual({ raw: "v", derived: "d:v" });
     expect(toJSON).not.toHaveBeenCalled();
     expect(valueOf).not.toHaveBeenCalled();
     expect(toString).not.toHaveBeenCalled();
@@ -239,7 +253,7 @@ describe("serializeSettingValue — never executes foreign code", () => {
     const base = { inherited: "from-prototype" };
     const value = Object.create(base);
     value.own = 1;
-    expect(serializeSettingValue(value)).toEqual({ own: 1 });
+    expect(serialize(value)).toEqual({ own: 1 });
   });
 
   it("reads a Map through the INTRINSIC entries(), so a subclass override cannot substitute data", () => {
@@ -257,7 +271,7 @@ describe("serializeSettingValue — never executes foreign code", () => {
       ["a", 1],
       ["b", { nested: true }]
     ]);
-    expect(serializeSettingValue(evil)).toEqual([
+    expect(serialize(evil)).toEqual([
       ["a", 1],
       ["b", { nested: true }]
     ]);
@@ -274,7 +288,7 @@ describe("serializeSettingValue — never executes foreign code", () => {
       }
     }
 
-    expect(serializeSettingValue(new EvilSet(["a", "b"]))).toEqual(["a", "b"]);
+    expect(serialize(new EvilSet(["a", "b"]))).toEqual(["a", "b"]);
   });
 
   it("walks a DataModel through the INTRINSIC toObject(), so a subclass override cannot decide the report", () => {
@@ -296,7 +310,7 @@ describe("serializeSettingValue — never executes foreign code", () => {
     }
 
     globalThis.foundry = { abstract: { DataModel } };
-    expect(serializeSettingValue(new EvilModel({ a: "hello", n: 3 }))).toEqual({ a: "hello", n: 3 });
+    expect(serialize(new EvilModel({ a: "hello", n: 3 }))).toEqual({ a: "hello", n: 3 });
   });
 
   it("falls back to the instance toObject() only when the INTRINSIC one is absent", () => {
@@ -308,10 +322,10 @@ describe("serializeSettingValue — never executes foreign code", () => {
     }
 
     globalThis.foundry = { abstract: { DataModel } };
-    expect(serializeSettingValue(new Model())).toEqual({ a: 1 });
+    expect(serialize(new Model())).toEqual({ a: 1 });
   });
 
-  it("REFUSES a DataModel whose source read throws, rather than falling through to the plain-object arm", () => {
+  it("marks a DataModel whose source read throws, rather than falling through to the plain-object arm", () => {
     const cloneLike = (original, depth = 0) => {
       if (depth > 100) {
         throw new Error(
@@ -354,11 +368,11 @@ describe("serializeSettingValue — never executes foreign code", () => {
       [{ model: new Model(cyclic) }, "$.model"]
     ]) {
       const error = expectThrown(value);
-      expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+      expect(error.code).toBe(OMITTED);
       expect(error.details).toMatchObject({ reason: "data-model-read", path });
     }
 
-    expect(serializeSettingValue(new Model({ a: "hello" }))).toEqual({ a: "hello" });
+    expect(serialize(new Model({ a: "hello" }))).toEqual({ a: "hello" });
   });
 
   it("guards the FALLBACK arm too — both the toObject property READ and its dispatch", () => {
@@ -382,12 +396,12 @@ describe("serializeSettingValue — never executes foreign code", () => {
 
     for (const value of [new ThrowingDispatch(), new ThrowingRead()]) {
       const error = expectThrown(value);
-      expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+      expect(error.code).toBe(OMITTED);
       expect(error.details).toMatchObject({ reason: "data-model-read", path: "$" });
     }
   });
 
-  it("puts `data-model-read` in the SAME precedence slot as every other ARM refusal, not in the accessor pass", () => {
+  it("marks a DataModel whose source read throws, and still applies every size bound around it", () => {
     class DataModel {
       toObject() {
         throw new Error("source boom");
@@ -397,7 +411,7 @@ describe("serializeSettingValue — never executes foreign code", () => {
     globalThis.foundry = { abstract: { DataModel } };
     const broken = new DataModel();
 
-    expect(expectThrown({ model: broken, pad: "x".repeat(500) }, { maxBytes: 50 }).details).toMatchObject({
+    expect(expectThrown({ model: broken, pad: "x" }).details).toMatchObject({
       reason: "data-model-read",
       path: "$.model"
     });
@@ -411,14 +425,14 @@ describe("serializeSettingValue — never executes foreign code", () => {
     expect(expectThrown({ model: broken }, { maxNodes: 1 }).details).toMatchObject({ limit: "value-nodes" });
   });
 
-  it("refuses an own FUNCTION property on a plain object (no foundry global, no DataModel branch)", () => {
+  it("marks an own FUNCTION property on a plain object (no foundry global, no DataModel branch)", () => {
     const error = expectThrown({ _source: { a: 1 }, toObject: () => ({ a: 1 }) });
-    expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+    expect(error.code).toBe(OMITTED);
     expect(error.details).toMatchObject({ reason: "function", path: "$.toObject" });
   });
 });
 
-describe("serializeSettingValue — Map / Set / Date shapes", () => {
+describe("value serializer — Map / Set / Date shapes", () => {
   it("converts a Map to [key, value] PAIRS, walking both halves", () => {
     const value = new Map(
       /** @type {any[]} */ ([
@@ -426,14 +440,14 @@ describe("serializeSettingValue — Map / Set / Date shapes", () => {
         ["b", new Set([1, 2])]
       ])
     );
-    expect(serializeSettingValue(value)).toEqual([
+    expect(serialize(value)).toEqual([
       ["a", 1],
       ["b", [1, 2]]
     ]);
   });
 
   it("walks an OBJECT Map key like any other value", () => {
-    expect(serializeSettingValue(new Map([[{ k: 1 }, "v"]]))).toEqual([[{ k: 1 }, "v"]]);
+    expect(serialize(new Map([[{ k: 1 }, "v"]]))).toEqual([[{ k: 1 }, "v"]]);
   });
 
   it("counts a Map's SYNTHESIZED pair layer in the DEPTH bound, so the advertised limit is the output's", () => {
@@ -446,15 +460,15 @@ describe("serializeSettingValue — Map / Set / Date shapes", () => {
       return value;
     };
 
-    expect(serializeSettingValue(nest(2), { maxDepth: 4 })).toEqual([["k", [["k", "leaf"]]]]);
+    expect(serialize(nest(2), { maxDepth: 4 })).toEqual([["k", [["k", "leaf"]]]]);
     expect(expectThrown(nest(3), { maxDepth: 4 }).details).toMatchObject({ limit: "value-depth", max: 4 });
 
     const jsonDepth = (node) => (Array.isArray(node) ? 1 + Math.max(0, ...node.map(jsonDepth)) : 0);
-    expect(jsonDepth(serializeSettingValue(nest(2), { maxDepth: 4 }))).toBe(4);
+    expect(jsonDepth(serialize(nest(2), { maxDepth: 4 }))).toBe(4);
 
     const deepestMapChain = SETTING_VALUE_MAX_DEPTH / 2;
     expect(Number.isInteger(deepestMapChain)).toBe(true);
-    expect(jsonDepth(serializeSettingValue(nest(deepestMapChain)))).toBe(SETTING_VALUE_MAX_DEPTH);
+    expect(jsonDepth(serialize(nest(deepestMapChain)))).toBe(SETTING_VALUE_MAX_DEPTH);
     expect(expectThrown(nest(deepestMapChain + 1)).details).toMatchObject({
       limit: "value-depth",
       max: SETTING_VALUE_MAX_DEPTH
@@ -470,7 +484,7 @@ describe("serializeSettingValue — Map / Set / Date shapes", () => {
       ])
     );
 
-    expect(serializeSettingValue(pairs, { maxNodes: 10 })).toEqual([
+    expect(serialize(pairs, { maxNodes: 10 })).toEqual([
       ["a", 1],
       ["b", 2],
       ["c", 3]
@@ -479,24 +493,24 @@ describe("serializeSettingValue — Map / Set / Date shapes", () => {
 
     expect(expectThrown(pairs, { maxNodes: 7 }).details.path).toBe("$[2]");
 
-    expect(serializeSettingValue(new Set(["a", "b", "c"]), { maxNodes: 4 })).toEqual(["a", "b", "c"]);
+    expect(serialize(new Set(["a", "b", "c"]), { maxNodes: 4 })).toEqual(["a", "b", "c"]);
     expect(expectThrown(new Set(["a", "b", "c"]), { maxNodes: 3 }).details).toMatchObject({
       limit: "value-nodes"
     });
   });
 
   it("converts a Set to an array of its values (deduplicated by Set semantics)", () => {
-    expect(serializeSettingValue(new Set(["a", "b", "a"]))).toEqual(["a", "b"]);
+    expect(serialize(new Set(["a", "b", "a"]))).toEqual(["a", "b"]);
   });
 
   it("converts a Date to its ISO string, and an INVALID Date to null", () => {
-    expect(serializeSettingValue(new Date("2026-01-01T00:00:00.000Z"))).toBe("2026-01-01T00:00:00.000Z");
-    expect(serializeSettingValue(new Date("not-a-date"))).toBeNull();
-    expect(serializeSettingValue({ when: new Date(0) })).toEqual({ when: "1970-01-01T00:00:00.000Z" });
+    expect(serialize(new Date("2026-01-01T00:00:00.000Z"))).toBe("2026-01-01T00:00:00.000Z");
+    expect(serialize(new Date("not-a-date"))).toBeNull();
+    expect(serialize({ when: new Date(0) })).toEqual({ when: "1970-01-01T00:00:00.000Z" });
   });
 });
 
-describe("serializeSettingValue — boxed primitives and Foundry Color", () => {
+describe("value serializer — boxed primitives and Foundry Color", () => {
   class ColorStub extends Number {
     get css() {
       throw new Error("Color#css must never be read by the walk");
@@ -518,25 +532,25 @@ describe("serializeSettingValue — boxed primitives and Foundry Color", () => {
 
   it("reports a Color as the #rrggbb string core's own JSON persistence stores", () => {
     globalThis.foundry = { utils: { Color: ColorStub } };
-    expect(serializeSettingValue(new ColorStub(0xffffff))).toBe("#ffffff");
+    expect(serialize(new ColorStub(0xffffff))).toBe("#ffffff");
 
-    expect(serializeSettingValue({ strokeColor: new ColorStub(0x0000ff) })).toEqual({
+    expect(serialize({ strokeColor: new ColorStub(0x0000ff) })).toEqual({
       strokeColor: "#0000ff"
     });
-    expect(serializeSettingValue({ fillColor: new ColorStub(0x000abc) })).toEqual({ fillColor: "#000abc" });
+    expect(serialize({ fillColor: new ColorStub(0x000abc) })).toEqual({ fillColor: "#000abc" });
   });
 
   it('reports an INVALID Color as "" (what core persists), never as null or {}', () => {
     globalThis.foundry = { utils: { Color: ColorStub } };
-    expect(serializeSettingValue(new ColorStub(Number.NaN))).toBe("");
-    expect(serializeSettingValue(new ColorStub(-1))).toBe("");
-    expect(serializeSettingValue(new ColorStub(0x1000000))).toBe("");
+    expect(serialize(new ColorStub(Number.NaN))).toBe("");
+    expect(serialize(new ColorStub(-1))).toBe("");
+    expect(serialize(new ColorStub(0x1000000))).toBe("");
   });
 
   it("resolves the Color class from the GLOBAL alias too (client.mjs aliases it on both installs)", () => {
     globalThis.Color = ColorStub;
     try {
-      expect(serializeSettingValue(new ColorStub(0x102030))).toBe("#102030");
+      expect(serialize(new ColorStub(0x102030))).toBe("#102030");
     } finally {
       delete globalThis.Color;
     }
@@ -544,16 +558,16 @@ describe("serializeSettingValue — boxed primitives and Foundry Color", () => {
 
   it("falls back to the NUMERIC value for a Number subclass when no Color class is resolvable", () => {
     class Boxed extends Number {}
-    expect(serializeSettingValue(new Boxed(42))).toBe(42);
+    expect(serialize(new Boxed(42))).toBe(42);
   });
 
   it("unboxes a boxed number/string/boolean to the primitive it wraps", () => {
-    expect(serializeSettingValue(new Number(5))).toBe(5);
-    expect(serializeSettingValue(new String("a"))).toBe("a");
-    expect(serializeSettingValue(new Boolean(true))).toBe(true);
-    expect(serializeSettingValue({ n: new Number(-2.5) })).toEqual({ n: -2.5 });
+    expect(serialize(new Number(5))).toBe(5);
+    expect(serialize(new String("a"))).toBe("a");
+    expect(serialize(new Boolean(true))).toBe(true);
+    expect(serialize({ n: new Number(-2.5) })).toEqual({ n: -2.5 });
 
-    expect(serializeSettingValue(new Number(Number.NaN))).toBeNull();
+    expect(serialize(new Number(Number.NaN))).toBeNull();
   });
 
   it("does not invoke a boxed value's own valueOf/toJSON override", () => {
@@ -562,31 +576,29 @@ describe("serializeSettingValue — boxed primitives and Foundry Color", () => {
     class Evil extends Number {}
     /** @type {any} */ (Evil.prototype).valueOf = valueOf;
     /** @type {any} */ (Evil.prototype).toJSON = toJSON;
-    expect(serializeSettingValue(new Evil(7))).toBe(7);
+    expect(serialize(new Evil(7))).toBe(7);
     expect(valueOf).not.toHaveBeenCalled();
     expect(toJSON).not.toHaveBeenCalled();
   });
 
   it("ignores a `Color` binding that is not usable as an instanceof right-hand side", () => {
     globalThis.foundry = { utils: { Color: () => 0 } };
-    expect(serializeSettingValue(new Number(3))).toBe(3);
-    expect(serializeSettingValue({ a: 1 })).toEqual({ a: 1 });
+    expect(serialize(new Number(3))).toBe(3);
+    expect(serialize({ a: 1 })).toEqual({ a: 1 });
   });
 
   it("does not let a SLOT-LESS impostor escape as a raw TypeError", () => {
     globalThis.foundry = { utils: { Color: ColorStub } };
-    expect(serializeSettingValue(Object.create(Date.prototype))).toEqual({});
-    expect(serializeSettingValue(Object.create(Number.prototype))).toEqual({});
-    expect(serializeSettingValue(Object.create(String.prototype))).toEqual({});
-    expect(serializeSettingValue(Object.create(Boolean.prototype))).toEqual({});
-    expect(serializeSettingValue(Object.create(ColorStub.prototype))).toEqual({});
+    expect(serialize(Object.create(Date.prototype))).toEqual({});
+    expect(serialize(Object.create(Number.prototype))).toEqual({});
+    expect(serialize(Object.create(String.prototype))).toEqual({});
+    expect(serialize(Object.create(Boolean.prototype))).toEqual({});
+    expect(serialize(Object.create(ColorStub.prototype))).toEqual({});
 
-    expect(serializeSettingValue(Object.create(Map.prototype))).toEqual({});
-    expect(serializeSettingValue(Object.create(Set.prototype))).toEqual({});
+    expect(serialize(Object.create(Map.prototype))).toEqual({});
+    expect(serialize(Object.create(Set.prototype))).toEqual({});
 
-    expect(
-      serializeSettingValue({ m: Object.create(Map.prototype), s: Object.create(Set.prototype) })
-    ).toEqual({
+    expect(serialize({ m: Object.create(Map.prototype), s: Object.create(Set.prototype) })).toEqual({
       m: {},
       s: {}
     });
@@ -596,16 +608,16 @@ describe("serializeSettingValue — boxed primitives and Foundry Color", () => {
         return Object.create(Map.prototype);
       }
     }
-    expect(serializeSettingValue(new FakeMap())).toEqual({});
+    expect(serialize(new FakeMap())).toEqual({});
 
-    expect(serializeSettingValue(Object.create(Map.prototype), { maxBytes: 2 })).toEqual({});
+    expect(serialize(Object.create(Map.prototype), { maxBytes: 2 })).toEqual({});
     expect(expectThrown(Object.create(Map.prototype), { maxBytes: 1 }).code).toBe(
       ERROR_CODES.PAYLOAD_TOO_LARGE
     );
   });
 });
 
-describe("serializeSettingValue — a NORMALIZATION HOP is not an output node", () => {
+describe("value serializer — a NORMALIZATION HOP is not an output node", () => {
   class DataModel {
     toObject(source = true) {
       return source ? /** @type {any} */ (this)._source : {};
@@ -622,36 +634,36 @@ describe("serializeSettingValue — a NORMALIZATION HOP is not an output node", 
   it("charges ONE node for a DataModel and its source object, not two", () => {
     globalThis.foundry = { abstract: { DataModel } };
 
-    expect(serializeSettingValue(new Model({}), { maxNodes: 1 })).toEqual({});
-    expect(serializeSettingValue(new Model({ a: 1 }), { maxNodes: 2 })).toEqual({ a: 1 });
+    expect(serialize(new Model({}), { maxNodes: 1 })).toEqual({});
+    expect(serialize(new Model({ a: 1 }), { maxNodes: 2 })).toEqual({ a: 1 });
     expect(expectThrown(new Model({ a: 1 }), { maxNodes: 1 }).details).toMatchObject({
       limit: "value-nodes"
     });
 
     const stacked = new Set([new Model({}), new Model({}), new Model({})]);
-    expect(serializeSettingValue(stacked, { maxNodes: 4 })).toEqual([{}, {}, {}]);
+    expect(serialize(stacked, { maxNodes: 4 })).toEqual([{}, {}, {}]);
     expect(expectThrown(stacked, { maxNodes: 3 }).details).toMatchObject({ limit: "value-nodes" });
 
-    expect(serializeSettingValue(new Model({}), { maxBytes: 2 })).toEqual({});
+    expect(serialize(new Model({}), { maxBytes: 2 })).toEqual({});
     expect(expectThrown(new Model({}), { maxBytes: 1 }).details).toMatchObject({ limit: "value-bytes" });
-    expect(serializeSettingValue({ a: new Model({ b: { c: 1 } }) }, { maxDepth: 3 })).toEqual({
+    expect(serialize({ a: new Model({ b: { c: 1 } }) }, { maxDepth: 3 })).toEqual({
       a: { b: { c: 1 } }
     });
-    expect(serializeSettingValue({ a: { b: { c: 1 } } }, { maxDepth: 3 })).toEqual({ a: { b: { c: 1 } } });
+    expect(serialize({ a: { b: { c: 1 } } }, { maxDepth: 3 })).toEqual({ a: { b: { c: 1 } } });
     expect(expectThrown({ a: new Model({ b: { c: 1 } }) }, { maxDepth: 2 }).details).toMatchObject({
       limit: "value-depth"
     });
   });
 
   it("charges ONE node for a boxed primitive too", () => {
-    expect(serializeSettingValue(new Number(5), { maxNodes: 1 })).toBe(5);
-    expect(serializeSettingValue(new String("a"), { maxNodes: 1 })).toBe("a");
-    expect(serializeSettingValue([new Number(1), new Number(2)], { maxNodes: 3 })).toEqual([1, 2]);
+    expect(serialize(new Number(5), { maxNodes: 1 })).toBe(5);
+    expect(serialize(new String("a"), { maxNodes: 1 })).toBe("a");
+    expect(serialize([new Number(1), new Number(2)], { maxNodes: 3 })).toEqual([1, 2]);
     expect(expectThrown([new Number(1), new Number(2)], { maxNodes: 2 }).details).toMatchObject({
       limit: "value-nodes"
     });
 
-    expect(serializeSettingValue(new Number(5), { maxBytes: 1 })).toBe(5);
+    expect(serialize(new Number(5), { maxBytes: 1 })).toBe(5);
   });
 
   it("bounds a CHAIN of wrapper hops by DEPTH — a named refusal, never a RangeError", () => {
@@ -666,9 +678,9 @@ describe("serializeSettingValue — a NORMALIZATION HOP is not an output node", 
       return value;
     };
 
-    expect(serializeSettingValue(chain(0))).toEqual({ leaf: 1 });
-    expect(serializeSettingValue(chain(3))).toEqual({ leaf: 1 });
-    expect(serializeSettingValue(chain(SETTING_VALUE_MAX_DEPTH - 1))).toEqual({ leaf: 1 });
+    expect(serialize(chain(0))).toEqual({ leaf: 1 });
+    expect(serialize(chain(3))).toEqual({ leaf: 1 });
+    expect(serialize(chain(SETTING_VALUE_MAX_DEPTH - 1))).toEqual({ leaf: 1 });
 
     const overCap = expectThrown(chain(SETTING_VALUE_MAX_DEPTH));
     expect(overCap.code).toBe(ERROR_CODES.PAYLOAD_TOO_LARGE);
@@ -689,7 +701,7 @@ describe("serializeSettingValue — a NORMALIZATION HOP is not an output node", 
   });
 });
 
-describe("serializeSettingValue — bounds are enforced DURING the walk", () => {
+describe("value serializer — bounds are enforced DURING the walk", () => {
   it("refuses a value deeper than the depth limit with PAYLOAD_TOO_LARGE", () => {
     let deep = /** @type {any} */ ("leaf");
     for (let index = 0; index < 5; index += 1) {
@@ -701,7 +713,7 @@ describe("serializeSettingValue — bounds are enforced DURING the walk", () => 
     expect(error.details).toMatchObject({ limit: "value-depth", max: 3 });
     expect(error.details.path).toContain("child");
 
-    expect(serializeSettingValue({ a: { b: { c: 1 } } }, { maxDepth: 3 })).toEqual({ a: { b: { c: 1 } } });
+    expect(serialize({ a: { b: { c: 1 } } }, { maxDepth: 3 })).toEqual({ a: { b: { c: 1 } } });
   });
 
   it("refuses a value with more nodes than the node limit", () => {
@@ -727,94 +739,6 @@ describe("serializeSettingValue — bounds are enforced DURING the walk", () => 
     });
   });
 
-  it("lets the ACCESSOR refusal PRE-EMPT the byte and node bounds — guard order is contract", () => {
-    const bigFirst = { big: "x".repeat(1000) };
-    Object.defineProperty(bigFirst, "acc", { get: () => 1, enumerable: true, configurable: true });
-    expect(expectThrown(bigFirst, { maxBytes: 50 }).details).toMatchObject({
-      reason: "accessor-property",
-      path: "$.acc"
-    });
-
-    const accFirst = {};
-    Object.defineProperty(accFirst, "acc", { get: () => 1, enumerable: true, configurable: true });
-    accFirst.big = "x".repeat(1000);
-    expect(expectThrown(accFirst, { maxBytes: 50 }).details).toMatchObject({
-      reason: "accessor-property",
-      path: "$.acc"
-    });
-
-    const nodeBound = { a: 1, b: 2 };
-    Object.defineProperty(nodeBound, "acc", { get: () => 1, enumerable: true, configurable: true });
-    expect(expectThrown(nodeBound, { maxNodes: 2 }).code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
-    expect(expectThrown(nodeBound, { maxNodes: 2 }).details).toMatchObject({
-      reason: "accessor-property",
-      path: "$.acc"
-    });
-
-    expect(expectThrown({ a: 1, b: 2 }, { maxNodes: 2 }).details).toMatchObject({ limit: "value-nodes" });
-  });
-
-  it("charges the object's OWN braces BEFORE the accessor scan (the one documented exception)", () => {
-    const accessorOnly = {};
-    Object.defineProperty(accessorOnly, "acc", { get: () => 1, enumerable: true, configurable: true });
-    expect(expectThrown(accessorOnly, { maxBytes: 1 }).details).toMatchObject({
-      limit: "value-bytes",
-      path: "$",
-      max: 1
-    });
-    expect(expectThrown(accessorOnly, { maxBytes: 2 }).details).toMatchObject({
-      reason: "accessor-property",
-      path: "$.acc"
-    });
-  });
-
-  it("lets the ARRAY accessor refusal pre-empt the byte bound too, wherever the accessor sits", () => {
-    const bigFirst = ["x".repeat(1000), 0];
-    Object.defineProperty(bigFirst, 1, { get: () => 1, enumerable: true, configurable: true });
-    expect(expectThrown(bigFirst, { maxBytes: 50 }).details).toMatchObject({
-      reason: "accessor-property",
-      path: "$[1]"
-    });
-
-    const accFirst = [0, "x".repeat(1000)];
-    Object.defineProperty(accFirst, 0, { get: () => 1, enumerable: true, configurable: true });
-    expect(expectThrown(accFirst, { maxBytes: 50 }).details).toMatchObject({
-      reason: "accessor-property",
-      path: "$[0]"
-    });
-
-    const nodeBound = [1, 2];
-    Object.defineProperty(nodeBound, 1, { get: () => 1, enumerable: true, configurable: true });
-    expect(expectThrown(nodeBound, { maxNodes: 2 }).details).toMatchObject({
-      reason: "accessor-property",
-      path: "$[1]"
-    });
-    expect(expectThrown([1, 2], { maxNodes: 2 }).details).toMatchObject({ limit: "value-nodes" });
-
-    const accessorOnly = [0];
-    Object.defineProperty(accessorOnly, 0, { get: () => 1, enumerable: true, configurable: true });
-    expect(expectThrown(accessorOnly, { maxBytes: 1 }).details).toMatchObject({
-      limit: "value-bytes",
-      path: "$"
-    });
-    expect(expectThrown(accessorOnly, { maxBytes: 2 }).details).toMatchObject({
-      reason: "accessor-property"
-    });
-  });
-
-  it("the array accessor scan is BOUNDED by own names, so a huge SPARSE array still terminates", () => {
-    const started = Date.now();
-    expect(expectThrown(new Array(1_000_000_000)).details).toMatchObject({ limit: "value-nodes" });
-    expect(Date.now() - started).toBeLessThan(5_000);
-
-    const sparse = new Array(1_000_000_000);
-    Object.defineProperty(sparse, 999_999_999, { get: () => 1, configurable: true });
-    expect(expectThrown(sparse).details).toMatchObject({
-      reason: "accessor-property",
-      path: "$[999999999]"
-    });
-  });
-
   it("the array accessor scan is BOUNDED for a SHORT array too, so a repeated one cannot spin", () => {
     const metadataArray = [];
     for (let index = 0; index < 5_000; index += 1) {
@@ -823,7 +747,7 @@ describe("serializeSettingValue — bounds are enforced DURING the walk", () => 
 
     const repeated = new Array(19_000).fill(metadataArray);
     const started = Date.now();
-    const walked = /** @type {unknown[]} */ (serializeSettingValue(repeated));
+    const walked = /** @type {unknown[]} */ (serialize(repeated));
     expect(Date.now() - started).toBeLessThan(5_000);
 
     expect(walked).toHaveLength(19_000);
@@ -848,9 +772,7 @@ describe("serializeSettingValue — bounds are enforced DURING the walk", () => 
       expect(expectThrown(value).details).toMatchObject({ limit: "value-bytes", path: "$" });
     }
 
-    expect(serializeSettingValue("y".repeat(SETTING_VALUE_MAX_BYTES - 2))).toHaveLength(
-      SETTING_VALUE_MAX_BYTES - 2
-    );
+    expect(serialize("y".repeat(SETTING_VALUE_MAX_BYTES - 2))).toHaveLength(SETTING_VALUE_MAX_BYTES - 2);
     expect(expectThrown("y".repeat(SETTING_VALUE_MAX_BYTES - 1)).details).toMatchObject({
       limit: "value-bytes"
     });
@@ -861,7 +783,7 @@ describe("serializeSettingValue — bounds are enforced DURING the walk", () => 
 
     const escapedKey = { 'a"b': 1 };
     expect(expectThrown(escapedKey, { maxBytes: 9 }).details).toMatchObject({ limit: "value-bytes" });
-    expect(serializeSettingValue(escapedKey, { maxBytes: 10 })).toEqual(escapedKey);
+    expect(serialize(escapedKey, { maxBytes: 10 })).toEqual(escapedKey);
   });
 
   it("charges every STRUCTURAL byte too, so the bound is exact for EACH collection kind", () => {
@@ -891,9 +813,9 @@ describe("serializeSettingValue — bounds are enforced DURING the walk", () => 
       ]
     ];
     for (const [label, value] of cases) {
-      const walked = serializeSettingValue(value);
+      const walked = serialize(value);
       const exact = utf8ByteLength(JSON.stringify(walked));
-      expect(serializeSettingValue(value, { maxBytes: exact }), label).toEqual(walked);
+      expect(serialize(value, { maxBytes: exact }), label).toEqual(walked);
       expect(expectThrown(value, { maxBytes: exact - 1 }).details, label).toMatchObject({
         limit: "value-bytes",
         max: exact - 1
@@ -934,14 +856,14 @@ describe("serializeSettingValue — bounds are enforced DURING the walk", () => 
     expect(utf8ByteLength(cyrillic)).toBe(72);
     const error = expectThrown(cyrillic, { maxBytes: 50 });
     expect(error.details).toMatchObject({ limit: "value-bytes" });
-    expect(serializeSettingValue(cyrillic, { maxBytes: 80 })).toBe(cyrillic);
+    expect(serialize(cyrillic, { maxBytes: 80 })).toBe(cyrillic);
   });
 
   it("cuts off a CYCLIC value even if cycle detection were removed (the bounds are the backstop)", () => {
     const cyclic = /** @type {any} */ ({});
     cyclic.self = cyclic;
     const error = expectThrown(cyclic, { maxDepth: 4 });
-    expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+    expect(error.code).toBe(OMITTED);
     expect(error.details.reason).toBe("circular-reference");
   });
 
@@ -962,7 +884,7 @@ describe("serializeSettingValue — bounds are enforced DURING the walk", () => 
   });
 });
 
-describe("serializeSettingValue — the diagnostic PATH is bounded", () => {
+describe("value serializer — the diagnostic PATH is bounded", () => {
   const PATH_CAP = 1024;
 
   function hasLoneSurrogate(text) {
@@ -983,18 +905,15 @@ describe("serializeSettingValue — the diagnostic PATH is bounded", () => {
     return false;
   }
 
-  it("caps an over-cap path in BOTH the message and details.path, keeping head and tail", () => {
+  it("caps an over-cap omission path, keeping head and tail", () => {
     const bigKey = `${"k".repeat(2000)}`;
     const error = expectThrown({ nested: { [bigKey]: 1n } });
-    expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+    expect(error.code).toBe(OMITTED);
     expect(error.details.reason).toBe("bigint");
     expect(error.details.path.length).toBe(PATH_CAP);
 
     expect(error.details.path.startsWith("$.nested.kkkk")).toBe(true);
     expect(error.details.path).toContain("…");
-
-    expect(error.message).toContain(error.details.path);
-    expect(error.message.length).toBeLessThan(PATH_CAP + 300);
   });
 
   it("keeps the FAILING LEAF in the tail, which a head-only cut would discard", () => {
@@ -1012,7 +931,7 @@ describe("serializeSettingValue — the diagnostic PATH is bounded", () => {
       configurable: true
     });
     const error = expectThrown(hostile);
-    expect(error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+    expect(error.code).toBe(OMITTED);
     expect(error.details.reason).toBe("accessor-property");
     expect(error.details.path.length).toBe(PATH_CAP);
 
@@ -1051,7 +970,6 @@ describe("serializeSettingValue — the diagnostic PATH is bounded", () => {
       expect(error.details.reason).toBe("bigint");
       expect(error.details.path.length).toBeLessThanOrEqual(PATH_CAP);
       expect(hasLoneSurrogate(error.details.path)).toBe(false);
-      expect(hasLoneSurrogate(error.message)).toBe(false);
     }
   });
 });
@@ -1070,5 +988,65 @@ describe("utf8ByteLength", () => {
     if (text !== "\ud800") {
       expect(utf8ByteLength(text)).toBe(new TextEncoder().encode(text).length);
     }
+  });
+});
+
+describe("serializeValueWithOmissions", () => {
+  it("replaces an accessor array element and keeps its neighbours", () => {
+    const array = [1, 2, 3];
+    const getter = vi.fn(() => 9);
+    Object.defineProperty(array, 1, { get: getter, enumerable: true });
+
+    const result = serializeValueWithOmissions({ list: array });
+
+    expect(getter).not.toHaveBeenCalled();
+    expect(result.value).toEqual({ list: [1, { $unserializable: "accessor-property" }, 3] });
+    expect(result.omissions).toEqual([{ path: "$.list[1]", reason: "accessor-property" }]);
+    expect(result.omissionsTruncated).toBe(false);
+  });
+
+  it("caps the omission list and says so, while every node keeps its marker", () => {
+    const value = Object.fromEntries(
+      Array.from({ length: SERIALIZE_OMISSIONS_MAX + 5 }, (_, index) => [`f${index}`, () => index])
+    );
+
+    const result = serializeValueWithOmissions(value);
+
+    expect(result.omissions).toHaveLength(SERIALIZE_OMISSIONS_MAX);
+    expect(result.omissionsTruncated).toBe(true);
+    expect(
+      Object.values(/** @type {any} */ (result.value)).every((node) => node.$unserializable === "function")
+    ).toBe(true);
+  });
+
+  it("counts each accessor it replaces against the node and depth limits", () => {
+    const wide = {};
+    for (let index = 0; index < 10; index += 1) {
+      Object.defineProperty(wide, `a${index}`, { get: () => index, enumerable: true });
+    }
+    expect(() => serializeValueWithOmissions(wide, { maxNodes: 5 })).toThrow(
+      expect.objectContaining({
+        code: ERROR_CODES.PAYLOAD_TOO_LARGE,
+        details: expect.objectContaining({ limit: "value-nodes" })
+      })
+    );
+
+    const deep = { level: {} };
+    Object.defineProperty(deep.level, "lazy", { get: () => 1, enumerable: true });
+    expect(() => serializeValueWithOmissions(deep, { maxDepth: 1 })).toThrow(
+      expect.objectContaining({
+        code: ERROR_CODES.PAYLOAD_TOO_LARGE,
+        details: expect.objectContaining({ limit: "value-depth" })
+      })
+    );
+    expect(serializeValueWithOmissions(deep, { maxDepth: 2 }).omissions).toEqual([
+      { path: "$.level.lazy", reason: "accessor-property" }
+    ]);
+  });
+
+  it("still refuses a value over the size limits", () => {
+    expect(() => serializeValueWithOmissions({ blob: "z".repeat(64) }, { maxBytes: 16 })).toThrow(
+      expect.objectContaining({ code: ERROR_CODES.PAYLOAD_TOO_LARGE })
+    );
   });
 });

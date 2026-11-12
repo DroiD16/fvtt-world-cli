@@ -2750,7 +2750,7 @@ function attachEmbeddedEffectOps(parent, effects, effectPrefix, itemOps) {
       });
     }
     if (itemOps) {
-      return itemOps.create(type, entries);
+      return itemOps.create(type, entries, options);
     }
     throw new Error(`Unexpected embedded create type: ${type}`);
   });
@@ -2806,10 +2806,11 @@ export function createActorDocument(id, data) {
   actor.effects = effects;
 
   const itemOps = {
-    create(type, entries) {
+    create(type, entries, options = {}) {
       expect(type).toBe("Item");
       return entries.map((entry, index) => {
-        const item = createDocument(entry.id ?? `${id}-item-created-${items.size + index + 1}`, entry);
+        const keptId = options.keepId ? (entry?._id ?? entry?.id ?? null) : (entry?.id ?? null);
+        const item = createDocument(keptId ?? `${id}-item-created-${items.size + index + 1}`, entry);
         items.set(item);
         return item;
       });

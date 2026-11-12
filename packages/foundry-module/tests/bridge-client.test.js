@@ -799,6 +799,29 @@ describe("BridgeClient response-size guard", () => {
     expect(sent.error.message).toContain("uploadLimitBytes");
   });
 
+  it("answers PAYLOAD_TOO_LARGE with the frame cap when a response cannot be serialized at all", () => {
+    const { client, socketSend } = connectedClientWithBound(4096);
+    client.send({
+      protocolVersion: PROTOCOL_VERSION,
+      type: MESSAGE_TYPES.COMMAND_RESPONSE,
+      id: "req-3",
+      ok: true,
+      result: {
+        content: {
+          toJSON() {
+            throw new RangeError("Invalid string length");
+          }
+        }
+      }
+    });
+
+    expect(socketSend).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(socketSend.mock.calls[0][0]);
+    expect(sent).toMatchObject({ id: "req-3", ok: false });
+    expect(sent.error.code).toBe(ERROR_CODES.PAYLOAD_TOO_LARGE);
+    expect(sent.error.details).toEqual({ limitBytes: 4096, reason: "serialization_limit" });
+  });
+
   it("sends a response unchanged when it is within the cap", () => {
     const { client, socketSend } = connectedClientWithBound(64 * 1024);
     const payload = {

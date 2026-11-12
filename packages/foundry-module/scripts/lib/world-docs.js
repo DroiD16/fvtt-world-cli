@@ -20,8 +20,8 @@ export function createReturnedNothingError(subject) {
     `${subject} returned no document: Foundry created nothing and gave no reason. One possible cause is a ` +
       "preCreate hook of Foundry core, the game system or a module that refused the document; another is a " +
       "payload that failed a client-side check Foundry reports only as a notification in the GM browser. " +
-      "Resending the same payload gives the same result: change the payload, or make the change from the " +
-      "Foundry UI",
+      "The GM browser's notifications and console show the cause; re-read the parent before deciding whether " +
+      "to resend, change the payload, or make the change from the Foundry UI",
     { reason: "create_returned_nothing" }
   );
 }

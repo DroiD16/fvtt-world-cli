@@ -44,6 +44,17 @@ const auditFilesSchema = {
   additionalProperties: false
 };
 
+const worldReferencesSchema = {
+  type: "object",
+  required: ["uuid"],
+  properties: {
+    uuid: { type: "string", minLength: 1 },
+    scope: auditFilesSchema.properties.scope,
+    ...paginationProperties
+  },
+  additionalProperties: false
+};
+
 export const fileCommands = {
   "file.list": cmd({
     type: "object",
@@ -141,5 +152,6 @@ export const fileCommands = {
 };
 
 export const worldAuditCommands = {
-  "world.audit-files": cmd(auditFilesSchema)
+  "world.audit-files": cmd(auditFilesSchema),
+  "world.references": cmd(worldReferencesSchema)
 };

@@ -134,6 +134,17 @@ function addSceneLevelTargetOptions(command: Command, levelDescription = "Level 
   return addSceneLevelScopeOption(command).requiredOption("--level-id <levelId>", levelDescription);
 }
 
+interface SceneTokenItemCloneOptions {
+  sceneId: string;
+  tokenId: string;
+  itemId: string;
+  name?: string;
+  img?: string;
+  sort?: number;
+  systemJson?: string;
+  patchJson?: string;
+}
+
 export function registerScene({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerCompendiumImport, registerBatchWriteCommands } =
     createSharedRegistrars(dependencies);
@@ -331,6 +342,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       "Comma-separated extra fields to include (allowed: delta — a derived per-token summary of the token-level overrides, null when there are none)",
       parseTokenListIncludeFields
     )
+    .addHelpText(
+      "after",
+      "\nThe tokens of one actor across all scenes: world references --uuid Actor.<actorId> --scope scene"
+    )
     .action(async function listSceneTokens(options: SceneTokenListOptions) {
       await executeRemoteCommand({
         commandName: "scene.token.list",
@@ -390,6 +405,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     "update"
   )
     .option("--patch-json <json>", "Full/extra token patch as a JSON object (merged last)")
+    .addHelpText(
+      "after",
+      '\nA patch with "delta": {"items": []} leaves the token\'s item overrides in place. To drop every token-level override, use scene token restore-delta; to change single items, use scene token item update/delete.'
+    )
     .action(async function updateSceneToken(
       options: TokenFieldOptions & { sceneId: string; tokenId: string; patchJson?: string }
     ) {
@@ -568,16 +587,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     "clone"
   )
     .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
-    .action(async function cloneSceneTokenItem(options: {
-      sceneId: string;
-      tokenId: string;
-      itemId: string;
-      name?: string;
-      img?: string;
-      sort?: number;
-      systemJson?: string;
-      patchJson?: string;
-    }) {
+    .action(async function cloneSceneTokenItem(options: SceneTokenItemCloneOptions) {
       const patch = {
         ...stringField("name", options.name),
         ...stringField("img", options.img),

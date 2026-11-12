@@ -83,6 +83,7 @@ const PREVIEW_FIXTURES = {
   behaviorId: "behavior-darkness",
   soundId: "sound-a",
   categoryId: "cat-lore",
+  pageId: "page-1",
   resultId: "result-1",
   combatantId: "combatant-1",
   groupId: COMBAT_GROUP_A,

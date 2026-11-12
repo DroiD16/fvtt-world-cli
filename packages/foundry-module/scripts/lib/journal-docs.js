@@ -177,7 +177,12 @@ export async function createJournalPages(journalId, pages) {
         `${pages.length} requested pages stored, which means a module's preCreateJournalEntryPage hook or a core ` +
         `_preCreate refused the rest. The pages in details.createdPageIds DID land — re-read the journal with ` +
         `journal.get before deciding what to do. ${WORLD_VETO_REMEDY}`,
-      { journalId, requested: pages.length, createdPageIds }
+      {
+        journalId,
+        requested: pages.length,
+        createdPageIds,
+        ...(createdPageIds.length === 0 ? { reason: "create_returned_nothing" } : {})
+      }
     );
   }
   return results;
@@ -374,7 +379,7 @@ export async function createJournalCategory(journal, data) {
     throw createBridgeError(
       ERROR_CODES.INTERNAL_ERROR,
       `Journal category was NOT created on journal ${journal?.id ?? "(unknown)"}: JournalEntryCategory creation returned no document, which means a module's preCreateJournalEntryCategory hook or a core _preCreate refused the write, or the payload failed Foundry's own client-side validation (which Foundry reports only as a UI notification). Nothing was created. ${JOURNAL_CATEGORY_VETO_REMEDY}`,
-      { journalId: journal?.id ?? null }
+      { journalId: journal?.id ?? null, reason: "create_returned_nothing" }
     );
   }
   return category;

@@ -1,4 +1,8 @@
-import { MACRO_EXECUTE_TIMEOUT_DEFAULT_MS, MACRO_EXECUTE_TIMEOUT_MAX_MS } from "@fvtt-world-cli/protocol";
+import {
+  MACRO_EXECUTE_TIMEOUT_DEFAULT_MS,
+  MACRO_EXECUTE_TIMEOUT_MAX_MS,
+  SERIALIZE_OMISSIONS_MAX
+} from "@fvtt-world-cli/protocol";
 import { Option } from "commander";
 
 import {
@@ -21,6 +25,20 @@ import {
   paginationParams
 } from "./shared.js";
 import { write } from "../deps.js";
+
+interface MacroCloneOptions {
+  macroId: string;
+  name?: string;
+  type?: string;
+  command?: string;
+  commandFile?: string;
+  commandStdin?: boolean;
+  img?: string;
+  folder?: string;
+  clearFolder?: boolean;
+  scope?: string;
+  patchJson?: string;
+}
 
 export function registerMacro({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerCompendiumImport } = createSharedRegistrars(dependencies);
@@ -130,19 +148,7 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
     "clone"
   )
     .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
-    .action(async function cloneMacroCommand(options: {
-      macroId: string;
-      name?: string;
-      type?: string;
-      command?: string;
-      commandFile?: string;
-      commandStdin?: boolean;
-      img?: string;
-      folder?: string;
-      clearFolder?: boolean;
-      scope?: string;
-      patchJson?: string;
-    }) {
+    .action(async function cloneMacroCommand(options: MacroCloneOptions) {
       const command = await resolveMacroCommandBody(options, dependencies);
       await executeRemoteCommand({
         commandName: "macro.clone",
@@ -176,6 +182,10 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
         "--macro-timeout-ms <ms>",
         `How long the GM client waits for the macro, in ms (default ${MACRO_EXECUTE_TIMEOUT_DEFAULT_MS}, max ${MACRO_EXECUTE_TIMEOUT_MAX_MS}). Raise the global --timeout-ms above it, or the CLI stops waiting before MACRO_TIMEOUT can be reported.`
       ).argParser(parsePositiveInt)
+    )
+    .addHelpText(
+      "after",
+      `\nA return value node with no JSON form (a function, an own accessor, a circular reference) comes back as {"$unserializable": "<reason>"} and is listed in .result.returnedOmissions (at most ${SERIALIZE_OMISSIONS_MAX} entries); a return value over the size limits is dropped whole and explained in .result.returnedOmitted.`
     )
     .action(async function executeMacroCommand(options: {
       macroId: string;

@@ -21,12 +21,22 @@ function renderSettingValue(value: unknown): string {
   return JSON.stringify(value ?? null, null, 2);
 }
 
+export function renderOmissionLines(label: string, omissions: unknown, truncated: unknown): string[] {
+  if (!Array.isArray(omissions) || omissions.length === 0) return [];
+  return [
+    `${label} incomplete: ${omissions.length}${truncated ? "+" : ""} node(s) replaced by {"$unserializable": <reason>}`,
+    ...omissions.map((omission: any) => `  ${omission?.path ?? "?"}\t${omission?.reason ?? "?"}`)
+  ];
+}
+
 export function renderSettingWriteLines(row: any, dryRun: boolean): string[] {
   const verb = dryRun ? "would write" : row?.changed ? "wrote" : "left unchanged";
   return [
     `${verb}: ${row?.id ?? `${row?.namespace}.${row?.key}`} (scope: ${row?.scope ?? "?"})`,
     `previous: ${renderSettingValue(row?.previous)}`,
+    ...renderOmissionLines("previous", row?.previousOmissions, row?.previousOmissionsTruncated),
     `${dryRun ? "requested" : "value"}: ${renderSettingValue(row?.value)}`,
+    ...renderOmissionLines("value", row?.valueOmissions, row?.valueOmissionsTruncated),
     `changed: ${Boolean(row?.changed)} / validated: ${Boolean(row?.validated)}`,
     ...(row?.requiresReload
       ? ["requiresReload: true — Foundry acts on this only after `system reload` or a manual browser reload"]
@@ -63,7 +73,12 @@ export function renderSettingBatchRows(setting: any): string[] {
     renderSettingSummaryLine(setting),
     ...(setting?.error
       ? [`  error: ${setting.error.code} — ${setting.error.message}`]
-      : [`  value: ${renderSettingValue(setting?.value)}`])
+      : [
+          `  value: ${renderSettingValue(setting?.value)}`,
+          ...renderOmissionLines("value", setting?.valueOmissions, setting?.valueOmissionsTruncated).map(
+            (line) => `  ${line}`
+          )
+        ])
   ];
 }
 
@@ -85,6 +100,7 @@ export function renderSettingDetails(setting: any): string {
 
     setting?.valueRedacted
       ? "value: null (REDACTED — authorization settings are never exposed through setting commands)"
-      : `value: ${JSON.stringify(setting?.value ?? null, null, 2)}`
+      : `value: ${JSON.stringify(setting?.value ?? null, null, 2)}`,
+    ...renderOmissionLines("value", setting?.valueOmissions, setting?.valueOmissionsTruncated)
   ].join("\n");
 }

@@ -78,7 +78,7 @@ const AUDIT_FIELD_TABLE = Object.freeze({
   }
 });
 
-const SCOPE_COLLECTIONS = Object.freeze({
+export const SCOPE_COLLECTIONS = Object.freeze({
   scene: "scenes",
   actor: "actors",
   item: "items",

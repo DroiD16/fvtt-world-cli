@@ -28,13 +28,13 @@ Use these families to narrow your search, then check their help for supported op
 | Task | Command families |
 |---|---|
 | Edit world content | `actor`, `item`, `journal`, `scene`, `macro`, `playlist`, `table`, `cards` |
-| Edit embedded content | Nested families such as `actor.item`, `playlist.sound`, `table.result`, and `*.effect` |
+| Edit embedded content | Nested families such as `actor.item`, `journal.page`, `playlist.sound`, `table.result`, and `*.effect` |
 | Edit scene placeables | `scene.token`, `scene.wall`, `scene.region`, and related families |
 | Edit scene levels (v14) | `scene.level` |
 | Manage encounters | `combat`, `combat.combatant`, `combat.group` |
 | Organize content and access | `folder`, `*.ownership.set`, `user` |
 | Manage chat and settings | `chat`, `setting` |
-| Find content or missing assets | `world.search`, `world.audit-files` |
+| Find content, references, or missing assets | `world.search`, `world.references`, `world.audit-files` |
 | Read packs or import world documents | `compendium`, supported `*.import-from-compendium` commands |
 | Manage assets | `file` |
 | Control playback and gameplay | Actions within `playlist`, `table`, `cards`, `combat`, `scene`, and `game` |
@@ -277,7 +277,8 @@ For scripts and JSON output, pass `--yes` to skip the listing and prompt.
 ## Local configuration
 
 `config get` shows the config path and non-secret settings. `config set-upload-limit <size>`
-changes the raw upload-byte limit; restart the daemon for it to take effect.
+changes the raw byte limit for uploads and file reads, and the CLI's own receive limit; restart the
+daemon for it to take effect.
 
 If set, `XDG_CONFIG_HOME` places configuration under `$XDG_CONFIG_HOME/fvtt-world-cli`. Otherwise:
 

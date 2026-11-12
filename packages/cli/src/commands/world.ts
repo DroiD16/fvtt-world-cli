@@ -12,6 +12,13 @@ import { executeRemoteCommand } from "../exec.js";
 import { parseScopeList, parseSearchTypeList } from "../parse.js";
 import { type RegistrationContext, addPaginationOptions, paginationParams } from "./shared.js";
 
+interface WorldReferencesOptions {
+  uuid: string;
+  scope?: string[];
+  limit?: number;
+  offset?: number;
+}
+
 export function registerWorld({ program, dependencies }: RegistrationContext) {
   const world = program.command("world").description("Foundry world-wide maintenance commands");
   world.addHelpText(
@@ -20,6 +27,7 @@ export function registerWorld({ program, dependencies }: RegistrationContext) {
       "",
       "Result key (--json): .result.broken[] (+ .result.checkedRefs / .result.checkedFiles / .result.skipped[], total/hasMore over broken) for audit-files.",
       "Result key (--json): .result.results[] (+ .result.total / .result.hasMore / .result.index) for search.",
+      "Result key (--json): .result.references[] (+ .result.target / .result.total / .result.hasMore / .result.scannedDocuments / .result.selfReferences / .result.scopes) for references.",
       "",
       "search: results are SECTIONED — world rows first, then pack rows, each ranked among itself.",
       "`score` is comparable only WITHIN a section (the two corpora are separate indexes), so compare",
@@ -48,6 +56,59 @@ export function registerWorld({ program, dependencies }: RegistrationContext) {
     await executeRemoteCommand({
       commandName: "world.audit-files",
       params: {
+        ...(options.scope ? { scope: options.scope } : {}),
+        ...paginationParams(options)
+      },
+      command: this,
+      dependencies
+    });
+  });
+
+  addPaginationOptions(
+    world
+      .command("references")
+      .description("Report where stored world data references a document, by its UUID")
+      .requiredOption(
+        "--uuid <uuid>",
+        "Target document UUID: Actor.<id>, Scene.<id>.Token.<id>, Compendium.<package>.<pack>.<Type>.<id>, …"
+      )
+      .option(
+        "--scope <list>",
+        `Comma-separated document families to scan: ${AUDIT_FILE_SCOPES.join(",")} (default: all)`,
+        parseScopeList
+      )
+      .addHelpText(
+        "after",
+        [
+          "",
+          "Scans the stored data of every world document in scope and of every user, embedded documents",
+          "included, flags and _stats included. Each row names the owning document by UUID and the dotted field",
+          "path inside it; a match inside a token's delta is reported on the token (field delta.…).",
+          "An embedded target needs its full UUID (Scene.<s>.Token.<t>); Token.<t> alone is refused.",
+          "match: uuid   the field holds the target UUID (bounded: Compendium.x.Actor.<id> never matches Actor.<id>)",
+          "       link   the UUID sits in an @UUID[...] link, or a legacy @Actor[<id>] / @Compendium[<pack>.<id>] link",
+          "       embedded  the field holds the UUID of a document embedded in the target (matchedUuid);",
+          "              deleting the target breaks it too",
+          "       id     a bare id in a Foundry foreign-key field of the target's type (token actorId, combatant",
+          "              actorId/tokenId, note entryId/pageId, folder, scene journal/playlist, ...); for an",
+          "              embedded target only where the record also names its parent (a note's entryId, a",
+          "              combatant's sceneId, or its combat's scene when that is empty) or sits inside that parent;",
+          "              none for a target nested deeper, such as a token's actor",
+          "Bare ids elsewhere (system data) and fields Foundry maintains itself (_stats.lastModifiedBy, a",
+          "token's _regions) are not id-matched. References inside the target itself are left out",
+          "and counted in selfReferences. Not scanned: compendium contents, chat messages, settings, folders'",
+          "own parent links, user hotbar slots, UUIDs used as object keys, relative @UUID[.Item.<id>] links",
+          "and name-based legacy links.",
+          "",
+          "The tokens of an actor across all scenes: world references --uuid Actor.<id> --scope scene",
+          "(rows Scene.<s>.Token.<t> with field actorId)."
+        ].join("\n")
+      )
+  ).action(async function findReferences(options: WorldReferencesOptions) {
+    await executeRemoteCommand({
+      commandName: "world.references",
+      params: {
+        uuid: options.uuid,
         ...(options.scope ? { scope: options.scope } : {}),
         ...paginationParams(options)
       },
