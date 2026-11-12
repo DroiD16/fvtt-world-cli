@@ -56,7 +56,8 @@ function describeParent(prefix, chain) {
   return {
     uuid: [...prefix, ...chain.slice(0, -2)].join("."),
     documentName: chain[chain.length - 4],
-    id: chain[chain.length - 3]
+    id: chain[chain.length - 3],
+    embedded: chain.length > 4
   };
 }
 
@@ -81,8 +82,13 @@ export function parseReferenceTarget(uuid) {
     };
   }
   if (!isTypeIdChain(parts)) throw invalidUuid(uuid);
-  const worldTypes = /** @type {any} */ (globalThis).CONST?.WORLD_DOCUMENT_TYPES;
-  if (parts.length === 2 && Array.isArray(worldTypes) && !worldTypes.includes(parts[0])) {
+  const constants = /** @type {any} */ (globalThis).CONST ?? {};
+  const worldTypes = Array.isArray(constants.WORLD_DOCUMENT_TYPES) ? constants.WORLD_DOCUMENT_TYPES : null;
+  const embeddedTypes = Array.isArray(constants.EMBEDDED_DOCUMENT_TYPES)
+    ? constants.EMBEDDED_DOCUMENT_TYPES
+    : [];
+  if (parts.length === 2 && worldTypes !== null && !worldTypes.includes(parts[0])) {
+    if (!embeddedTypes.includes(parts[0])) throw invalidUuid(uuid);
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
       `${parts[0]} is an embedded document type, so ${uuid} names no single document: its id is unique only ` +
@@ -275,6 +281,7 @@ const NULL_PARENT_CONTAINER_FIELDS = Object.freeze({ "Combatant.sceneId": "scene
 function foreignKeyNamesTargetParent(target, owner, foreignKey, path) {
   const parent = target.parent;
   if (parent === null) return true;
+  if (parent.embedded) return false;
   const prefix = foreignKey.segments.slice(0, -1);
   const sibling = foreignKeysOf(owner.documentName).find(
     (candidate) =>

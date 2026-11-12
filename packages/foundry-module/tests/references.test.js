@@ -200,6 +200,15 @@ beforeEach(() => {
       "RollTable",
       "PlaylistSound"
     ],
+    EMBEDDED_DOCUMENT_TYPES: [
+      "ActiveEffect",
+      "ActorDelta",
+      "Combatant",
+      "Item",
+      "JournalEntryPage",
+      "Note",
+      "Token"
+    ],
     WORLD_DOCUMENT_TYPES: [
       "Actor",
       "Cards",
@@ -423,6 +432,44 @@ describe("world.references lookup", () => {
         details: expect.objectContaining({ documentName: "JournalEntryPage" })
       })
     );
+  });
+
+  it("refuses an unknown two-segment type as a malformed UUID, not as a parentless embedded one", () => {
+    for (const uuid of ["Actors.aaaaaaaaaaaaaaaa", "Adventure.aaaaaaaaaaaaaaaa"]) {
+      expect(() => runReferenceLookup({ uuid }), uuid).toThrow(
+        expect.objectContaining({ code: "INVALID_PARAMS", details: { uuid } })
+      );
+    }
+  });
+
+  it("matches no bare id for a document embedded below an embedded parent, such as a token's actor", () => {
+    globalThis.game.scenes = collection("Scene", [
+      {
+        _id: "scene00000000001",
+        name: "Cave",
+        tokens: [{ _id: "token00000000001", name: "Boss", actorId: ACTOR_ID, delta: null }],
+        notes: []
+      }
+    ]);
+    globalThis.game.combats = collection("Combat", [
+      {
+        _id: "combat0000000001",
+        scene: "scene00000000002",
+        combatants: [
+          {
+            _id: "combatant0000001",
+            actorId: ACTOR_ID,
+            sceneId: "scene00000000002",
+            tokenId: "token00000000001"
+          }
+        ]
+      }
+    ]);
+
+    const result = runReferenceLookup({
+      uuid: `Scene.scene00000000001.Token.token00000000001.Actor.${ACTOR_ID}`
+    });
+    expect(result.references.filter((ref) => ref.match === "id")).toEqual([]);
   });
 
   it("fails loudly when a document schema cannot be read instead of skipping id matching", () => {

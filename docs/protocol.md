@@ -197,7 +197,8 @@ owning document by `uuid`, the dotted `field` path inside its stored source, and
 UUID of a document embedded in the target (carried in `matchedUuid`), and `id` for a bare id in a
 Foundry foreign-key field of the target's document type. Embedded ids repeat across parents, for
 example in a duplicated scene, so an `id` match on an embedded target also requires the record to
-name the target's parent or to sit inside it. Underscore fields that Foundry maintains itself, such
+name the target's parent or to sit inside it; a target below an embedded parent, such as a token's
+actor, gets no `id` matches. Underscore fields that Foundry maintains itself, such
 as `_stats.lastModifiedBy`, take no part in `id` matching. A match inside a token's delta belongs to
 the token, with a `delta.` field path. `scopes` lists the document families searched; users are
 always searched as well. An embedded document type given without its parent chain, such as
