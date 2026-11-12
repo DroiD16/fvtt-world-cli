@@ -214,7 +214,7 @@ observation: `captured` for all expected messages, `not-created` when a chat mac
 
 A node of the return value that has no JSON form, such as a function, an own accessor property or
 a circular reference, is replaced by `{"$unserializable": "<reason>"}` and listed with its path in
-`returnedOmissions`. The list holds at most `SERIALIZE_OMISSIONS_MAX` entries; a longer one sets
+`returnedOmissions`. The list holds at most `SERIALIZE_OMISSIONS_MAX` (100) entries; a longer one sets
 `returnedOmissionsTruncated: true`, while every replaced node still carries its marker. The bridge
 reads property descriptors and never calls a getter. A return value
 over the size limits is dropped whole and explained in `returnedOmitted`.
