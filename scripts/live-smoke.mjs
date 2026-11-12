@@ -4054,8 +4054,8 @@ function runExtendedCoverage(
           thumbDryRun?.thumbnail?.storedPath === null &&
           thumbDryRun?.thumbnail?.sizeBytes === null &&
           thumbDryRun?.thumbnail?.persisted === false &&
-          thumbDryRun?.thumbnail?.outputWidth === 64 &&
-          thumbDryRun?.thumbnail?.outputHeight === 64,
+          thumbDryRun?.thumbnail?.outputWidth === null &&
+          thumbDryRun?.thumbnail?.outputHeight === null,
         { thumbnail: thumbDryRun?.thumbnail ?? null, dryRun: thumbDryRun?.dryRun ?? null }
       );
 
@@ -4087,8 +4087,9 @@ function runExtendedCoverage(
           !generatedThumb.storedPath.startsWith("data:") &&
           typeof generatedThumb?.sizeBytes === "number" &&
           generatedThumb.sizeBytes > 0 &&
-          generatedThumb?.outputWidth === 64 &&
-          generatedThumb?.outputHeight === 64,
+          Number.isInteger(generatedThumb?.outputWidth) &&
+          generatedThumb.outputWidth >= 64 &&
+          generatedThumb?.outputHeight === generatedThumb.outputWidth,
         {
           persisted: generatedThumb?.persisted ?? null,
           storedPath: generatedThumb?.storedPath ?? null,

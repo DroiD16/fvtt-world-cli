@@ -387,12 +387,21 @@ describe("command router", () => {
       return { get, reset: globalThis.canvas.fog.reset };
     }
 
+    /** @type {{ width: number, height: number }} */
+    let decodedSize;
+
+    beforeEach(() => {
+      decodedSize = { width: 450, height: 150 };
+      globalThis.createImageBitmap = vi.fn(async () => ({ ...decodedSize, close() {} }));
+    });
+
     afterEach(() => {
       delete globalThis.canvas;
       delete globalThis.CONFIG;
+      delete (/** @type {any} */ (globalThis).createImageBitmap);
     });
 
-    it("generates + persists a thumbnail on v13, mapping Foundry's reported dims to SOURCE dims", async () => {
+    it("generates + persists a thumbnail on v13, reporting the decoded image size and Foundry's SOURCE dims", async () => {
       globalThis.game.release = { version: "13.351", generation: 13 };
       const scene = globalThis.game.scenes.get("scene-1");
       const thumb = makeThumbDataUrl(1200);
@@ -412,8 +421,8 @@ describe("command router", () => {
         storedPath: "worlds/test-world/assets/scenes/scene-1-thumb.webp",
         sizeBytes: 1200,
 
-        outputWidth: 300,
-        outputHeight: 100,
+        outputWidth: 450,
+        outputHeight: 150,
         sourceWidth: 4000,
         sourceHeight: 3000,
         persisted: true
@@ -426,8 +435,9 @@ describe("command router", () => {
       expect(JSON.stringify(response)).not.toContain("__destroyedRenderTexture");
     });
 
-    it("maps Foundry's reported dims to OUTPUT dims on v14 (and reports no source dims)", async () => {
+    it("reports the decoded image size on v14 rather than the size Foundry reports, and no source dims", async () => {
       globalThis.game.release = { version: "14.365", generation: 14 };
+      decodedSize = { width: 600, height: 450 };
       const scene = globalThis.game.scenes.get("scene-1");
       scene.createThumbnail = vi.fn(async () =>
         v14ThumbnailResult(makeThumbDataUrl(900), { width: 400, height: 300 })
@@ -440,8 +450,8 @@ describe("command router", () => {
 
       expect(response.ok).toBe(true);
       expect(response.result.thumbnail).toMatchObject({
-        outputWidth: 400,
-        outputHeight: 300,
+        outputWidth: 600,
+        outputHeight: 450,
 
         sourceWidth: null,
         sourceHeight: null,
@@ -524,8 +534,8 @@ describe("command router", () => {
 
       expect(response.ok).toBe(true);
       expect(response.result.thumbnail).toMatchObject({
-        outputWidth: 320,
-        outputHeight: 240,
+        outputWidth: 450,
+        outputHeight: 150,
         sourceWidth: null,
         sourceHeight: null
       });
@@ -789,8 +799,8 @@ describe("command router", () => {
 
         storedPath: null,
         sizeBytes: null,
-        outputWidth: 512,
-        outputHeight: 512,
+        outputWidth: null,
+        outputHeight: null,
         sourceWidth: null,
         sourceHeight: null,
         persisted: false

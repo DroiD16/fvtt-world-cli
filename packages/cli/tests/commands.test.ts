@@ -2406,8 +2406,8 @@ describe("fvtt-world-cli commands", () => {
             thumb: null,
             storedPath: null,
             sizeBytes: null,
-            outputWidth: 300,
-            outputHeight: 100,
+            outputWidth: null,
+            outputHeight: null,
             sourceWidth: null,
             sourceHeight: null,
             persisted: false
@@ -2419,6 +2419,7 @@ describe("fvtt-world-cli commands", () => {
 
     expect(result.error).toBeNull();
     expect(result.stdout).toContain("[dry-run] would generate a thumbnail for scene scene-1");
+    expect(result.stdout).toContain("output: n/a (dry run)");
     expect(result.stdout).toContain("source: not reported by this Foundry version");
     expect(result.stdout).toContain("size: n/a (dry run)");
     expect(result.stdout).toContain("persisted: false");

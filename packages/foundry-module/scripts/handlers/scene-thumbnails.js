@@ -5,44 +5,17 @@ import {
 } from "../generated/protocol.js";
 import { getFoundryGeneration } from "../lib/foundry-capabilities.js";
 import { getSceneById } from "../lib/game-collections.js";
-import { assertThumbnailSupported, decodedDataUrlBytes, renderSceneThumbnail } from "../lib/canvas.js";
+import {
+  assertThumbnailSupported,
+  decodeDataUrlImage,
+  decodedDataUrlBytes,
+  renderSceneThumbnail
+} from "../lib/canvas.js";
 import { BridgeError, createBridgeError, isFoundryValidationError } from "../lib/errors.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 
 const DEFAULT_THUMBNAIL_WIDTH = 300;
 const DEFAULT_THUMBNAIL_HEIGHT = 100;
-
-/** @param {{ generation: number | null, reportedWidth: number | null, reportedHeight: number | null, requestedWidth: number, requestedHeight: number }} input */
-function mapThumbnailDimensions({
-  generation,
-  reportedWidth,
-  reportedHeight,
-  requestedWidth,
-  requestedHeight
-}) {
-  if (generation !== null && generation >= 14) {
-    return {
-      outputWidth: reportedWidth ?? requestedWidth,
-      outputHeight: reportedHeight ?? requestedHeight,
-      sourceWidth: null,
-      sourceHeight: null
-    };
-  }
-  if (generation === 13) {
-    return {
-      outputWidth: requestedWidth,
-      outputHeight: requestedHeight,
-      sourceWidth: reportedWidth,
-      sourceHeight: reportedHeight
-    };
-  }
-  return {
-    outputWidth: requestedWidth,
-    outputHeight: requestedHeight,
-    sourceWidth: null,
-    sourceHeight: null
-  };
-}
 
 function thumbnailResultBody({
   sceneId,
@@ -77,18 +50,10 @@ export function createSceneThumbnailHandlers() {
       const requestedWidth = params.width ?? DEFAULT_THUMBNAIL_WIDTH;
       const requestedHeight = params.height ?? DEFAULT_THUMBNAIL_HEIGHT;
       const includeThumb = params.includeThumb === true;
-      const generation = getFoundryGeneration();
 
-      assertThumbnailSupported(scene);
+      assertThumbnailSupported(scene, "scene.thumbnail.generate");
 
       if (isDryRun(params)) {
-        const dims = mapThumbnailDimensions({
-          generation,
-          reportedWidth: null,
-          reportedHeight: null,
-          requestedWidth,
-          requestedHeight
-        });
         return dryRunResponse(
           thumbnailResultBody({
             sceneId: scene.id ?? params.sceneId,
@@ -96,7 +61,10 @@ export function createSceneThumbnailHandlers() {
 
             storedPath: null,
             sizeBytes: null,
-            ...dims,
+            outputWidth: null,
+            outputHeight: null,
+            sourceWidth: null,
+            sourceHeight: null,
             persisted: false
           })
         );
@@ -107,13 +75,6 @@ export function createSceneThumbnailHandlers() {
         height: requestedHeight
       });
       const sizeBytes = decodedDataUrlBytes(thumb);
-      const dims = mapThumbnailDimensions({
-        generation,
-        reportedWidth,
-        reportedHeight,
-        requestedWidth,
-        requestedHeight
-      });
 
       if (sizeBytes > SCENE_THUMBNAIL_MAX_BYTES) {
         throw createBridgeError(
@@ -145,6 +106,15 @@ export function createSceneThumbnailHandlers() {
           }
         );
       }
+
+      const decoded = await decodeDataUrlImage(thumb);
+      const reportsSource = getFoundryGeneration() === 13;
+      const dims = {
+        outputWidth: decoded.width,
+        outputHeight: decoded.height,
+        sourceWidth: reportsSource ? reportedWidth : null,
+        sourceHeight: reportsSource ? reportedHeight : null
+      };
 
       const notPersisted = (/** @type {string} */ observation, /** @type {any} */ extra = {}) =>
         createBridgeError(

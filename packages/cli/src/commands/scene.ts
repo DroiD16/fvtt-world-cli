@@ -305,6 +305,12 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       "--include-thumb",
       "Include the generated base64 data URL in the response (read it with --json; the SCENE stores the extracted asset path, reported as .thumbnail.storedPath)"
     )
+    .addHelpText(
+      "after",
+      "\n.thumbnail.outputWidth and .outputHeight are read from the rendered image itself. They can exceed" +
+        "\n--width and --height: Foundry renders at the GM client's pixel ratio when its core setting for" +
+        "\npixel-ratio resolution scaling is on. A dry run reports them as null."
+    )
     .action(async function generateSceneThumbnail(options: {
       sceneId: string;
       width?: number;

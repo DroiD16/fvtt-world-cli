@@ -364,7 +364,11 @@ export const RENDERERS = registerRenderers([
       `${
         result.dryRun ? "[dry-run] would generate a thumbnail for scene" : "Generated thumbnail for scene"
       } ${result.sceneId}`,
-      `output: ${thumbnail.outputWidth ?? "?"}x${thumbnail.outputHeight ?? "?"}`,
+      `output: ${
+        thumbnail.outputWidth == null || thumbnail.outputHeight == null
+          ? "n/a (dry run)"
+          : `${thumbnail.outputWidth}x${thumbnail.outputHeight} px (decoded from the rendered image)`
+      }`,
       `source: ${
         thumbnail.sourceWidth == null || thumbnail.sourceHeight == null
           ? "not reported by this Foundry version"
