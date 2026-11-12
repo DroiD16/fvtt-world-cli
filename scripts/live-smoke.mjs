@@ -1680,6 +1680,124 @@ async function runPolicySegment(summary, options, { stamp, coverage }) {
 }
 
 /** @returns {Promise<boolean>} whether the run may still issue the system.reload branch */
+async function runReferenceGmCoverage(summary, { gmControlUrl, gmUserId, scriptMacroId, actorId }) {
+  if (gmUserId && scriptMacroId) {
+    let hotbar = null;
+    let rows = [];
+    let restored = null;
+    try {
+      hotbar = await evaluateInGmPage(
+        gmControlUrl,
+        `const user = game.users.get(${JSON.stringify(gmUserId)});
+        const before = foundry.utils.deepClone(user._source.hotbar ?? {});
+        let slot = null;
+        for (let index = 50; index >= 1; index -= 1) {
+          if (!(String(index) in before)) {
+            slot = index;
+            break;
+          }
+        }
+        if (slot === null) return { before, slot };
+        await user.update({ hotbar: { ...before, [slot]: ${JSON.stringify(scriptMacroId)} } }, { diff: false, recursive: false });
+        return { before, slot };`
+      );
+      if (hotbar?.slot) rows = referenceRows(["--uuid", `Macro.${scriptMacroId}`, "--scope", "macro"]).rows;
+    } finally {
+      if (hotbar?.slot) {
+        restored = await evaluateInGmPage(
+          gmControlUrl,
+          `const user = game.users.get(${JSON.stringify(gmUserId)});
+          await user.update({ hotbar: ${JSON.stringify(hotbar.before)} }, { diff: false, recursive: false });
+          return user._source.hotbar;`
+        ).catch(() => null);
+      }
+    }
+    const sameSlots = (left, right) =>
+      JSON.stringify(Object.entries(left ?? {}).sort()) ===
+      JSON.stringify(Object.entries(right ?? {}).sort());
+    if (hotbar && hotbar.slot === null) {
+      summary.notes.push(
+        "world.references(hotbar slot) was not exercised: every hotbar slot of the GM user is taken, and the run assigns only a free slot."
+      );
+    } else {
+      markAndPush(
+        summary,
+        "world.references(a hotbar slot holding the macro is found; the hotbar restored)",
+        Boolean(
+          hotbar?.slot &&
+          rows.includes(`User.${gmUserId}|hotbar.${hotbar.slot}|id`) &&
+          sameSlots(restored, hotbar.before)
+        ),
+        { slot: hotbar?.slot ?? null, rows, before: hotbar?.before ?? null, restored }
+      );
+    }
+  }
+
+  if (actorId) {
+    const namespace = "fvtt-world-cli-smoke";
+    const targetUuid = `Actor.${actorId}`;
+    let registered = null;
+    let setRun = null;
+    let settingId = null;
+    let lookup = null;
+    try {
+      registered = await evaluateInGmPage(
+        gmControlUrl,
+        `game.settings.register(${JSON.stringify(namespace)}, "refs", { scope: "world", config: false, type: Object, default: {} });
+        return true;`
+      );
+      setRun = runFoundryctl([
+        "setting",
+        "set",
+        "--namespace",
+        namespace,
+        "--key",
+        "refs",
+        "--value-json",
+        JSON.stringify({ [targetUuid]: [`@UUID[${targetUuid}]`] })
+      ]);
+      settingId = await evaluateInGmPage(
+        gmControlUrl,
+        `return game.settings.get(${JSON.stringify(namespace)}, "refs", { document: true })?.id ?? null;`
+      );
+      lookup = referenceRows(["--uuid", targetUuid, "--scope", "setting"]);
+    } finally {
+      await evaluateInGmPage(
+        gmControlUrl,
+        `const doc = game.settings.get(${JSON.stringify(namespace)}, "refs", { document: true });
+        if (doc?.id) await doc.delete();
+        game.settings.settings.delete(${JSON.stringify(`${namespace}.refs`)});
+        return true;`
+      ).catch(() => null);
+    }
+    const expectedRows = [
+      `Setting.${settingId}|value.${targetUuid}|key`,
+      `Setting.${settingId}|value.${targetUuid}.0|link`
+    ];
+    const names = (lookup?.run.response?.result?.references ?? [])
+      .filter((ref) => ref.uuid === `Setting.${settingId}`)
+      .map((ref) => ref.name);
+    markAndPush(
+      summary,
+      "world.references(a world setting's stored JSON is scanned, keys included, named by its key)",
+      Boolean(
+        registered === true &&
+        setRun?.response?.ok &&
+        settingId &&
+        expectedRows.every((row) => lookup?.rows.includes(row)) &&
+        names.every((name) => name === `${namespace}.refs`)
+      ),
+      {
+        set: setRun ? summarizeCommand(setRun) : null,
+        settingId,
+        expectedRows,
+        rows: lookup?.rows ?? null,
+        names
+      }
+    );
+  }
+}
+
 async function runDangerousSegment(summary, options, { stamp, coverage }) {
   const gmControlUrl = options.gmControlUrl;
   if (!gmControlUrl) {
@@ -1930,6 +2048,12 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
         return true;`
       ).catch(() => null);
     }
+    await runReferenceGmCoverage(summary, {
+      gmControlUrl,
+      gmUserId,
+      scriptMacroId,
+      actorId: options.actorId
+    });
     markAndPush(
       summary,
       "dangerous.setting.set(type cast)",
@@ -3393,6 +3517,133 @@ function runPageReferenceItemBulkCoverage(summary, { targetSceneId, actorId, sta
         }
       );
     }
+  }
+
+  runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPageId, stamp, created });
+}
+
+function referenceRows(args) {
+  const run = runFoundryctl(["world", "references", ...args]);
+  return {
+    run,
+    rows: (run.response?.result?.references ?? []).map(
+      (ref) => `${ref.uuid}|${ref.field}|${ref.match}${ref.matchedUuid ? `|${ref.matchedUuid}` : ""}`
+    ),
+    scopes: run.response?.result?.scopes ?? null
+  };
+}
+
+function runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPageId, stamp, created }) {
+  if (journalId) {
+    const flagged = expectOk(
+      summary,
+      "journal.update(flag keyed by the reference target's UUID)",
+      runFoundryctl([
+        "journal",
+        "update",
+        "--journal-id",
+        journalId,
+        "--patch-json",
+        JSON.stringify({ flags: { world: { [scratchUuid]: { seen: true } } } })
+      ])
+    );
+    const storedFlags = flagged?.journal?.flags?.world ?? null;
+    const keyed = referenceRows(["--uuid", scratchUuid, "--scope", "journal"]);
+    const expectedRow = `JournalEntry.${journalId}|flags.world.${scratchUuid}|key`;
+    markAndPush(
+      summary,
+      "world.references(a UUID used as a flag key is found at its key path)",
+      Boolean(keyed.run.response?.ok && keyed.rows.includes(expectedRow)),
+      { expectedRow, rows: keyed.rows, storedFlags }
+    );
+  }
+
+  if (journalId && introPageId) {
+    const relativePage = expectOk(
+      summary,
+      "journal.page.create(relative link to a sibling page)",
+      runFoundryctl([
+        "journal",
+        "page",
+        "create",
+        "--journal-id",
+        journalId,
+        "--name",
+        `Smoke Relative ${stamp}`,
+        "--type",
+        "text",
+        "--data-json",
+        JSON.stringify({ text: { content: `<p>@UUID[.${introPageId}]{Intro}</p>`, format: 1 } })
+      ])
+    );
+    const relativePageId = relativePage?.page?.id ?? null;
+    const introUuid = `JournalEntry.${journalId}.JournalEntryPage.${introPageId}`;
+    const relative = referenceRows(["--uuid", introUuid, "--scope", "journal"]);
+    const expectedRow = `JournalEntry.${journalId}.JournalEntryPage.${relativePageId}|text.content|relative|${introUuid}`;
+    markAndPush(
+      summary,
+      "world.references(a relative @UUID[.<pageId>] link resolves against its page)",
+      Boolean(relativePageId && relative.rows.includes(expectedRow)),
+      { expectedRow, rows: relative.rows }
+    );
+  }
+
+  const parentFolder = expectOk(
+    summary,
+    "folder.create(reference parent)",
+    runFoundryctl(["folder", "create", "--name", `Smoke Ref Parent ${stamp}`, "--type", "Actor"])
+  );
+  const parentFolderId = parentFolder?.folder?.id ?? null;
+  if (parentFolderId) {
+    created.folders.push(parentFolderId);
+    const childFolder = expectOk(
+      summary,
+      "folder.create(reference child)",
+      runFoundryctl([
+        "folder",
+        "create",
+        "--name",
+        `Smoke Ref Child ${stamp}`,
+        "--type",
+        "Actor",
+        "--folder",
+        parentFolderId
+      ])
+    );
+    const childFolderId = childFolder?.folder?.id ?? null;
+    if (childFolderId) created.folders.push(childFolderId);
+    const folders = referenceRows(["--uuid", `Folder.${parentFolderId}`, "--scope", "folder"]);
+    markAndPush(
+      summary,
+      "world.references(a child folder's parent link is found)",
+      Boolean(childFolderId && folders.rows.includes(`Folder.${childFolderId}|folder|id`)),
+      { rows: folders.rows, childFolderId }
+    );
+  }
+
+  const message = expectOk(
+    summary,
+    "chat.create(reference to the scratch actor)",
+    runFoundryctl(["chat", "create", "--content", `<p>@UUID[${scratchUuid}]{Target} ${stamp}</p>`])
+  );
+  const messageId = message?.message?.id ?? null;
+  if (messageId) {
+    created.messages.push(messageId);
+    const byDefault = referenceRows(["--uuid", scratchUuid]);
+    const chat = referenceRows(["--uuid", scratchUuid, "--scope", "chat"]);
+    const expectedRow = `ChatMessage.${messageId}|content|link`;
+    markAndPush(
+      summary,
+      "world.references(chat messages scanned only with --scope chat)",
+      Boolean(
+        byDefault.run.response?.ok &&
+        !byDefault.rows.some((row) => row.startsWith("ChatMessage.")) &&
+        Array.isArray(byDefault.scopes) &&
+        !byDefault.scopes.includes("chat") &&
+        chat.rows.includes(expectedRow)
+      ),
+      { expectedRow, defaultScopes: byDefault.scopes, chatRows: chat.rows }
+    );
   }
 }
 
