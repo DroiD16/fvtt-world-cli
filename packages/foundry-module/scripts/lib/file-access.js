@@ -1,13 +1,13 @@
 import {
   DEFAULT_UPLOAD_SIZE_LIMIT_BYTES,
   ERROR_CODES,
+  READ_ENCODING_CEILING_BYTES,
   UPLOAD_SIZE_LIMIT_MAX_BYTES
 } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
 import { paginate } from "./pagination.js";
 
 const DATA_SOURCE = "data";
-const READ_SIZE_LIMIT_BYTES = 1024 * 1024;
 
 const MIME_BY_EXTENSION = Object.freeze({
   css: "text/css",
@@ -655,14 +655,22 @@ function ensureUploadSize(bytesLength, path, uploadLimitBytes = DEFAULT_UPLOAD_S
   }
 }
 
-function ensureReadSize(bytesLength, path) {
-  if (bytesLength > READ_SIZE_LIMIT_BYTES) {
+/** @param {number} uploadLimitBytes */
+export function effectiveReadLimitBytes(uploadLimitBytes) {
+  return Math.min(uploadLimitBytes, READ_ENCODING_CEILING_BYTES);
+}
+
+function ensureReadSize(bytesLength, path, readLimitBytes) {
+  if (bytesLength > readLimitBytes) {
     throw createBridgeError(
       ERROR_CODES.PAYLOAD_TOO_LARGE,
-      `Read payload for ${path} is ${bytesLength} bytes, over the ${READ_SIZE_LIMIT_BYTES}-byte read limit`,
+      `Read payload for ${path} is ${bytesLength} bytes, over the ${readLimitBytes}-byte read limit. file.read ` +
+        `shares the daemon's uploadLimitBytes (max ${UPLOAD_SIZE_LIMIT_MAX_BYTES} bytes) and never exceeds ` +
+        `${READ_ENCODING_CEILING_BYTES} bytes, the largest file whose base64 form fits one browser string; ` +
+        "below that ceiling, raise uploadLimitBytes in the daemon config and restart the daemon to read a larger file",
       {
         path,
-        limitBytes: READ_SIZE_LIMIT_BYTES,
+        limitBytes: readLimitBytes,
         sizeBytes: bytesLength
       }
     );
@@ -855,7 +863,12 @@ function encodeDataPathForFetch(path) {
   return path.split("/").map(encodeDataPathSegment).join("/");
 }
 
-export async function readDataFile(path, encoding) {
+export async function readDataFile(
+  path,
+  encoding,
+  { uploadLimitBytes = DEFAULT_UPLOAD_SIZE_LIMIT_BYTES } = {}
+) {
+  const readLimitBytes = effectiveReadLimitBytes(uploadLimitBytes);
   const normalizedPath = normalizeFilePath(path);
   const entry = await statDataPath(normalizedPath);
   if (entry.kind !== "file") {
@@ -890,12 +903,12 @@ export async function readDataFile(path, encoding) {
 
   const declaredSize = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredSize)) {
-    ensureReadSize(declaredSize, normalizedPath);
+    ensureReadSize(declaredSize, normalizedPath, readLimitBytes);
   }
 
   const buffer = await response.arrayBuffer();
   const bytes = new Uint8Array(buffer);
-  ensureReadSize(bytes.byteLength, normalizedPath);
+  ensureReadSize(bytes.byteLength, normalizedPath, readLimitBytes);
 
   return {
     file: createEntry(normalizedPath, "file", bytes.byteLength, response.headers.get("content-type")),
@@ -1182,8 +1195,3 @@ function summarizeUploadResponse(response) {
 
   return summary;
 }
-
-export const FILE_LIMITS = Object.freeze({
-  readBytes: READ_SIZE_LIMIT_BYTES,
-  uploadBytes: DEFAULT_UPLOAD_SIZE_LIMIT_BYTES
-});

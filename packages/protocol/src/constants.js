@@ -89,6 +89,13 @@ export function resolveEffectiveLimits(uploadLimitBytes = DEFAULT_UPLOAD_SIZE_LI
   };
 }
 
+export const BROWSER_STRING_MAX_LENGTH = 536_870_888;
+
+export const READ_RESPONSE_ENVELOPE_RESERVE_CHARS = 1024 * 1024;
+
+export const READ_ENCODING_CEILING_BYTES =
+  Math.floor((BROWSER_STRING_MAX_LENGTH - READ_RESPONSE_ENVELOPE_RESERVE_CHARS) / 4) * 3;
+
 export const BATCH_GET_MAX_IDS = 100;
 
 export const BATCH_WRITE_MAX_ITEMS = 100;

@@ -27,11 +27,13 @@ a correlated control-request error.
 
 ## Size limits
 
-The upload limit and the transport frame limit are distinct: the first bounds raw upload content,
-the second accounts for encoding and envelope overhead and is never lower than what legitimate
+The upload limit and the transport frame limit are distinct: the first bounds raw upload content
+and the raw size of a `file.read`, the second accounts for encoding and envelope overhead and is never lower than what legitimate
 large read responses require. The daemon advertises its effective limits during the handshake, and
 the bridge checks response size before sending, so an oversized response returns
-`PAYLOAD_TOO_LARGE` instead of destroying the shared session. A persisted upload-limit change is
+`PAYLOAD_TOO_LARGE` instead of destroying the shared session; a response too large for the browser
+to serialize at all returns the same code. A `file.read` never exceeds about 383 MiB, the largest
+file whose base64 form fits one browser string. A persisted upload-limit change is
 applied to the transport only after the daemon restarts.
 
 ## Pairing

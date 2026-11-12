@@ -29,7 +29,7 @@ command config get
 
 command config set-upload-limit
   aliases=[]
-  summary=Persist the file.upload size limit (raw bytes, pre-base64) for the daemon and CLI
+  summary=Persist the file.upload and file.read size limit (raw bytes, pre-base64) and the CLI's receive limit derived from it
   arg size | required=true | variadic=false | parser=- | choices=- | default=- | help=Upload size limit as bytes or a size like 100MiB (max 512MiB)
 
 command auth
@@ -87,7 +87,7 @@ command bridge serve
   aliases=[]
   summary=Start the local bridge daemon
   opt --request-timeout-ms <ms> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Response timeout for forwarded Foundry requests
-  opt --upload-limit-bytes <size> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Override the file.upload size limit as bytes or a size like 100MiB (max 512MiB)
+  opt --upload-limit-bytes <size> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Override the file.upload and file.read size limit for this run, as bytes or a size like 100MiB (max 512MiB); CLI commands size their receive limit from the persisted value (config set-upload-limit) only
 
 command commands
   aliases=[]
@@ -3380,7 +3380,7 @@ command file stat
 
 command file read
   aliases=[]
-  summary=
+  summary=Read a file's content; a file larger than the daemon's uploadLimitBytes (system info: limits.uploadBytes) or than about 383 MiB returns PAYLOAD_TOO_LARGE
   opt --path <path> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Data-relative file path
   opt --encoding <encoding> | parser=<anonymous> | conflicts=[] | choices=["text","base64"] | required=true | hidden=false | default=- | help=Read encoding
 

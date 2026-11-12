@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createCommandRouter } from "../scripts/command-router.js";
+import { BROWSER_STRING_MAX_LENGTH, READ_ENCODING_CEILING_BYTES } from "../scripts/generated/protocol.js";
 
 import {
   createFetchResponse,
@@ -947,7 +948,30 @@ describe("command router", () => {
     expect(response.error.code).toBe("PATH_NOT_ALLOWED");
   });
 
-  it("returns payload-too-large for oversized file reads", async () => {
+  it("reads a file larger than 1 MiB under the default limit", async () => {
+    const size = 1024 * 1024 + 1;
+    globalThis.__routerTestState.fetchOverrides.set(
+      "worlds/world-1/readme.txt",
+      createFetchResponse({
+        ok: true,
+        status: 200,
+        bytes: new Uint8Array(size),
+        contentType: "image/webp",
+        contentLength: String(size)
+      })
+    );
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+
+    const response = await router.route(
+      createRequest("file.read", { path: "worlds/world-1/readme.txt", encoding: "base64" })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result.file.size).toBe(size);
+  });
+
+  it("returns payload-too-large past the effective transfer limit and reports that limit", async () => {
+    const limit = 2048;
     globalThis.__routerTestState.fetchOverrides.set(
       "worlds/world-1/readme.txt",
       createFetchResponse({
@@ -955,13 +979,14 @@ describe("command router", () => {
         status: 200,
         bytes: new Uint8Array([1]),
         contentType: "text/plain",
-        contentLength: String(1024 * 1024 + 1)
+        contentLength: String(limit + 1)
       })
     );
 
     const router = createCommandRouter({
       bridgeClient: {
-        getStatus: () => ({ status: "connected" })
+        getStatus: () => ({ status: "connected" }),
+        getEffectiveLimits: () => ({ uploadBytes: limit, wsMaxPayloadBytes: 10 * limit })
       }
     });
 
@@ -971,10 +996,59 @@ describe("command router", () => {
 
     expect(response.ok).toBe(false);
     expect(response.error.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(response.error.message).toContain("uploadLimitBytes");
+    expect(response.error.details.limitBytes).toBe(limit);
+    expect(response.error.details.sizeBytes).toBe(limit + 1);
+  });
 
-    expect(response.error.message).toContain(String(1024 * 1024));
-    expect(response.error.message).toContain(String(1024 * 1024 + 1));
-    expect(response.error.details.limitBytes).toBe(1024 * 1024);
-    expect(response.error.details.sizeBytes).toBe(1024 * 1024 + 1);
+  it("caps the read limit at the largest file whose base64 form fits one browser string", async () => {
+    const declared = READ_ENCODING_CEILING_BYTES + 1;
+    globalThis.__routerTestState.fetchOverrides.set(
+      "worlds/world-1/readme.txt",
+      createFetchResponse({
+        ok: true,
+        status: 200,
+        bytes: new Uint8Array([1]),
+        contentType: "application/octet-stream",
+        contentLength: String(declared)
+      })
+    );
+    const router = createCommandRouter({
+      bridgeClient: {
+        getStatus: () => ({ status: "connected" }),
+        getEffectiveLimits: () => ({ uploadBytes: 512 * 1024 * 1024, wsMaxPayloadBytes: 700 * 1024 * 1024 })
+      }
+    });
+
+    const response = await router.route(
+      createRequest("file.read", { path: "worlds/world-1/readme.txt", encoding: "base64" })
+    );
+
+    expect(response.error.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(response.error.details).toMatchObject({
+      limitBytes: READ_ENCODING_CEILING_BYTES,
+      sizeBytes: declared
+    });
+    expect(Math.ceil(READ_ENCODING_CEILING_BYTES / 3) * 4).toBeLessThan(BROWSER_STRING_MAX_LENGTH);
+  });
+
+  it("checks the actual byte count when the server declares no length", async () => {
+    globalThis.__routerTestState.fetchOverrides.set(
+      "worlds/world-1/readme.txt",
+      createFetchResponse({ ok: true, status: 200, bytes: new Uint8Array(17), contentType: "text/plain" })
+    );
+    const router = createCommandRouter({
+      bridgeClient: {
+        getStatus: () => ({ status: "connected" }),
+        getEffectiveLimits: () => ({ uploadBytes: 16, wsMaxPayloadBytes: 1024 })
+      }
+    });
+
+    const response = await router.route(
+      createRequest("file.read", { path: "worlds/world-1/readme.txt", encoding: "text" })
+    );
+
+    expect(response.error.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(response.error.details).toMatchObject({ limitBytes: 16, sizeBytes: 17 });
   });
 });

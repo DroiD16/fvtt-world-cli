@@ -1,3 +1,4 @@
+import { READ_ENCODING_CEILING_BYTES } from "@fvtt-world-cli/protocol";
 import { CommanderError, Option } from "commander";
 
 import { createFileUploadParams } from "../params.js";
@@ -67,9 +68,17 @@ export function registerFile({ program, dependencies }: RegistrationContext) {
     });
   file
     .command("read")
+    .description(
+      `Read a file's content; a file larger than the daemon's uploadLimitBytes (system info: limits.uploadBytes) or than about ${Math.floor(READ_ENCODING_CEILING_BYTES / (1024 * 1024))} MiB returns PAYLOAD_TOO_LARGE`
+    )
     .requiredOption("--path <path>", "Data-relative file path")
     .addOption(
       new Option("--encoding <encoding>", "Read encoding").choices(["text", "base64"]).makeOptionMandatory()
+    )
+    .addHelpText(
+      "after",
+      "\nThe CLI sizes its own receive limit from the persisted uploadLimitBytes (config set-upload-limit). A limit raised only with bridge serve --upload-limit-bytes reaches the bridge, but a response larger than the persisted limit allows still closes this command's connection." +
+        "\nText escapes control bytes in JSON; read a binary file as base64."
     )
     .action(async function readFileCommand(options: { path: string; encoding: "text" | "base64" }) {
       await executeRemoteCommand({
