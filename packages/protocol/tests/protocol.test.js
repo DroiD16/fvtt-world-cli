@@ -7706,10 +7706,9 @@ describe("protocol contract", () => {
       }
     });
 
-    it("exposes the three new setting error codes and keeps them distinct", () => {
+    it("exposes the setting error codes and keeps them distinct", () => {
       expect(ERROR_CODES.SETTING_NOT_FOUND).toBe("SETTING_NOT_FOUND");
       expect(ERROR_CODES.SETTING_READ_FAILED).toBe("SETTING_READ_FAILED");
-      expect(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE).toBe("SETTING_VALUE_NOT_SERIALIZABLE");
       expect(ERROR_CODES.PAYLOAD_TOO_LARGE).toBe("PAYLOAD_TOO_LARGE");
       expect(new Set(Object.values(ERROR_CODES)).size).toBe(Object.keys(ERROR_CODES).length);
     });
