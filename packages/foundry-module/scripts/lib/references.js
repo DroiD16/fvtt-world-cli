@@ -23,11 +23,6 @@ const REFERENCE_SCOPE_COLLECTIONS = Object.freeze({
   chat: (/** @type {any} */ game) => game?.messages
 });
 
-// Foundry declares User.hotbar as a plain ObjectField of slot -> Macro id, so the schema walk cannot find it.
-const ID_MAP_FIELDS = Object.freeze({
-  User: Object.freeze([Object.freeze({ segments: Object.freeze(["hotbar"]), documentName: "Macro" })])
-});
-
 const RELATIVE_LINK_FIELDS = Object.freeze({
   JournalEntryPage: Object.freeze([Object.freeze(["text", "content"])]),
   RollTable: Object.freeze([Object.freeze(["description"])]),
@@ -186,12 +181,8 @@ function referenceNeedles(target) {
 }
 
 function knownDocumentTypes() {
-  const constants = /** @type {any} */ (globalThis).CONST ?? {};
-  if (Array.isArray(constants.ALL_DOCUMENT_TYPES)) return new Set(constants.ALL_DOCUMENT_TYPES);
-  return new Set([
-    ...(Array.isArray(constants.WORLD_DOCUMENT_TYPES) ? constants.WORLD_DOCUMENT_TYPES : []),
-    ...(Array.isArray(constants.EMBEDDED_DOCUMENT_TYPES) ? constants.EMBEDDED_DOCUMENT_TYPES : [])
-  ]);
+  const allTypes = /** @type {any} */ (globalThis).CONST?.ALL_DOCUMENT_TYPES;
+  return new Set(Array.isArray(allTypes) ? allTypes : []);
 }
 
 /**
@@ -519,14 +510,10 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
           record(owner, [...prefix, ...foreignKey.segments], { match: "id" });
         }
       }
-      if (target.parent === null) {
-        for (const idMap of ID_MAP_FIELDS[/** @type {keyof typeof ID_MAP_FIELDS} */ (documentName)] ?? []) {
-          if (idMap.documentName !== target.documentName) continue;
-          const entries = readAt(source, [...idMap.segments]);
-          if (!entries || typeof entries !== "object") continue;
-          for (const [slot, id] of Object.entries(entries)) {
-            if (id === target.id) record(owner, [...prefix, ...idMap.segments, slot], { match: "id" });
-          }
+      // Foundry declares User.hotbar as a plain ObjectField of slot -> Macro id, so the schema walk cannot find it.
+      if (documentName === "User" && target.documentName === "Macro" && target.parent === null) {
+        for (const [slot, id] of Object.entries(source?.hotbar ?? {})) {
+          if (id === target.id) record(owner, [...prefix, "hotbar", slot], { match: "id" });
         }
       }
     }

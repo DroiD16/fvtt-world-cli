@@ -205,6 +205,28 @@ beforeEach(() => {
   globalThis.foundry = { ...(globalThis.foundry ?? {}), data: { fields } };
   globalThis.CONFIG = CONFIG;
   globalThis.CONST = {
+    ALL_DOCUMENT_TYPES: [
+      "ActiveEffect",
+      "Actor",
+      "ActorDelta",
+      "Cards",
+      "ChatMessage",
+      "Combat",
+      "Combatant",
+      "Folder",
+      "Item",
+      "JournalEntry",
+      "JournalEntryPage",
+      "Macro",
+      "Note",
+      "Playlist",
+      "RollTable",
+      "Scene",
+      "Setting",
+      "TableResult",
+      "Token",
+      "User"
+    ],
     DOCUMENT_LINK_TYPES: [
       "Actor",
       "Cards",
