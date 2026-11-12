@@ -30,6 +30,7 @@ import { createFileHandlers } from "./handlers/files.js";
 import { createFolderHandlers } from "./handlers/folders.js";
 import { createGameHandlers } from "./handlers/game.js";
 import { createImageHandlers } from "./handlers/image.js";
+import { createCanvasHandlers } from "./handlers/canvas.js";
 import { createItemHandlers } from "./handlers/items.js";
 import { createJournalHandlers } from "./handlers/journals.js";
 import { createMacroHandlers } from "./handlers/macros.js";
@@ -46,6 +47,7 @@ import { createSceneLightHandlers } from "./handlers/scene-lights.js";
 import { createSceneTemplateHandlers } from "./handlers/scene-templates.js";
 import { createSceneRegionHandlers } from "./handlers/scene-regions.js";
 import { createSceneFogHandlers } from "./handlers/scene-fog.js";
+import { createSceneSnapshotHandlers } from "./handlers/scene-snapshot.js";
 import { createSceneThumbnailHandlers } from "./handlers/scene-thumbnails.js";
 import { createSceneTokenItemEffectHandlers } from "./handlers/scene-token-item-effects.js";
 import { createSceneTokenItemHandlers } from "./handlers/scene-token-items.js";
@@ -151,6 +153,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {}, o
     ...createFolderHandlers(),
     ...createGameHandlers(),
     ...createImageHandlers(),
+    ...createCanvasHandlers(),
     ...createFileHandlers(),
     ...createJournalHandlers(),
     ...createMacroHandlers(),
@@ -167,6 +170,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {}, o
     ...createPolicyHandlers(),
     ...createSceneHandlers(),
     ...createSceneThumbnailHandlers(),
+    ...createSceneSnapshotHandlers(),
     ...createSceneFogHandlers(),
     ...createSceneTokenHandlers(),
     ...createSceneTokenItemHandlers(),

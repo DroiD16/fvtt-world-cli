@@ -61,10 +61,12 @@ import {
   type TokenPlacementOptions
 } from "../params.js";
 import { executeRemoteCommand } from "../exec.js";
+import { saveResultImage } from "../image-output.js";
 import {
   parseCsvList,
   parseIdList,
   parseNumber,
+  parsePositiveInt,
   parseTokenIncludeFields,
   parseTokenDeltaIncludeFields
 } from "../parse.js";
@@ -327,6 +329,76 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
         },
         command: this,
         dependencies
+      });
+    });
+
+  scene
+    .command("snapshot")
+    .description(
+      "Render a scene to an image with its walls, lights, sounds, tokens, regions, drawings, notes and grid drawn over it, without changing anything"
+    )
+    .requiredOption("--scene-id <sceneId>", "Scene id")
+    .option("--level-id <levelId>", "Level to render (Foundry v14; default: the scene's initial level)")
+    .addOption(
+      new Option("--size <px>", "Long side of the image in px (16–2048, default 1024)").argParser(
+        parsePositiveInt
+      )
+    )
+    .addOption(new Option("--format <format>", "Image format (default webp)").choices(["webp", "png"]))
+    .addOption(
+      new Option(
+        "--layers <list>",
+        "Comma-separated overlays to draw: grid, regions, drawings, templates (v13), walls, lights, sounds, notes, tokens (default: all)"
+      ).argParser((value: string) => parseCsvList(value, "--layers"))
+    )
+    .option("--no-layers", "Draw no overlays: only the background and tiles Foundry renders")
+    .option("--token-images", "Draw each token's image inside its box")
+    .option("--out <file>", "Write the image to this file (default: a new file in the system temp directory)")
+    .addHelpText(
+      "after",
+      [
+        "",
+        "The background and visible tiles are rendered by Foundry; the overlays are drawn from document",
+        "data, not from Foundry's lighting or vision (canvas capture shows those). Nothing is written to",
+        "the world or to Foundry's data.",
+        "",
+        "Walls: white blocks movement and sight, grey dashed does not block movement, cyan blocks movement",
+        "but not sight, yellow-green limits sight, orange blocks sight by proximity or distance. A thin",
+        "yellow dotted center line marks a wall that blocks sight but lets light through. Sound restriction",
+        "is not shown. Doors carry a square: blue closed, purple secret, green dashed open, red locked. A",
+        "one-way wall carries a tick on the side its `dir` names. Lights: dashed ring at the dim radius, solid ring at the bright radius, in the",
+        "light's color (purple for darkness, grey with a cross when hidden). Sounds: teal dotted ring at the",
+        "radius. Tokens: box colored by disposition (green friendly, yellow neutral, red hostile, purple",
+        "secret), dashed and marked (hidden) when hidden.",
+        "",
+        "Result keys (--json): .result.image {path, mimeType, width, height, sizeBytes},",
+        ".result.transform {scale, offsetX, offsetY} (image pixel = coordinate * scale + offset),",
+        ".result.view {x, y, width, height} (the canvas rectangle the image covers), .result.layers,",
+        ".result.levelId (v14)."
+      ].join("\n")
+    )
+    .action(async function snapshotScene(options: {
+      sceneId: string;
+      levelId?: string;
+      size?: number;
+      format?: string;
+      layers?: string[] | false;
+      tokenImages?: boolean;
+      out?: string;
+    }) {
+      await executeRemoteCommand({
+        commandName: "scene.snapshot",
+        params: {
+          sceneId: options.sceneId,
+          ...(options.levelId === undefined ? {} : { levelId: options.levelId }),
+          ...(options.size === undefined ? {} : { size: options.size }),
+          ...(options.format === undefined ? {} : { format: options.format }),
+          ...(options.layers === false ? { layers: [] } : options.layers ? { layers: options.layers } : {}),
+          ...(options.tokenImages ? { tokenImages: true } : {})
+        },
+        command: this,
+        dependencies,
+        prepareResult: saveResultImage("snapshot", options.out)
       });
     });
 

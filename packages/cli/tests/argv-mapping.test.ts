@@ -3489,6 +3489,56 @@ describe("fvtt-world-cli commands", () => {
       "image.show",
       { src: "https://example.invalid/map.webp", title: "The Vault", userIds: ["user-1", "user-2"] }
     ],
+    [["scene", "snapshot", "--scene-id", "scene-1"], "scene.snapshot", { sceneId: "scene-1" }],
+    [
+      [
+        "scene",
+        "snapshot",
+        "--scene-id",
+        "scene-1",
+        "--level-id",
+        "level-1",
+        "--size",
+        "2048",
+        "--format",
+        "png",
+        "--layers",
+        "walls,lights",
+        "--token-images"
+      ],
+      "scene.snapshot",
+      {
+        sceneId: "scene-1",
+        levelId: "level-1",
+        size: 2048,
+        format: "png",
+        layers: ["walls", "lights"],
+        tokenImages: true
+      }
+    ],
+    [
+      ["scene", "snapshot", "--scene-id", "scene-1", "--no-layers"],
+      "scene.snapshot",
+      { sceneId: "scene-1", layers: [] }
+    ],
+    [["canvas", "capture"], "canvas.capture", {}],
+    [
+      ["canvas", "capture", "--size", "800", "--format", "png"],
+      "canvas.capture",
+      { size: 800, format: "png" }
+    ],
+    [
+      ["canvas", "pan", "--x", "100", "--y", "-50.5", "--scale", "0.75"],
+      "canvas.pan",
+      { x: 100, y: -50.5, scale: 0.75 }
+    ],
+    [["canvas", "pan", "--fit"], "canvas.pan", { fit: true }],
+    [["canvas", "view-scene", "--scene-id", "scene-1"], "canvas.view-scene", { sceneId: "scene-1" }],
+    [
+      ["canvas", "view-scene", "--scene-id", "scene-1", "--level-id", "level-1"],
+      "canvas.view-scene",
+      { sceneId: "scene-1", levelId: "level-1" }
+    ],
     [["chat", "flush"], "chat.flush", {}],
     [["game", "pause", "--paused", "true"], "game.pause", { paused: true }],
     [["game", "pause", "--paused", "false"], "game.pause", { paused: false }],

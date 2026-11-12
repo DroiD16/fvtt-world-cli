@@ -39,6 +39,7 @@ Use these families to narrow your search, then check their help for supported op
 | Manage assets | `file` |
 | Control playback and gameplay | Actions within `playlist`, `table`, `cards`, `combat`, `scene`, and `game` |
 | Show content to players | `scene pull-users`, `journal show`, `image show` |
+| Look at a scene or the GM's screen | `scene snapshot`, `canvas capture`, `canvas pan`, `canvas view-scene` |
 | Inspect the connection | `system info`, `system ping` |
 
 ## Common workflows
@@ -87,6 +88,32 @@ Deleting a level also deletes its tokens and every placeable that exists only on
 run does not list them, so read the scene's placeables before deleting a level.
 
 [Compatibility](compatibility.md) lists the scene map fields each Foundry version accepts.
+
+### Look at a scene
+
+```bash
+fvtt-world-cli scene snapshot --scene-id <sceneId> --format png --out scene.png --json
+fvtt-world-cli canvas view-scene --scene-id <sceneId> --json
+fvtt-world-cli canvas pan --fit --json
+fvtt-world-cli canvas capture --format png --out view.png --json
+```
+
+`scene snapshot` has Foundry render the scene's background and visible tiles, then draws walls,
+lights, sounds, tokens, regions, drawings, notes, measured templates (v13) and the grid over them
+from document data. It changes nothing in the world and writes nothing to Foundry's data. Its light
+overlay is a pair of rings at the dim and bright radius, not rendered light.
+
+Rendered light, darkness and vision exist only on the GM client's screen, because Foundry computes
+them for the visible area. `canvas capture` saves that screen. To capture another place, switch the
+GM client to the scene with `canvas view-scene` and move the view with `canvas pan` first. Both
+change only the GM client's view, which a GM working in that browser will notice, so by default
+they wait for GM approval. The `pan` result's `previous` position and the `view-scene` result's
+`previousSceneId` put the view back.
+
+Both image commands save the image to a local file, the `--out` path or a new file in the system
+temp directory, and report its path as `image.path` instead of image data. `transform` converts a
+document coordinate to an image pixel (pixel = coordinate × scale + offset), and `view` is the
+canvas rectangle the image covers.
 
 ### Send a batch of commands
 

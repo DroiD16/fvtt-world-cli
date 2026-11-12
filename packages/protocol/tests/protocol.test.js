@@ -59,6 +59,9 @@ import {
   isDestructiveCommand,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
   FOG_RESET_CONFIRM_TIMEOUT_MS,
+  RENDERED_IMAGE_MAX_DIMENSION,
+  RENDERED_IMAGE_MIN_DIMENSION,
+  SCENE_SNAPSHOT_LAYERS,
   SCENE_THUMBNAIL_MAX_BYTES,
   SCENE_THUMBNAIL_MAX_DIMENSION,
   SCENE_THUMBNAIL_MIN_DIMENSION,
@@ -2481,7 +2484,12 @@ describe("protocol contract", () => {
 
     it("names the approve extras the verb rule cannot reach, and keeps the two lists apart", () => {
       expect(Object.isFrozen(APPROVE_EXTRA_COMMANDS)).toBe(true);
-      expect(APPROVE_EXTRA_COMMANDS).toEqual(["system.reload", "user.create"]);
+      expect(APPROVE_EXTRA_COMMANDS).toEqual([
+        "system.reload",
+        "user.create",
+        "canvas.pan",
+        "canvas.view-scene"
+      ]);
 
       for (const command of APPROVE_EXTRA_COMMANDS) {
         expect(isDestructiveCommand(command), `${command} is not caught by the verb rule`).toBe(false);
@@ -2583,7 +2591,9 @@ describe("protocol contract", () => {
       "scene.fog.reset",
       "scene.token.restore-delta",
       "system.reload",
-      "user.create"
+      "user.create",
+      "canvas.pan",
+      "canvas.view-scene"
     ];
     const DESTRUCTIVE_SUFFIXES = [".delete", ".delete-many"];
 
@@ -2624,7 +2634,7 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 63 approve-listed, 8 denied and 284 self-running commands in a registry of 355", () => {
+    it("counts 65 approve-listed, 8 denied and 286 self-running commands in a registry of 359", () => {
       const bucket = (behavior) =>
         COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
@@ -2636,10 +2646,10 @@ describe("protocol contract", () => {
           allow: bucket("allow")
         },
         "the totals moved: re-check the default-policy prose in docs/commands.md and docs/security.md (they name the buckets, not the counts) in the same change"
-      ).toEqual({ commands: 355, approve: 63, deny: 8, allow: 284 });
+      ).toEqual({ commands: 359, approve: 65, deny: 8, allow: 286 });
     });
 
-    it("leaves 350 governed commands in 19 top-level groups once the exempt ones are removed", () => {
+    it("leaves 354 governed commands in 20 top-level groups once the exempt ones are removed", () => {
       const exempt = new Set(POLICY_EXEMPT_COMMANDS);
       const governed = COMMAND_NAMES.filter((command) => !exempt.has(command));
 
@@ -2649,7 +2659,7 @@ describe("protocol contract", () => {
           groups: new Set(governed.map((command) => command.split(".")[0])).size
         },
         "the window totals moved: the permissions window renders one section per top-level group, so re-check its rendering assumptions in the same change"
-      ).toEqual({ governed: 350, groups: 19 });
+      ).toEqual({ governed: 354, groups: 20 });
     });
 
     it("cannot be mutated in place", () => {
@@ -7982,6 +7992,59 @@ describe("protocol contract", () => {
       expectRejected("game.pause", {}, "paused");
       expectValid("system.reload", {});
       expectRejected("system.reload", { dryRun: true }, "not allowed");
+    });
+  });
+
+  describe("scene snapshot and GM canvas view commands", () => {
+    it("keeps them out of the writes, since none of them changes world data", () => {
+      for (const command of ["scene.snapshot", "canvas.capture", "canvas.pan", "canvas.view-scene"]) {
+        expect(COMMAND_DEFINITIONS[command].mutation, command).toBe(false);
+      }
+      expect(defaultBehaviorFor("scene.snapshot")).toBe("allow");
+      expect(defaultBehaviorFor("canvas.capture")).toBe("allow");
+    });
+
+    it("accepts a snapshot of a scene with a bounded long side, a format and named layers", () => {
+      expectValid("scene.snapshot", { sceneId: "scene-1" });
+      expectValid("scene.snapshot", {
+        sceneId: "scene-1",
+        levelId: "level-1",
+        size: RENDERED_IMAGE_MAX_DIMENSION,
+        format: "png",
+        layers: [...SCENE_SNAPSHOT_LAYERS],
+        tokenImages: true
+      });
+      expectValid("scene.snapshot", { sceneId: "scene-1", layers: [] });
+      expectRejected("scene.snapshot", {}, "sceneId");
+      expectRejected(
+        "scene.snapshot",
+        { sceneId: "scene-1", size: RENDERED_IMAGE_MAX_DIMENSION + 1 },
+        "size"
+      );
+      expectRejected(
+        "scene.snapshot",
+        { sceneId: "scene-1", size: RENDERED_IMAGE_MIN_DIMENSION - 1 },
+        "size"
+      );
+      expectRejected("scene.snapshot", { sceneId: "scene-1", format: "jpeg" }, "format");
+      expectRejected("scene.snapshot", { sceneId: "scene-1", layers: ["lighting"] }, "layers");
+      expectRejected("scene.snapshot", { sceneId: "scene-1", dryRun: true }, "not allowed");
+    });
+
+    it("accepts a capture, a pan by position or fit, and a view switch", () => {
+      expectValid("canvas.capture", {});
+      expectValid("canvas.capture", { size: 800, format: "webp" });
+      expectRejected("canvas.capture", { size: RENDERED_IMAGE_MAX_DIMENSION + 1 }, "size");
+
+      expectValid("canvas.pan", { x: 100, y: 200.5, scale: 0.75 });
+      expectValid("canvas.pan", { scale: 1 });
+      expectValid("canvas.pan", { fit: true });
+      expectRejected("canvas.pan", {}, "at least 1");
+      expectRejected("canvas.pan", { fit: false }, "fit");
+
+      expectValid("canvas.view-scene", { sceneId: "scene-1" });
+      expectValid("canvas.view-scene", { sceneId: "scene-1", levelId: "level-1" });
+      expectRejected("canvas.view-scene", {}, "sceneId");
     });
   });
 

@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 
 import {
@@ -2425,6 +2425,86 @@ describe("fvtt-world-cli commands", () => {
     expect(result.stdout).toContain("persisted: false");
 
     expect(result.stdout).toContain("stored path: n/a (dry run)");
+  });
+
+  describe("rendered images", () => {
+    const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
+    const imageResponse = (kind: "snapshot" | "capture") =>
+      vi.fn(async () => ({
+        protocolVersion: "1.0",
+        type: "command.response",
+        id: "req-1",
+        ok: true,
+        result: {
+          sceneId: "scene-1",
+          levelId: null,
+          ...(kind === "snapshot" ? { layers: ["walls"] } : { position: { x: 1, y: 2, scale: 0.5 } }),
+          image: {
+            dataUrl: `data:image/png;base64,${pngBytes.toString("base64")}`,
+            mimeType: "image/png",
+            width: 64,
+            height: 48,
+            sizeBytes: pngBytes.length
+          },
+          view: { x: 0, y: 0, width: 128, height: 96 },
+          transform: { scale: 0.5, offsetX: 0, offsetY: 0 }
+        }
+      })) as unknown as SendCommandMock;
+
+    it("writes a snapshot to --out and prints the path instead of the image data", async () => {
+      const directory = mkdtempSync(join(tmpdir(), "fvtt-world-cli-image-test-"));
+      try {
+        const out = join(directory, "scene.png");
+        const result = await runCommand(
+          ["--json", "scene", "snapshot", "--scene-id", "scene-1", "--out", out],
+          imageResponse("snapshot")
+        );
+
+        expect(result.error).toBeNull();
+        expect(readFileSync(out)).toEqual(pngBytes);
+        const printed = JSON.parse(result.stdout);
+        expect(printed.result.image).toEqual({
+          mimeType: "image/png",
+          width: 64,
+          height: 48,
+          sizeBytes: pngBytes.length,
+          path: out
+        });
+        expect(result.stdout).not.toContain("base64");
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
+
+    it("writes a capture to a new temporary file when no --out is given", async () => {
+      const result = await runCommand(["canvas", "capture"], imageResponse("capture"));
+
+      expect(result.error).toBeNull();
+      const path = /image: (\S+)/.exec(result.stdout)?.[1] ?? "";
+      expect(path.startsWith(tmpdir())).toBe(true);
+      expect(path.endsWith("capture-scene-1.png")).toBe(true);
+      expect(readFileSync(path)).toEqual(pngBytes);
+      expect(result.stdout).toContain("size: 64x48 px, image/png");
+      expect(result.stdout).not.toContain("base64");
+      rmSync(dirname(path), { recursive: true, force: true });
+    });
+
+    it("reports an image it could not write as a local file error", async () => {
+      const result = await runCommand(
+        [
+          "scene",
+          "snapshot",
+          "--scene-id",
+          "scene-1",
+          "--out",
+          join(tmpdir(), "missing-dir-for-test", "x.png")
+        ],
+        imageResponse("snapshot")
+      );
+
+      expect(result.error).toBeInstanceOf(CommanderError);
+      expect((result.error as CommanderError).code).toBe("fvtt-world-cli.localFileWriteError");
+    });
   });
 
   it("renders scene.fog.reset output for the real and dry-run shapes", async () => {

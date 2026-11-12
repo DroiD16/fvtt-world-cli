@@ -1,9 +1,12 @@
 import {
   ERROR_CODES,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
-  FOG_RESET_CONFIRM_TIMEOUT_MS
+  FOG_RESET_CONFIRM_TIMEOUT_MS,
+  RENDERED_IMAGE_MAX_BYTES
 } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
+
+const RENDERED_IMAGE_QUALITY = 0.85;
 
 /** @returns {boolean} */
 export function isCanvasDisabled() {
@@ -136,6 +139,63 @@ export async function decodeDataUrlImage(dataUrl) {
       { message: raw?.message ?? String(error) }
     );
   }
+}
+
+/**
+ * @param {number} longSide
+ * @param {number} width
+ * @param {number} height
+ * @returns {{ width: number, height: number }}
+ */
+export function fitLongSide(longSide, width, height) {
+  return width >= height
+    ? { width: longSide, height: Math.max(1, Math.round((longSide * height) / width)) }
+    : { width: Math.max(1, Math.round((longSide * width) / height)), height: longSide };
+}
+
+/**
+ * @param {number} width
+ * @param {number} height
+ * @returns {{ element: HTMLCanvasElement, context: CanvasRenderingContext2D }}
+ */
+export function createImageCanvas(width, height) {
+  const element = globalThis.document.createElement("canvas");
+  element.width = width;
+  element.height = height;
+  const context = element.getContext("2d");
+  if (!context) {
+    throw createBridgeError(
+      ERROR_CODES.BRIDGE_NOT_READY,
+      "The GM client could not create a 2D canvas context to compose the image"
+    );
+  }
+  return { element, context };
+}
+
+/**
+ * @param {HTMLCanvasElement} element
+ * @param {string} format
+ * @param {Record<string, unknown>} details
+ * @returns {Promise<{ dataUrl: string, mimeType: string, width: number, height: number, sizeBytes: number }>}
+ */
+export async function encodeRenderedImage(element, format, details) {
+  const dataUrl = element.toDataURL(`image/${format}`, RENDERED_IMAGE_QUALITY);
+  const sizeBytes = decodedDataUrlBytes(dataUrl);
+  if (sizeBytes > RENDERED_IMAGE_MAX_BYTES) {
+    throw createBridgeError(
+      ERROR_CODES.PAYLOAD_TOO_LARGE,
+      `The rendered image is ${sizeBytes} bytes, above the ${RENDERED_IMAGE_MAX_BYTES}-byte limit for a rendered image; request a smaller size, or webp instead of png`,
+      { ...details, limit: "image-bytes", sizeBytes, limitBytes: RENDERED_IMAGE_MAX_BYTES }
+    );
+  }
+  const decoded = await decodeDataUrlImage(dataUrl);
+  return {
+    dataUrl,
+    mimeType: dataUrl.slice("data:".length, dataUrl.indexOf(";")),
+    width: decoded.width,
+    height: decoded.height,
+    sizeBytes
+  };
 }
 
 export function assertFogResetSupported() {

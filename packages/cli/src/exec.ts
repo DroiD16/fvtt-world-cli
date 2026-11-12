@@ -25,12 +25,14 @@ export async function executeRemoteCommand({
   commandName,
   params,
   command,
-  dependencies
+  dependencies,
+  prepareResult
 }: {
   commandName: string;
   params: Record<string, unknown>;
   command: Command;
   dependencies: CliDependencies;
+  prepareResult?: (result: any) => unknown;
 }) {
   const clientConfig = getCommandConfig(command, dependencies);
   const globalOptions = command.optsWithGlobals();
@@ -74,6 +76,10 @@ export async function executeRemoteCommand({
       stderr: dependencies.stderr,
       ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
     });
+  }
+
+  if (response.ok && prepareResult) {
+    response = { ...response, result: prepareResult(response.result) };
   }
 
   if (outputJson) {

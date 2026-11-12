@@ -106,6 +106,21 @@ var SCENE_THUMBNAIL_MIN_DIMENSION = 16;
 var SCENE_THUMBNAIL_MAX_DIMENSION = 1024;
 var SCENE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 var SCENE_THUMBNAIL_RESPONSE_MAX_BYTES = 1024 * 1024;
+var RENDERED_IMAGE_MIN_DIMENSION = 16;
+var RENDERED_IMAGE_MAX_DIMENSION = 2048;
+var RENDERED_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+var RENDERED_IMAGE_FORMATS = Object.freeze(["webp", "png"]);
+var SCENE_SNAPSHOT_LAYERS = Object.freeze([
+  "grid",
+  "regions",
+  "drawings",
+  "templates",
+  "walls",
+  "lights",
+  "sounds",
+  "notes",
+  "tokens"
+]);
 var FOG_RESET_CONFIRM_TIMEOUT_MS = 5e3;
 var FOG_RESET_CONFIRM_POLL_INTERVAL_MS = 250;
 var TABLE_DRAW_MAX_COUNT = 100;
@@ -1065,6 +1080,40 @@ var approvalCommands = {
   [APPROVAL_AWAIT_COMMAND]: cmd(approvalAwaitSchema, { discovery: false }),
   [APPROVAL_CANCEL_COMMAND]: cmd(approvalCancelSchema, { discovery: false }),
   [POLICY_SNAPSHOT_COMMAND]: cmd(emptyObjectSchema, { discovery: false })
+};
+
+// packages/protocol/src/schemas/canvas.js
+var canvasCommands = {
+  "canvas.capture": cmd({
+    type: "object",
+    required: [],
+    properties: {
+      size: { type: "integer", minimum: RENDERED_IMAGE_MIN_DIMENSION, maximum: RENDERED_IMAGE_MAX_DIMENSION },
+      format: { type: "string", enum: RENDERED_IMAGE_FORMATS }
+    },
+    additionalProperties: false
+  }),
+  "canvas.pan": cmd({
+    type: "object",
+    required: [],
+    properties: {
+      x: { type: "number" },
+      y: { type: "number" },
+      scale: { type: "number" },
+      fit: { type: "boolean", const: true }
+    },
+    additionalProperties: false,
+    minProperties: 1
+  }),
+  "canvas.view-scene": cmd({
+    type: "object",
+    required: ["sceneId"],
+    properties: {
+      sceneId: { type: "string", minLength: 1 },
+      levelId: { type: "string", minLength: 1 }
+    },
+    additionalProperties: false
+  })
 };
 
 // packages/protocol/src/schemas/cards.js
@@ -4740,6 +4789,19 @@ var sceneCommands = {
     },
     { mutation: true }
   ),
+  "scene.snapshot": cmd({
+    type: "object",
+    required: ["sceneId"],
+    properties: {
+      sceneId: { type: "string", minLength: 1 },
+      levelId: { type: "string", minLength: 1 },
+      size: { type: "integer", minimum: RENDERED_IMAGE_MIN_DIMENSION, maximum: RENDERED_IMAGE_MAX_DIMENSION },
+      format: { type: "string", enum: RENDERED_IMAGE_FORMATS },
+      layers: { type: "array", items: { type: "string", enum: SCENE_SNAPSHOT_LAYERS } },
+      tokenImages: { type: "boolean" }
+    },
+    additionalProperties: false
+  }),
   "scene.fog.reset": cmd(
     {
       type: "object",
@@ -5128,6 +5190,7 @@ var COMMAND_DEFINITIONS = deepFreeze(
     folderCommands,
     gameCommands,
     imageCommands,
+    canvasCommands,
     userCommands,
     settingCommands,
     actorCompendiumImportCommands,
@@ -5504,6 +5567,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "scene.clone": "allow",
   "scene.import-from-compendium": "allow",
   "scene.thumbnail.generate": "allow",
+  "scene.snapshot": "allow",
   "scene.fog.reset": "approve",
   "scene.activate": "allow",
   "scene.pull-users": "allow",
@@ -5828,6 +5892,9 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "folder.delete": "approve",
   "game.pause": "allow",
   "image.show": "allow",
+  "canvas.capture": "allow",
+  "canvas.pan": "approve",
+  "canvas.view-scene": "approve",
   "user.list": "allow",
   "user.get": "allow",
   "user.create": "approve",
@@ -5857,7 +5924,12 @@ var DESTRUCTIVE_COMMANDS = Object.freeze([
   "scene.fog.reset",
   "scene.token.restore-delta"
 ]);
-var APPROVE_EXTRA_COMMANDS = Object.freeze(["system.reload", "user.create"]);
+var APPROVE_EXTRA_COMMANDS = Object.freeze([
+  "system.reload",
+  "user.create",
+  "canvas.pan",
+  "canvas.view-scene"
+]);
 var DENIED_BY_DEFAULT_COMMANDS = Object.freeze([
   "macro.execute",
   "setting.set",
@@ -6442,7 +6514,12 @@ export {
   REFERENCES_MAX_MATCHES,
   REFERENCE_DEFAULT_SCOPES,
   REFERENCE_SCOPES,
+  RENDERED_IMAGE_FORMATS,
+  RENDERED_IMAGE_MAX_BYTES,
+  RENDERED_IMAGE_MAX_DIMENSION,
+  RENDERED_IMAGE_MIN_DIMENSION,
   REQUEST_SCHEMA,
+  SCENE_SNAPSHOT_LAYERS,
   SCENE_THUMBNAIL_MAX_BYTES,
   SCENE_THUMBNAIL_MAX_DIMENSION,
   SCENE_THUMBNAIL_MIN_DIMENSION,

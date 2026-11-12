@@ -12,6 +12,7 @@ import {
 } from "./constants.js";
 import { actorCommands, actorCompendiumImportCommands } from "./schemas/actor.js";
 import { approvalCommands } from "./schemas/approval.js";
+import { canvasCommands } from "./schemas/canvas.js";
 import { cardsCommands } from "./schemas/cards.js";
 import { chatCommands } from "./schemas/chat.js";
 import { combatCommands } from "./schemas/combat.js";
@@ -77,6 +78,7 @@ export const COMMAND_DEFINITIONS = deepFreeze(
     folderCommands,
     gameCommands,
     imageCommands,
+    canvasCommands,
     userCommands,
     settingCommands,
     actorCompendiumImportCommands,

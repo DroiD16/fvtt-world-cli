@@ -48,7 +48,10 @@ shared sanitization before validation, preview, or execution. Foundry DataModels
 system-specific and version-specific values.
 
 Each command has an explicit schema and handler. Document handlers call Foundry document methods;
-action handlers call a fixed, reviewed Foundry method. Related operations reuse preparation,
+action handlers call a fixed, reviewed Foundry method. The `canvas` commands work on the GM
+client's own view instead of world data: they read the frame it rendered, scroll and zoom it, or
+switch the scene it shows, and change no document. Because the bridge runs inside that client, its
+screen is the only place where Foundry has computed lighting and vision. Related operations reuse preparation,
 guards, serialization, and bulk helpers so a preview or bulk write cannot bypass a single
 command's restrictions.
 

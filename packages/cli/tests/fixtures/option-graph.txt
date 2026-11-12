@@ -344,6 +344,18 @@ command scene thumbnail generate
   opt --height <height> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Thumbnail height in px (16–1024, default 100)
   opt --include-thumb | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Include the generated base64 data URL in the response (read it with --json; the SCENE stores the extracted asset path, reported as .thumbnail.storedPath)
 
+command scene snapshot
+  aliases=[]
+  summary=Render a scene to an image with its walls, lights, sounds, tokens, regions, drawings, notes and grid drawn over it, without changing anything
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --level-id <levelId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Level to render (Foundry v14; default: the scene's initial level)
+  opt --size <px> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Long side of the image in px (16–2048, default 1024)
+  opt --format <format> | parser=<anonymous> | conflicts=[] | choices=["webp","png"] | required=false | hidden=false | default=- | help=Image format (default webp)
+  opt --layers <list> | parser=<anonymous> | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated overlays to draw: grid, regions, drawings, templates (v13), walls, lights, sounds, notes, tokens (default: all)
+  opt --no-layers | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Draw no overlays: only the background and tiles Foundry renders
+  opt --token-images | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Draw each token's image inside its box
+  opt --out <file> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Write the image to this file (default: a new file in the system temp directory)
+
 command scene fog
   aliases=[]
   summary=Scene fog of war commands
@@ -3522,3 +3534,28 @@ command image show
   opt --src <src> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Managed data-relative image path or http(s) URL
   opt --title <title> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Window title (default: derived by Foundry from the source)
   opt --user-ids <list> | parser=<anonymous> | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated user ids to show it to (default: every user); offline users are reported as skipped
+
+command canvas
+  aliases=[]
+  summary=GM client canvas view commands
+
+command canvas capture
+  aliases=[]
+  summary=Capture the GM client's current view as an image, with lighting, darkness and vision as the GM sees them
+  opt --size <px> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Long side of the image in px (16–2048, default: the GM screen's, at most 2048)
+  opt --format <format> | parser=<anonymous> | conflicts=[] | choices=["webp","png"] | required=false | hidden=false | default=- | help=Image format (default webp)
+  opt --out <file> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Write the image to this file (default: a new file in the system temp directory)
+
+command canvas pan
+  aliases=[]
+  summary=Scroll and zoom the GM client's view of its current scene
+  opt --x <x> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Canvas x at the center of the screen
+  opt --y <y> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Canvas y at the center of the screen
+  opt --scale <scale> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Zoom scale; Foundry clamps it to the scene's zoom limits
+  opt --fit | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Center the scene and zoom so all of it fits the screen (instead of --x/--y/--scale)
+
+command canvas view-scene
+  aliases=[]
+  summary=Switch the scene the GM client views, without activating it for players
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --level-id <levelId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Level to view (Foundry v14)

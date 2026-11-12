@@ -181,6 +181,7 @@ export function planLocalError(
       mapped = CLI_ERROR_CODES.UNKNOWN_OPTION;
     } else if (
       code === "fvtt-world-cli.localFileReadError" ||
+      code === "fvtt-world-cli.localFileWriteError" ||
       code === "fvtt-world-cli.commandFileReadError"
     ) {
       mapped = CLI_ERROR_CODES.LOCAL_FILE_ERROR;

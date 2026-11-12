@@ -13,7 +13,14 @@ may be able to read the CLI credential. A compromised GM browser or installed mo
 inside the trusted runtime.
 
 Reads and search can expose any content the connected GM can see, including material hidden from
-players.
+players. `scene snapshot` and `canvas capture` extend that to images: a snapshot draws hidden
+tokens, disabled lights and secret doors, and a capture shows the GM's screen with the GM's
+lighting and vision.
+
+The `canvas` commands also act on the GM's own screen. `canvas pan` scrolls and zooms the GM
+client's view, and `canvas view-scene` switches the scene it shows. Neither changes world data or
+what players see, but a GM working in that browser sees the view move under them. That is why both
+require approval by default.
 
 ## Authentication
 
@@ -61,7 +68,8 @@ reads, writes, bulk commands, and dry runs. Permissions belong to that browser p
 paired browser can have a different policy.
 
 By default, code execution, setting writes, and user role or permission changes are denied.
-Destructive operations, GM-client reload, and user creation require approval. The Command permissions
+Destructive operations, GM-client reload, user creation, and moving the GM client's view
+(`canvas.pan`, `canvas.view-scene`) require approval. The Command permissions
 window shows the full current policy. State checks and internal approval controls remain available;
 daemon-side `auth` commands are outside this policy.
 
