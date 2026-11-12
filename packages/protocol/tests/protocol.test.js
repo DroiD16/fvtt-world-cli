@@ -996,8 +996,18 @@ describe("schema validator paths for keys that contain dots", () => {
     expectRejected(
       "actor.item.update",
       { actorId: "a1", itemId: "i1", patch: { "system.activities.x1.profiles": [] } },
-      '{"system": {"activities.x1.profiles": ...}}'
+      '{"system": {"activities": {"x1": {"profiles": ...}}}}'
     );
+  });
+
+  it("gives the nesting hint for a dotted key inside a nested closed object", () => {
+    const result = validate("journal.update", {
+      journalId: "j1",
+      patch: { pages: [{ id: "p1", "text.content": "<p>x</p>" }] }
+    });
+    const message = result.errors.find((error) => error.includes('pages[0]["text.content"]'));
+    expect(message).toContain("a key at this level");
+    expect(message).toContain('{"text": {"content": ...}}');
   });
 
   it("adds no nesting hint when the key's first segment is not an allowed field", () => {
@@ -1005,7 +1015,7 @@ describe("schema validator paths for keys that contain dots", () => {
     expect(result.errors).toContainEqual(
       expect.stringContaining('$.params.patch["bogus.key"] is not allowed')
     );
-    expect(result.errors.join("\n")).not.toContain("move the rest of the path");
+    expect(result.errors.join("\n")).not.toContain("nest the rest of the path");
   });
 });
 

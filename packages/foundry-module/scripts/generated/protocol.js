@@ -5823,8 +5823,8 @@ function describeDottedKey(key, properties) {
   if (!key.includes(".") || !Object.hasOwn(properties, root)) {
     return "";
   }
-  const rest = key.slice(root.length + 1);
-  return `; a top-level key must be one of the listed field names, so move the rest of the path inside "${root}": {"${root}": {"${rest}": ...}}`;
+  const nested = key.split(".").reduceRight((inner, segment) => `{${JSON.stringify(segment)}: ${inner}}`, "...");
+  return `; a key at this level must be one of the listed field names, so nest the rest of the path inside "${root}": ${nested}`;
 }
 function describeAllowedFields(key, allowedFields) {
   if (allowedFields.length === 0) {
@@ -5897,7 +5897,7 @@ function validateObjectSchema(schema, value, path, errors) {
   for (const [key, propertyValue] of Object.entries(value)) {
     const propertySchema = properties[key];
     if (propertySchema) {
-      validateSchema(propertySchema, propertyValue, `${childPath(path, key)}`, errors);
+      validateSchema(propertySchema, propertyValue, childPath(path, key), errors);
       continue;
     }
     if (additionalProperties === false) {
@@ -5907,7 +5907,7 @@ function validateObjectSchema(schema, value, path, errors) {
       continue;
     }
     if (isPlainObject(additionalProperties)) {
-      validateSchema(additionalProperties, propertyValue, `${childPath(path, key)}`, errors);
+      validateSchema(additionalProperties, propertyValue, childPath(path, key), errors);
     }
   }
 }
