@@ -187,27 +187,44 @@ function knownDocumentTypes() {
 
 /**
  * @param {ReturnType<typeof parseReferenceTarget>} target
+ * @param {(text: string) => Array<{ match: string, matchedUuid?: string }>} matchString
  */
-function createKeyPathMatcher(target) {
+function createKeyMatcher(target, matchString) {
   const needles = referenceNeedles(target);
   const documentTypes = knownDocumentTypes();
+  const continuesLongerUuid = (/** @type {string} */ before) => {
+    const segments = before ? before.split(".") : [];
+    if (segments.at(-3) === "Compendium") return true;
+    return (
+      segments.length >= 2 &&
+      documentTypes.has(segments[segments.length - 2]) &&
+      DOCUMENT_ID_PATTERN.test(segments[segments.length - 1])
+    );
+  };
 
   /**
    * @param {string[]} path
+   * @returns {Array<{ match: string, matchedUuid?: string }>}
    */
   return (path) => {
+    const key = path[path.length - 1];
     const joined = path.join(".");
-    return needles.some((needle) => {
-      if (joined !== needle && !joined.endsWith(`.${needle}`)) return false;
-      const before = joined.slice(0, Math.max(0, joined.length - needle.length - 1));
-      const segments = before ? before.split(".") : [];
-      if (segments.at(-3) === "Compendium") return false;
-      return !(
-        segments.length >= 2 &&
-        documentTypes.has(segments[segments.length - 2]) &&
-        DOCUMENT_ID_PATTERN.test(segments[segments.length - 1])
-      );
-    });
+    /** @type {Map<string, { match: string, matchedUuid?: string }>} */
+    const hits = new Map();
+    if (key.endsWith(target.id)) {
+      for (const needle of needles) {
+        if (joined !== needle && !joined.endsWith(`.${needle}`)) continue;
+        if (!continuesLongerUuid(joined.slice(0, Math.max(0, joined.length - needle.length - 1)))) {
+          hits.set("", { match: "key" });
+        }
+      }
+    }
+    const startsWithNeedle = needles.some((needle) => key.startsWith(needle));
+    if (startsWithNeedle && continuesLongerUuid(path.slice(0, -1).join("."))) return [...hits.values()];
+    for (const { matchedUuid } of matchString(key)) {
+      hits.set(matchedUuid ?? "", matchedUuid ? { match: "key", matchedUuid } : { match: "key" });
+    }
+    return [...hits.values()];
   };
 }
 
@@ -449,7 +466,7 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
   const game = getGame();
   const target = parseReferenceTarget(uuid);
   const matchString = createStringMatcher(target);
-  const keyPathNamesTarget = createKeyPathMatcher(target);
+  const matchKey = createKeyMatcher(target, matchString);
   const scopes =
     Array.isArray(scope) && scope.length > 0 ? [...new Set(scope)] : [...REFERENCE_DEFAULT_SCOPES];
 
@@ -505,12 +522,7 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
     if (value && typeof value === "object") {
       for (const [key, entry] of Object.entries(value)) {
         const entryPath = [...path, key];
-        for (const { matchedUuid } of matchString(key)) {
-          record(owner, entryPath, matchedUuid ? { match: "key", matchedUuid } : { match: "key" });
-        }
-        if (key.endsWith(target.id) && keyPathNamesTarget(entryPath)) {
-          record(owner, entryPath, { match: "key" });
-        }
+        for (const hit of matchKey(entryPath)) record(owner, entryPath, hit);
         walkValue(entry, entryPath, owner);
       }
     }

@@ -700,6 +700,47 @@ describe("world.references lookup", () => {
     expect(runReferenceLookup({ uuid: `Actor.${ACTOR_ID}`, scope: ["item"] }).total).toBe(0);
   });
 
+  it("counts a self-reference in a key once, whether the key is literal or expanded", () => {
+    globalThis.game.items = collection("Item", [
+      {
+        _id: "dddddddddddddddd",
+        name: "Self",
+        flags: { world: { "Item.dddddddddddddddd": 1 } },
+        effects: []
+      }
+    ]);
+    globalThis.game.settings = settings([
+      { _id: "setting000000001", key: "mod.self", value: JSON.stringify({ "Setting.setting000000001": 1 }) }
+    ]);
+
+    expect(runReferenceLookup({ uuid: "Item.dddddddddddddddd", scope: ["item"] }).selfReferences).toBe(1);
+    expect(runReferenceLookup({ uuid: "Setting.setting000000001", scope: ["setting"] }).selfReferences).toBe(
+      1
+    );
+  });
+
+  it("applies the longer-UUID rule to a literal key nested under UUID-like keys", () => {
+    globalThis.game.settings = settings([
+      {
+        _id: "setting000000001",
+        key: "mod.nested",
+        value: JSON.stringify({
+          [`Actor.${ACTOR_ID}`]: { "Item.itemaaaaaaaaaaaa": 1 },
+          "Compendium.world.monsters": { [`Actor.${ACTOR_ID}`]: 1 },
+          note: { "Item.itemaaaaaaaaaaaa": 1, [`see Actor.${ACTOR_ID}`]: 1 }
+        })
+      }
+    ]);
+
+    expect(rows(runReferenceLookup({ uuid: "Item.itemaaaaaaaaaaaa", scope: ["setting"] }))).toEqual([
+      ["Setting.setting000000001", "value.note.Item.itemaaaaaaaaaaaa", "key", null]
+    ]);
+    expect(rows(runReferenceLookup({ uuid: `Actor.${ACTOR_ID}`, scope: ["setting"] }))).toEqual([
+      ["Setting.setting000000001", `value.Actor.${ACTOR_ID}`, "key", null],
+      ["Setting.setting000000001", `value.note.see Actor.${ACTOR_ID}`, "key", null]
+    ]);
+  });
+
   it("scans folders by default, so a child folder's parent link is found", () => {
     globalThis.game.folders = collection("Folder", [
       { _id: "folder0000000001", name: "Parent", folder: null },
