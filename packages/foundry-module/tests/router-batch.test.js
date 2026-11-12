@@ -1218,6 +1218,54 @@ describe("command router", () => {
     expect(response.error.code).toBe("SCENE_NOT_FOUND");
   });
 
+  it("prepares an actor.item batch create element EXACTLY as actor.item.create does", async () => {
+    expect(EMBEDDED_ITEM_BATCH_FAMILIES).toEqual(
+      declaredBatchCreateFamilies().filter(
+        (family) =>
+          !EFFECT_BATCH_FAMILIES.includes(family) && !declaredPlaceableBatchFamilies().includes(family)
+      )
+    );
+    const data = {
+      name: "Longsword",
+      type: "weapon",
+      img: "worlds/world-1/art/long sword.png",
+      flags: { mod: { a: 1 } },
+      effects: [
+        {
+          name: "Bless",
+          img: "worlds/world-1/art/glow #1.png",
+          _id: "spoofed",
+          _stats: { hacked: true },
+          ownership: { default: 3 }
+        }
+      ]
+    };
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const actor = /** @type {any} */ (globalThis.game.actors.get("actor-1"));
+    const payloadsFor = () =>
+      actor.createEmbeddedDocuments.mock.calls
+        .filter((call) => call[0] === "Item")
+        .flatMap((call) => call[1]);
+
+    actor.createEmbeddedDocuments.mockClear();
+    const single = await router.route(createRequest("actor.item.create", { actorId: "actor-1", data }));
+    expect(single.ok, JSON.stringify(single.error)).toBe(true);
+    const singlePayloads = payloadsFor();
+    expect(singlePayloads).toHaveLength(1);
+
+    actor.createEmbeddedDocuments.mockClear();
+    const batch = await router.route(
+      createRequest("actor.item.create-many", { actorId: "actor-1", data: [data] })
+    );
+    expect(batch.ok, JSON.stringify(batch.error)).toBe(true);
+    const batchPayloads = payloadsFor();
+    expect(batchPayloads).toHaveLength(1);
+
+    const { _id, ...batchPayload } = batchPayloads[0];
+    expect(typeof _id).toBe("string");
+    expect(batchPayload).toEqual(singlePayloads[0]);
+  });
+
   it("prepares a batch create element EXACTLY as the single create verb does (every batched family)", async () => {
     const families = {
       "scene.token": { type: "Token", data: { actorId: "actor-1", x: 15, y: 25 } },
