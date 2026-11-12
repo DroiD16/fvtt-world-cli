@@ -3,18 +3,22 @@ import { Option } from "commander";
 import {
   createJournalCategoryCreateParams,
   createJournalCategoryUpdateParams,
+  createJournalPageCreateParams,
+  createJournalPageUpdateParams,
   createJournalCloneParams,
   createJournalCreateParams,
   createJournalUpdateParams,
   booleanField,
-  type JournalCategoryFieldOptions
+  type JournalCategoryFieldOptions,
+  type JournalPageFieldOptions
 } from "../params.js";
 import { executeRemoteCommand } from "../exec.js";
 import { parseBoolean, parseCsvList, parseIdList } from "../parse.js";
 import {
   JOURNAL_CATEGORY_NAME_HELP,
   addJournalCategoryFieldOptions,
-  addJournalFieldOptions
+  addJournalFieldOptions,
+  addJournalPageFieldOptions
 } from "./field-options.js";
 import {
   type RegistrationContext,
@@ -26,6 +30,29 @@ import {
   paginationParams
 } from "./shared.js";
 import { write } from "../deps.js";
+
+interface JournalPageListOptions {
+  journalId: string;
+  name?: string;
+  limit?: number;
+  offset?: number;
+}
+
+interface JournalPageTargetOptions {
+  journalId: string;
+  pageId: string;
+}
+
+interface JournalPageCreateOptions extends JournalPageFieldOptions {
+  journalId: string;
+  name: string;
+  type: string;
+  dataJson?: string;
+}
+
+interface JournalPageUpdateOptions extends JournalPageFieldOptions, JournalPageTargetOptions {
+  patchJson?: string;
+}
 
 export function registerJournal({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerCompendiumImport, registerBatchWriteCommands } =
@@ -168,6 +195,87 @@ export function registerJournal({ program, dependencies }: RegistrationContext) 
       await executeRemoteCommand({
         commandName: "journal.delete",
         params: { journalId: options.journalId },
+        command: this,
+        dependencies
+      });
+    });
+
+  const journalPage = journal
+    .command("page")
+    .description("Journal-embedded page commands (one page at a time; journal update batches several)");
+  journalPage.addHelpText(
+    "after",
+    "\nResult key (--json): .result.page (single/write) / .result.pages[] (list), with .result.journalId alongside." +
+      "\nlist returns summaries without text, system or flags; get returns the full page with its ownership." +
+      "\nPage data follows the journal.update page rules: text fields only on text pages, src only on image/pdf/video pages," +
+      " image.caption only on image pages; see `fvtt-world-cli schema journal.page.create`." +
+      '\nText content goes through --data-json/--patch-json, e.g. --patch-json \'{"text":{"content":"<p>…</p>"}}\'.' +
+      "\nPage ownership: journal ownership set --journal-id <id> --page-id <pageId>."
+  );
+  addNameFilterOption(
+    addPaginationOptions(journalPage.command("list").requiredOption("--journal-id <journalId>", "Journal id"))
+  ).action(async function listJournalPages(options: JournalPageListOptions) {
+    await executeRemoteCommand({
+      commandName: "journal.page.list",
+      params: { journalId: options.journalId, ...nameFilterParams(options), ...paginationParams(options) },
+      command: this,
+      dependencies
+    });
+  });
+  journalPage
+    .command("get")
+    .requiredOption("--journal-id <journalId>", "Journal id")
+    .requiredOption("--page-id <pageId>", "Page id")
+    .action(async function getJournalPage(options: JournalPageTargetOptions) {
+      await executeRemoteCommand({
+        commandName: "journal.page.get",
+        params: { journalId: options.journalId, pageId: options.pageId },
+        command: this,
+        dependencies
+      });
+    });
+  addJournalPageFieldOptions(
+    addIdempotencyKeyOption(journalPage.command("create"))
+      .requiredOption("--journal-id <journalId>", "Journal id")
+      .requiredOption("--name <name>", "Page name")
+      .requiredOption("--type <type>", "Page type (text, image, pdf, video, or a system page type)"),
+    "create"
+  )
+    .option("--data-json <json>", "Full/extra page data as a JSON object (merged last)")
+    .action(async function createJournalPage(options: JournalPageCreateOptions) {
+      await executeRemoteCommand({
+        commandName: "journal.page.create",
+        params: createJournalPageCreateParams(options),
+        command: this,
+        dependencies
+      });
+    });
+  addJournalPageFieldOptions(
+    journalPage
+      .command("update")
+      .requiredOption("--journal-id <journalId>", "Journal id")
+      .requiredOption("--page-id <pageId>", "Page id")
+      .option("--name <name>", "New page name")
+      .option("--type <type>", "New page type"),
+    "update"
+  )
+    .option("--patch-json <json>", "Full/extra page patch as a JSON object (merged last)")
+    .action(async function updateJournalPage(options: JournalPageUpdateOptions) {
+      await executeRemoteCommand({
+        commandName: "journal.page.update",
+        params: createJournalPageUpdateParams(options),
+        command: this,
+        dependencies
+      });
+    });
+  journalPage
+    .command("delete")
+    .requiredOption("--journal-id <journalId>", "Journal id")
+    .requiredOption("--page-id <pageId>", "Page id")
+    .action(async function deleteJournalPage(options: JournalPageTargetOptions) {
+      await executeRemoteCommand({
+        commandName: "journal.page.delete",
+        params: { journalId: options.journalId, pageId: options.pageId },
         command: this,
         dependencies
       });

@@ -109,6 +109,22 @@ export function serializeJournalPage(page, { ownership = false } = {}) {
   };
 }
 
+/** @param {any} page */
+export function serializeJournalPageSummary(page) {
+  const data = documentData(page);
+  return {
+    ...identityFields(page, data),
+    name: page.name ?? data.name ?? null,
+    type: page.type ?? data.type ?? null,
+    sort: page.sort ?? data.sort ?? 0,
+    category: page.category ?? data.category ?? null,
+    src: page.src ?? data.src ?? null,
+    title: data.title ? cloneValue(data.title) : null,
+    image: data.image ? cloneValue(data.image) : null,
+    video: data.video ? cloneValue(data.video) : null
+  };
+}
+
 /** @param {any} category */
 export function storedJournalCategoryName(category) {
   return storedDocumentName(category);

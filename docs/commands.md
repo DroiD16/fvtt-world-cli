@@ -28,7 +28,7 @@ Use these families to narrow your search, then check their help for supported op
 | Task | Command families |
 |---|---|
 | Edit world content | `actor`, `item`, `journal`, `scene`, `macro`, `playlist`, `table`, `cards` |
-| Edit embedded content | Nested families such as `actor.item`, `playlist.sound`, `table.result`, and `*.effect` |
+| Edit embedded content | Nested families such as `actor.item`, `journal.page`, `playlist.sound`, `table.result`, and `*.effect` |
 | Edit scene placeables | `scene.token`, `scene.wall`, `scene.region`, and related families |
 | Edit scene levels (v14) | `scene.level` |
 | Manage encounters | `combat`, `combat.combatant`, `combat.group` |

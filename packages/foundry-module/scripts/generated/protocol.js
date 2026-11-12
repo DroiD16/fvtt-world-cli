@@ -213,6 +213,7 @@ var ERROR_CODES = Object.freeze({
   PLAYLIST_NOT_FOUND: "PLAYLIST_NOT_FOUND",
   PLAYLIST_SOUND_NOT_FOUND: "PLAYLIST_SOUND_NOT_FOUND",
   JOURNAL_CATEGORY_NOT_FOUND: "JOURNAL_CATEGORY_NOT_FOUND",
+  JOURNAL_PAGE_NOT_FOUND: "JOURNAL_PAGE_NOT_FOUND",
   CHAT_MESSAGE_NOT_FOUND: "CHAT_MESSAGE_NOT_FOUND",
   TABLE_NOT_FOUND: "TABLE_NOT_FOUND",
   TABLE_RESULT_NOT_FOUND: "TABLE_RESULT_NOT_FOUND",
@@ -2282,6 +2283,16 @@ var journalPageCreateSchema = {
 var journalPagePatchSchema = patchFrom(journalPageCreateSchema, {
   prepend: { id: { type: "string", minLength: 1 } }
 });
+var journalPageOwnPatchSchema = patchFrom(journalPageCreateSchema);
+var journalPageIdSchema = {
+  type: "object",
+  required: ["journalId", "pageId"],
+  properties: {
+    journalId: { type: "string", minLength: 1 },
+    pageId: { type: "string", minLength: 1 }
+  },
+  additionalProperties: false
+};
 var journalDataSchema = {
   type: "object",
   required: ["name"],
@@ -2449,6 +2460,58 @@ var journalCommands = {
     patchSchema: journalDocumentPatchSchema,
     verbs: ["update-many", "delete-many"]
   }),
+  "journal.page.list": cmd({
+    type: "object",
+    required: ["journalId"],
+    properties: {
+      journalId: { type: "string", minLength: 1 },
+      ...nameFilterProperty,
+      ...paginationProperties
+    },
+    additionalProperties: false
+  }),
+  "journal.page.get": cmd(journalPageIdSchema),
+  "journal.page.create": cmd(
+    {
+      type: "object",
+      required: ["journalId", "data"],
+      properties: {
+        journalId: { type: "string", minLength: 1 },
+        data: journalPageCreateSchema,
+        ...dryRunProperty,
+        ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "journal.page.update": cmd(
+    {
+      type: "object",
+      required: ["journalId", "pageId", "patch"],
+      properties: {
+        journalId: { type: "string", minLength: 1 },
+        pageId: { type: "string", minLength: 1 },
+        patch: journalPageOwnPatchSchema,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "journal.page.delete": cmd(
+    {
+      type: "object",
+      required: ["journalId", "pageId"],
+      properties: {
+        journalId: { type: "string", minLength: 1 },
+        pageId: { type: "string", minLength: 1 },
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
   "journal.category.list": cmd({
     type: "object",
     required: ["journalId"],
@@ -5563,6 +5626,11 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "journal.ownership.set": "allow",
   "journal.update-many": "allow",
   "journal.delete-many": "approve",
+  "journal.page.list": "allow",
+  "journal.page.get": "allow",
+  "journal.page.create": "allow",
+  "journal.page.update": "allow",
+  "journal.page.delete": "approve",
   "journal.category.list": "allow",
   "journal.category.get": "allow",
   "journal.category.create": "allow",

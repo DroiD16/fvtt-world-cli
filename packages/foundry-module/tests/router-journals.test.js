@@ -1431,3 +1431,156 @@ describe("command router", () => {
     });
   });
 });
+
+describe("journal.page commands", () => {
+  beforeEach(() => {
+    installFakeFoundry();
+  });
+
+  const run = (command, params) =>
+    createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } }).route(
+      createRequest(command, params)
+    );
+
+  it("lists page summaries in sort order without page bodies", async () => {
+    const journal = /** @type {any} */ (globalThis.game.journal.get("journal-guard"));
+    journal.pages.get("gp-image").sort = -5;
+
+    const response = await run("journal.page.list", { journalId: "journal-guard", limit: 3 });
+
+    expect(response.ok, JSON.stringify(response.error)).toBe(true);
+    expect(response.result.journalId).toBe("journal-guard");
+    expect(response.result.total).toBe(journal.pages.size);
+    expect(response.result.hasMore).toBe(true);
+    expect(response.result.pages[0]).toMatchObject({ id: "gp-image", name: "Cover", type: "image" });
+    for (const page of response.result.pages) {
+      expect(page).not.toHaveProperty("text");
+      expect(page).not.toHaveProperty("system");
+    }
+  });
+
+  it("filters the page list by name", async () => {
+    const response = await run("journal.page.list", { journalId: "journal-guard", name: "markdown" });
+    expect(response.result.pages.map((page) => page.id)).toEqual(["gp-md", "gp-md-derived"]);
+  });
+
+  it("gets one page with its text and ownership", async () => {
+    const response = await run("journal.page.get", { journalId: "journal-1", pageId: "page-1" });
+
+    expect(response.ok).toBe(true);
+    expect(response.result.page).toMatchObject({ id: "page-1", text: { content: "Secret text" } });
+    expect(response.result.page).toHaveProperty("ownership");
+  });
+
+  it("reports a missing page as JOURNAL_PAGE_NOT_FOUND on read, update and delete", async () => {
+    /** @type {Array<[string, Record<string, unknown>]>} */
+    const requests = [
+      ["journal.page.get", { journalId: "journal-1", pageId: "nope" }],
+      ["journal.page.update", { journalId: "journal-1", pageId: "nope", patch: { name: "X" } }],
+      ["journal.page.delete", { journalId: "journal-1", pageId: "nope" }]
+    ];
+    for (const [command, params] of requests) {
+      const response = await run(command, params);
+      expect(response.error.code, command).toBe("JOURNAL_PAGE_NOT_FOUND");
+      expect(response.error.details, command).toEqual({ journalId: "journal-1", pageId: "nope" });
+    }
+    const missingJournal = await run("journal.page.list", { journalId: "missing-journal" });
+    expect(missingJournal.error.code).toBe("JOURNAL_NOT_FOUND");
+  });
+
+  it("creates a page through the journal's page preparation", async () => {
+    const journal = /** @type {any} */ (globalThis.game.journal.get("journal-guard"));
+    const response = await run("journal.page.create", {
+      journalId: "journal-guard",
+      data: { name: "Map", type: "image", src: "worlds/w/art/old map.webp", category: "cat-lore" }
+    });
+
+    expect(response.ok, JSON.stringify(response.error)).toBe(true);
+    expect(response.result.page).toMatchObject({ name: "Map", type: "image", category: "cat-lore" });
+    const [, entries] = journal.createEmbeddedDocuments.mock.calls.at(-1);
+    expect(entries[0].src).toBe("worlds/w/art/old%20map.webp");
+    expect(journal.pages.get(response.result.page.id)).toBeTruthy();
+  });
+
+  it("refuses page data the journal.update page path refuses, before writing", async () => {
+    const journal = /** @type {any} */ (globalThis.game.journal.get("journal-guard"));
+    const cases = [
+      [{ name: "Pic", type: "image", text: { content: "x" } }, "text"],
+      [{ name: "Notes", type: "text", src: "worlds/w/a.webp" }, "src"],
+      [{ name: "Notes", type: "text", category: "cat-missing" }, null]
+    ];
+    for (const [data, field] of cases) {
+      const response = await run("journal.page.create", { journalId: "journal-guard", data });
+      expect(response.error.code, JSON.stringify(data)).toBe("INVALID_PARAMS");
+      if (field) expect(response.error.details.field).toBe(field);
+    }
+    expect(journal.createEmbeddedDocuments).not.toHaveBeenCalled();
+  });
+
+  it("previews a page create without writing", async () => {
+    const journal = /** @type {any} */ (globalThis.game.journal.get("journal-preview"));
+    const before = journal.pages.size;
+    const response = await run("journal.page.create", {
+      journalId: "journal-preview",
+      data: { name: "Draft", type: "text", text: { content: "<p>draft</p>" } },
+      dryRun: true
+    });
+
+    expect(response.ok, JSON.stringify(response.error)).toBe(true);
+    expect(response.result.dryRun).toBe(true);
+    expect(response.result.page).toMatchObject({ name: "Draft", text: { content: "<p>draft</p>" } });
+    expect(journal.pages.size).toBe(before);
+  });
+
+  it("updates a page and applies the markdown guards of journal.update", async () => {
+    const updated = await run("journal.page.update", {
+      journalId: "journal-guard",
+      pageId: "gp-text",
+      patch: { name: "Overview 2", text: { content: "<p>new</p>" } }
+    });
+    expect(updated.ok, JSON.stringify(updated.error)).toBe(true);
+    expect(updated.result.page).toMatchObject({ id: "gp-text", name: "Overview 2" });
+
+    const refused = await run("journal.page.update", {
+      journalId: "journal-guard",
+      pageId: "gp-text",
+      patch: { text: { markdown: "# x" } }
+    });
+    expect(refused.error.code).toBe("INVALID_PARAMS");
+    expect(refused.error.details.field).toBe("text.markdown");
+  });
+
+  it("previews a page update on a copy", async () => {
+    const journal = /** @type {any} */ (globalThis.game.journal.get("journal-preview"));
+    const response = await run("journal.page.update", {
+      journalId: "journal-preview",
+      pageId: "pv-text",
+      patch: { text: { content: "Changed" } },
+      dryRun: true
+    });
+
+    expect(response.ok, JSON.stringify(response.error)).toBe(true);
+    expect(response.result.page.text.content).toBe("Changed");
+    expect(journal.pages.get("pv-text").text.content).toBe("Original notes");
+  });
+
+  it("deletes a page, and a dry run deletes nothing", async () => {
+    const journal = /** @type {any} */ (globalThis.game.journal.get("journal-1"));
+    const preview = await run("journal.page.delete", {
+      journalId: "journal-1",
+      pageId: "page-1",
+      dryRun: true
+    });
+    expect(preview.result).toMatchObject({
+      journalId: "journal-1",
+      id: "page-1",
+      deleted: false,
+      dryRun: true
+    });
+    expect(journal.pages.get("page-1")).toBeTruthy();
+
+    const response = await run("journal.page.delete", { journalId: "journal-1", pageId: "page-1" });
+    expect(response.result).toEqual({ journalId: "journal-1", id: "page-1", deleted: true });
+    expect(journal.pages.get("page-1")).toBeFalsy();
+  });
+});

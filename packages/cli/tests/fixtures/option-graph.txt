@@ -1734,6 +1734,56 @@ command journal delete
   summary=
   opt --journal-id <journalId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Journal id
 
+command journal page
+  aliases=[]
+  summary=Journal-embedded page commands (one page at a time; journal update batches several)
+
+command journal page list
+  aliases=[]
+  summary=
+  opt --journal-id <journalId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Journal id
+  opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
+  opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
+  opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+
+command journal page get
+  aliases=[]
+  summary=
+  opt --journal-id <journalId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Journal id
+  opt --page-id <pageId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Page id
+
+command journal page create
+  aliases=[]
+  summary=
+  opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
+  opt --journal-id <journalId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Journal id
+  opt --name <name> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Page name
+  opt --type <type> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Page type (text, image, pdf, video, or a system page type)
+  opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Page sort value
+  opt --category <categoryId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Category id from journal category list
+  opt --clear-category | parser=- | conflicts=["category"] | choices=- | required=false | hidden=false | default=- | help=Explicitly set category to null
+  opt --src <src> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Media path of an image, pdf or video page
+  opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Full/extra page data as a JSON object (merged last)
+
+command journal page update
+  aliases=[]
+  summary=
+  opt --journal-id <journalId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Journal id
+  opt --page-id <pageId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Page id
+  opt --name <name> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New page name
+  opt --type <type> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New page type
+  opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New page sort value
+  opt --category <categoryId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New category id from journal category list
+  opt --clear-category | parser=- | conflicts=["category"] | choices=- | required=false | hidden=false | default=- | help=Explicitly set category to null
+  opt --src <src> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New media path
+  opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Full/extra page patch as a JSON object (merged last)
+
+command journal page delete
+  aliases=[]
+  summary=
+  opt --journal-id <journalId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Journal id
+  opt --page-id <pageId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Page id
+
 command journal category
   aliases=[]
   summary=Journal-embedded category commands (labels pages are grouped under)

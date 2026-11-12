@@ -946,6 +946,63 @@ describe("fvtt-world-cli commands", () => {
       { combatId: "cbt-1", combatantId: "cmb-1", initiative: null }
     ],
 
+    [["journal", "page", "list", "--journal-id", "j-1"], "journal.page.list", { journalId: "j-1" }],
+    [
+      ["journal", "page", "get", "--journal-id", "j-1", "--page-id", "p-1"],
+      "journal.page.get",
+      { journalId: "j-1", pageId: "p-1" }
+    ],
+    [
+      [
+        "journal",
+        "page",
+        "create",
+        "--journal-id",
+        "j-1",
+        "--name",
+        "Map",
+        "--type",
+        "image",
+        "--src",
+        "worlds/w/map.webp",
+        "--category",
+        "cat-1",
+        "--data-json",
+        '{"image":{"caption":"Old map"}}'
+      ],
+      "journal.page.create",
+      {
+        journalId: "j-1",
+        data: {
+          name: "Map",
+          type: "image",
+          src: "worlds/w/map.webp",
+          category: "cat-1",
+          image: { caption: "Old map" }
+        }
+      }
+    ],
+    [
+      [
+        "journal",
+        "page",
+        "update",
+        "--journal-id",
+        "j-1",
+        "--page-id",
+        "p-1",
+        "--clear-category",
+        "--patch-json",
+        '{"text":{"content":"<p>x</p>"}}'
+      ],
+      "journal.page.update",
+      { journalId: "j-1", pageId: "p-1", patch: { category: null, text: { content: "<p>x</p>" } } }
+    ],
+    [
+      ["journal", "page", "delete", "--journal-id", "j-1", "--page-id", "p-1"],
+      "journal.page.delete",
+      { journalId: "j-1", pageId: "p-1" }
+    ],
     [["journal", "category", "list", "--journal-id", "j-1"], "journal.category.list", { journalId: "j-1" }],
     [
       [

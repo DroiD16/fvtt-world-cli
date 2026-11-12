@@ -594,6 +594,50 @@ export function createJournalCategoryUpdateParams(
   };
 }
 
+export interface JournalPageFieldOptions {
+  name?: string;
+  type?: string;
+  sort?: number;
+  category?: string;
+  clearCategory?: boolean;
+  src?: string;
+}
+
+function buildJournalPageFields(options: JournalPageFieldOptions) {
+  return {
+    ...stringField("name", options.name),
+    ...stringField("type", options.type),
+    ...numberField("sort", options.sort),
+    ...(options.clearCategory ? { category: null } : stringField("category", options.category)),
+    ...stringField("src", options.src)
+  };
+}
+
+export function createJournalPageCreateParams(
+  options: JournalPageFieldOptions & { journalId: string; name: string; type: string; dataJson?: string }
+) {
+  return {
+    journalId: options.journalId,
+    data: {
+      ...buildJournalPageFields(options),
+      ...(optionalJsonObject(options.dataJson, "--data-json") ?? {})
+    }
+  };
+}
+
+export function createJournalPageUpdateParams(
+  options: JournalPageFieldOptions & { journalId: string; pageId: string; patchJson?: string }
+) {
+  return {
+    journalId: options.journalId,
+    pageId: options.pageId,
+    patch: assertNonEmptyPatch({
+      ...buildJournalPageFields(options),
+      ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+    })
+  };
+}
+
 export interface TableFieldOptions {
   description?: string;
   img?: string;

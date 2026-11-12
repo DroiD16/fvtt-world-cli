@@ -44,7 +44,12 @@ import {
 } from "./files.js";
 import { renderFolderDetails } from "./folders.js";
 import { renderItemDetails, renderItemSummaryLine } from "./items.js";
-import { renderJournalCategoryDetails, renderJournalDetails, renderJournalShowResult } from "./journals.js";
+import {
+  renderJournalCategoryDetails,
+  renderJournalDetails,
+  renderJournalPageDetails,
+  renderJournalShowResult
+} from "./journals.js";
 import { renderMacroDetails, renderMacroExecuteResult } from "./macros.js";
 import { renderPlaylistDetails, renderPlaylistSoundDetails } from "./playlists.js";
 import {
@@ -771,6 +776,21 @@ export const RENDERERS = registerRenderers([
   }),
   deleteRenderer("journal.delete", "journal"),
   detailRenderer("journal.show", (result) => renderJournalShowResult(result)),
+  listRenderer("journal.page.list", {
+    key: "pages",
+    empty: "No pages found.",
+    heading: "Pages",
+    prefix: (result) => [`journal: ${result.journalId}`],
+    row: (page) => `${page.id}\t${page.name ?? ""}\t${page.type ?? ""}\tsort=${page.sort ?? 0}`
+  }),
+  detailRenderer(["journal.page.get", "journal.page.create", "journal.page.update"], (result) =>
+    renderJournalPageDetails(result.journalId, result.page)
+  ),
+  detailRenderer("journal.page.delete", (result) =>
+    result.deleted
+      ? `Deleted journal page ${result.id} from journal ${result.journalId}`
+      : `Would delete journal page ${result.id} from journal ${result.journalId}`
+  ),
   listRenderer("journal.category.list", {
     key: "categories",
     empty: "No categories found.",
