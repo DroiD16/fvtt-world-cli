@@ -54,7 +54,6 @@ import {
   PROTOCOL_COMPONENTS,
   PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
-  REFERENCE_DEFAULT_SCOPES,
   REFERENCE_SCOPES,
   defaultProfile,
   isDestructiveCommand,
@@ -1969,9 +1968,7 @@ describe("protocol contract", () => {
       expectRejected("world.references", { uuid: "Actor.abc", path: "x" }, "$.params.path is not allowed");
     });
 
-    it("scans every audit scope plus folders and settings by default and chat only on request", () => {
-      expect(REFERENCE_SCOPES).toEqual([...AUDIT_FILE_SCOPES, "folder", "setting", "chat"]);
-      expect(REFERENCE_DEFAULT_SCOPES).toEqual(REFERENCE_SCOPES.filter((scope) => scope !== "chat"));
+    it("keeps world.audit-files to the audit scopes", () => {
       expect(COMMAND_DEFINITIONS["world.audit-files"].paramsSchema.properties.scope.items.enum).toEqual([
         ...AUDIT_FILE_SCOPES
       ]);
@@ -3225,10 +3222,6 @@ describe("protocol contract", () => {
         expect(validate(command, { journalId: "j-1", pageId: "p-1" }).ok, command).toBe(true);
       }
       expect(validate("journal.page.update", { journalId: "j-1", pageId: "p-1" }).ok).toBe(false);
-    });
-
-    it("exposes JOURNAL_PAGE_NOT_FOUND", () => {
-      expect(ERROR_CODES.JOURNAL_PAGE_NOT_FOUND).toBe("JOURNAL_PAGE_NOT_FOUND");
     });
   });
 

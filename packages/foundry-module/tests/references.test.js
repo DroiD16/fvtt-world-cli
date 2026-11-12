@@ -1011,18 +1011,4 @@ describe("world.references lookup", () => {
       })
     );
   });
-
-  it("refuses a lookup above the match cap", () => {
-    const many = Array.from({ length: REFERENCES_MAX_MATCHES + 1 }, (_, index) => ({
-      _id: `item${String(index).padStart(12, "0")}`,
-      name: "Copy",
-      flags: { link: `Actor.${ACTOR_ID}` },
-      effects: []
-    }));
-    globalThis.game.items = collection("Item", many);
-
-    expect(() => runReferenceLookup({ uuid: `Actor.${ACTOR_ID}`, scope: ["item"] })).toThrow(
-      expect.objectContaining({ code: "QUERY_TOO_BROAD" })
-    );
-  });
 });

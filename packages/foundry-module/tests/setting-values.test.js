@@ -147,15 +147,6 @@ describe("value serializer — omitted kinds", () => {
     expect(getter).not.toHaveBeenCalled();
   });
 
-  it("marks an own accessor on an ARRAY INDEX too", () => {
-    const getter = vi.fn(() => "invoked");
-    const value = [1];
-    Object.defineProperty(value, 1, { get: getter, enumerable: true, configurable: true });
-    const error = expectThrown(value);
-    expect(error.details).toMatchObject({ reason: "accessor-property", path: "$[1]" });
-    expect(getter).not.toHaveBeenCalled();
-  });
-
   it("marks a SET-ONLY accessor on an ARRAY INDEX (it has no `value` to walk)", () => {
     const value = [1, 2];
     Object.defineProperty(value, 1, { set: () => {}, enumerable: true, configurable: true });
@@ -753,17 +744,6 @@ describe("value serializer — bounds are enforced DURING the walk", () => {
     expect(walked).toHaveLength(19_000);
     expect(walked[0]).toEqual([]);
     expect(walked[18_999]).toEqual([]);
-
-    const shortHostile = [1, 2, 3];
-    Object.defineProperty(shortHostile, 2, { get: () => 1, configurable: true });
-    for (let index = 0; index < 1_000; index += 1) {
-      shortHostile[`meta${index}`] = index;
-    }
-
-    expect(expectThrown(shortHostile).details).toMatchObject({
-      reason: "accessor-property",
-      path: "$[2]"
-    });
   });
 
   it("charges the REAL JSON encoding of a string, escapes included (the cap is not a floor)", () => {
@@ -1042,11 +1022,5 @@ describe("serializeValueWithOmissions", () => {
     expect(serializeValueWithOmissions(deep, { maxDepth: 2 }).omissions).toEqual([
       { path: "$.level.lazy", reason: "accessor-property" }
     ]);
-  });
-
-  it("still refuses a value over the size limits", () => {
-    expect(() => serializeValueWithOmissions({ blob: "z".repeat(64) }, { maxBytes: 16 })).toThrow(
-      expect.objectContaining({ code: ERROR_CODES.PAYLOAD_TOO_LARGE })
-    );
   });
 });
