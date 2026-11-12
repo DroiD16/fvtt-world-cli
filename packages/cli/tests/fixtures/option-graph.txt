@@ -159,6 +159,14 @@ command world audit-files
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
 
+command world references
+  aliases=[]
+  summary=Report where stored world data references a document, by its UUID
+  opt --uuid <uuid> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Target document UUID: Actor.<id>, Scene.<id>.Token.<id>, Compendium.<package>.<pack>.<Type>.<id>, …
+  opt --scope <list> | parser=parseScopeList | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated document families to scan: scene,actor,item,journal,playlist,macro,table,combat,cards (default: all)
+  opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
+  opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
+
 command world search
   aliases=[]
   summary=Search world (and optionally compendium) documents through the bridge index

@@ -34,7 +34,7 @@ Use these families to narrow your search, then check their help for supported op
 | Manage encounters | `combat`, `combat.combatant`, `combat.group` |
 | Organize content and access | `folder`, `*.ownership.set`, `user` |
 | Manage chat and settings | `chat`, `setting` |
-| Find content or missing assets | `world.search`, `world.audit-files` |
+| Find content, references, or missing assets | `world.search`, `world.references`, `world.audit-files` |
 | Read packs or import world documents | `compendium`, supported `*.import-from-compendium` commands |
 | Manage assets | `file` |
 | Control playback and gameplay | Actions within `playlist`, `table`, `cards`, `combat`, `scene`, and `game` |

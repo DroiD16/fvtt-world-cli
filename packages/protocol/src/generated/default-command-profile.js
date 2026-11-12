@@ -356,6 +356,7 @@ export const DEFAULT_COMMAND_PROFILE = deepFreeze({
   "setting.set-many": "deny",
   "actor.import-from-compendium": "allow",
   "world.audit-files": "allow",
+  "world.references": "allow",
   "world.search": "allow",
   "approval.await": "allow",
   "approval.cancel": "allow",

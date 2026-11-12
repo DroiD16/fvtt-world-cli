@@ -124,6 +124,8 @@ export const CARDS_PASS_MAX_IDS = 100;
 
 export const AUDIT_FILES_MAX_DIRS = 500;
 
+export const REFERENCES_MAX_MATCHES = 10_000;
+
 export const SCENE_THUMBNAIL_MIN_DIMENSION = 16;
 export const SCENE_THUMBNAIL_MAX_DIMENSION = 1024;
 

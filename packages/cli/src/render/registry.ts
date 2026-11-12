@@ -315,6 +315,29 @@ export const RENDERERS = registerRenderers([
     return lines.join("\n");
   }),
 
+  customRenderer("world.references", (result, offset) => {
+    const references = result.references ?? [];
+    const target = result.target ?? {};
+    const lines = [
+      `target: ${target.uuid ?? ""}\t${humanCell(target.name)}\texists=${target.exists === null ? "unknown" : String(target.exists)}`
+    ];
+    if (references.length) {
+      lines.push(
+        `References (${references.length})`,
+        ...references.map(
+          (ref: any) =>
+            `${ref.uuid}\t${humanCell(ref.name)}\t${ref.field}\t${ref.match}${ref.matchedUuid ? `\t${ref.matchedUuid}` : ""}`
+        )
+      );
+    } else {
+      lines.push("No stored references found.");
+    }
+    lines.push(...listFooterLines(result, references.length, offset));
+    lines.push(
+      `summary: references=${result.total ?? references.length} scannedDocuments=${result.scannedDocuments ?? 0} selfReferences=${result.selfReferences ?? 0} scopes=${(result.scopes ?? []).join(",")}`
+    );
+    return lines.join("\n");
+  }),
   listRenderer("scene.list", {
     key: "scenes",
     empty: "No scenes found.",

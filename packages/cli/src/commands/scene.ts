@@ -331,6 +331,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       "Comma-separated extra fields to include (allowed: delta — a derived per-token summary of the token-level overrides, null when there are none)",
       parseTokenListIncludeFields
     )
+    .addHelpText(
+      "after",
+      "\nThe tokens of one actor across all scenes: world references --uuid Actor.<actorId> --scope scene"
+    )
     .action(async function listSceneTokens(options: SceneTokenListOptions) {
       await executeRemoteCommand({
         commandName: "scene.token.list",

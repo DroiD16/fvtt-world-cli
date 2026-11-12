@@ -1949,6 +1949,21 @@ describe("protocol contract", () => {
     });
   });
 
+  describe("world.references params", () => {
+    it("is a read that requires a uuid and shares the audit scope enum", () => {
+      expect(COMMAND_DEFINITIONS["world.references"].mutation).toBe(false);
+      expect(validate("world.references", {}).ok).toBe(false);
+      expect(
+        validate("world.references", { uuid: "Actor.abc", scope: ["scene"], limit: 5, offset: 0 }).ok
+      ).toBe(true);
+      expect(COMMAND_DEFINITIONS["world.references"].paramsSchema.properties.scope).toEqual(
+        COMMAND_DEFINITIONS["world.audit-files"].paramsSchema.properties.scope
+      );
+      expectRejected("world.references", { uuid: "Actor.abc", scope: ["chat"] }, "$.params.scope[0]");
+      expectRejected("world.references", { uuid: "Actor.abc", path: "x" }, "$.params.path is not allowed");
+    });
+  });
+
   describe("world.audit-files params", () => {
     const validateAudit = (params) => validate("world.audit-files", params);
 
@@ -2595,7 +2610,7 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 63 approve-listed, 8 denied and 283 self-running commands in a registry of 354", () => {
+    it("counts 63 approve-listed, 8 denied and 284 self-running commands in a registry of 355", () => {
       const bucket = (behavior) =>
         COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
@@ -2607,10 +2622,10 @@ describe("protocol contract", () => {
           allow: bucket("allow")
         },
         "the totals moved: re-check the default-policy prose in docs/commands.md and docs/security.md (they name the buckets, not the counts) in the same change"
-      ).toEqual({ commands: 354, approve: 63, deny: 8, allow: 283 });
+      ).toEqual({ commands: 355, approve: 63, deny: 8, allow: 284 });
     });
 
-    it("leaves 349 governed commands in 19 top-level groups once the exempt ones are removed", () => {
+    it("leaves 350 governed commands in 19 top-level groups once the exempt ones are removed", () => {
       const exempt = new Set(POLICY_EXEMPT_COMMANDS);
       const governed = COMMAND_NAMES.filter((command) => !exempt.has(command));
 
@@ -2620,7 +2635,7 @@ describe("protocol contract", () => {
           groups: new Set(governed.map((command) => command.split(".")[0])).size
         },
         "the window totals moved: the permissions window renders one section per top-level group, so re-check its rendering assumptions in the same change"
-      ).toEqual({ governed: 349, groups: 19 });
+      ).toEqual({ governed: 350, groups: 19 });
     });
 
     it("cannot be mutated in place", () => {
@@ -5980,6 +5995,8 @@ describe("protocol contract", () => {
       "setting.list",
 
       "world.audit-files",
+
+      "world.references",
 
       "world.search"
     ]);

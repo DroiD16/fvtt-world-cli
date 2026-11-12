@@ -100,6 +100,7 @@ var BATCH_WRITE_SUCCESS_STATUSES = Object.freeze([
 var BATCH_WRITE_PERSISTED_STATUSES = Object.freeze(["created", "updated", "deleted"]);
 var CARDS_PASS_MAX_IDS = 100;
 var AUDIT_FILES_MAX_DIRS = 500;
+var REFERENCES_MAX_MATCHES = 1e4;
 var SCENE_THUMBNAIL_MIN_DIMENSION = 16;
 var SCENE_THUMBNAIL_MAX_DIMENSION = 1024;
 var SCENE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
@@ -1840,6 +1841,16 @@ var auditFilesSchema = {
   },
   additionalProperties: false
 };
+var worldReferencesSchema = {
+  type: "object",
+  required: ["uuid"],
+  properties: {
+    uuid: { type: "string", minLength: 1 },
+    scope: auditFilesSchema.properties.scope,
+    ...paginationProperties
+  },
+  additionalProperties: false
+};
 var fileCommands = {
   "file.list": cmd({
     type: "object",
@@ -1927,7 +1938,8 @@ var fileCommands = {
   )
 };
 var worldAuditCommands = {
-  "world.audit-files": cmd(auditFilesSchema)
+  "world.audit-files": cmd(auditFilesSchema),
+  "world.references": cmd(worldReferencesSchema)
 };
 
 // packages/protocol/src/schemas/folder.js
@@ -5803,6 +5815,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "setting.set-many": "deny",
   "actor.import-from-compendium": "allow",
   "world.audit-files": "allow",
+  "world.references": "allow",
   "world.search": "allow",
   "approval.await": "allow",
   "approval.cancel": "allow",
@@ -6398,6 +6411,7 @@ export {
   READ_RESPONSE_ENVELOPE_RESERVE_CHARS,
   RECONNECT_BASE_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
+  REFERENCES_MAX_MATCHES,
   REQUEST_SCHEMA,
   SCENE_THUMBNAIL_MAX_BYTES,
   SCENE_THUMBNAIL_MAX_DIMENSION,
