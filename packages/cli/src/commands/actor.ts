@@ -20,6 +20,7 @@ import { parseIdList, parseIncludeFields, parseNumber } from "../parse.js";
 import {
   addActorFieldOptions,
   addActorIncludeOption,
+  addItemGetIncludeOption,
   addEffectFieldOptions,
   addEmbeddedItemFieldOptions,
   addReservedIncludeOption
@@ -293,12 +294,11 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
       dependencies
     });
   });
-  addReservedIncludeOption(
+  addItemGetIncludeOption(
     actorItem
       .command("get")
       .requiredOption("--actor-id <actorId>", "Actor id")
-      .requiredOption("--item-id <itemId>", "Item id"),
-    "on this command"
+      .requiredOption("--item-id <itemId>", "Item id")
   ).action(async function getActorItem(options: { actorId: string; itemId: string; include?: string[] }) {
     await executeRemoteCommand({
       commandName: "actor.item.get",

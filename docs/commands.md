@@ -159,6 +159,11 @@ data. Check the command's help for available projections and filters.
 Actor results carry `itemCount` in place of the owned items; `actor get` and `actor get-many`
 return the items with `--include items`. `system info --include modules` lists installed modules.
 
+Stored `system` data holds what was authored. Values the game system computes, such as an armor
+class, a skill total or an attack bonus, appear only with `--include prepared` on actor, token and
+item reads. For an item's values, `actor item get` and `scene token item get` read the item as its
+owner prepared it; `actor get --include items,prepared` does not add them per item.
+
 ### Updates and merge semantics
 
 Use JSON flags such as `--data-json` and `--patch-json` for structured values. Updates are patches:

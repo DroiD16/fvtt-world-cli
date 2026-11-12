@@ -3043,6 +3043,32 @@ function runTokenDeltaCoverage(summary, { targetSceneId, actorId, stamp, created
     );
     return;
   }
+  const tokenItemPrepared = runFoundryctl([
+    "scene",
+    "token",
+    "item",
+    "get",
+    "--scene-id",
+    targetSceneId,
+    "--token-id",
+    tokenId,
+    "--item-id",
+    inheritedItem.id,
+    "--include",
+    "prepared"
+  ]);
+  markAndPush(
+    summary,
+    "scene.token.item.get(--include prepared on an unlinked token's item)",
+    isCommandSuccess(tokenItemPrepared) &&
+      tokenItemPrepared.response?.result?.actorLink === false &&
+      typeof tokenItemPrepared.response?.result?.item?.prepared?.system === "object" &&
+      tokenItemPrepared.response.result.item.prepared.system !== null,
+    {
+      ...summarizeCommand(tokenItemPrepared),
+      omitted: tokenItemPrepared.response?.result?.item?.prepared?.omitted ?? null
+    }
+  );
   const overrideName = `${inheritedItem.name} Smoke Override ${stamp}`;
   expectOk(
     summary,
@@ -15040,6 +15066,133 @@ function runExtendedCoverage(
   }
 }
 
+function objectKeyPaths(value) {
+  const paths = [];
+  const visit = (node, prefix) => {
+    if (!node || typeof node !== "object") return;
+    for (const [key, entry] of Object.entries(node)) {
+      const path = prefix ? `${prefix}.${key}` : key;
+      paths.push(path);
+      visit(entry, path);
+    }
+  };
+  visit(value, "");
+  return paths;
+}
+
+const PREPARED_SCHEMA_PATHS_SCRIPT = (actorId, itemId) => `
+  const paths = (value) => {
+    const out = [];
+    const visit = (node, prefix) => {
+      if (!node || typeof node !== "object") return;
+      for (const [key, entry] of Object.entries(node)) {
+        const path = prefix ? prefix + "." + key : key;
+        out.push(path);
+        visit(entry, path);
+      }
+    };
+    visit(JSON.parse(JSON.stringify(value)), "");
+    return out;
+  };
+  const actor = game.actors.get(${JSON.stringify(actorId)});
+  const item = ${JSON.stringify(itemId)} ? actor.items.get(${JSON.stringify(itemId)}) : null;
+  return {
+    actor: paths(actor.system.toObject(false)),
+    item: item ? paths(item.system.toObject(false)) : null
+  };
+`;
+
+async function runPreparedCoverage(summary, { actorId, fixtureActor, gmControlUrl, systemId }) {
+  const actorRun = runFoundryctl(["actor", "get", "--actor-id", actorId, "--include", "prepared"]);
+  const actor = actorRun.response?.result?.actor ?? null;
+  const preparedSystem = actor?.prepared?.system ?? null;
+  const storedPaths = new Set(objectKeyPaths(actor?.system));
+  const preparedPaths = objectKeyPaths(preparedSystem);
+  const derivedOnly = preparedPaths.filter((path) => !storedPaths.has(path));
+  markAndPush(
+    summary,
+    "actor.get(--include prepared adds values the stored system does not hold)",
+    isCommandSuccess(actorRun) && preparedSystem !== null && derivedOnly.length > 0,
+    {
+      ...summarizeCommand(actorRun),
+      omitted: actor?.prepared?.omitted ?? null,
+      derivedOnly: derivedOnly.slice(0, 10)
+    }
+  );
+  if (systemId === "dnd5e") {
+    markAndPush(
+      summary,
+      "actor.get(--include prepared: dnd5e attributes.ac.value is a number)",
+      typeof preparedSystem?.attributes?.ac?.value === "number",
+      { observed: preparedSystem?.attributes?.ac?.value ?? null }
+    );
+  } else {
+    summary.notes.push(
+      `prepared: the world runs system ${systemId}, so the dnd5e armor-class check was not run; the generic derived-value and schema-superset checks still ran`
+    );
+  }
+
+  const item = Array.isArray(fixtureActor?.items) ? (fixtureActor.items[0] ?? null) : null;
+  let itemPrepared = null;
+  if (item?.id) {
+    const itemRun = runFoundryctl([
+      "actor",
+      "item",
+      "get",
+      "--actor-id",
+      actorId,
+      "--item-id",
+      item.id,
+      "--include",
+      "prepared"
+    ]);
+    itemPrepared = itemRun.response?.result?.item?.prepared?.system ?? null;
+    markAndPush(
+      summary,
+      "actor.item.get(--include prepared returns the item's prepared system)",
+      isCommandSuccess(itemRun) && itemPrepared !== null && typeof itemPrepared === "object",
+      {
+        ...summarizeCommand(itemRun),
+        itemId: item.id,
+        omitted: itemRun.response?.result?.item?.prepared?.omitted ?? null
+      }
+    );
+  } else {
+    summary.notes.push(
+      `prepared: actor ${actorId} owns no item, so actor.item.get --include prepared was not run`
+    );
+  }
+
+  if (!gmControlUrl) {
+    summary.notes.push(
+      "prepared: no --gm-control, so the check that prepared keys cover every toObject(false) key was not run"
+    );
+    return;
+  }
+  const schemaPaths = await evaluateInGmPage(
+    gmControlUrl,
+    PREPARED_SCHEMA_PATHS_SCRIPT(actorId, item?.id ?? null)
+  );
+  const preparedSet = new Set(preparedPaths);
+  const missingActor = (schemaPaths?.actor ?? []).filter((path) => !preparedSet.has(path));
+  markAndPush(
+    summary,
+    "actor.get(--include prepared covers every key of the system's toObject(false))",
+    Array.isArray(schemaPaths?.actor) && missingActor.length === 0,
+    { checked: schemaPaths?.actor?.length ?? null, missing: missingActor.slice(0, 20) }
+  );
+  if (item?.id && itemPrepared) {
+    const itemSet = new Set(objectKeyPaths(itemPrepared));
+    const missingItem = (schemaPaths?.item ?? []).filter((path) => !itemSet.has(path));
+    markAndPush(
+      summary,
+      "actor.item.get(--include prepared covers every key of the item system's toObject(false))",
+      Array.isArray(schemaPaths?.item) && missingItem.length === 0,
+      { checked: schemaPaths?.item?.length ?? null, missing: missingItem.slice(0, 20) }
+    );
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const summary = {
@@ -15212,6 +15365,13 @@ async function main() {
         items: Array.isArray(fixtureWithItems?.items) ? fixtureWithItems.items.length : null
       }
     );
+
+    await runPreparedCoverage(summary, {
+      actorId: options.actorId,
+      fixtureActor: fixtureWithItems,
+      gmControlUrl: options.gmControlUrl,
+      systemId: systemInfo.system?.id ?? null
+    });
 
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const sceneUpdatedNameSuffix = ` [smoke ${stamp}]`;

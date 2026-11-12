@@ -407,6 +407,26 @@ describe("placeable level membership", () => {
 });
 
 describe("serializeItem", () => {
+  it("adds the live system with its derived values only with include:['prepared']", () => {
+    const item = {
+      id: "item-1",
+      name: "Scimitar",
+      type: "weapon",
+      system: { damage: { base: "1d6" }, activities: { attack: { labels: { toHit: "+4" } } } },
+      toObject() {
+        return { _id: "item-1", name: "Scimitar", type: "weapon", system: { damage: { base: "1d6" } } };
+      }
+    };
+
+    expect("prepared" in serializeItem(item)).toBe(false);
+    const result = serializeItem(item, { include: ["prepared"] });
+    expect(result.system).toEqual({ damage: { base: "1d6" } });
+    expect(result.prepared).toEqual({
+      system: { damage: { base: "1d6" }, activities: { attack: { labels: { toHit: "+4" } } } }
+    });
+    assertStructuredCloneable(result);
+  });
+
   it("serializes stored source holding a value structuredClone rejects through its JSON form", () => {
     class ForcedReplacement {
       toJSON() {
@@ -1800,11 +1820,7 @@ describe("serializeActor", () => {
       type: "character",
       items: [],
 
-      system: {
-        toObject(source) {
-          return source === false ? { attributes: { senses: { darkvision: 60 } } } : { attributes: {} };
-        }
-      },
+      system: { attributes: { senses: { darkvision: 60 } } },
       prototypeToken: {
         toObject(source) {
           return source === false ? { sight: { range: 60 } } : { sight: { range: 0 } };
@@ -1857,17 +1873,20 @@ describe("serializeActor", () => {
     expect(prepared.prototypeToken.light.color).toBe("#ff0000");
   });
 
-  it("degrades a derived subtree to null when its toObject(false) throws, without crashing", () => {
+  it("degrades a derived subtree to null when reading it throws, without crashing", () => {
     const actor = {
       id: "actor-1",
       name: "Valeros",
       type: "character",
       items: [],
-      system: {
-        toObject() {
-          throw new Error("unserializable derived system");
+      system: new Proxy(
+        {},
+        {
+          ownKeys() {
+            throw new Error("unserializable derived system");
+          }
         }
-      },
+      ),
       prototypeToken: null,
       detectionModes: null,
       toObject() {
@@ -1878,6 +1897,7 @@ describe("serializeActor", () => {
     const result = serializeActor(actor, { include: ["prepared"] });
     const prepared = /** @type {any} */ (result.prepared);
     expect(prepared.system).toBeNull();
+    expect(prepared.omitted).toEqual({ reason: "unreadable" });
     expect(prepared.prototypeToken).toBeNull();
     expect(prepared.detectionModes).toBeNull();
   });
@@ -2133,13 +2153,7 @@ describe("serializeToken", () => {
   it("appends the token's runtime vision + effective actor derived system only with include:['prepared']", () => {
     const token = {
       id: "token-1",
-      actor: {
-        system: {
-          toObject(source) {
-            return source === false ? { attributes: { senses: { darkvision: 90 } } } : { attributes: {} };
-          }
-        }
-      },
+      actor: { system: { attributes: { senses: { darkvision: 90 } } } },
       toObject(source) {
         if (source === false) {
           return {

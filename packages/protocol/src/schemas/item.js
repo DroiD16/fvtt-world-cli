@@ -10,6 +10,7 @@ import {
   emptyScopeProperties,
   idempotencyKeyProperty,
   includeProperty,
+  itemGetIncludeProperty,
   itemScopeProperties,
   nameFilterProperty,
   nameFilteredListSchema,
@@ -23,14 +24,14 @@ export const itemCommands = {
     required: ["itemId"],
     properties: {
       itemId: { type: "string", minLength: 1 },
-      ...includeProperty
+      ...itemGetIncludeProperty
     },
     additionalProperties: false
   }),
   "item.get-many": cmd({
     type: "object",
     required: ["ids"],
-    properties: { ...batchIdsProperty, ...includeProperty },
+    properties: { ...batchIdsProperty, ...itemGetIncludeProperty },
     additionalProperties: false
   }),
   "item.create": cmd(

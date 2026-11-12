@@ -6659,6 +6659,7 @@ describe("protocol contract", () => {
         itemId: "item-1",
         patch: { name: "Renamed" }
       },
+      "scene.token.item.get": { sceneId: "scene-1", tokenId: "token-1", itemId: "item-1" },
       "scene.token.get": { sceneId: "scene-1", tokenId: "token-1" },
       "scene.token.list": { sceneId: "scene-1" },
       "compendium.get": { pack: "world.x", entryId: "e-1" },
@@ -6677,6 +6678,13 @@ describe("protocol contract", () => {
       "items.effects",
       "prepared"
     ]);
+    const ITEM_GET_INCLUDE_ENUM = Object.freeze(["flags", "effects", "prepared"]);
+    const ITEM_GET_COMMANDS = Object.freeze([
+      "item.get",
+      "item.get-many",
+      "actor.item.get",
+      "scene.token.item.get"
+    ]);
     const TOKEN_INCLUDE_ENUM = Object.freeze(["prepared", "delta"]);
     const TOKEN_LIST_INCLUDE_ENUM = Object.freeze(["delta"]);
 
@@ -6684,6 +6692,7 @@ describe("protocol contract", () => {
     const SYSTEM_INFO_INCLUDE_ENUM = Object.freeze(["modules"]);
     const expectedIncludeEnum = (command) => {
       if (command === "actor.get" || command === "actor.get-many") return ACTOR_INCLUDE_ENUM;
+      if (ITEM_GET_COMMANDS.includes(command)) return ITEM_GET_INCLUDE_ENUM;
       if (command === "scene.token.get") return TOKEN_INCLUDE_ENUM;
       if (command === "scene.token.list") return TOKEN_LIST_INCLUDE_ENUM;
       if (command === "compendium.get" || command === "compendium.get-many") return COMPENDIUM_INCLUDE_ENUM;
@@ -6913,7 +6922,7 @@ describe("protocol contract", () => {
       });
       expect(COMMAND_DEFINITIONS["item.get-many"].paramsSchema.properties.include).toEqual({
         type: "array",
-        items: { type: "string", enum: ["flags", "effects"] }
+        items: { type: "string", enum: ["flags", "effects", "prepared"] }
       });
 
       for (const command of [

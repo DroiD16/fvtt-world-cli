@@ -269,6 +269,10 @@ export function parseActorIncludeFields(value: string) {
   ]);
 }
 
+export function parseItemGetIncludeFields(value: string) {
+  return parseAllowedIncludeFields(value, ["flags", "effects", "prepared"]);
+}
+
 export function parseTokenIncludeFields(value: string) {
   return parseAllowedIncludeFields(value, ["prepared", "delta"]);
 }

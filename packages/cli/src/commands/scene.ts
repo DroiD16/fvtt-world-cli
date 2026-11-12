@@ -71,6 +71,7 @@ import {
   addEmbeddedItemFieldOptions,
   addExecutableBehaviorFieldOptions,
   addRegionBehaviorFieldOptions,
+  addItemGetIncludeOption,
   addReservedIncludeOption,
   addSceneFieldOptions,
   addSceneSoundFieldOptions,
@@ -365,7 +366,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     .requiredOption("--token-id <tokenId>", "Token id")
     .option(
       "--include <fields>",
-      "Comma-separated extra fields to include (allowed: prepared, delta — the stored ActorDelta source, null for a linked token or when none is stored)",
+      "Comma-separated extra fields to include (allowed: prepared — the token's vision, light and its actor's system data with the derived values the system computed; delta — the stored ActorDelta source, null for a linked token or when none is stored)",
       parseTokenIncludeFields
     )
     .action(async function getSceneToken(options: SceneTokenGetOptions) {
@@ -500,19 +501,30 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       });
     }
   );
-  sceneTokenItem
-    .command("get")
-    .requiredOption("--scene-id <sceneId>", "Scene id")
-    .requiredOption("--token-id <tokenId>", "Token id")
-    .requiredOption("--item-id <itemId>", "Item id")
-    .action(async function getSceneTokenItem(options: { sceneId: string; tokenId: string; itemId: string }) {
-      await executeRemoteCommand({
-        commandName: "scene.token.item.get",
-        params: { sceneId: options.sceneId, tokenId: options.tokenId, itemId: options.itemId },
-        command: this,
-        dependencies
-      });
+  addItemGetIncludeOption(
+    sceneTokenItem
+      .command("get")
+      .requiredOption("--scene-id <sceneId>", "Scene id")
+      .requiredOption("--token-id <tokenId>", "Token id")
+      .requiredOption("--item-id <itemId>", "Item id")
+  ).action(async function getSceneTokenItem(options: {
+    sceneId: string;
+    tokenId: string;
+    itemId: string;
+    include?: string[];
+  }) {
+    await executeRemoteCommand({
+      commandName: "scene.token.item.get",
+      params: {
+        sceneId: options.sceneId,
+        tokenId: options.tokenId,
+        itemId: options.itemId,
+        ...(options.include ? { include: options.include } : {})
+      },
+      command: this,
+      dependencies
     });
+  });
   addReservedIncludeOption(
     addEmbeddedItemFieldOptions(
       addIdempotencyKeyOption(sceneTokenItem.command("create"))

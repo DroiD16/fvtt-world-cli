@@ -2,6 +2,7 @@ import { Command, Option } from "commander";
 
 import {
   parseActorIncludeFields,
+  parseItemGetIncludeFields,
   parseBoolean,
   parseCsvList,
   parseIncludeFields,
@@ -85,8 +86,16 @@ export function addReservedIncludeOption(
 export function addActorIncludeOption(command: Command): Command {
   return command.option(
     "--include <fields>",
-    "Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds derived data; flags/effects are always present, so those two have no effect)",
+    "Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds the actor's system data after the system computed its derived values, such as totals, modifiers and DCs — for an item's derived values use actor item get --include prepared; flags/effects are always present, so those two have no effect)",
     parseActorIncludeFields
+  );
+}
+
+export function addItemGetIncludeOption(command: Command): Command {
+  return command.option(
+    "--include <fields>",
+    "Comma-separated extra fields (prepared adds the item's system data after the system computed its derived values, such as attack bonuses, damage labels and save DCs; flags/effects are always present, so those two have no effect)",
+    parseItemGetIncludeFields
   );
 }
 

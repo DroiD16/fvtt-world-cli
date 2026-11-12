@@ -151,6 +151,10 @@ for each one. `id` is the public identifier; a `_id` mirror may accompany it. Va
 through `include` flags may be derived or version-dependent. Write them back only when the
 update schema explicitly accepts them. Actor reads return `itemCount` in place of owned items; add
 `--include items` when the task needs them, or use `actor item list` and `actor item get`.
+Stored `system` holds authored inputs only. Read a computed game value (armor class, skill total,
+attack bonus, save DC) from `.prepared.system` of `--include prepared`: `actor get` for the actor,
+`actor item get` for an owned item, `scene token item get` for an unlinked token's item. A
+`prepared.omitted` entry means the value was too large or unreadable, not that it is zero.
 
 ## Retry classification
 

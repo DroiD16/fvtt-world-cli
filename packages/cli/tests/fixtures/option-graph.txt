@@ -371,7 +371,7 @@ command scene token get
   summary=
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
   opt --token-id <tokenId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Token id
-  opt --include <fields> | parser=parseTokenIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: prepared, delta — the stored ActorDelta source, null for a linked token or when none is stored)
+  opt --include <fields> | parser=parseTokenIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: prepared — the token's vision, light and its actor's system data with the derived values the system computed; delta — the stored ActorDelta source, null for a linked token or when none is stored)
 
 command scene token create
   aliases=[]
@@ -475,6 +475,7 @@ command scene token item get
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
   opt --token-id <tokenId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Token id
   opt --item-id <itemId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Item id
+  opt --include <fields> | parser=parseItemGetIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (prepared adds the item's system data after the system computed its derived values, such as attack bonuses, damage labels and save DCs; flags/effects are always present, so those two have no effect)
 
 command scene token item create
   aliases=[]
@@ -1513,13 +1514,13 @@ command item get
   aliases=[]
   summary=
   opt --item-id <itemId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Item id
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present on this command, so this option currently has no effect
+  opt --include <fields> | parser=parseItemGetIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (prepared adds the item's system data after the system computed its derived values, such as attack bonuses, damage labels and save DCs; flags/effects are always present, so those two have no effect)
 
 command item get-many
   aliases=[]
   summary=
   opt --ids <list> | parser=parseIdList | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Comma-separated item ids (atomic: all must exist)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present on this command, so this option currently has no effect
+  opt --include <fields> | parser=parseItemGetIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (prepared adds the item's system data after the system computed its derived values, such as attack bonuses, damage labels and save DCs; flags/effects are always present, so those two have no effect)
 
 command item create
   aliases=[]
@@ -2908,13 +2909,13 @@ command actor get
   aliases=[]
   summary=
   opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Actor id
-  opt --include <fields> | parser=parseActorIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds derived data; flags/effects are always present, so those two have no effect)
+  opt --include <fields> | parser=parseActorIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds the actor's system data after the system computed its derived values, such as totals, modifiers and DCs — for an item's derived values use actor item get --include prepared; flags/effects are always present, so those two have no effect)
 
 command actor get-many
   aliases=[]
   summary=
   opt --ids <list> | parser=parseIdList | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Comma-separated actor ids (atomic: all must exist)
-  opt --include <fields> | parser=parseActorIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds derived data; flags/effects are always present, so those two have no effect)
+  opt --include <fields> | parser=parseActorIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds the actor's system data after the system computed its derived values, such as totals, modifiers and DCs — for an item's derived values use actor item get --include prepared; flags/effects are always present, so those two have no effect)
 
 command actor create
   aliases=[]
@@ -3040,7 +3041,7 @@ command actor item get
   summary=
   opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Actor id
   opt --item-id <itemId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Item id
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present on this command, so this option currently has no effect
+  opt --include <fields> | parser=parseItemGetIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (prepared adds the item's system data after the system computed its derived values, such as attack bonuses, damage labels and save DCs; flags/effects are always present, so those two have no effect)
 
 command actor item clone
   aliases=[]

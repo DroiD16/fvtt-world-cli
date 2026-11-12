@@ -7,6 +7,7 @@ import {
   freeformObjectSchema,
   idempotencyKeyProperty,
   includeProperty,
+  itemGetIncludeProperty,
   nameFilterProperty,
   nullableStringSchema,
   paginationProperties,
@@ -541,7 +542,8 @@ export const sceneEmbeddedCommands = {
     properties: {
       sceneId: { type: "string", minLength: 1 },
       tokenId: { type: "string", minLength: 1 },
-      itemId: { type: "string", minLength: 1 }
+      itemId: { type: "string", minLength: 1 },
+      ...itemGetIncludeProperty
     },
     additionalProperties: false
   }),

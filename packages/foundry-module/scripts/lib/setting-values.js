@@ -123,12 +123,12 @@ function getDataModelClass() {
   return typeof DataModel === "function" ? DataModel : null;
 }
 
-function isDataModelInstance(value) {
+export function isDataModelInstance(value) {
   const DataModel = getDataModelClass();
   return DataModel !== null && value instanceof DataModel;
 }
 
-function getColorClass() {
+export function getColorClass() {
   const scope = /** @type {any} */ (globalThis);
   const Color = scope.foundry?.utils?.Color ?? scope.Color;
 
@@ -141,7 +141,7 @@ function getColorClass() {
  * @param {number} numeric
  * @returns {string}
  */
-function colorToCss(numeric) {
+export function colorToCss(numeric) {
   if (!Number.isInteger(numeric) || numeric < 0 || numeric > 0xffffff) {
     return "";
   }
@@ -154,7 +154,7 @@ function colorToCss(numeric) {
  * @param {object} node
  * @returns {{ ok: boolean, value: any }}
  */
-function unbox(intrinsic, node) {
+export function unbox(intrinsic, node) {
   try {
     return { ok: true, value: intrinsic.call(node) };
   } catch {

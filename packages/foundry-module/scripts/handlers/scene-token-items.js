@@ -37,7 +37,7 @@ export function createSceneTokenItemHandlers() {
         sceneId: params.sceneId,
         tokenId: params.tokenId,
         actorLink,
-        item: serializeItem(item)
+        item: serializeItem(item, { include: params.include })
       };
     },
 

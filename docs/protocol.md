@@ -185,6 +185,21 @@ version; [Foundry compatibility](compatibility.md) lists them.
 World document reads carry `compendiumSource` and `duplicateSource`, hoisted from Foundry's
 `_stats` and `null` when absent.
 
+`include: ["prepared"]` adds `prepared.system`, the live `system` data after the game system computed
+its derived values, such as totals, modifiers and save DCs. It is accepted by `actor.get`,
+`actor.get-many`, `scene.token.get`, `item.get`, `item.get-many`, `actor.item.get` and
+`scene.token.item.get`. A token's and a token item's values come from the token's actor, which for an
+unlinked token includes its overrides. The bridge reads every field the system's data model declares
+and every plain property the system added during preparation. It does not call class getters, so a
+value a system exposes only through a getter is absent. Nested documents appear as
+`{ documentName, id, uuid }`, keyed collections as objects keyed by id, sets as arrays, and a value
+with no JSON form as `{"$unserializable": "<reason>"}`. A value over 512 KiB, 50,000 nodes or 32
+levels, or one that throws while being read, gives `prepared.system: null` and `prepared.omitted`
+with `reason` (`too-large` or `unreadable`) and, for `too-large`, the `limit` (`bytes`, `nodes` or
+`depth`) and its `max`. The read itself still succeeds. Actor results also carry
+`prepared.prototypeToken` and `prepared.detectionModes`; token results carry `detectionModes`,
+`sight` and `light`. Prepared values are derived: writing them back stores them as source.
+
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.
 

@@ -112,6 +112,9 @@ var SETTING_VALUE_MAX_DEPTH = 32;
 var SETTING_VALUE_MAX_NODES = 2e4;
 var SETTING_VALUE_MAX_BYTES = 256 * 1024;
 var SERIALIZE_OMISSIONS_MAX = 100;
+var PREPARED_VALUE_MAX_DEPTH = 32;
+var PREPARED_VALUE_MAX_NODES = 5e4;
+var PREPARED_VALUE_MAX_BYTES = 512 * 1024;
 var MACRO_EXECUTE_TIMEOUT_DEFAULT_MS = 3e4;
 var MACRO_EXECUTE_TIMEOUT_MAX_MS = 3e5;
 var SEARCH_MODES = Object.freeze(["name", "full"]);
@@ -322,6 +325,9 @@ var dryRunProperty = {
 };
 var includeProperty = {
   include: { type: "array", items: { type: "string", enum: ["flags", "effects"] } }
+};
+var itemGetIncludeProperty = {
+  include: { type: "array", items: { type: "string", enum: ["flags", "effects", "prepared"] } }
 };
 var actorIncludeProperty = {
   include: {
@@ -792,7 +798,7 @@ var actorCommands = {
     properties: {
       actorId: { type: "string", minLength: 1 },
       itemId: { type: "string", minLength: 1 },
-      ...includeProperty
+      ...itemGetIncludeProperty
     },
     additionalProperties: false
   }),
@@ -2071,14 +2077,14 @@ var itemCommands = {
     required: ["itemId"],
     properties: {
       itemId: { type: "string", minLength: 1 },
-      ...includeProperty
+      ...itemGetIncludeProperty
     },
     additionalProperties: false
   }),
   "item.get-many": cmd({
     type: "object",
     required: ["ids"],
-    properties: { ...batchIdsProperty, ...includeProperty },
+    properties: { ...batchIdsProperty, ...itemGetIncludeProperty },
     additionalProperties: false
   }),
   "item.create": cmd(
@@ -3452,7 +3458,8 @@ var sceneEmbeddedCommands = {
     properties: {
       sceneId: { type: "string", minLength: 1 },
       tokenId: { type: "string", minLength: 1 },
-      itemId: { type: "string", minLength: 1 }
+      itemId: { type: "string", minLength: 1 },
+      ...itemGetIncludeProperty
     },
     additionalProperties: false
   }),
@@ -6409,6 +6416,9 @@ export {
   POLICY_DISCOVERY_TIMEOUT_MS,
   POLICY_EXEMPT_COMMANDS,
   POLICY_SNAPSHOT_COMMAND,
+  PREPARED_VALUE_MAX_BYTES,
+  PREPARED_VALUE_MAX_DEPTH,
+  PREPARED_VALUE_MAX_NODES,
   PROTOCOL_COMPONENTS,
   PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
