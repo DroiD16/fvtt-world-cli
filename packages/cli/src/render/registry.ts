@@ -804,7 +804,10 @@ export const RENDERERS = registerRenderers([
     empty: "No pages found.",
     heading: "Pages",
     prefix: (result) => [`journal: ${result.journalId}`],
-    row: (page) => `${page.id}\t${page.name ?? ""}\t${page.type ?? ""}\tsort=${page.sort ?? 0}`
+    row: (page) =>
+      `${page.id}\t${page.name ?? ""}\t${page.type ?? ""}\tsort=${page.sort ?? 0}${
+        page.textFormat === 2 ? "\tformat=markdown" : page.textFormat === 1 ? "\tformat=html" : ""
+      }`
   }),
   detailRenderer(["journal.page.get", "journal.page.create", "journal.page.update"], (result) =>
     renderJournalPageDetails(result.journalId, result.page)

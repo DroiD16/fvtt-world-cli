@@ -113,9 +113,7 @@ export function serializeJournalPageSummary(page) {
     sort: page.sort ?? data.sort ?? 0,
     category: page.category ?? data.category ?? null,
     src: page.src ?? data.src ?? null,
-    title: data.title ? cloneValue(data.title) : null,
-    image: data.image ? cloneValue(data.image) : null,
-    video: data.video ? cloneValue(data.video) : null
+    textFormat: (page.type ?? data.type) === "text" ? (data.text?.format ?? null) : null
   };
 }
 

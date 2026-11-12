@@ -1454,9 +1454,18 @@ describe("journal.page commands", () => {
     expect(response.result.hasMore).toBe(true);
     expect(response.result.pages[0]).toMatchObject({ id: "gp-image", name: "Cover", type: "image" });
     for (const page of response.result.pages) {
-      expect(page).not.toHaveProperty("text");
-      expect(page).not.toHaveProperty("system");
+      expect(Object.keys(page).sort()).toEqual(
+        ["_id", "category", "id", "name", "sort", "src", "textFormat", "type"].sort()
+      );
     }
+    expect(response.result.pages[0].textFormat).toBeNull();
+  });
+
+  it("tells an HTML text page from a markdown one in the page list", async () => {
+    const response = await run("journal.page.list", { journalId: "journal-guard", name: "notes" });
+    expect(response.result.pages.map((page) => [page.id, page.textFormat])).toEqual([["gp-md", 2]]);
+    const html = await run("journal.page.list", { journalId: "journal-guard", name: "overview" });
+    expect(html.result.pages.map((page) => [page.id, page.textFormat])).toEqual([["gp-text", 1]]);
   });
 
   it("filters the page list by name", async () => {

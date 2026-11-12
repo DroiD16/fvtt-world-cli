@@ -3174,9 +3174,12 @@ function runPageReferenceItemBulkCoverage(summary, { targetSceneId, actorId, sta
     const list = expectOk(summary, "journal.page.list", runFoundryctl(pageArgs("list")));
     markAndPush(
       summary,
-      "journal.page.list(summary row without text)",
+      "journal.page.list(summary row without text, with its text format)",
       Boolean(
-        list?.total === 1 && list.pages?.[0]?.id === introPageId && !("text" in (list.pages?.[0] ?? {}))
+        list?.total === 1 &&
+        list.pages?.[0]?.id === introPageId &&
+        !("text" in (list.pages?.[0] ?? {})) &&
+        list.pages?.[0]?.textFormat === 1
       ),
       { pages: list?.pages ?? null }
     );
