@@ -251,23 +251,41 @@ function createStringMatcher(target) {
 }
 
 /**
+ * @param {string} html
+ * @returns {string[]}
+ */
+function textNodeContents(html) {
+  const Parser = /** @type {any} */ (globalThis).DOMParser;
+  if (typeof Parser !== "function") return [];
+  const parsed = new Parser().parseFromString(html, "text/html");
+  const walker = parsed.createTreeWalker(parsed, /** @type {any} */ (globalThis).NodeFilter?.SHOW_TEXT ?? 4);
+  const texts = [];
+  while (walker.nextNode()) texts.push(String(walker.currentNode.textContent ?? ""));
+  return texts;
+}
+
+/**
  * @param {string} text
  * @param {string} ownerUuid
  * @returns {string[]}
  */
 function resolveRelativeLinks(text, ownerUuid) {
+  if (!/[@&]/.test(text)) return [];
+  const nodes = textNodeContents(text).filter((node) => /@UUID\[\.|@Embed\[/i.test(node));
+  if (nodes.length === 0) return [];
   const parseUuid = /** @type {any} */ (globalThis).foundry?.utils?.parseUuid;
   const resolveDocument = /** @type {any} */ (globalThis).fromUuidSync;
   if (typeof parseUuid !== "function" || typeof resolveDocument !== "function") return [];
   const relative = resolveDocument(ownerUuid, { strict: false });
   if (!relative) return [];
-  const candidates = [];
-  for (const match of text.matchAll(UUID_LINK)) {
-    if (match[1].startsWith(".")) candidates.push(match[1]);
-  }
   const textEditor = /** @type {any} */ (globalThis).foundry?.applications?.ux?.TextEditor;
-  if (typeof textEditor?._parseEmbedConfig === "function") {
-    for (const match of text.matchAll(EMBED_LINK)) {
+  const candidates = [];
+  for (const node of nodes) {
+    for (const match of node.matchAll(UUID_LINK)) {
+      if (match[1].startsWith(".")) candidates.push(match[1]);
+    }
+    if (typeof textEditor?._parseEmbedConfig !== "function") continue;
+    for (const match of node.matchAll(EMBED_LINK)) {
       let config = null;
       try {
         config = textEditor._parseEmbedConfig(match[1], { relative });
@@ -526,7 +544,7 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
         /** @type {keyof typeof RELATIVE_LINK_FIELDS} */ (documentName)
       ] ?? []) {
         const text = readAt(source, [...field]);
-        if (typeof text !== "string" || !/@UUID\[\.|@Embed\[/i.test(text)) continue;
+        if (typeof text !== "string") continue;
         for (const resolved of resolveRelativeLinks(text, owner.uuid)) {
           if (resolved === target.uuid || resolved.startsWith(`${target.uuid}.`)) {
             record(owner, [...field], { match: "relative", matchedUuid: resolved });

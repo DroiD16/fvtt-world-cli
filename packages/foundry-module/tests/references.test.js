@@ -269,6 +269,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete globalThis.fromUuidSync;
+  Reflect.deleteProperty(globalThis, "DOMParser");
   delete globalThis.CONST;
   vi.restoreAllMocks();
 });
@@ -299,21 +300,39 @@ function relativeDocument(uuid) {
  * @param {{ relative: { uuid: string, documentName: string, parentUuid: string | null } }} options
  */
 function parseRelativeUuid(uuid, { relative }) {
+  const resolved = (full) => {
+    const [documentType, documentId, ...embedded] = full.split(".");
+    return { uuid: full, documentType, documentId, embedded };
+  };
   if (!uuid.startsWith(".")) {
     const parts = uuid.split(".");
     return { uuid, documentId: parts.length >= 2 ? parts[1] : undefined };
   }
   const parts = uuid.slice(1).split(".");
-  if (parts.length % 2 === 0) {
-    return { uuid: `${relative.uuid}.${parts.join(".")}`, documentId: parts.at(-1) };
-  }
-  if (relative.parentUuid) {
+  if (parts.length % 2 === 0) return resolved(`${relative.uuid}.${parts.join(".")}`);
+  if (relative.parentUuid)
+    return resolved(`${relative.parentUuid}.${relative.documentName}.${parts.join(".")}`);
+  return resolved(`${relative.documentName}.${parts.at(-1)}`);
+}
+
+class TextNodeParser {
+  parseFromString(html) {
+    const texts = html
+      .split(/<[^>]*>/)
+      .filter((text) => text.length > 0)
+      .map((text) => text.replaceAll("&quot;", '"').replaceAll("&#91;", "[").replaceAll("&amp;", "&"));
     return {
-      uuid: `${relative.parentUuid}.${relative.documentName}.${parts.join(".")}`,
-      documentId: parts.at(-1)
+      createTreeWalker: () => {
+        let index = -1;
+        return {
+          get currentNode() {
+            return { textContent: texts[index] };
+          },
+          nextNode: () => ++index < texts.length
+        };
+      }
     };
   }
-  return { uuid: `${relative.documentName}.${parts.at(-1)}`, documentId: parts.at(-1) };
 }
 
 /**
@@ -326,7 +345,7 @@ function parseEmbedConfig(raw, options) {
   for (const part of raw.split(/\s+/)) {
     const [key, value] = part.split("=");
     if (value === undefined) values.push(key);
-    else if (key === "uuid") uuid = value;
+    else if (key === "uuid") uuid = value.replace(/(^"|"$)/g, "");
   }
   uuid ??= values.find((value) => parseRelativeUuid(value, options)?.documentId);
   return { values, uuid };
@@ -753,6 +772,7 @@ describe("world.references lookup", () => {
         utils: { parseUuid: vi.fn(parseRelativeUuid) },
         applications: { ux: { TextEditor: { _parseEmbedConfig: vi.fn(parseEmbedConfig) } } }
       };
+      Object.assign(globalThis, { DOMParser: TextNodeParser });
       globalThis.fromUuidSync = vi.fn((uuid) => relativeDocument(uuid));
       globalThis.game.journal = collection("JournalEntry", [
         {
@@ -876,6 +896,35 @@ describe("world.references lookup", () => {
           })
         }
       );
+    });
+
+    it("reads relative links from decoded text nodes only, as Foundry's enrichment does", () => {
+      globalThis.game.journal = collection("JournalEntry", [
+        {
+          _id: "journal000000001",
+          name: "Lore",
+          pages: [
+            {
+              _id: "page000000000001",
+              name: "Index",
+              text: {
+                content:
+                  '<p>@Embed[uuid=&quot;.page000000000002&quot;]</p><p><span title="@UUID[.page000000000003]">x</span></p>' +
+                  "<p>@UUID&#91;.page000000000004]</p>"
+              }
+            },
+            { _id: "page000000000002", name: "Lair" },
+            { _id: "page000000000003", name: "Map" },
+            { _id: "page000000000004", name: "Hall" }
+          ]
+        }
+      ]);
+      const total = (pageId) =>
+        runReferenceLookup({ uuid: `JournalEntry.journal000000001.JournalEntryPage.${pageId}` }).total;
+
+      expect(total("page000000000002")).toBe(1);
+      expect(total("page000000000003")).toBe(0);
+      expect(total("page000000000004")).toBe(1);
     });
 
     it("matches no relative link of another journal or outside an enriched field, and counts one inside the target as self", () => {
