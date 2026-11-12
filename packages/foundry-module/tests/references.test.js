@@ -927,6 +927,17 @@ describe("world.references lookup", () => {
       expect(total("page000000000004")).toBe(1);
     });
 
+    it("drops a relative parse whose uuid is not the path Foundry would follow", () => {
+      globalThis.foundry.utils.parseUuid = vi.fn(() => ({
+        uuid: "RollTable.result0000000002",
+        documentType: "RollTable",
+        documentId: "result0000000002",
+        embedded: ["x", "TableResult"]
+      }));
+
+      expect(runReferenceLookup({ uuid: "RollTable.result0000000002" }).total).toBe(0);
+    });
+
     it("matches no relative link of another journal or outside an enriched field, and counts one inside the target as self", () => {
       const lair = runReferenceLookup({
         uuid: "JournalEntry.journal000000001.JournalEntryPage.page000000000002"

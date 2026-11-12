@@ -265,6 +265,15 @@ function textNodeContents(html) {
 }
 
 /**
+ * @param {any} parsed
+ */
+function isConsistentParse(parsed) {
+  if (typeof parsed?.uuid !== "string") return false;
+  // v13 returns, for some relative forms, a uuid that differs from the path fromUuid follows.
+  return parsed.uuid === [parsed.documentType, parsed.documentId, ...(parsed.embedded ?? [])].join(".");
+}
+
+/**
  * @param {string} text
  * @param {string} ownerUuid
  * @returns {string[]}
@@ -297,8 +306,8 @@ function resolveRelativeLinks(text, ownerUuid) {
   }
   const resolved = [];
   for (const candidate of candidates) {
-    const uuid = parseUuid(candidate, { relative })?.uuid;
-    if (typeof uuid === "string") resolved.push(uuid);
+    const parsed = parseUuid(candidate, { relative });
+    if (isConsistentParse(parsed)) resolved.push(parsed.uuid);
   }
   return resolved;
 }
