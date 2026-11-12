@@ -15,28 +15,24 @@ const UUID_LINK = /@UUID\[([^#\]]+)(?:#[^\]]+)?]/g;
 const EMBED_LINK = /@Embed\[([^\]]+)]/gi;
 
 const REFERENCE_SCOPE_COLLECTIONS = Object.freeze({
-  ...Object.fromEntries(
-    Object.entries(SCOPE_COLLECTIONS).map(([scope, key]) => [scope, (/** @type {any} */ game) => game?.[key]])
-  ),
-  folder: (/** @type {any} */ game) => game?.folders,
-  setting: (/** @type {any} */ game) => game?.settings?.storage?.get?.("world"),
-  chat: (/** @type {any} */ game) => game?.messages
+  ...SCOPE_COLLECTIONS,
+  folder: "folders",
+  chat: "messages"
 });
 
+/** @type {Readonly<Record<string, string[]>>} */
 const RELATIVE_LINK_FIELDS = Object.freeze({
-  JournalEntryPage: Object.freeze([Object.freeze(["text", "content"])]),
-  RollTable: Object.freeze([Object.freeze(["description"])]),
-  TableResult: Object.freeze([Object.freeze(["description"])])
+  JournalEntryPage: ["text", "content"],
+  RollTable: ["description"],
+  TableResult: ["description"]
 });
 
 /**
  * @param {string} documentName
  */
 function isLegacyLinkType(documentName) {
-  const constants = /** @type {any} */ (globalThis).CONST ?? {};
-  const linkTypes = Array.isArray(constants.DOCUMENT_LINK_TYPES) ? constants.DOCUMENT_LINK_TYPES : [];
-  const worldTypes = Array.isArray(constants.WORLD_DOCUMENT_TYPES) ? constants.WORLD_DOCUMENT_TYPES : [];
-  return linkTypes.includes(documentName) && worldTypes.includes(documentName);
+  const { DOCUMENT_LINK_TYPES, WORLD_DOCUMENT_TYPES } = /** @type {any} */ (globalThis).CONST;
+  return DOCUMENT_LINK_TYPES.includes(documentName) && WORLD_DOCUMENT_TYPES.includes(documentName);
 }
 
 /**
@@ -94,18 +90,13 @@ export function parseReferenceTarget(uuid) {
       compendium: `${scope}.${pack}`,
       documentName: chain[chain.length - 2],
       id: chain[chain.length - 1],
-      primary: chain.length === 2,
       parent: describeParent(["Compendium", scope, pack], chain)
     };
   }
   if (!isTypeIdChain(parts)) throw invalidUuid(uuid);
-  const constants = /** @type {any} */ (globalThis).CONST ?? {};
-  const worldTypes = Array.isArray(constants.WORLD_DOCUMENT_TYPES) ? constants.WORLD_DOCUMENT_TYPES : null;
-  const embeddedTypes = Array.isArray(constants.EMBEDDED_DOCUMENT_TYPES)
-    ? constants.EMBEDDED_DOCUMENT_TYPES
-    : [];
-  if (parts.length === 2 && worldTypes !== null && !worldTypes.includes(parts[0])) {
-    if (!embeddedTypes.includes(parts[0])) throw invalidUuid(uuid);
+  const { WORLD_DOCUMENT_TYPES, EMBEDDED_DOCUMENT_TYPES } = /** @type {any} */ (globalThis).CONST;
+  if (parts.length === 2 && !WORLD_DOCUMENT_TYPES.includes(parts[0])) {
+    if (!EMBEDDED_DOCUMENT_TYPES.includes(parts[0])) throw invalidUuid(uuid);
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
       `${parts[0]} is an embedded document type, so ${uuid} names no single document: its id is unique only ` +
@@ -119,7 +110,6 @@ export function parseReferenceTarget(uuid) {
     compendium: null,
     documentName: parts[parts.length - 2],
     id: parts[parts.length - 1],
-    primary: parts.length === 2,
     parent: describeParent([], parts)
   };
 }
@@ -130,8 +120,7 @@ export function parseReferenceTarget(uuid) {
 function describeTarget(target) {
   let document = null;
   try {
-    const resolve = /** @type {any} */ (globalThis).fromUuidSync;
-    document = typeof resolve === "function" ? resolve(target.uuid, { strict: false }) : null;
+    document = /** @type {any} */ (globalThis).fromUuidSync(target.uuid, { strict: false });
   } catch {
     document = null;
   }
@@ -156,7 +145,7 @@ function escapeRegExp(text) {
  * @param {ReturnType<typeof parseReferenceTarget>} target
  */
 function buildLegacyLinkPatterns(target) {
-  if (!target.primary) return [];
+  if (target.parent !== null) return [];
   if (target.compendium === null) {
     return isLegacyLinkType(target.documentName)
       ? [new RegExp(`@${target.documentName}\\[${escapeRegExp(target.id)}(?:#[^\\]]*)?\\]`)]
@@ -174,15 +163,10 @@ function buildLegacyLinkPatterns(target) {
  */
 function referenceNeedles(target) {
   const needles = [target.uuid];
-  if (target.compendium !== null && target.primary) {
+  if (target.compendium !== null && target.parent === null) {
     needles.push(`Compendium.${target.compendium}.${target.id}`);
   }
   return needles;
-}
-
-function knownDocumentTypes() {
-  const allTypes = /** @type {any} */ (globalThis).CONST?.ALL_DOCUMENT_TYPES;
-  return new Set(Array.isArray(allTypes) ? allTypes : []);
 }
 
 /**
@@ -191,7 +175,7 @@ function knownDocumentTypes() {
  */
 function createKeyMatcher(target, matchString) {
   const needles = referenceNeedles(target);
-  const documentTypes = knownDocumentTypes();
+  const documentTypes = new Set(/** @type {any} */ (globalThis).CONST.ALL_DOCUMENT_TYPES);
   const continuesLongerUuid = (/** @type {string} */ before) => {
     const segments = before ? before.split(".") : [];
     if (segments.at(-3) === "Compendium") return true;
@@ -304,13 +288,12 @@ function resolveRelativeLinks(text, ownerUuid) {
   if (typeof parseUuid !== "function" || typeof resolveDocument !== "function") return [];
   const relative = resolveDocument(ownerUuid, { strict: false });
   if (!relative) return [];
-  const textEditor = /** @type {any} */ (globalThis).foundry?.applications?.ux?.TextEditor;
+  const textEditor = /** @type {any} */ (globalThis).foundry.applications.ux.TextEditor;
   const candidates = [];
   for (const node of nodes) {
     for (const match of node.matchAll(UUID_LINK)) {
       if (match[1].startsWith(".")) candidates.push(match[1]);
     }
-    if (typeof textEditor?._parseEmbedConfig !== "function") continue;
     for (const match of node.matchAll(EMBED_LINK)) {
       let config = null;
       try {
@@ -423,9 +406,6 @@ function readAt(value, path) {
   return current;
 }
 
-// Foundry resolves a Combatant whose sceneId is null through its Combat's scene (Combatant#token).
-const NULL_PARENT_CONTAINER_FIELDS = Object.freeze({ "Combatant.sceneId": "scene" });
-
 /**
  * @typedef {{ documentName: string, source: Record<string, any>, uuid: string }} ReferenceOwner
  */
@@ -434,9 +414,8 @@ const NULL_PARENT_CONTAINER_FIELDS = Object.freeze({ "Combatant.sceneId": "scene
  * @param {ReturnType<typeof parseReferenceTarget>} target
  * @param {ReferenceOwner & { container: ReferenceOwner | null }} owner
  * @param {{ segments: string[] }} foreignKey
- * @param {string[]} path
  */
-function foreignKeyNamesTargetParent(target, owner, foreignKey, path) {
+function foreignKeyNamesTargetParent(target, owner, foreignKey) {
   const parent = target.parent;
   if (parent === null) return true;
   if (parent.embedded) return false;
@@ -449,10 +428,15 @@ function foreignKeyNamesTargetParent(target, owner, foreignKey, path) {
   );
   if (sibling) {
     const siblingField = sibling.segments[sibling.segments.length - 1];
-    const siblingValue = readAt(owner.source, [...path.slice(0, -1), siblingField]);
-    const containerField = NULL_PARENT_CONTAINER_FIELDS[`${owner.documentName}.${siblingField}`];
-    if (siblingValue == null && containerField && owner.container !== null) {
-      return readAt(owner.container.source, [containerField]) === parent.id;
+    const siblingValue = readAt(owner.source, [...prefix, siblingField]);
+    // Foundry resolves a Combatant whose sceneId is null through its Combat's scene (Combatant#token).
+    if (
+      siblingValue == null &&
+      owner.documentName === "Combatant" &&
+      siblingField === "sceneId" &&
+      owner.container !== null
+    ) {
+      return readAt(owner.container.source, ["scene"]) === parent.id;
     }
     return siblingValue === parent.id;
   }
@@ -545,8 +529,7 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
           foreignKeyNamesTargetParent(
             target,
             { documentName, source, uuid: owner.uuid, container },
-            foreignKey,
-            foreignKey.segments
+            foreignKey
           )
         ) {
           record(owner, [...prefix, ...foreignKey.segments], { match: "id" });
@@ -560,16 +543,12 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
       }
     }
 
-    if (prefix.length === 0) {
-      for (const field of RELATIVE_LINK_FIELDS[
-        /** @type {keyof typeof RELATIVE_LINK_FIELDS} */ (documentName)
-      ] ?? []) {
-        const text = readAt(source, [...field]);
-        if (typeof text !== "string") continue;
-        for (const resolved of resolveRelativeLinks(text, owner.uuid)) {
-          if (resolved === target.uuid || resolved.startsWith(`${target.uuid}.`)) {
-            record(owner, [...field], { match: "relative", matchedUuid: resolved });
-          }
+    const relativeField = prefix.length === 0 ? RELATIVE_LINK_FIELDS[documentName] : undefined;
+    const relativeText = relativeField ? readAt(source, relativeField) : undefined;
+    if (relativeField && typeof relativeText === "string") {
+      for (const resolved of resolveRelativeLinks(relativeText, owner.uuid)) {
+        if (resolved === target.uuid || resolved.startsWith(`${target.uuid}.`)) {
+          record(owner, relativeField, { match: "relative", matchedUuid: resolved });
         }
       }
     }
@@ -623,9 +602,9 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
   };
 
   for (const scopeName of scopes) {
-    walkCollection(
-      REFERENCE_SCOPE_COLLECTIONS[/** @type {keyof typeof REFERENCE_SCOPE_COLLECTIONS} */ (scopeName)]?.(game)
-    );
+    const collection =
+      REFERENCE_SCOPE_COLLECTIONS[/** @type {keyof typeof REFERENCE_SCOPE_COLLECTIONS} */ (scopeName)];
+    walkCollection(scopeName === "setting" ? game.settings?.storage?.get("world") : game[collection]);
   }
   walkCollection(/** @type {any} */ (game)?.users);
 

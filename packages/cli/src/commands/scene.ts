@@ -407,7 +407,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     .option("--patch-json <json>", "Full/extra token patch as a JSON object (merged last)")
     .addHelpText(
       "after",
-      '\nA patch with "delta": {"items": []} leaves the token\'s item overrides in place. To drop every token-level override, use scene token restore-delta; to change single items, use scene token item update/delete.'
+      '\nA patch with "delta": {"items": []} keeps the token\'s item overrides. scene token restore-delta drops every token override; scene token item update/delete changes single items.'
     )
     .action(async function updateSceneToken(
       options: TokenFieldOptions & { sceneId: string; tokenId: string; patchJson?: string }

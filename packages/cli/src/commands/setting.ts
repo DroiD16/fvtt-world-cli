@@ -50,7 +50,7 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
     .requiredOption("--key <key>", "Setting key within the namespace")
     .addHelpText(
       "after",
-      `\nA value node the bridge cannot serialize (an accessor property, a function, a circular reference) comes back as {"$unserializable": "<reason>"} and is listed in .result.setting.valueOmissions (at most ${SERIALIZE_OMISSIONS_MAX} entries; valueOmissionsTruncated marks a longer list); the bridge never calls the accessor. Such a value is incomplete: writing it back with setting set would store the markers as data.`
+      `\nA value node with no JSON form (an accessor property, a function, a circular reference) comes back as {"$unserializable": "<reason>"} and is listed in .result.setting.valueOmissions (at most ${SERIALIZE_OMISSIONS_MAX} entries; valueOmissionsTruncated marks a longer list). Such a value is incomplete: writing it back with setting set stores the markers as data.`
     )
     .action(async function getSetting(options: { namespace: string; key: string }) {
       await executeRemoteCommand({
@@ -70,10 +70,7 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
       'Comma-separated setting ids in "namespace.key" form (e.g. core.chatBubbles,my-module.apiKey)',
       parseIdList
     )
-    .addHelpText(
-      "after",
-      "\nEach row reports unserializable value parts the way setting get does, in valueOmissions."
-    )
+    .addHelpText("after", "\nEach row reports omissions like setting get, in valueOmissions.")
     .action(async function getManySettings(options: { ids: string[] }) {
       await executeRemoteCommand({
         commandName: "setting.get-many",
@@ -94,7 +91,7 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
     )
     .addHelpText(
       "after",
-      '\nprevious and value are reported like setting get, with previousOmissions/valueOmissions for parts replaced by {"$unserializable": "<reason>"}. A value copied from a read with omissions carries those markers: writing it stores them as data, so rebuild the value without them first.'
+      '\nprevious and value report omissions like setting get, in previousOmissions and valueOmissions. {"$unserializable": ...} markers in --value-json are stored as data.'
     )
     .action(async function setSetting(options: { namespace: string; key: string; valueJson: unknown }) {
       await executeRemoteCommand({

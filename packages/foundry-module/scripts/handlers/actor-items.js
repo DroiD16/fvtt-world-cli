@@ -6,7 +6,6 @@ import {
   deleteActorItem,
   deleteEmbeddedItemMany,
   getActorItemById,
-  getEmbeddedItemDocumentClass,
   importActorItemFromCompendium,
   prepareEmbeddedItemCreateData,
   prepareEmbeddedItemUpdateData,
@@ -70,7 +69,6 @@ function createActorItemBatchHandlers() {
           return item;
         },
         prepare: (patch) => prepareEmbeddedItemUpdateData(patch),
-        documentClass: getEmbeddedItemDocumentClass(actor),
         diff: (document, patch) => computeDocumentUpdateDiff(document, patch),
         mergePreview: (document, patch) => previewDocumentUpdate(document, patch),
         update: (entries) => updateEmbeddedItemMany(actor, entries),

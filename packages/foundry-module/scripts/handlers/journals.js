@@ -233,11 +233,7 @@ function getJournalPageById(journalId, pageId) {
  * @param {any} journal
  */
 function sortedJournalPages(journal) {
-  const pages = journal.pages ? Array.from(journal.pages) : [];
-  return pages
-    .map((page, index) => ({ page, index, sort: Number.isFinite(page?.sort) ? page.sort : 0 }))
-    .sort((a, b) => a.sort - b.sort || a.index - b.index)
-    .map((entry) => entry.page);
+  return Array.from(journal.pages ?? []).sort((a, b) => a.sort - b.sort);
 }
 
 export function createJournalHandlers() {

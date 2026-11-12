@@ -191,35 +191,6 @@ export function serializeValueWithOmissions(value, limits = {}) {
   /** @type {Array<{ path: string, reason: string }>} */
   const omissions = [];
   let omissionsTruncated = false;
-  const serialized = serializeValue(value, limits, (reason, path) => {
-    if (omissions.length < SERIALIZE_OMISSIONS_MAX) {
-      omissions.push({ path: boundPath(path), reason });
-    } else {
-      omissionsTruncated = true;
-    }
-  });
-  return { value: serialized, omissions, omissionsTruncated };
-}
-
-/**
- * @param {string} prefix
- * @param {ReturnType<typeof serializeValueWithOmissions>} read
- */
-export function omissionFields(prefix, read) {
-  if (read.omissions.length === 0) return {};
-  return {
-    [`${prefix}Omissions`]: read.omissions,
-    ...(read.omissionsTruncated ? { [`${prefix}OmissionsTruncated`]: true } : {})
-  };
-}
-
-/**
- * @param {unknown} value
- * @param {{ maxDepth?: number, maxNodes?: number, maxBytes?: number }} limits
- * @param {(reason: string, path: string) => void} omit
- * @returns {unknown}
- */
-function serializeValue(value, limits, omit) {
   const maxDepth = limits.maxDepth ?? SETTING_VALUE_MAX_DEPTH;
   const maxNodes = limits.maxNodes ?? SETTING_VALUE_MAX_NODES;
   const maxBytes = limits.maxBytes ?? SETTING_VALUE_MAX_BYTES;
@@ -236,7 +207,11 @@ function serializeValue(value, limits, omit) {
    * @param {string} path
    */
   const unserializable = (reason, path) => {
-    omit(reason, path);
+    if (omissions.length < SERIALIZE_OMISSIONS_MAX) {
+      omissions.push({ path: boundPath(path), reason });
+    } else {
+      omissionsTruncated = true;
+    }
     chargeBytes(jsonStringByteLength(UNSERIALIZABLE_MARKER_KEY) + jsonStringByteLength(reason) + 3, path);
     return { [UNSERIALIZABLE_MARKER_KEY]: reason };
   };
@@ -475,5 +450,17 @@ function serializeValue(value, limits, omit) {
     }
   };
 
-  return walk(value, "$", 0);
+  return { value: walk(value, "$", 0), omissions, omissionsTruncated };
+}
+
+/**
+ * @param {string} prefix
+ * @param {ReturnType<typeof serializeValueWithOmissions>} read
+ */
+export function omissionFields(prefix, read) {
+  if (read.omissions.length === 0) return {};
+  return {
+    [`${prefix}Omissions`]: read.omissions,
+    ...(read.omissionsTruncated ? { [`${prefix}OmissionsTruncated`]: true } : {})
+  };
 }

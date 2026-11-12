@@ -169,11 +169,6 @@ export function previewPreparedEmbeddedItemCreate(parent, preparedData) {
   return previewDocumentCreate(resolveEmbeddedDocumentClass(parent?.items, "Item"), preparedData, { parent });
 }
 
-/** @param {any} parent */
-export function getEmbeddedItemDocumentClass(parent) {
-  return resolveEmbeddedDocumentClass(parent?.items, "Item") ?? null;
-}
-
 export async function createEmbeddedItemMany(parent, payloads) {
   if (typeof parent?.createEmbeddedDocuments !== "function") {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Embedded document create API is not available");

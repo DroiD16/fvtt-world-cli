@@ -207,10 +207,9 @@ export function registerJournal({ program, dependencies }: RegistrationContext) 
     .description("Journal-embedded page commands (one page at a time; journal update batches several)");
   journalPage.addHelpText(
     "after",
-    "\nResult key (--json): .result.page (single/write) / .result.pages[] (list), with .result.journalId alongside." +
-      "\nlist returns summaries without text, system or flags; each carries textFormat, the stored text.format (1 HTML, 2 Markdown; null on image, pdf and video pages). get returns the full page with its ownership." +
-      "\nPage data follows the journal.update page rules: text fields only on text pages, src only on image/pdf/video pages," +
-      " image.caption only on image pages; see `fvtt-world-cli schema journal.page.create`." +
+    "\nResult key (--json): .result.page (get and writes) / .result.pages[] (list), with .result.journalId." +
+      "\nlist returns summaries without text, system or flags, with textFormat (1 HTML, 2 Markdown, null on media pages); get returns the full page." +
+      "\nText fields belong to text pages, src to image, pdf and video pages, image.caption to image pages (schema journal.page.create)." +
       '\nText content goes through --data-json/--patch-json, e.g. --patch-json \'{"text":{"content":"<p>…</p>"}}\'.' +
       "\nPage ownership: journal ownership set --journal-id <id> --page-id <pageId>."
   );

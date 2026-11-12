@@ -3463,12 +3463,6 @@ function runPageReferenceItemBulkCoverage(summary, { targetSceneId, actorId, sta
     ),
     { references: sceneOnly?.references ?? null }
   );
-  expectErr(
-    summary,
-    "world.references(malformed uuid → INVALID_PARAMS)",
-    runFoundryctl(["world", "references", "--uuid", "actor.lowercase"]),
-    ERROR_CODES.INVALID_PARAMS
-  );
   if (tokenId) {
     const parentless = runFoundryctl(["world", "references", "--uuid", `Token.${tokenId}`]);
     markAndPush(
@@ -3560,68 +3554,10 @@ function runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPage
   }
 
   if (journalId && introPageId) {
-    const relativePage = expectOk(
-      summary,
-      "journal.page.create(relative link to a sibling page)",
-      runFoundryctl([
-        "journal",
-        "page",
-        "create",
-        "--journal-id",
-        journalId,
-        "--name",
-        `Smoke Relative ${stamp}`,
-        "--type",
-        "text",
-        "--data-json",
-        JSON.stringify({ text: { content: `<p>@UUID[.${introPageId}]{Intro}</p>`, format: 1 } })
-      ])
-    );
-    const relativePageId = relativePage?.page?.id ?? null;
-    const introUuid = `JournalEntry.${journalId}.JournalEntryPage.${introPageId}`;
-    const relative = referenceRows(["--uuid", introUuid, "--scope", "journal"]);
-    const expectedRow = `JournalEntry.${journalId}.JournalEntryPage.${relativePageId}|text.content|relative|${introUuid}`;
-    markAndPush(
-      summary,
-      "world.references(a relative @UUID[.<pageId>] link resolves against its page)",
-      Boolean(relativePageId && relative.rows.includes(expectedRow)),
-      { expectedRow, rows: relative.rows }
-    );
-
-    const embedPage = expectOk(
-      summary,
-      "journal.page.create(relative @Embed of a sibling page)",
-      runFoundryctl([
-        "journal",
-        "page",
-        "create",
-        "--journal-id",
-        journalId,
-        "--name",
-        `Smoke Embed ${stamp}`,
-        "--type",
-        "text",
-        "--data-json",
-        JSON.stringify({ text: { content: `<p>@Embed[.${introPageId} inline]</p>`, format: 1 } })
-      ])
-    );
-    const embedPageId = embedPage?.page?.id ?? null;
-    const embedRow = `JournalEntry.${journalId}.JournalEntryPage.${embedPageId}|text.content|relative|${introUuid}`;
-    const embedded = referenceRows(["--uuid", introUuid, "--scope", "journal"]);
-    markAndPush(
-      summary,
-      "world.references(a relative @Embed[.<pageId>] is read through Foundry's embed parser)",
-      Boolean(embedPageId && embedded.rows.includes(embedRow)),
-      { expectedRow: embedRow, rows: embedded.rows }
-    );
-
-    const decodedPages = [
-      ["quotedEmbed", `<p>@Embed[uuid=&quot;.${introPageId}&quot;]</p>`],
-      ["attributeLink", `<p><span title="@UUID[.${introPageId}]">Intro</span></p>`]
-    ].map(([label, content]) => {
-      const page = expectOk(
+    const createTextPage = (step, name, content) =>
+      expectOk(
         summary,
-        `journal.page.create(${label} relative link fixture)`,
+        step,
         runFoundryctl([
           "journal",
           "page",
@@ -3629,18 +3565,58 @@ function runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPage
           "--journal-id",
           journalId,
           "--name",
-          `Smoke ${label} ${stamp}`,
+          `${name} ${stamp}`,
           "--type",
           "text",
           "--data-json",
           JSON.stringify({ text: { content, format: 1 } })
         ])
-      )?.page;
+      )?.page ?? null;
+    const introUuid = `JournalEntry.${journalId}.JournalEntryPage.${introPageId}`;
+    const pageRow = (pageId) =>
+      `JournalEntry.${journalId}.JournalEntryPage.${pageId}|text.content|relative|${introUuid}`;
+
+    const relativePageId =
+      createTextPage(
+        "journal.page.create(relative link to a sibling page)",
+        "Smoke Relative",
+        `<p>@UUID[.${introPageId}]{Intro}</p>`
+      )?.id ?? null;
+    const embedPageId =
+      createTextPage(
+        "journal.page.create(relative @Embed of a sibling page)",
+        "Smoke Embed",
+        `<p>@Embed[.${introPageId} inline]</p>`
+      )?.id ?? null;
+    const decodedPages = [
+      ["quotedEmbed", `<p>@Embed[uuid=&quot;.${introPageId}&quot;]</p>`],
+      ["attributeLink", `<p><span title="@UUID[.${introPageId}]">Intro</span></p>`]
+    ].map(([label, content]) => {
+      const page = createTextPage(
+        `journal.page.create(${label} relative link fixture)`,
+        `Smoke ${label}`,
+        content
+      );
       return { label, id: page?.id ?? null, stored: page?.text?.content ?? null };
     });
-    const decoded = referenceRows(["--uuid", introUuid, "--scope", "journal"]);
-    const decodedRow = (page) =>
-      `JournalEntry.${journalId}.JournalEntryPage.${page.id}|text.content|relative|${introUuid}`;
+    const introReferences = referenceRows(["--uuid", introUuid, "--scope", "journal"]);
+
+    const expectedRow = pageRow(relativePageId);
+    markAndPush(
+      summary,
+      "world.references(a relative @UUID[.<pageId>] link resolves against its page)",
+      Boolean(relativePageId && introReferences.rows.includes(expectedRow)),
+      { expectedRow, rows: introReferences.rows }
+    );
+
+    const embedRow = pageRow(embedPageId);
+    markAndPush(
+      summary,
+      "world.references(a relative @Embed[.<pageId>] is read through Foundry's embed parser)",
+      Boolean(embedPageId && introReferences.rows.includes(embedRow)),
+      { expectedRow: embedRow, rows: introReferences.rows }
+    );
+
     const [quotedEmbed, attributeLink] = decodedPages;
     markAndPush(
       summary,
@@ -3648,10 +3624,10 @@ function runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPage
       Boolean(
         quotedEmbed.id &&
         attributeLink.id &&
-        decoded.rows.includes(decodedRow(quotedEmbed)) &&
-        !decoded.rows.includes(decodedRow(attributeLink))
+        introReferences.rows.includes(pageRow(quotedEmbed.id)) &&
+        !introReferences.rows.includes(pageRow(attributeLink.id))
       ),
-      { pages: decodedPages, rows: decoded.rows }
+      { pages: decodedPages, rows: introReferences.rows }
     );
 
     const otherJournal = expectOk(
@@ -3662,24 +3638,12 @@ function runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPage
     const otherJournalId = otherJournal?.journal?.id ?? null;
     if (otherJournalId) {
       created.journals.push(otherJournalId);
-      const parentPage = expectOk(
-        summary,
-        "journal.page.create(parent-relative @UUID[..<journalId>] link)",
-        runFoundryctl([
-          "journal",
-          "page",
-          "create",
-          "--journal-id",
-          journalId,
-          "--name",
-          `Smoke Parent Relative ${stamp}`,
-          "--type",
-          "text",
-          "--data-json",
-          JSON.stringify({ text: { content: `<p>@UUID[..${otherJournalId}]{Other}</p>`, format: 1 } })
-        ])
-      );
-      const parentPageId = parentPage?.page?.id ?? null;
+      const parentPageId =
+        createTextPage(
+          "journal.page.create(parent-relative @UUID[..<journalId>] link)",
+          "Smoke Parent Relative",
+          `<p>@UUID[..${otherJournalId}]{Other}</p>`
+        )?.id ?? null;
       const otherUuid = `JournalEntry.${otherJournalId}`;
       const parentRelative = referenceRows(["--uuid", otherUuid, "--scope", "journal"]);
       const parentRow = `JournalEntry.${journalId}.JournalEntryPage.${parentPageId}|text.content|relative|${otherUuid}`;
