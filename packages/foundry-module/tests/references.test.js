@@ -294,6 +294,22 @@ function parseRelativeUuid(uuid, { relative }) {
   return { uuid: `${relative.documentName}.${parts.at(-1)}`, documentId: parts.at(-1) };
 }
 
+/**
+ * @param {string} raw
+ * @param {{ relative: { uuid: string, documentName: string, parentUuid: string | null } }} options
+ */
+function parseEmbedConfig(raw, options) {
+  const values = [];
+  let uuid;
+  for (const part of raw.split(/\s+/)) {
+    const [key, value] = part.split("=");
+    if (value === undefined) values.push(key);
+    else if (key === "uuid") uuid = value;
+  }
+  uuid ??= values.find((value) => parseRelativeUuid(value, options)?.documentId);
+  return { values, uuid };
+}
+
 const rows = (result) =>
   result.references.map((ref) => [ref.uuid, ref.field, ref.match, ref.matchedUuid ?? null]);
 
@@ -695,7 +711,11 @@ describe("world.references lookup", () => {
 
   describe("relative links", () => {
     beforeEach(() => {
-      globalThis.foundry = { ...globalThis.foundry, utils: { parseUuid: vi.fn(parseRelativeUuid) } };
+      globalThis.foundry = {
+        ...globalThis.foundry,
+        utils: { parseUuid: vi.fn(parseRelativeUuid) },
+        applications: { ux: { TextEditor: { _parseEmbedConfig: vi.fn(parseEmbedConfig) } } }
+      };
       globalThis.fromUuidSync = vi.fn((uuid) => relativeDocument(uuid));
       globalThis.game.journal = collection("JournalEntry", [
         {
@@ -782,10 +802,10 @@ describe("world.references lookup", () => {
       ]);
     });
 
-    it("skips an embed value Foundry cannot parse, as Foundry does, and still reads the rest", () => {
-      globalThis.foundry.utils.parseUuid = vi.fn((uuid, options) => {
-        if (uuid === "broken") throw new Error("unparsable");
-        return parseRelativeUuid(uuid, options);
+    it("reads embed configs through Foundry's own parser and skips one it refuses", () => {
+      globalThis.foundry.applications.ux.TextEditor._parseEmbedConfig = vi.fn((raw, options) => {
+        if (raw.startsWith("broken")) throw new Error("unparsable");
+        return parseEmbedConfig(raw, options);
       });
       globalThis.game.journal = collection("JournalEntry", [
         {
@@ -795,20 +815,30 @@ describe("world.references lookup", () => {
             {
               _id: "page000000000001",
               name: "Index",
-              text: { content: "@Embed[broken .page000000000002] and @UUID[.page000000000003]" }
+              text: {
+                content: "@Embed[broken .page000000000002] @Embed[.page000000000004] @UUID[.page000000000003]"
+              }
             },
             { _id: "page000000000002", name: "Lair" },
-            { _id: "page000000000003", name: "Map" }
+            { _id: "page000000000003", name: "Map" },
+            { _id: "page000000000004", name: "Hall" }
           ]
         }
       ]);
 
-      for (const pageId of ["page000000000002", "page000000000003"]) {
-        expect(
-          runReferenceLookup({ uuid: `JournalEntry.journal000000001.JournalEntryPage.${pageId}` }).total,
-          pageId
-        ).toBe(1);
-      }
+      const total = (pageId) =>
+        runReferenceLookup({ uuid: `JournalEntry.journal000000001.JournalEntryPage.${pageId}` }).total;
+      expect(total("page000000000002")).toBe(0);
+      expect(total("page000000000003")).toBe(1);
+      expect(total("page000000000004")).toBe(1);
+      expect(globalThis.foundry.applications.ux.TextEditor._parseEmbedConfig).toHaveBeenCalledWith(
+        ".page000000000004",
+        {
+          relative: expect.objectContaining({
+            uuid: "JournalEntry.journal000000001.JournalEntryPage.page000000000001"
+          })
+        }
+      );
     });
 
     it("matches no relative link of another journal or outside an enriched field, and counts one inside the target as self", () => {

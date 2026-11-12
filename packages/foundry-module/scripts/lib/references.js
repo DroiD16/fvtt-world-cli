@@ -13,7 +13,6 @@ const AFTER_BOUNDARY = /[A-Za-z0-9]/;
 const LINK_PREFIX = /@[A-Za-z]+\[$/;
 const UUID_LINK = /@UUID\[([^#\]]+)(?:#[^\]]+)?]/g;
 const EMBED_LINK = /@Embed\[([^\]]+)]/gi;
-const EMBED_CONFIG_PART = /(?:[^\s"]+|"[^"]*")+/g;
 
 const REFERENCE_SCOPE_COLLECTIONS = Object.freeze({
   ...Object.fromEntries(
@@ -261,28 +260,6 @@ function createStringMatcher(target) {
 }
 
 /**
- * @param {string} raw
- * @param {(value: string) => any} parse
- */
-function embedConfigUuid(raw, parse) {
-  const values = [];
-  for (const part of raw.match(EMBED_CONFIG_PART) ?? []) {
-    const [key, value] = part.split("=");
-    if (value === undefined) values.push(key.replace(/(^"|"$)/g, ""));
-    else if (key === "uuid") return value.replace(/(^"|"$)/g, "");
-  }
-  return (
-    values.find((value) => {
-      try {
-        return Boolean(parse(value)?.documentId);
-      } catch {
-        return false;
-      }
-    }) ?? null
-  );
-}
-
-/**
  * @param {string} text
  * @param {string} ownerUuid
  * @returns {string[]}
@@ -293,18 +270,25 @@ function resolveRelativeLinks(text, ownerUuid) {
   if (typeof parseUuid !== "function" || typeof resolveDocument !== "function") return [];
   const relative = resolveDocument(ownerUuid, { strict: false });
   if (!relative) return [];
-  const parse = (/** @type {string} */ value) => parseUuid(value, { relative });
   const candidates = [];
   for (const match of text.matchAll(UUID_LINK)) {
     if (match[1].startsWith(".")) candidates.push(match[1]);
   }
-  for (const match of text.matchAll(EMBED_LINK)) {
-    const uuid = embedConfigUuid(match[1], parse);
-    if (uuid?.startsWith(".")) candidates.push(uuid);
+  const textEditor = /** @type {any} */ (globalThis).foundry?.applications?.ux?.TextEditor;
+  if (typeof textEditor?._parseEmbedConfig === "function") {
+    for (const match of text.matchAll(EMBED_LINK)) {
+      let config = null;
+      try {
+        config = textEditor._parseEmbedConfig(match[1], { relative });
+      } catch {
+        continue;
+      }
+      if (typeof config?.uuid === "string" && config.uuid.startsWith(".")) candidates.push(config.uuid);
+    }
   }
   const resolved = [];
   for (const candidate of candidates) {
-    const uuid = parse(candidate)?.uuid;
+    const uuid = parseUuid(candidate, { relative })?.uuid;
     if (typeof uuid === "string") resolved.push(uuid);
   }
   return resolved;
