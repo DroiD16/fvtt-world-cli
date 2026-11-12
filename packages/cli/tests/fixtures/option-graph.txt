@@ -386,8 +386,8 @@ command scene token create
   opt --rotation <rotation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token rotation
   opt --elevation <elevation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token elevation
   opt --disposition <disposition> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token disposition
-  opt --linked | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Link the token to the world actor
-  opt --unlinked | parser=- | conflicts=["linked"] | choices=- | required=false | hidden=false | default=- | help=Keep the token unlinked (per-token actor delta)
+  opt --linked | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Link the token to the world actor (default: as the actor's prototype token says)
+  opt --unlinked | parser=- | conflicts=["linked"] | choices=- | required=false | hidden=false | default=- | help=Create the token unlinked, with a per-token actor delta (default: as the actor's prototype token says)
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Full/extra token data as a JSON object (merged last)
 
 command scene token update

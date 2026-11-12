@@ -177,7 +177,7 @@ const TOKEN_BODY_FIELDS: readonly FieldSpec[] = [
   {
     flag: "--linked",
     help: {
-      create: "Link the token to the world actor",
+      create: "Link the token to the world actor (default: as the actor's prototype token says)",
       update: "Link the token to the world actor",
       clone: "Link the clone to the world actor"
     }
@@ -185,7 +185,8 @@ const TOKEN_BODY_FIELDS: readonly FieldSpec[] = [
   {
     flag: "--unlinked",
     help: {
-      create: "Keep the token unlinked (per-token actor delta)",
+      create:
+        "Create the token unlinked, with a per-token actor delta (default: as the actor's prototype token says)",
       update: "Unlink the token (per-token actor delta)",
       clone: "Unlink the clone (per-token actor delta)"
     },

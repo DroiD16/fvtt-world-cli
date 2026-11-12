@@ -81,6 +81,9 @@ level ids in a preview are provisional.
 Deleting a level also deletes its tokens and every placeable only on that level, and the dry run
 does not list them: read the scene's placeables (token `level`, others' `levels`) and tell the user
 what the delete removes before running it.
+A token created from an actor takes `actorLink` from the actor's prototype token. Pass `--unlinked`
+when the token needs its own items, effects, or data, and check `actorLink` in the result: token
+item and effect writes on a linked token change the world actor.
 An unlinked token keeps its own overrides, which edits to its world actor never reach. Before
 editing an actor that has placed tokens, read its tokens' overrides
 (`scene token get --include delta,prepared`) and tell the user which tokens the edit will not

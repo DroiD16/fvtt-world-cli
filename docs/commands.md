@@ -209,6 +209,10 @@ cached state survives. Reuse it only for the same request; a corrected or remain
 new operation and needs a fresh key. Follow the [delivery rules](protocol.md#delivery-states-and-retries)
 when a connection fails, since some failures also lose the cached state.
 
+A token created from an actor is linked or unlinked as the actor's prototype token says, unless
+`--linked` or `--unlinked` (`actorLink` in the data) is given. Item and effect writes on a linked
+token change the world actor.
+
 Bulk writes are not transactions. Inspect `complete` and every entry in `outcomes` before deciding
 what to retry. `scene token create-many` creates its tokens one at a time so Foundry numbers them as
 it does when they are placed by hand, and stops at the first token that does not land. The tokens

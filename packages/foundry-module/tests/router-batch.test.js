@@ -715,7 +715,7 @@ describe("command router", () => {
     });
   }
 
-  it("scene.token.create-many resolves EACH element's actor, defaulting each to UNLINKED", async () => {
+  it("scene.token.create-many resolves EACH element's actor, passing actorLink only where the element sets it", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
     const scene = globalThis.game.scenes.get("scene-1");
     const actor = globalThis.game.actors.get("actor-1");
@@ -739,7 +739,8 @@ describe("command router", () => {
     ]);
 
     expect(actor.getTokenDocument).toHaveBeenCalledTimes(4);
-    expect(actor.getTokenDocument.mock.calls[2][0]).toMatchObject({ x: 10, y: 10, actorLink: false });
+    expect(actor.getTokenDocument.mock.calls[2][0]).toMatchObject({ x: 10, y: 10 });
+    expect(actor.getTokenDocument.mock.calls[2][0]).not.toHaveProperty("actorLink");
     expect(actor.getTokenDocument.mock.calls[3][0]).toMatchObject({ x: 20, y: 20, actorLink: true });
     const [placed, linked, raw] = response.result.outcomes.map((outcome) => scene.tokens.get(outcome.id));
 

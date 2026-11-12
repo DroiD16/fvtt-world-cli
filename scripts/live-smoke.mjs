@@ -3747,6 +3747,147 @@ function runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPage
   }
 }
 
+const TOKEN_SORT_SCRIPT = (sceneId, tokenIds) => `
+  const scene = game.scenes.get(${JSON.stringify(sceneId)});
+  return { viewed: canvas?.scene?.id ?? null, sorts: ${JSON.stringify(tokenIds)}.map((id) => scene.tokens.get(id)?.sort ?? null) };
+`;
+
+async function runTokenPlacementCoverage(summary, { actorId, targetSceneId, stamp, isV14, gmControlUrl }) {
+  const actorType =
+    runFoundryctl(["actor", "get", "--actor-id", actorId]).response?.result?.actor?.type ?? null;
+  if (!targetSceneId || !actorType) {
+    markAndPush(summary, "token placement coverage (target scene and fixture actor type)", false, {
+      targetSceneId,
+      actorType
+    });
+    return;
+  }
+  const actors = [];
+  const tokens = [];
+  const createActor = (label, prototypeToken) => {
+    const run = runFoundryctl([
+      "actor",
+      "create",
+      "--name",
+      `Smoke ${label} ${stamp}`,
+      "--type",
+      actorType,
+      "--data-json",
+      JSON.stringify({ prototypeToken })
+    ]);
+    const id = expectOk(summary, `actor.create(${label} scratch)`, run)?.actor?.id ?? null;
+    if (id) actors.push(id);
+    return id;
+  };
+
+  try {
+    const linkedActorId = createActor("Linked Prototype", { actorLink: true });
+    if (linkedActorId) {
+      const linked = expectOk(
+        summary,
+        "scene.token.create(linked prototype, no --linked flag)",
+        runFoundryctl(["scene", "token", "create", "--scene-id", targetSceneId, "--actor-id", linkedActorId])
+      )?.token;
+      if (linked?.id) tokens.push(linked.id);
+      markAndPush(
+        summary,
+        "scene.token.create(a linked prototype token gives a linked token)",
+        linked?.actorLink === true,
+        {
+          observed: linked?.actorLink ?? null
+        }
+      );
+    }
+
+    const numberedName = `Smoke Numbered ${stamp}`;
+    const numberedActorId = createActor("Numbered", {
+      name: numberedName,
+      actorLink: false,
+      appendNumber: true,
+      prependAdjective: false
+    });
+    if (!numberedActorId) return;
+
+    const view = gmControlUrl
+      ? await evaluateInGmPage(gmControlUrl, TOKEN_SORT_SCRIPT(targetSceneId, []))
+      : null;
+    if (!isV14 && view?.viewed !== targetSceneId) {
+      summary.notes.push(
+        `token numbering: on Foundry v13 Foundry numbers tokens against the scene the GM is viewing (${view?.viewed ?? "unknown, no --gm-control"}), not the target scene ${targetSceneId}, so the numbering assertions were not run`
+      );
+      return;
+    }
+
+    const elements = [0, 1, 2].map((index) => ({ actorId: numberedActorId, x: 1700 + index * 100, y: 1800 }));
+    const dry = runFoundryctl([
+      "--dry-run",
+      "scene",
+      "token",
+      "create-many",
+      "--scene-id",
+      targetSceneId,
+      "--data-json",
+      JSON.stringify(elements)
+    ]);
+    markAndPush(
+      summary,
+      "scene.token.create-many(dry run warns that numbers advance at write time)",
+      isCommandSuccess(dry) &&
+        dry.response.result.dryRun === true &&
+        typeof dry.response.result.warning === "string",
+      { ...summarizeCommand(dry), warning: dry.response?.result?.warning ?? null }
+    );
+
+    const batch = expectOk(
+      summary,
+      "scene.token.create-many(3 tokens of an appendNumber actor)",
+      runFoundryctl([
+        "scene",
+        "token",
+        "create-many",
+        "--scene-id",
+        targetSceneId,
+        "--data-json",
+        JSON.stringify(elements)
+      ])
+    );
+    const ids = (batch?.outcomes ?? []).map((outcome) => outcome.id).filter(Boolean);
+    tokens.push(...ids);
+    markAndPush(
+      summary,
+      "scene.token.create-many(Foundry numbers the tokens (1), (2), (3))",
+      batch?.complete === true &&
+        JSON.stringify(batch.outcomes.map((outcome) => outcome.name)) ===
+          JSON.stringify([1, 2, 3].map((n) => `${numberedName} (${n})`)),
+      { observed: (batch?.outcomes ?? []).map((outcome) => outcome.name) }
+    );
+    if (gmControlUrl && ids.length === 3) {
+      const { sorts } = await evaluateInGmPage(gmControlUrl, TOKEN_SORT_SCRIPT(targetSceneId, ids));
+      markAndPush(
+        summary,
+        "scene.token.create-many(default sort climbs by one per token)",
+        sorts.every((sort) => Number.isInteger(sort)) &&
+          sorts[1] === sorts[0] + 1 &&
+          sorts[2] === sorts[1] + 1,
+        { sorts }
+      );
+    }
+  } finally {
+    if (tokens.length > 0) {
+      runFoundryctl([
+        "scene",
+        "token",
+        "delete-many",
+        "--scene-id",
+        targetSceneId,
+        "--ids",
+        tokens.join(",")
+      ]);
+    }
+    for (const id of actors) runFoundryctl(["actor", "delete", "--actor-id", id]);
+  }
+}
+
 function runExtendedCoverage(
   summary,
   { actorId, targetSceneId, targetSceneActive, gmUserId, stamp, worldId, isV14 = false }
@@ -8191,11 +8332,19 @@ function runExtendedCoverage(
           );
           const tokens = reads.map((run) => run.response?.result?.token ?? null);
 
+          const fixtureLink =
+            runFoundryctl(["actor", "get", "--actor-id", actorId]).response?.result?.actor?.prototypeToken
+              ?.actorLink ?? null;
           markAndPush(
             summary,
-            "scene.token.create-many(element 0: actor resolved, actorLink defaults to false)",
-            tokens[0]?.actorId === actorId && tokens[0]?.actorLink === false,
-            { observed: { actorId: tokens[0]?.actorId, actorLink: tokens[0]?.actorLink } }
+            "scene.token.create-many(element 0: actor resolved, actorLink follows the prototype token)",
+            tokens[0]?.actorId === actorId &&
+              typeof fixtureLink === "boolean" &&
+              tokens[0]?.actorLink === fixtureLink,
+            {
+              observed: { actorId: tokens[0]?.actorId, actorLink: tokens[0]?.actorLink },
+              prototype: fixtureLink
+            }
           );
           markAndPush(
             summary,
@@ -16403,6 +16552,14 @@ async function main() {
       stamp,
       worldId,
       isV14
+    });
+
+    await runTokenPlacementCoverage(summary, {
+      actorId: options.actorId,
+      targetSceneId: targetScene?.id ?? null,
+      stamp,
+      isV14,
+      gmControlUrl: options.gmControlUrl
     });
 
     const missingSceneRun = runFoundryctl(["scene", "get", "--scene-id", createMissingId("scene", stamp)]);

@@ -54,7 +54,27 @@ describe("command router", () => {
     });
   });
 
-  it("creates a token from an actor, defaulting to unlinked", async () => {
+  it("creates a token from an actor, linked as the actor's prototype token says unless actorLink is given", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const actor = globalThis.game.actors.get("actor-1");
+    actor.prototypeToken = { ...(actor.prototypeToken ?? {}), actorLink: true };
+
+    const linked = await router.route(
+      createRequest("scene.token.create", { sceneId: "scene-1", data: { actorId: "actor-1" } })
+    );
+    expect(linked.result.token.actorLink).toBe(true);
+    expect(actor.getTokenDocument.mock.calls.at(-1)[0]).not.toHaveProperty("actorLink");
+
+    const unlinked = await router.route(
+      createRequest("scene.token.create", {
+        sceneId: "scene-1",
+        data: { actorId: "actor-1", actorLink: false }
+      })
+    );
+    expect(unlinked.result.token.actorLink).toBe(false);
+  });
+
+  it("creates an unlinked token from an actor whose prototype token is unlinked", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
     const response = await router.route(

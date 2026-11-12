@@ -374,9 +374,7 @@ export async function resolveSceneTokenCreateData(data, scene) {
   assertPlaceableLevelFieldsSupported("Token", data);
   const { actorId, ...fields } = data ?? {};
   const overrides = fields.sort === undefined ? { ...fields, sort: nextTokenSort(scene) } : fields;
-  return actorId
-    ? buildTokenDataFromActor(actorId, { ...overrides, actorLink: overrides.actorLink ?? false }, scene)
-    : overrides;
+  return actorId ? buildTokenDataFromActor(actorId, overrides, scene) : overrides;
 }
 
 /** @param {any} scene */
