@@ -3614,6 +3614,45 @@ function runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPage
       { expectedRow: embedRow, rows: embedded.rows }
     );
 
+    const decodedPages = [
+      ["quotedEmbed", `<p>@Embed[uuid=&quot;.${introPageId}&quot;]</p>`],
+      ["attributeLink", `<p><span title="@UUID[.${introPageId}]">Intro</span></p>`]
+    ].map(([label, content]) => {
+      const page = expectOk(
+        summary,
+        `journal.page.create(${label} relative link fixture)`,
+        runFoundryctl([
+          "journal",
+          "page",
+          "create",
+          "--journal-id",
+          journalId,
+          "--name",
+          `Smoke ${label} ${stamp}`,
+          "--type",
+          "text",
+          "--data-json",
+          JSON.stringify({ text: { content, format: 1 } })
+        ])
+      )?.page;
+      return { label, id: page?.id ?? null, stored: page?.text?.content ?? null };
+    });
+    const decoded = referenceRows(["--uuid", introUuid, "--scope", "journal"]);
+    const decodedRow = (page) =>
+      `JournalEntry.${journalId}.JournalEntryPage.${page.id}|text.content|relative|${introUuid}`;
+    const [quotedEmbed, attributeLink] = decodedPages;
+    markAndPush(
+      summary,
+      "world.references(relative links read from decoded text: an encoded-quote @Embed counts, an attribute does not)",
+      Boolean(
+        quotedEmbed.id &&
+        attributeLink.id &&
+        decoded.rows.includes(decodedRow(quotedEmbed)) &&
+        !decoded.rows.includes(decodedRow(attributeLink))
+      ),
+      { pages: decodedPages, rows: decoded.rows }
+    );
+
     const otherJournal = expectOk(
       summary,
       "journal.create(target of a parent-relative link)",
