@@ -35,6 +35,16 @@ import {
 } from "./shared.js";
 import { write } from "../deps.js";
 
+interface ActorItemCloneOptions {
+  actorId: string;
+  itemId: string;
+  name?: string;
+  img?: string;
+  sort?: number;
+  systemJson?: string;
+  patchJson?: string;
+}
+
 export function registerActor({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerBatchWriteCommands } = createSharedRegistrars(dependencies);
   const actor = program.command("actor").description("Foundry actor commands");
@@ -309,15 +319,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     "clone"
   )
     .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
-    .action(async function cloneActorItem(options: {
-      actorId: string;
-      itemId: string;
-      name?: string;
-      img?: string;
-      sort?: number;
-      systemJson?: string;
-      patchJson?: string;
-    }) {
+    .action(async function cloneActorItem(options: ActorItemCloneOptions) {
       await executeRemoteCommand({
         commandName: "actor.item.clone",
         params: createActorItemCloneParams(options),

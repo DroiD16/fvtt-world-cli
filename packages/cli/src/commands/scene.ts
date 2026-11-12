@@ -134,6 +134,17 @@ function addSceneLevelTargetOptions(command: Command, levelDescription = "Level 
   return addSceneLevelScopeOption(command).requiredOption("--level-id <levelId>", levelDescription);
 }
 
+interface SceneTokenItemCloneOptions {
+  sceneId: string;
+  tokenId: string;
+  itemId: string;
+  name?: string;
+  img?: string;
+  sort?: number;
+  systemJson?: string;
+  patchJson?: string;
+}
+
 export function registerScene({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerCompendiumImport, registerBatchWriteCommands } =
     createSharedRegistrars(dependencies);
@@ -576,16 +587,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     "clone"
   )
     .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
-    .action(async function cloneSceneTokenItem(options: {
-      sceneId: string;
-      tokenId: string;
-      itemId: string;
-      name?: string;
-      img?: string;
-      sort?: number;
-      systemJson?: string;
-      patchJson?: string;
-    }) {
+    .action(async function cloneSceneTokenItem(options: SceneTokenItemCloneOptions) {
       const patch = {
         ...stringField("name", options.name),
         ...stringField("img", options.img),

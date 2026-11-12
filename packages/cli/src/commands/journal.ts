@@ -54,6 +54,15 @@ interface JournalPageUpdateOptions extends JournalPageFieldOptions, JournalPageT
   patchJson?: string;
 }
 
+interface JournalCloneOptions {
+  journalId: string;
+  name?: string;
+  folder?: string;
+  clearFolder?: boolean;
+  sort?: number;
+  patchJson?: string;
+}
+
 export function registerJournal({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerCompendiumImport, registerBatchWriteCommands } =
     createSharedRegistrars(dependencies);
@@ -173,14 +182,7 @@ export function registerJournal({ program, dependencies }: RegistrationContext) 
     "clone"
   )
     .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
-    .action(async function cloneJournal(options: {
-      journalId: string;
-      name?: string;
-      folder?: string;
-      clearFolder?: boolean;
-      sort?: number;
-      patchJson?: string;
-    }) {
+    .action(async function cloneJournal(options: JournalCloneOptions) {
       await executeRemoteCommand({
         commandName: "journal.clone",
         params: createJournalCloneParams(options),

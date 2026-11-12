@@ -22,6 +22,20 @@ import {
 } from "./shared.js";
 import { write } from "../deps.js";
 
+interface MacroCloneOptions {
+  macroId: string;
+  name?: string;
+  type?: string;
+  command?: string;
+  commandFile?: string;
+  commandStdin?: boolean;
+  img?: string;
+  folder?: string;
+  clearFolder?: boolean;
+  scope?: string;
+  patchJson?: string;
+}
+
 export function registerMacro({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerCompendiumImport } = createSharedRegistrars(dependencies);
   const macro = program.command("macro").description("Foundry macro commands");
@@ -130,19 +144,7 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
     "clone"
   )
     .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
-    .action(async function cloneMacroCommand(options: {
-      macroId: string;
-      name?: string;
-      type?: string;
-      command?: string;
-      commandFile?: string;
-      commandStdin?: boolean;
-      img?: string;
-      folder?: string;
-      clearFolder?: boolean;
-      scope?: string;
-      patchJson?: string;
-    }) {
+    .action(async function cloneMacroCommand(options: MacroCloneOptions) {
       const command = await resolveMacroCommandBody(options, dependencies);
       await executeRemoteCommand({
         commandName: "macro.clone",
