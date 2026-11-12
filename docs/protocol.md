@@ -342,12 +342,14 @@ elevation and level stay as sent.
 `scene.token.create-many` validates every element first and writes nothing if one fails. It then
 prepares and creates the tokens one at a time, in order, so each token is prepared against a scene
 that already holds the tokens before it. That is how Foundry's appended numbers and default `sort`
-advance within one batch. The first element that is not confirmed created stops the batch. That
-element reports `dropped` when it failed to prepare (with a `null` id, never sent) or when Foundry
-stored nothing without an error, and `unknown` when Foundry's create call threw. A preparation error
-or a failed create call is reported in `failure`, whose message starts with `scene.token.create-many element <index>`; when no
-earlier token was created, the request fails instead with that message and `details.index`. The
-elements after it report `notAttempted` with a `null` id and were never sent.
+advance within one batch. The batch stops at the first element whose preparation fails, whose create
+call throws, or whose token Foundry does not store. That element reports `dropped` when its
+preparation failed (with a `null` id, never sent) or when Foundry stored nothing without an error.
+When its create call threw, it reports `created` if the token was stored anyway and `unknown` if it
+was not. A preparation error or a thrown create call is reported in `failure`, whose message starts
+with `scene.token.create-many element <index>`; when no token was created, the request fails instead
+with that message and `details.index`. The elements after it report `notAttempted` with a `null` id
+and were never sent.
 A token create-many dry run with actor elements adds a `warning`, because each preview is prepared
 against the current scene and the write draws appended numbers, random adjectives and random images
 again.

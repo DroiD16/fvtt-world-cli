@@ -895,6 +895,28 @@ describe("command router", () => {
     expect(scene.tokens.size).toBe(before);
   });
 
+  it("scene.token.create-many names a write-time failure that carries no message", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const actor = globalThis.game.actors.get("actor-1");
+    const prepare = actor.getTokenDocument.getMockImplementation();
+    let calls = 0;
+    actor.getTokenDocument.mockImplementation(async (...args) => {
+      calls += 1;
+      if (calls === 2) throw new Error("");
+      return prepare(...args);
+    });
+
+    const response = await router.route(
+      createRequest("scene.token.create-many", { sceneId: "scene-1", data: [{ actorId: "actor-1" }] })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.message).toBe(
+      "scene.token.create-many element 0 was refused. Nothing was written."
+    );
+    expect(response.error.details.index).toBe(0);
+  });
+
   it("a token create-many dry run with actor elements warns that names are drawn again at write time", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
     const scene = globalThis.game.scenes.get("scene-1");

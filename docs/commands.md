@@ -224,9 +224,9 @@ token change the world actor.
 Bulk writes are not transactions. Inspect `complete` and every entry in `outcomes` before deciding
 what to retry. The other `create-many` commands send all elements to Foundry in one create call.
 `scene token create-many` sends one create per token, in order, so Foundry numbers the tokens as it
-does when they are placed by hand. It stops at the first token that does not land: that token reports
-`dropped` (or `unknown` when Foundry's create call failed), `failure` names its index, and the tokens
-after it report `notAttempted`.
+does when they are placed by hand. It stops after the first token that fails to prepare, whose create
+call throws, or that Foundry does not store. `failure` names that token's index when there was an
+error, and the tokens after it report `notAttempted`.
 
 ### Actions
 

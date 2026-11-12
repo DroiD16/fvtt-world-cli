@@ -109,8 +109,9 @@ export function generateUnusedDocumentId(isTaken) {
 /**
  * @param {string} message
  * @param {{ command: string, index: number, id?: string }} coordinates
+ * @param {{ nothingWritten?: boolean }} [options]
  */
-function stampBatchRefusalMessage(message, { command, index, id }) {
+function stampBatchRefusalMessage(message, { command, index, id }, { nothingWritten = true } = {}) {
   const text = typeof message === "string" ? message.trim() : "";
   const coordinate = `${command} element ${index}${typeof id === "string" ? ` (id ${id})` : ""}`;
   let stamped = text.startsWith(`${command} element ${index} `)
@@ -118,7 +119,7 @@ function stampBatchRefusalMessage(message, { command, index, id }) {
     : text
       ? `${coordinate}: ${text}`
       : `${coordinate} was refused.`;
-  if (!BATCH_NO_WRITE_ASSURANCE_PATTERN.test(stamped)) {
+  if (nothingWritten && !BATCH_NO_WRITE_ASSURANCE_PATTERN.test(stamped)) {
     stamped = `${/[.!?]$/.test(stamped) ? stamped : `${stamped}.`} ${BATCH_NO_WRITE_ASSURANCE}`;
   }
   return stamped;
@@ -360,19 +361,9 @@ async function createSequentially({ command, items, prepare, isIdTaken, create, 
  */
 function sequentialElementFailure(error, { command, index, id, nothingWritten }) {
   const mapped = isFoundryValidationError(error) ? toFoundryValidationError(error) : toProtocolError(error);
-  const coordinate = `${command} element ${index}${typeof id === "string" ? ` (id ${id})` : ""}`;
-  const text = mapped.message.startsWith(`${command} element ${index} `)
-    ? mapped.message
-    : `${coordinate}: ${mapped.message}`;
-  const message =
-    nothingWritten && !BATCH_NO_WRITE_ASSURANCE_PATTERN.test(text)
-      ? `${/[.!?]$/.test(text) ? text : `${text}.`} ${BATCH_NO_WRITE_ASSURANCE}`
-      : text;
-  const annotated = createBridgeError(mapped.code, message, {
-    ...(mapped.details ?? {}),
-    index,
-    ...(typeof id === "string" ? { id } : {})
-  });
+  const message = stampBatchRefusalMessage(mapped.message, { command, index, id }, { nothingWritten });
+  const coordinates = typeof id === "string" ? { index, id } : { index };
+  const annotated = createBridgeError(mapped.code, message, { ...coordinates, ...(mapped.details ?? {}) });
   return { error: annotated, code: mapped.code, message };
 }
 
