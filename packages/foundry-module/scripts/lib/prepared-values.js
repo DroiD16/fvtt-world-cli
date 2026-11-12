@@ -8,6 +8,7 @@ import {
   getColorClass,
   isDataModelInstance,
   readScalarObject,
+  unbox,
   utf8ByteLength
 } from "./setting-values.js";
 
@@ -89,17 +90,23 @@ export function serializePreparedValue(value) {
     ancestors.add(object);
     try {
       const scalar = readScalarObject(object, ColorClass);
-      if (scalar.ok) return walk(scalar.value, null, depth);
+      if (scalar.ok) {
+        return typeof scalar.value === "number" && !Number.isFinite(scalar.value) ? null : scalar.value;
+      }
       if (object instanceof Map) {
-        /** @type {Record<string, unknown>} */
-        const result = {};
-        for (const [key, entry] of Map.prototype.entries.call(object)) {
-          defineEntry(result, String(key), walk(entry, null, depth + 1));
+        const iterator = unbox(Map.prototype.entries, object);
+        if (iterator.ok) {
+          /** @type {Record<string, unknown>} */
+          const result = {};
+          for (const [key, entry] of iterator.value) {
+            defineEntry(result, String(key), walk(entry, null, depth + 1));
+          }
+          return result;
         }
-        return result;
       }
       if (object instanceof Set) {
-        return Array.from(Set.prototype.values.call(object), (entry) => walk(entry, null, depth + 1));
+        const iterator = unbox(Set.prototype.values, object);
+        if (iterator.ok) return Array.from(iterator.value, (entry) => walk(entry, null, depth + 1));
       }
       if (Array.isArray(object)) {
         const element = elementFieldOf(field);

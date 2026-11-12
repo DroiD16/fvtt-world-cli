@@ -122,6 +122,23 @@ describe("serializePreparedValue", () => {
     });
   });
 
+  it("reads a Map or Set it cannot iterate as a plain object and keeps the rest of the value", () => {
+    const value = {
+      wrapped: new Proxy(new Map([["a", 1]]), {}),
+      faked: Object.create(Set.prototype),
+      kept: { total: 5 }
+    };
+
+    expect(serializePreparedValue(value)).toEqual({ value: { wrapped: {}, faked: {}, kept: { total: 5 } } });
+  });
+
+  it("counts a date, colour or boxed value as one node", () => {
+    const flags = new Array(PREPARED_VALUE_MAX_NODES - 1).fill(new Boolean(true));
+    const result = serializePreparedValue(flags);
+    expect(result.omitted).toBeUndefined();
+    expect(/** @type {unknown[]} */ (result.value)).toHaveLength(PREPARED_VALUE_MAX_NODES - 1);
+  });
+
   it("answers null with the limit that was reached instead of a partial value", () => {
     /** @type {any} */
     let deep = {};

@@ -154,7 +154,7 @@ function colorToCss(numeric) {
  * @param {object} node
  * @returns {{ ok: boolean, value: any }}
  */
-function unbox(intrinsic, node) {
+export function unbox(intrinsic, node) {
   try {
     return { ok: true, value: intrinsic.call(node) };
   } catch {
@@ -185,7 +185,7 @@ export const UNSERIALIZABLE_MARKER_KEY = "$unserializable";
 /**
  * @param {object} node
  * @param {Function | null} ColorClass
- * @returns {{ ok: boolean, value?: unknown }}
+ * @returns {{ ok: boolean, value?: unknown, boxed?: boolean }}
  */
 export function readScalarObject(node, ColorClass) {
   if (node instanceof Date) {
@@ -211,7 +211,7 @@ export function readScalarObject(node, ColorClass) {
           : Boolean.prototype.valueOf;
     const unboxed = unbox(intrinsic, node);
     if (unboxed.ok) {
-      return { ok: true, value: unboxed.value };
+      return { ok: true, value: unboxed.value, boxed: true };
     }
   }
 
@@ -337,8 +337,16 @@ export function serializeValueWithOmissions(value, limits = {}) {
     ancestors.add(/** @type {object} */ (node));
     try {
       const scalar = readScalarObject(/** @type {object} */ (node), ColorClass);
-      if (scalar.ok) {
+      if (scalar.ok && scalar.boxed) {
         return walk(scalar.value, path, depth, wrapperHops + 1);
+      }
+      if (scalar.ok) {
+        if (scalar.value === null) {
+          chargeBytes(4, path);
+          return null;
+        }
+        chargeBytes(jsonStringByteLength(/** @type {string} */ (scalar.value)), path);
+        return scalar.value;
       }
 
       if (node instanceof Map) {
