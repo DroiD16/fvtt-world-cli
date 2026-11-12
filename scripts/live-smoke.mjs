@@ -3161,7 +3161,7 @@ function runTokenDeltaCoverage(summary, { targetSceneId, actorId, stamp, created
   );
 }
 
-function runPageReferenceItemBulkCoverage(summary, { targetSceneId, actorId, stamp, created }) {
+function runPageReferenceItemBulkCoverage(summary, { targetSceneId, actorId, stamp, created, isV14 }) {
   const fixture = runFoundryctl(["actor", "get", "--actor-id", actorId, "--include", "items"]).response
     ?.result?.actor;
   const actorType = fixture?.type ?? null;
@@ -3519,7 +3519,7 @@ function runPageReferenceItemBulkCoverage(summary, { targetSceneId, actorId, sta
     }
   }
 
-  runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPageId, stamp, created });
+  runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPageId, stamp, created, isV14 });
 }
 
 function referenceRows(args) {
@@ -3533,7 +3533,7 @@ function referenceRows(args) {
   };
 }
 
-function runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPageId, stamp, created }) {
+function runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPageId, stamp, created, isV14 }) {
   if (journalId) {
     const flagged = expectOk(
       summary,
@@ -3586,6 +3586,76 @@ function runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPage
       Boolean(relativePageId && relative.rows.includes(expectedRow)),
       { expectedRow, rows: relative.rows }
     );
+
+    const embedPage = expectOk(
+      summary,
+      "journal.page.create(relative @Embed of a sibling page)",
+      runFoundryctl([
+        "journal",
+        "page",
+        "create",
+        "--journal-id",
+        journalId,
+        "--name",
+        `Smoke Embed ${stamp}`,
+        "--type",
+        "text",
+        "--data-json",
+        JSON.stringify({ text: { content: `<p>@Embed[.${introPageId} inline]</p>`, format: 1 } })
+      ])
+    );
+    const embedPageId = embedPage?.page?.id ?? null;
+    const embedRow = `JournalEntry.${journalId}.JournalEntryPage.${embedPageId}|text.content|relative|${introUuid}`;
+    const embedded = referenceRows(["--uuid", introUuid, "--scope", "journal"]);
+    markAndPush(
+      summary,
+      "world.references(a relative @Embed[.<pageId>] is read through Foundry's embed parser)",
+      Boolean(embedPageId && embedded.rows.includes(embedRow)),
+      { expectedRow: embedRow, rows: embedded.rows }
+    );
+
+    const otherJournal = expectOk(
+      summary,
+      "journal.create(target of a parent-relative link)",
+      runFoundryctl(["journal", "create", "--name", `Smoke Ref Other ${stamp}`])
+    );
+    const otherJournalId = otherJournal?.journal?.id ?? null;
+    if (otherJournalId) {
+      created.journals.push(otherJournalId);
+      const parentPage = expectOk(
+        summary,
+        "journal.page.create(parent-relative @UUID[..<journalId>] link)",
+        runFoundryctl([
+          "journal",
+          "page",
+          "create",
+          "--journal-id",
+          journalId,
+          "--name",
+          `Smoke Parent Relative ${stamp}`,
+          "--type",
+          "text",
+          "--data-json",
+          JSON.stringify({ text: { content: `<p>@UUID[..${otherJournalId}]{Other}</p>`, format: 1 } })
+        ])
+      );
+      const parentPageId = parentPage?.page?.id ?? null;
+      const otherUuid = `JournalEntry.${otherJournalId}`;
+      const parentRelative = referenceRows(["--uuid", otherUuid, "--scope", "journal"]);
+      const parentRow = `JournalEntry.${journalId}.JournalEntryPage.${parentPageId}|text.content|relative|${otherUuid}`;
+      markAndPush(
+        summary,
+        isV14
+          ? "world.references(v14 resolves @UUID[..<journalId>] one parent up, to the other journal)"
+          : "world.references(v13 resolves no @UUID[..<journalId>] link to the other journal)",
+        Boolean(
+          parentPageId &&
+          parentRelative.run.response?.ok &&
+          (isV14 ? parentRelative.rows.includes(parentRow) : parentRelative.rows.length === 0)
+        ),
+        { isV14, expectedRow: isV14 ? parentRow : null, rows: parentRelative.rows }
+      );
+    }
   }
 
   const parentFolder = expectOk(
@@ -6542,7 +6612,7 @@ function runExtendedCoverage(
         }
 
         runTokenDeltaCoverage(summary, { targetSceneId, actorId, stamp, created });
-        runPageReferenceItemBulkCoverage(summary, { targetSceneId, actorId, stamp, created });
+        runPageReferenceItemBulkCoverage(summary, { targetSceneId, actorId, stamp, created, isV14 });
 
         const tokenEffectName = `Smoke Token Buff ${stamp}`;
         const tokenEffectCreate = expectOk(
