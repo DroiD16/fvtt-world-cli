@@ -3344,6 +3344,56 @@ function runPageReferenceItemBulkCoverage(summary, { targetSceneId, actorId, sta
     runFoundryctl(["world", "references", "--uuid", "actor.lowercase"]),
     ERROR_CODES.INVALID_PARAMS
   );
+  if (tokenId) {
+    const parentless = runFoundryctl(["world", "references", "--uuid", `Token.${tokenId}`]);
+    markAndPush(
+      summary,
+      "world.references(Token.<id> without its scene → INVALID_PARAMS naming the embedded type)",
+      Boolean(
+        isExpectedError(parentless, ERROR_CODES.INVALID_PARAMS) &&
+        parentless.response?.error?.details?.documentName === "Token"
+      ),
+      { ...summarizeCommand(parentless) }
+    );
+  }
+
+  const gmUserId = runFoundryctl(["system", "info"]).response?.result?.user?.id ?? null;
+  const previousCharacter = gmUserId
+    ? runFoundryctl(["user", "get", "--user-id", gmUserId]).response?.result?.user
+    : undefined;
+  if (gmUserId && previousCharacter) {
+    const priorCharacterId = previousCharacter.character ?? null;
+    const assign = runFoundryctl(["user", "update", "--user-id", gmUserId, "--character", scratchActorId]);
+    let characterRows = [];
+    try {
+      characterRows = (
+        runFoundryctl(["world", "references", "--uuid", scratchUuid, "--scope", "journal"]).response?.result
+          ?.references ?? []
+      ).map((ref) => `${ref.uuid}|${ref.field}|${ref.match}`);
+    } finally {
+      const restore = runFoundryctl(
+        priorCharacterId
+          ? ["user", "update", "--user-id", gmUserId, "--character", priorCharacterId]
+          : ["user", "update", "--user-id", gmUserId, "--clear-character"]
+      );
+      markAndPush(
+        summary,
+        "world.references(a user's assigned character is found; the user's character restored)",
+        Boolean(
+          assign.response?.ok &&
+          characterRows.includes(`User.${gmUserId}|character|id`) &&
+          restore.response?.ok &&
+          (restore.response?.result?.user?.character ?? null) === priorCharacterId
+        ),
+        {
+          assign: summarizeCommand(assign),
+          rows: characterRows,
+          restore: summarizeCommand(restore),
+          priorCharacterId
+        }
+      );
+    }
+  }
 }
 
 function runExtendedCoverage(
