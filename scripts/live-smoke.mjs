@@ -3968,6 +3968,297 @@ async function runTokenPlacementCoverage(summary, { actorId, targetSceneId, stam
   }
 }
 
+function pngSize(path) {
+  const bytes = existsSync(path) ? readFileSync(path) : Buffer.alloc(0);
+  return bytes.length >= 24 && bytes.toString("ascii", 1, 4) === "PNG"
+    ? { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+    : null;
+}
+
+function canvasViewArgs(view) {
+  return [
+    "canvas",
+    "view-scene",
+    "--scene-id",
+    view.sceneId,
+    ...(view.levelId ? ["--level-id", view.levelId] : [])
+  ];
+}
+
+async function runSceneImageCoverage(summary, { actorId, stamp, isV14, gmControlUrl }) {
+  const imageDir = mkdtempSync(join(tmpdir(), "fvtt-world-cli-smoke-images-"));
+  let sceneId = null;
+  let original = null;
+  try {
+    sceneId =
+      expectOk(
+        summary,
+        "scene.create(image scratch)",
+        runFoundryctl([
+          "scene",
+          "create",
+          "--name",
+          `Smoke Image Scene ${stamp}`,
+          "--width",
+          "1200",
+          "--height",
+          "800"
+        ])
+      )?.scene?.id ?? null;
+    if (!sceneId) return;
+    const placeables = [
+      ["wall", ["--data-json", JSON.stringify({ c: [200, 200, 1000, 200] })]],
+      ["wall", ["--data-json", JSON.stringify({ c: [200, 200, 200, 600], door: 1 })]],
+      ["light", ["--data-json", JSON.stringify({ x: 600, y: 400, config: { dim: 30, bright: 15 } })]],
+      ["token", ["--actor-id", actorId, "--x", "500", "--y", "300", "--name", `Smoke Image Token ${stamp}`]]
+    ];
+    for (const [family, args] of placeables) {
+      expectOk(
+        summary,
+        `scene.${family}.create(image scratch)`,
+        runFoundryctl(["scene", family, "create", "--scene-id", sceneId, ...args])
+      );
+    }
+
+    const snapshotPath = join(imageDir, "snapshot.png");
+    const snapshot = expectOk(
+      summary,
+      "scene.snapshot",
+      runFoundryctl([
+        "scene",
+        "snapshot",
+        "--scene-id",
+        sceneId,
+        "--format",
+        "png",
+        "--size",
+        "600",
+        "--out",
+        snapshotPath
+      ])
+    );
+    const decoded = pngSize(snapshotPath);
+    const { scale, offsetX, offsetY } = snapshot?.transform ?? {};
+    markAndPush(
+      summary,
+      "scene.snapshot(image saved, size read from the file, transform covers the scene rectangle)",
+      snapshot?.image?.path === snapshotPath &&
+        !("dataUrl" in (snapshot?.image ?? {})) &&
+        decoded?.width === 600 &&
+        decoded?.height === 400 &&
+        snapshot.image.width === decoded.width &&
+        snapshot.image.height === decoded.height &&
+        Math.abs(snapshot.view.width - 1200) < 1 &&
+        Math.abs(snapshot.view.x * scale + offsetX) < 0.5 &&
+        Math.abs((snapshot.view.y + snapshot.view.height) * scale + offsetY - 400) < 0.5,
+      {
+        image: snapshot?.image ?? null,
+        decoded,
+        view: snapshot?.view ?? null,
+        transform: snapshot?.transform ?? null
+      }
+    );
+    markAndPush(
+      summary,
+      isV14
+        ? "scene.snapshot(v14: renders a level, no templates layer by default)"
+        : "scene.snapshot(v13: no level, templates layer by default)",
+      ["walls", "lights", "tokens"].every((layer) => snapshot?.layers?.includes(layer)) &&
+        (isV14
+          ? typeof snapshot?.levelId === "string" && !snapshot.layers.includes("templates")
+          : snapshot?.levelId === null && snapshot.layers.includes("templates")),
+      { levelId: snapshot?.levelId ?? null, layers: snapshot?.layers ?? null }
+    );
+    expectErr(
+      summary,
+      isV14 ? "scene.snapshot(templates layer refused on v14)" : "scene.snapshot(levelId refused on v13)",
+      runFoundryctl(
+        isV14
+          ? ["scene", "snapshot", "--scene-id", sceneId, "--layers", "templates"]
+          : ["scene", "snapshot", "--scene-id", sceneId, "--level-id", "level0000000000"]
+      ),
+      ERROR_CODES.UNSUPPORTED_OPERATION
+    );
+
+    const before = runFoundryctl([
+      "canvas",
+      "capture",
+      "--size",
+      "64",
+      "--out",
+      join(imageDir, "before.webp")
+    ]);
+    if (isCommandSuccess(before)) {
+      const { sceneId: viewedSceneId, levelId, position } = before.response.result;
+      original = { sceneId: viewedSceneId, levelId, position };
+    } else {
+      markAndPush(
+        summary,
+        "canvas.capture(GM view before the canvas steps)",
+        isExpectedError(before, ERROR_CODES.SCENE_NOT_VIEWED),
+        {
+          ...summarizeCommand(before)
+        }
+      );
+      summary.notes.push(
+        "The GM client viewed no scene before the canvas steps, so the run cannot put that state back: the GM client is left viewing the image scratch scene until it is deleted."
+      );
+    }
+
+    const viewed = expectOk(
+      summary,
+      "canvas.view-scene",
+      runFoundryctl(["canvas", "view-scene", "--scene-id", sceneId])
+    );
+    markAndPush(
+      summary,
+      "canvas.view-scene(switches and reports the scene it left)",
+      viewed?.sceneId === sceneId &&
+        viewed?.changed === (original?.sceneId !== sceneId) &&
+        viewed?.previousSceneId === (original?.sceneId ?? null),
+      { viewed, original }
+    );
+    const again = expectOk(
+      summary,
+      "canvas.view-scene(again)",
+      runFoundryctl(["canvas", "view-scene", "--scene-id", sceneId])
+    );
+    markAndPush(
+      summary,
+      "canvas.view-scene(an already viewed scene reports changed:false)",
+      again?.changed === false,
+      { again }
+    );
+
+    const fit = expectOk(summary, "canvas.pan(fit)", runFoundryctl(["canvas", "pan", "--fit"]));
+    markAndPush(
+      summary,
+      "canvas.pan(fit centers the scene rectangle)",
+      fit?.sceneId === sceneId &&
+        fit.position.scale > 0 &&
+        fit.view.x <= snapshot?.view?.x + 1 &&
+        fit.view.x + fit.view.width >= snapshot?.view?.x + snapshot?.view?.width - 1,
+      { fit, sceneRect: snapshot?.view ?? null }
+    );
+    expectErr(
+      summary,
+      "canvas.pan(fit with a position refused)",
+      runFoundryctl(["canvas", "pan", "--fit", "--scale", "2"]),
+      ERROR_CODES.INVALID_PARAMS
+    );
+    const panned = expectOk(
+      summary,
+      "canvas.pan(position)",
+      runFoundryctl([
+        "canvas",
+        "pan",
+        "--x",
+        String(snapshot?.view?.x + 600),
+        "--y",
+        String(snapshot?.view?.y + 400),
+        "--scale",
+        "1"
+      ])
+    );
+    markAndPush(
+      summary,
+      "canvas.pan(reports the applied position and the previous one)",
+      Math.abs(panned?.position?.x - (snapshot?.view?.x + 600)) < 0.5 &&
+        Math.abs(panned?.position?.y - (snapshot?.view?.y + 400)) < 0.5 &&
+        panned?.previous?.scale === fit?.position?.scale,
+      { panned }
+    );
+
+    const capturePath = join(imageDir, "capture.png");
+    const capture = expectOk(
+      summary,
+      "canvas.capture",
+      runFoundryctl(["canvas", "capture", "--format", "png", "--out", capturePath])
+    );
+    const captured = pngSize(capturePath);
+    markAndPush(
+      summary,
+      "canvas.capture(image of the viewed scene, size read from the file, view around the pan point)",
+      capture?.sceneId === sceneId &&
+        captured !== null &&
+        capture.image.width === captured.width &&
+        capture.image.height === captured.height &&
+        capture.view.x <= panned?.position?.x &&
+        capture.view.x + capture.view.width >= panned?.position?.x &&
+        Math.abs(
+          panned.position.x * capture.transform.scale + capture.transform.offsetX - captured.width / 2
+        ) < 1,
+      {
+        image: capture?.image ?? null,
+        captured,
+        view: capture?.view ?? null,
+        transform: capture?.transform ?? null
+      }
+    );
+
+    if (gmControlUrl && original) {
+      await evaluateInGmPage(
+        gmControlUrl,
+        moduleSettingWriteScript(POLICY_SETTING_KEY, scratchPolicy({ "canvas.view-scene": "approve" }))
+      );
+      try {
+        const { run, autoApproved, approvalError } = await runFoundryctlAutoApproving(
+          canvasViewArgs(original),
+          "canvas.view-scene",
+          gmControlUrl
+        );
+        markAndPush(
+          summary,
+          "canvas.view-scene(held for approval, runs once allowed)",
+          autoApproved && isCommandSuccess(run) && run.response.result.sceneId === original.sceneId,
+          { autoApproved, approvalError, ...summarizeCommand(run) }
+        );
+      } finally {
+        await evaluateInGmPage(gmControlUrl, moduleSettingWriteScript(POLICY_SETTING_KEY, scratchPolicy({})));
+      }
+    }
+  } finally {
+    if (original) {
+      runFoundryctl(canvasViewArgs(original));
+      runFoundryctl([
+        "canvas",
+        "pan",
+        "--x",
+        String(original.position.x),
+        "--y",
+        String(original.position.y),
+        "--scale",
+        String(original.position.scale)
+      ]);
+      const after = runFoundryctl([
+        "canvas",
+        "capture",
+        "--size",
+        "64",
+        "--out",
+        join(imageDir, "after.webp")
+      ]).response?.result;
+      markAndPush(
+        summary,
+        "canvas(GM view restored to its scene and position)",
+        after?.sceneId === original.sceneId &&
+          Math.abs(after.position.x - original.position.x) < 0.5 &&
+          Math.abs(after.position.y - original.position.y) < 0.5 &&
+          Math.abs(after.position.scale - original.position.scale) < 1e-6,
+        { original, after: after ? { sceneId: after.sceneId, position: after.position } : null }
+      );
+    }
+    if (sceneId) {
+      expectOk(
+        summary,
+        "scene.delete(image scratch)",
+        runFoundryctl(["scene", "delete", "--scene-id", sceneId, "--force"])
+      );
+    }
+    rmSync(imageDir, { recursive: true, force: true });
+  }
+}
+
 function runExtendedCoverage(
   summary,
   { actorId, targetSceneId, targetSceneActive, gmUserId, stamp, worldId, isV14 = false }
@@ -16649,6 +16940,13 @@ async function main() {
     await runTokenPlacementCoverage(summary, {
       actorId: options.actorId,
       targetSceneId: targetScene?.id ?? null,
+      stamp,
+      isV14,
+      gmControlUrl: options.gmControlUrl
+    });
+
+    await runSceneImageCoverage(summary, {
+      actorId: options.actorId,
       stamp,
       isV14,
       gmControlUrl: options.gmControlUrl
