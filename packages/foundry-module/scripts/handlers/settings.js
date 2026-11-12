@@ -12,7 +12,7 @@ import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { createBridgeError, toFailureSummary } from "../lib/errors.js";
 import { buildMismatchReport, createMismatchError } from "../lib/mismatch-report.js";
 import { paginate, serializeSettingMetadata } from "../lib/serializers.js";
-import { serializeSettingValue, serializeValueWithOmissions } from "../lib/setting-values.js";
+import { omissionFields, serializeValueWithOmissions } from "../lib/setting-values.js";
 import { MODULE_SETTING_KEYS, assertFoundryReady } from "../lib/validators.js";
 
 function getSettingsRegistry() {
@@ -299,7 +299,7 @@ function settingValidationError(id, failure) {
  */
 function validateSettingValue(id, config, value) {
   const type = config?.type;
-  serializeSettingValue(value);
+  serializeValueWithOmissions(value);
 
   if (isSettingDataField(type)) {
     let cleaned;
@@ -381,18 +381,6 @@ function readSettingValue(namespace, key, id) {
  */
 function requestedRead(prepared) {
   return { value: prepared.requested, omissions: [], omissionsTruncated: false };
-}
-
-/**
- * @param {string} prefix
- * @param {ReturnType<typeof serializeValueWithOmissions>} read
- */
-function omissionFields(prefix, read) {
-  if (read.omissions.length === 0) return {};
-  return {
-    [`${prefix}Omissions`]: read.omissions,
-    ...(read.omissionsTruncated ? { [`${prefix}OmissionsTruncated`]: true } : {})
-  };
 }
 
 /**

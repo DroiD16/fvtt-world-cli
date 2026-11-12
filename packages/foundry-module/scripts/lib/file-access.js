@@ -656,7 +656,7 @@ function ensureUploadSize(bytesLength, path, uploadLimitBytes = DEFAULT_UPLOAD_S
 }
 
 /** @param {number} uploadLimitBytes */
-export function effectiveReadLimitBytes(uploadLimitBytes) {
+function effectiveReadLimitBytes(uploadLimitBytes) {
   return Math.min(uploadLimitBytes, READ_ENCODING_CEILING_BYTES);
 }
 
