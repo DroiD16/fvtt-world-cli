@@ -243,9 +243,17 @@ export async function createSceneEmbedded(scene, type, data, { dryRun = false } 
   }
 
   const prepared = prepareSceneEmbeddedCreateData(type, data);
+  return dryRun ? prepared : createPreparedSceneEmbedded(scene, type, prepared);
+}
 
-  if (dryRun) {
-    return prepared;
+/**
+ * @param {any} scene
+ * @param {string} type
+ * @param {Record<string, any>} prepared
+ */
+export async function createPreparedSceneEmbedded(scene, type, prepared) {
+  if (typeof scene.createEmbeddedDocuments !== "function") {
+    throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Scene embedded document API is not available");
   }
 
   const results = await scene.createEmbeddedDocuments(type, [prepared], {
@@ -372,10 +380,35 @@ export async function buildTokenDataFromActor(actorId, overrides, scene) {
  */
 export async function resolveSceneTokenCreateData(data, scene) {
   assertPlaceableLevelFieldsSupported("Token", data);
-  const { actorId, ...overrides } = data ?? {};
-  if (!actorId) {
-    return overrides;
-  }
+  const { actorId, ...fields } = data ?? {};
+  const overrides = fields.sort === undefined ? { ...fields, sort: nextTokenSort(scene) } : fields;
+  return actorId ? buildTokenDataFromActor(actorId, overrides, scene) : overrides;
+}
 
-  return buildTokenDataFromActor(actorId, { ...overrides, actorLink: overrides.actorLink ?? false }, scene);
+/**
+ * @param {any} scene
+ * @param {Record<string, any>} data
+ * @param {{ center?: boolean, snap?: boolean } | undefined} placement
+ */
+export function placeTokenData(scene, data, placement) {
+  if (!placement?.center && !placement?.snap) return data;
+  const token = previewPreparedSceneEmbeddedCreate(scene, "Token", data);
+  const { x, y, elevation, width, height, shape } = token._source;
+  let position = { x, y, elevation, width, height, shape };
+  if (placement.center) {
+    const pivot = token.getCenterPoint({ x: 0, y: 0, elevation: 0, width, height, shape });
+    position = { ...position, x: x - pivot.x, y: y - pivot.y };
+  }
+  if (placement.snap) {
+    const snapped = token.getSnappedPosition(position);
+    position = { ...position, x: snapped.x, y: snapped.y };
+  }
+  return { ...data, x: Math.round(position.x), y: Math.round(position.y) };
+}
+
+/** @param {any} scene */
+function nextTokenSort(scene) {
+  let max = -Infinity;
+  for (const token of scene?.tokens ?? []) max = Math.max(max, token.sort ?? 0);
+  return Math.max(max + 1, 0);
 }

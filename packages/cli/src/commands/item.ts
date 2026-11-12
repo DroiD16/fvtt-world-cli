@@ -9,7 +9,12 @@ import {
 } from "../params.js";
 import { executeRemoteCommand } from "../exec.js";
 import { parseIdList } from "../parse.js";
-import { addEffectFieldOptions, addItemFieldOptions, addReservedIncludeOption } from "./field-options.js";
+import {
+  addEffectFieldOptions,
+  addItemFieldOptions,
+  addItemGetIncludeOption,
+  addReservedIncludeOption
+} from "./field-options.js";
 import {
   type RegistrationContext,
   createSharedRegistrars,
@@ -65,25 +70,23 @@ export function registerItem({ program, dependencies }: RegistrationContext) {
       dependencies
     });
   });
-  addReservedIncludeOption(
-    item.command("get").requiredOption("--item-id <itemId>", "Item id"),
-    "on this command"
-  ).action(async function getItem(options: { itemId: string; include?: string[] }) {
-    await executeRemoteCommand({
-      commandName: "item.get",
-      params: {
-        itemId: options.itemId,
-        ...(options.include ? { include: options.include } : {})
-      },
-      command: this,
-      dependencies
-    });
-  });
-  addReservedIncludeOption(
+  addItemGetIncludeOption(item.command("get").requiredOption("--item-id <itemId>", "Item id")).action(
+    async function getItem(options: { itemId: string; include?: string[] }) {
+      await executeRemoteCommand({
+        commandName: "item.get",
+        params: {
+          itemId: options.itemId,
+          ...(options.include ? { include: options.include } : {})
+        },
+        command: this,
+        dependencies
+      });
+    }
+  );
+  addItemGetIncludeOption(
     item
       .command("get-many")
-      .requiredOption("--ids <list>", "Comma-separated item ids (atomic: all must exist)", parseIdList),
-    "on this command"
+      .requiredOption("--ids <list>", "Comma-separated item ids (atomic: all must exist)", parseIdList)
   ).action(async function getManyItems(options: { ids: string[]; include?: string[] }) {
     await executeRemoteCommand({
       commandName: "item.get-many",

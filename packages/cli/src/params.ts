@@ -1389,6 +1389,7 @@ export interface TokenFieldOptions {
   disposition?: number;
   linked?: boolean;
   unlinked?: boolean;
+  include?: string[];
 }
 
 function buildTokenFields(options: TokenFieldOptions, json: Record<string, unknown> | undefined) {
@@ -1407,13 +1408,27 @@ function buildTokenFields(options: TokenFieldOptions, json: Record<string, unkno
   };
 }
 
+export interface TokenPlacementOptions {
+  center?: boolean;
+  snap?: boolean;
+}
+
+export function tokenPlacementParams(options: TokenPlacementOptions) {
+  if (!options.center && !options.snap) return {};
+  return {
+    placement: { ...(options.center ? { center: true } : {}), ...(options.snap ? { snap: true } : {}) }
+  };
+}
+
 export function createSceneTokenCreateParams(
-  options: TokenFieldOptions & { sceneId: string; dataJson?: string }
+  options: TokenFieldOptions & TokenPlacementOptions & { sceneId: string; dataJson?: string }
 ) {
   const json = optionalJsonObject(options.dataJson, "--data-json");
   return {
     sceneId: options.sceneId,
-    data: buildTokenFields(options, json)
+    data: buildTokenFields(options, json),
+    ...tokenPlacementParams(options),
+    ...(options.include ? { include: options.include } : {})
   };
 }
 
@@ -1424,7 +1439,8 @@ export function createSceneTokenUpdateParams(
   return {
     sceneId: options.sceneId,
     tokenId: options.tokenId,
-    patch: assertNonEmptyPatch(buildTokenFields(options, json))
+    patch: assertNonEmptyPatch(buildTokenFields(options, json)),
+    ...(options.include ? { include: options.include } : {})
   };
 }
 
@@ -1435,7 +1451,8 @@ export function createSceneTokenCloneParams(
   return {
     sceneId: options.sceneId,
     tokenId: options.tokenId,
-    ...optionalPatch(buildTokenFields(options, json))
+    ...optionalPatch(buildTokenFields(options, json)),
+    ...(options.include ? { include: options.include } : {})
   };
 }
 

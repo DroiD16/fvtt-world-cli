@@ -185,6 +185,21 @@ version; [Foundry compatibility](compatibility.md) lists them.
 World document reads carry `compendiumSource` and `duplicateSource`, hoisted from Foundry's
 `_stats` and `null` when absent.
 
+`include: ["prepared"]` adds `prepared.system`, the live `system` data after the game system computed
+its derived values, such as totals, modifiers and save DCs. It is accepted by `actor.get`,
+`actor.get-many`, `scene.token.get`, `item.get`, `item.get-many`, `actor.item.get` and
+`scene.token.item.get`. A token's and a token item's values come from the token's actor, which for an
+unlinked token includes its overrides. The bridge reads every field the system's data model declares
+and every plain property the system added during preparation. It does not call class getters, so a
+value a system exposes only through a getter is absent. Nested documents appear as
+`{ documentName, id, uuid }`, keyed collections as objects keyed by id, sets as arrays, and a value
+with no JSON form as `{"$unserializable": "<reason>"}`. A value over 512 KiB, 50,000 nodes or 32
+levels, or one that throws while being read, gives `prepared.system: null` and `prepared.omitted`
+with `reason` (`too-large` or `unreadable`) and, for `too-large`, the `limit` (`bytes`, `nodes` or
+`depth`) and its `max`. The read itself still succeeds. Actor results also carry
+`prepared.prototypeToken` and `prepared.detectionModes`; token results carry `detectionModes`,
+`sight` and `light`. Prepared values are derived: writing them back stores them as source.
+
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.
 
@@ -279,6 +294,12 @@ before execution are reported: random selection, rendering, hooks, and other exe
 observations may be absent or explicitly unconfirmed. A successful preview reserves nothing; the
 world can change between preview and commit.
 
+A single create, update or clone preview returns the document as Foundry would build it from the
+request. A `create-many` preview carries `id: null` and, in families whose outcomes carry a name,
+the name of each element's preview. `include: ["delta"]` on `scene.token.create`, `update` and
+`clone` adds the token's stored `delta` to the result, in a dry run as in a write, so the overrides a
+patch produces can be checked before they are written.
+
 ## Idempotency
 
 An idempotency key identifies one logical request. Reusing it with another command or payload
@@ -310,6 +331,28 @@ Its input ids and line indexes belong to CLI output, not the wire contract.
 
 Bulk writes accept bounded arrays and prevalidate their elements. Persistence is not transactional;
 results report `complete` and per-element `outcomes`, all of which the caller must inspect.
+
+`scene.token.create` and `scene.token.create-many` accept `placement: { center?, snap? }`. Without
+it, `x` and `y` are the token's top-left corner, as Foundry stores them. `center` reads them as the
+token's center and subtracts the offset Foundry's `TokenDocument#getCenterPoint` gives for the
+token's size and shape. `snap` then moves the position to `TokenDocument#getSnappedPosition` on the
+target scene's grid. Both round `x` and `y` to whole pixels, as Foundry does for a dropped token;
+elevation and level stay as sent.
+
+`scene.token.create-many` validates every element first and writes nothing if one fails. It then
+prepares and creates the tokens one at a time, in order, so each token is prepared against a scene
+that already holds the tokens before it. That is how Foundry's appended numbers and default `sort`
+advance within one batch. The batch stops at the first element whose preparation fails, whose create
+call throws, or whose token Foundry does not store. That element reports `dropped` when its
+preparation failed (with a `null` id, never sent) or when Foundry stored nothing without an error.
+When its create call threw, it reports `created` if the token was stored anyway and `unknown` if it
+was not. A preparation error or a thrown create call is reported in `failure`, whose message starts
+with `scene.token.create-many element <index>`; when no token was created, the request fails instead
+with that message and `details.index`. The elements after it report `notAttempted` with a `null` id
+and were never sent.
+A token create-many dry run with actor elements adds a `warning`, because each preview is prepared
+against the current scene and the write draws appended numbers, random adjectives and random images
+again.
 
 `get-many` fails the request if any requested id cannot be read. `setting.get-many` is the exception;
 it reports an unregistered key as `SETTING_NOT_FOUND` on that row without failing the whole request.

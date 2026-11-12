@@ -13,7 +13,7 @@ import { paginate } from "../lib/serializers.js";
 import { createSceneEmbeddedBatchHandlers } from "./scene-embedded-batch.js";
 
 /**
- * @param {{ type: string, prefix: string, idField: string, resultKey: string, pluralKey: string, notFoundCode: string, serialize: (document: any) => any, serializeSummary: (document: any, params?: any) => any, listFilter?: (rows: any[], params: any) => any[], omitVerbs?: string[], prepareCreate?: (data: Record<string, any>, scene: any) => any, assertSupported?: (scene: any) => void, assertDeleteAllowed?: (scene: any, ids: string[]) => void, summarize?: (document: any) => Record<string, unknown> }} config
+ * @param {{ type: string, prefix: string, idField: string, resultKey: string, pluralKey: string, notFoundCode: string, serialize: (document: any, params?: any) => any, serializeSummary: (document: any, params?: any) => any, listFilter?: (rows: any[], params: any) => any[], omitVerbs?: string[], sequentialCreate?: boolean, prepareCreate?: (data: Record<string, any>, scene: any, params: any) => any, assertSupported?: (scene: any) => void, assertDeleteAllowed?: (scene: any, ids: string[]) => void, summarize?: (document: any) => Record<string, unknown> }} config
  */
 export function createScenePlaceableHandlers({
   type,
@@ -26,6 +26,7 @@ export function createScenePlaceableHandlers({
   serializeSummary,
   listFilter,
   omitVerbs = [],
+  sequentialCreate,
   prepareCreate,
   assertSupported,
   assertDeleteAllowed,
@@ -54,16 +55,16 @@ export function createScenePlaceableHandlers({
     async get(params) {
       resolveScene(params.sceneId);
       const { document } = getSceneEmbeddedById(params.sceneId, type, params[idField], notFoundCode, idField);
-      return { sceneId: params.sceneId, [resultKey]: serialize(document) };
+      return { sceneId: params.sceneId, [resultKey]: serialize(document, params) };
     },
 
     async create(params) {
       const scene = resolveScene(params.sceneId);
       const document = await createSceneEmbedded(scene, type, params.data, { dryRun: isDryRun(params) });
-      const result = { sceneId: params.sceneId, [resultKey]: serialize(document) };
+      const result = { sceneId: params.sceneId, [resultKey]: serialize(document, params) };
       if (isDryRun(params)) {
         const preview = previewSceneEmbeddedCreate(scene, type, params.data);
-        return dryRunResponse({ ...result, [resultKey]: serialize(preview) });
+        return dryRunResponse({ ...result, [resultKey]: serialize(preview, params) });
       }
       return result;
     },
@@ -79,10 +80,10 @@ export function createScenePlaceableHandlers({
         idField,
         { dryRun: isDryRun(params) }
       );
-      const result = { sceneId: params.sceneId, [resultKey]: serialize(document) };
+      const result = { sceneId: params.sceneId, [resultKey]: serialize(document, params) };
       if (isDryRun(params)) {
         const preview = await previewSceneEmbeddedUpdate(document, params.patch);
-        return dryRunResponse({ ...result, [resultKey]: serialize(preview) });
+        return dryRunResponse({ ...result, [resultKey]: serialize(preview, params) });
       }
       return result;
     },
@@ -98,7 +99,7 @@ export function createScenePlaceableHandlers({
         idField,
         { dryRun: isDryRun(params) }
       );
-      const result = { sceneId: params.sceneId, [resultKey]: serialize(clone) };
+      const result = { sceneId: params.sceneId, [resultKey]: serialize(clone, params) };
       return isDryRun(params) ? dryRunResponse(result) : result;
     },
 
@@ -120,6 +121,7 @@ export function createScenePlaceableHandlers({
       idField,
       notFoundCode,
       listCommand: `${prefix}.list`,
+      sequentialCreate,
       prepareCreate,
       assertSupported,
       assertDeleteAllowed,

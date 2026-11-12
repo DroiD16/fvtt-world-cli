@@ -14,6 +14,7 @@ import {
   freeformObjectSchema,
   idempotencyKeyProperty,
   includeProperty,
+  itemGetIncludeProperty,
   nameFilterProperty,
   nameFilteredListSchema,
   nullableStringSchema,
@@ -27,7 +28,7 @@ const actorDataSchema = {
   properties: {
     name: { type: "string", minLength: 1 },
     type: { type: "string", minLength: 1 },
-    img: { type: "string", minLength: 1 },
+    img: { type: ["string", "null"], minLength: 1 },
     folder: nullableStringSchema,
     sort: { type: "number" },
     system: freeformObjectSchema,
@@ -161,7 +162,7 @@ export const actorCommands = {
     properties: {
       actorId: { type: "string", minLength: 1 },
       itemId: { type: "string", minLength: 1 },
-      ...includeProperty
+      ...itemGetIncludeProperty
     },
     additionalProperties: false
   }),

@@ -48,6 +48,11 @@ afterEach(() => {
 });
 
 describe("value serializer — plain kinds", () => {
+  it("returns a date at the depth limit without spending a wrapper hop on it", () => {
+    expect(serialize(new Date(0), { maxDepth: 0 })).toBe("1970-01-01T00:00:00.000Z");
+    expect(serialize([new Date(0)], { maxDepth: 1 })).toEqual(["1970-01-01T00:00:00.000Z"]);
+  });
+
   it("maps undefined to null at the root, in a property and in an array hole", () => {
     expect(serialize(undefined)).toBeNull();
     expect(serialize({ a: undefined })).toEqual({ a: null });

@@ -7,6 +7,7 @@ import {
   freeformObjectSchema,
   idempotencyKeyProperty,
   includeProperty,
+  itemGetIncludeProperty,
   nameFilterProperty,
   nullableStringSchema,
   paginationProperties,
@@ -15,11 +16,11 @@ import {
   sceneTokenItemScopeProperties,
   sceneTokenScopeProperties,
   tokenIncludeProperty,
-  tokenListIncludeProperty
+  tokenDeltaIncludeProperty
 } from "./shared.js";
 
 const tokenWriteProperties = {
-  actorId: { type: "string", minLength: 1 },
+  actorId: { type: ["string", "null"], minLength: 1 },
   actorLink: { type: "boolean" },
   name: { type: "string", minLength: 1 },
   x: { type: "number" },
@@ -44,6 +45,15 @@ const tokenCreateSchema = {
   properties: tokenWriteProperties,
   additionalProperties: true,
   minProperties: 1
+};
+
+const tokenPlacementProperty = {
+  placement: {
+    type: "object",
+    required: [],
+    properties: { center: { type: "boolean" }, snap: { type: "boolean" } },
+    additionalProperties: false
+  }
 };
 
 const tokenPatchSchema = {
@@ -88,7 +98,7 @@ const tilePatchSchema = {
 };
 
 const soundWriteProperties = {
-  path: { type: "string", minLength: 1 },
+  path: { type: ["string", "null"], minLength: 1 },
   x: { type: "number" },
   y: { type: "number" },
   radius: { type: "number" },
@@ -197,7 +207,7 @@ const drawingWriteProperties = {
   strokeWidth: { type: "number" },
   strokeColor: { type: "string" },
   strokeAlpha: { type: "number" },
-  texture: { type: "string" },
+  texture: nullableStringSchema,
   text: { type: "string" },
   fontFamily: { type: "string" },
   fontSize: { type: "number" },
@@ -265,7 +275,7 @@ const templateWriteProperties = {
   width: { type: "number" },
   borderColor: { type: "string" },
   fillColor: { type: "string" },
-  texture: { type: "string" },
+  texture: nullableStringSchema,
   hidden: { type: "boolean" },
   flags: freeformObjectSchema
 };
@@ -436,7 +446,7 @@ export const sceneEmbeddedCommands = {
       sceneId: { type: "string", minLength: 1 },
       ...nameFilterProperty,
       ...paginationProperties,
-      ...tokenListIncludeProperty
+      ...tokenDeltaIncludeProperty
     },
     additionalProperties: false
   }),
@@ -457,6 +467,8 @@ export const sceneEmbeddedCommands = {
       properties: {
         sceneId: { type: "string", minLength: 1 },
         data: tokenCreateSchema,
+        ...tokenPlacementProperty,
+        ...tokenDeltaIncludeProperty,
         ...dryRunProperty,
         ...idempotencyKeyProperty
       },
@@ -472,6 +484,7 @@ export const sceneEmbeddedCommands = {
         sceneId: { type: "string", minLength: 1 },
         tokenId: { type: "string", minLength: 1 },
         patch: tokenPatchSchema,
+        ...tokenDeltaIncludeProperty,
         ...dryRunProperty
       },
       additionalProperties: false
@@ -499,6 +512,7 @@ export const sceneEmbeddedCommands = {
         sceneId: { type: "string", minLength: 1 },
         tokenId: { type: "string", minLength: 1 },
         patch: tokenPatchSchema,
+        ...tokenDeltaIncludeProperty,
         ...dryRunProperty,
         ...idempotencyKeyProperty
       },
@@ -522,7 +536,8 @@ export const sceneEmbeddedCommands = {
   ...batchWriteCommands("scene.token", {
     scopeProperties: sceneScopeProperties,
     createSchema: tokenCreateSchema,
-    patchSchema: tokenPatchSchema
+    patchSchema: tokenPatchSchema,
+    extraProperties: { "create-many": tokenPlacementProperty }
   }),
   "scene.token.item.list": cmd({
     type: "object",
@@ -541,7 +556,8 @@ export const sceneEmbeddedCommands = {
     properties: {
       sceneId: { type: "string", minLength: 1 },
       tokenId: { type: "string", minLength: 1 },
-      itemId: { type: "string", minLength: 1 }
+      itemId: { type: "string", minLength: 1 },
+      ...itemGetIncludeProperty
     },
     additionalProperties: false
   }),

@@ -1,10 +1,11 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { getSceneById } from "../lib/game-collections.js";
 import {
-  createSceneEmbedded,
+  createPreparedSceneEmbedded,
   getSceneEmbeddedById,
+  placeTokenData,
   prepareSceneEmbeddedCreateData,
-  previewSceneEmbeddedCreate,
+  previewPreparedSceneEmbeddedCreate,
   resolveSceneTokenCreateData
 } from "../lib/scene-embedded.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
@@ -23,25 +24,47 @@ import { createScenePlaceableHandlers } from "./scene-placeables.js";
 
 const TOKEN = "Token";
 
+/**
+ * @param {Record<string, any>} data
+ * @param {any} scene
+ * @param {{ center?: boolean, snap?: boolean } | undefined} placement
+ */
+async function prepareTokenCreate(data, scene, placement) {
+  const prepared = prepareSceneEmbeddedCreateData(TOKEN, await resolveSceneTokenCreateData(data, scene));
+  return placeTokenData(scene, prepared, placement);
+}
+
 export function createSceneTokenHandlers() {
+  const placeables = createScenePlaceableHandlers({
+    type: TOKEN,
+    prefix: "scene.token",
+    idField: "tokenId",
+    resultKey: "token",
+    pluralKey: "tokens",
+    notFoundCode: ERROR_CODES.TOKEN_NOT_FOUND,
+    serialize: (document, params) => serializeToken(document, { include: params?.include }),
+    serializeSummary: (document, params) => serializeTokenSummary(document, { include: params?.include }),
+    listFilter: (tokens, params) => filterByName(tokens, params.name),
+
+    sequentialCreate: true,
+    prepareCreate: (data, scene, params) => prepareTokenCreate(data, scene, params.placement),
+
+    summarize: (document) => ({ name: tokenName(document) }),
+    omitVerbs: ["get", "create"]
+  });
+
   return {
-    ...createScenePlaceableHandlers({
-      type: TOKEN,
-      prefix: "scene.token",
-      idField: "tokenId",
-      resultKey: "token",
-      pluralKey: "tokens",
-      notFoundCode: ERROR_CODES.TOKEN_NOT_FOUND,
-      serialize: (document) => serializeToken(document),
-      serializeSummary: (document, params) => serializeTokenSummary(document, { include: params?.include }),
-      listFilter: (tokens, params) => filterByName(tokens, params.name),
+    ...placeables,
 
-      prepareCreate: async (data, scene) =>
-        prepareSceneEmbeddedCreateData(TOKEN, await resolveSceneTokenCreateData(data, scene)),
-
-      summarize: (document) => ({ name: tokenName(document) }),
-      omitVerbs: ["get", "create"]
-    }),
+    async "scene.token.create-many"(params) {
+      const result = await placeables["scene.token.create-many"](params);
+      if (!isDryRun(params) || !params.data.some((data) => data?.actorId)) return result;
+      return {
+        ...result,
+        warning:
+          "Each element was prepared against the scene as it is now. The write prepares each token again after the tokens before it are placed, so appended numbers advance and random adjectives and images are drawn again; the created names can differ from these."
+      };
+    },
 
     async "scene.token.get"(params) {
       const { document } = getSceneEmbeddedById(
@@ -110,16 +133,16 @@ export function createSceneTokenHandlers() {
 
     async "scene.token.create"(params) {
       const scene = getSceneById(params.sceneId);
-
-      const tokenData = await resolveSceneTokenCreateData(params.data, scene);
-
-      const token = await createSceneEmbedded(scene, TOKEN, tokenData, { dryRun: isDryRun(params) });
-      const result = { sceneId: params.sceneId, token: serializeToken(token) };
+      const tokenData = await prepareTokenCreate(params.data, scene, params.placement);
       if (isDryRun(params)) {
-        const preview = previewSceneEmbeddedCreate(scene, TOKEN, tokenData);
-        return dryRunResponse({ ...result, token: serializeToken(preview) });
+        const preview = previewPreparedSceneEmbeddedCreate(scene, TOKEN, tokenData);
+        return dryRunResponse({
+          sceneId: params.sceneId,
+          token: serializeToken(preview, { include: params.include })
+        });
       }
-      return result;
+      const token = await createPreparedSceneEmbedded(scene, TOKEN, tokenData);
+      return { sceneId: params.sceneId, token: serializeToken(token, { include: params.include }) };
     }
   };
 }

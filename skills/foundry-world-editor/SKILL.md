@@ -81,8 +81,14 @@ level ids in a preview are provisional.
 Deleting a level also deletes its tokens and every placeable only on that level, and the dry run
 does not list them: read the scene's placeables (token `level`, others' `levels`) and tell the user
 what the delete removes before running it.
-An unlinked token keeps its own overrides, which edits to its world actor never reach. Before
-editing an actor that has placed tokens, read its tokens' overrides
+Token `x`/`y` are its top-left corner. To put a token's center on a point, pass `--center` to
+`scene token create`/`create-many`, plus `--snap` to align it to the grid.
+A token created from an actor takes `actorLink` from the actor's prototype token. Pass `--unlinked`
+when the token needs its own items, effects, or data, and check `actorLink` in the result: token
+item and effect writes on a linked token change the world actor.
+An unlinked token keeps its own overrides, which edits to its world actor never reach. To check a
+`delta` patch, dry-run `scene token update` with `--include delta`; the result shows the overrides it
+would store. Before editing an actor that has placed tokens, read its tokens' overrides
 (`scene token get --include delta,prepared`) and tell the user which tokens the edit will not
 change.
 Before deleting or relinking a document, run `world references --uuid <uuid>` and tell the user
@@ -151,6 +157,10 @@ for each one. `id` is the public identifier; a `_id` mirror may accompany it. Va
 through `include` flags may be derived or version-dependent. Write them back only when the
 update schema explicitly accepts them. Actor reads return `itemCount` in place of owned items; add
 `--include items` when the task needs them, or use `actor item list` and `actor item get`.
+Stored `system` holds authored inputs only. Read a computed game value (armor class, skill total,
+attack bonus, save DC) from `.prepared.system` of `--include prepared`: `actor get` for the actor,
+`actor item get` for an owned item, `scene token item get` for an unlinked token's item. A
+`prepared.omitted` entry means the value was too large or unreadable, not that it is zero.
 
 ## Retry classification
 
@@ -191,8 +201,9 @@ Classify a failure before reacting:
 Bulk commands (`create-many`, `update-many`, `delete-many`) share single-command validation but
 are not transactions: check the top-level `complete` flag and inspect every entry in `outcomes`.
 Persisted statuses such as `created`, `updated`, and `deleted` mean something different from
-`unchanged`, `alreadyDeleted`, `dropped`, and `unknown`; the authoritative status set lives in the
-protocol constants, not here. Action commands
+`unchanged`, `alreadyDeleted`, `dropped`, `unknown`, and `notAttempted` (never sent, because an
+earlier element of a sequential batch failed); the authoritative status set lives in the protocol
+constants, not here. Action commands
 (playback, draws, deals, combat transitions, thumbnails, fog) call fixed typed Foundry methods and
 can trigger hooks, chat output, and system automation; read the schema, dry-run first, and
 interpret confirmation fields literally rather than assuming an ordinary update happened.

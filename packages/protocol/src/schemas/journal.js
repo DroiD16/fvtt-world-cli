@@ -89,7 +89,7 @@ const journalPageCreateSchema = {
     title: journalPageTitleSchema,
     image: journalPageImageSchema,
     video: journalPageVideoSchema,
-    src: { type: "string", minLength: 1 },
+    src: { type: ["string", "null"], minLength: 1 },
 
     category: nullableStringSchema,
 

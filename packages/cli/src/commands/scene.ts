@@ -56,7 +56,9 @@ import {
   type SoundFieldOptions,
   stringField,
   type TileFieldOptions,
-  type TokenFieldOptions
+  tokenPlacementParams,
+  type TokenFieldOptions,
+  type TokenPlacementOptions
 } from "../params.js";
 import { executeRemoteCommand } from "../exec.js";
 import {
@@ -64,18 +66,20 @@ import {
   parseIdList,
   parseNumber,
   parseTokenIncludeFields,
-  parseTokenListIncludeFields
+  parseTokenDeltaIncludeFields
 } from "../parse.js";
 import {
   addEffectFieldOptions,
   addEmbeddedItemFieldOptions,
   addExecutableBehaviorFieldOptions,
   addRegionBehaviorFieldOptions,
+  addItemGetIncludeOption,
   addReservedIncludeOption,
   addSceneFieldOptions,
   addSceneSoundFieldOptions,
   addTileFieldOptions,
-  addTokenFieldOptions
+  addTokenFieldOptions,
+  addTokenPlacementOptions
 } from "./field-options.js";
 import {
   type RegistrationContext,
@@ -340,7 +344,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     .option(
       "--include <fields>",
       "Comma-separated extra fields to include (allowed: delta — a derived per-token summary of the token-level overrides, null when there are none)",
-      parseTokenListIncludeFields
+      parseTokenDeltaIncludeFields
     )
     .addHelpText(
       "after",
@@ -365,7 +369,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     .requiredOption("--token-id <tokenId>", "Token id")
     .option(
       "--include <fields>",
-      "Comma-separated extra fields to include (allowed: prepared, delta — the stored ActorDelta source, null for a linked token or when none is stored)",
+      "Comma-separated extra fields to include (allowed: prepared — the token's vision, light and its actor's system data with the derived values the system computed; delta — the stored ActorDelta source, null for a linked token or when none is stored)",
       parseTokenIncludeFields
     )
     .action(async function getSceneToken(options: SceneTokenGetOptions) {
@@ -380,15 +384,17 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
         dependencies
       });
     });
-  addTokenFieldOptions(
-    addIdempotencyKeyOption(sceneToken.command("create"))
-      .requiredOption("--scene-id <sceneId>", "Scene id")
-      .option("--actor-id <actorId>", "Create the token from this actor's prototype token"),
-    "create"
+  addTokenPlacementOptions(
+    addTokenFieldOptions(
+      addIdempotencyKeyOption(sceneToken.command("create"))
+        .requiredOption("--scene-id <sceneId>", "Scene id")
+        .option("--actor-id <actorId>", "Create the token from this actor's prototype token"),
+      "create"
+    )
   )
     .option("--data-json <json>", "Full/extra token data as a JSON object (merged last)")
     .action(async function createSceneToken(
-      options: TokenFieldOptions & { sceneId: string; dataJson?: string }
+      options: TokenFieldOptions & TokenPlacementOptions & { sceneId: string; dataJson?: string }
     ) {
       await executeRemoteCommand({
         commandName: "scene.token.create",
@@ -469,7 +475,13 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     prefix: "scene.token",
     noun: "token",
     dataHelp:
-      'Token data as a JSON ARRAY of objects (each may carry actorId, e.g. [{"actorId":"…","x":0,"y":0}])'
+      'Token data as a JSON ARRAY of objects (each may carry actorId, e.g. [{"actorId":"…","x":0,"y":0}])',
+    createExtras: {
+      description:
+        "Create many tokens, one Foundry create per token in order (per-element outcomes; nothing is written if any element is invalid; the batch stops after the first token that fails to prepare, whose create call throws, or that Foundry does not store)",
+      addOptions: addTokenPlacementOptions,
+      params: tokenPlacementParams
+    }
   });
 
   const sceneTokenItem = sceneToken
@@ -500,19 +512,30 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       });
     }
   );
-  sceneTokenItem
-    .command("get")
-    .requiredOption("--scene-id <sceneId>", "Scene id")
-    .requiredOption("--token-id <tokenId>", "Token id")
-    .requiredOption("--item-id <itemId>", "Item id")
-    .action(async function getSceneTokenItem(options: { sceneId: string; tokenId: string; itemId: string }) {
-      await executeRemoteCommand({
-        commandName: "scene.token.item.get",
-        params: { sceneId: options.sceneId, tokenId: options.tokenId, itemId: options.itemId },
-        command: this,
-        dependencies
-      });
+  addItemGetIncludeOption(
+    sceneTokenItem
+      .command("get")
+      .requiredOption("--scene-id <sceneId>", "Scene id")
+      .requiredOption("--token-id <tokenId>", "Token id")
+      .requiredOption("--item-id <itemId>", "Item id")
+  ).action(async function getSceneTokenItem(options: {
+    sceneId: string;
+    tokenId: string;
+    itemId: string;
+    include?: string[];
+  }) {
+    await executeRemoteCommand({
+      commandName: "scene.token.item.get",
+      params: {
+        sceneId: options.sceneId,
+        tokenId: options.tokenId,
+        itemId: options.itemId,
+        ...(options.include ? { include: options.include } : {})
+      },
+      command: this,
+      dependencies
     });
+  });
   addReservedIncludeOption(
     addEmbeddedItemFieldOptions(
       addIdempotencyKeyOption(sceneTokenItem.command("create"))

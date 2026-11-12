@@ -2,11 +2,13 @@ import { Command, Option } from "commander";
 
 import {
   parseActorIncludeFields,
+  parseItemGetIncludeFields,
   parseBoolean,
   parseCsvList,
   parseIncludeFields,
   parseNumber,
-  parsePositiveInt
+  parsePositiveInt,
+  parseTokenDeltaIncludeFields
 } from "../parse.js";
 
 export type FieldVerb = "create" | "update" | "clone";
@@ -85,8 +87,16 @@ export function addReservedIncludeOption(
 export function addActorIncludeOption(command: Command): Command {
   return command.option(
     "--include <fields>",
-    "Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds derived data; flags/effects are always present, so those two have no effect)",
+    "Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds the actor's system data after the system computed its derived values, such as totals, modifiers and DCs — for an item's derived values use actor item get --include prepared; flags/effects are always present, so those two have no effect)",
     parseActorIncludeFields
+  );
+}
+
+export function addItemGetIncludeOption(command: Command): Command {
+  return command.option(
+    "--include <fields>",
+    "Comma-separated extra fields (prepared adds the item's system data after the system computed its derived values, such as attack bonuses, damage labels and save DCs; flags/effects are always present, so those two have no effect)",
+    parseItemGetIncludeFields
   );
 }
 
@@ -168,7 +178,8 @@ const TOKEN_BODY_FIELDS: readonly FieldSpec[] = [
   {
     flag: "--linked",
     help: {
-      create: "Link the token to the world actor",
+      create:
+        "Link the token to the world actor (default with --actor-id: as the actor's prototype token says; without it, unlinked)",
       update: "Link the token to the world actor",
       clone: "Link the clone to the world actor"
     }
@@ -176,7 +187,8 @@ const TOKEN_BODY_FIELDS: readonly FieldSpec[] = [
   {
     flag: "--unlinked",
     help: {
-      create: "Keep the token unlinked (per-token actor delta)",
+      create:
+        "Create the token unlinked, with a per-token actor delta (default with --actor-id: as the actor's prototype token says; without it, unlinked)",
       update: "Unlink the token (per-token actor delta)",
       clone: "Unlink the clone (per-token actor delta)"
     },
@@ -189,7 +201,20 @@ export function addTokenFieldOptions(command: Command, verb: FieldVerb): Command
     verb === "create"
       ? [...TOKEN_POSITION_FIELDS, TOKEN_NAME_FIELD, ...TOKEN_BODY_FIELDS]
       : [TOKEN_NAME_FIELD, ...TOKEN_POSITION_FIELDS, ...TOKEN_BODY_FIELDS];
-  return addFieldOptions(command, verb, ordered);
+  return addFieldOptions(command, verb, ordered).option(
+    "--include <fields>",
+    "Comma-separated extra fields in the result token (allowed: delta — the stored ActorDelta source, null for a linked token or when none is stored)",
+    parseTokenDeltaIncludeFields
+  );
+}
+
+export function addTokenPlacementOptions(command: Command): Command {
+  return command
+    .option(
+      "--center",
+      "Read x and y as the token's center instead of its top-left corner, as Foundry does for a dropped token"
+    )
+    .option("--snap", "Snap the position to the scene grid, as Foundry does for a dropped token");
 }
 
 const TILE_FIELDS: readonly FieldSpec[] = [

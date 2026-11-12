@@ -25,7 +25,7 @@ const chatMessageCreateSchema = {
     blind: { type: "boolean" },
     style: { type: "number", enum: [0, 1, 2, 3] }, // CHAT_MESSAGE_STYLES (verified v13)
     flavor: { type: "string" },
-    sound: { type: "string", minLength: 1 },
+    sound: { type: ["string", "null"], minLength: 1 },
     flags: freeformObjectSchema
   },
   additionalProperties: false

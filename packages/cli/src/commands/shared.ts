@@ -215,7 +215,8 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
       dataHelp,
       scope = "scene",
       verbs = ["create-many", "update-many", "delete-many"],
-      withForce = false
+      withForce = false,
+      createExtras
     }: {
       prefix: string;
       noun: string;
@@ -223,6 +224,11 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
       scope?: keyof typeof BATCH_SCOPES;
       verbs?: Array<"create-many" | "update-many" | "delete-many">;
       withForce?: boolean;
+      createExtras?: {
+        description: string;
+        addOptions: (command: Command) => Command;
+        params: (options: Record<string, any>) => Record<string, unknown>;
+      };
     }
   ) {
     const scopeSpec = BATCH_SCOPES[scope];
@@ -238,9 +244,11 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
     if (verbs.includes("delete-many")) registerBatchDeleteMany();
 
     function registerBatchCreateMany() {
-      scopeOption(addIdempotencyKeyOption(group.command("create-many")))
+      const command = scopeOption(addIdempotencyKeyOption(group.command("create-many")));
+      (createExtras ? createExtras.addOptions(command) : command)
         .description(
-          `Create many ${noun}s in ONE call (per-element outcomes; nothing is written if any element is invalid)`
+          createExtras?.description ??
+            `Create many ${noun}s in ONE call (per-element outcomes; nothing is written if any element is invalid)`
         )
         .requiredOption(
           "--data-json <json>",
@@ -253,7 +261,11 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
         ) {
           await executeRemoteCommand({
             commandName: `${prefix}.create-many`,
-            params: { ...scopeParams(options), data: options.dataJson },
+            params: {
+              ...scopeParams(options),
+              data: options.dataJson,
+              ...(createExtras ? createExtras.params(options) : {})
+            },
             command: this,
             dependencies
           });

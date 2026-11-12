@@ -2837,7 +2837,7 @@ export function createActorDocument(id, data) {
     const tokenData = {
       name: actor.name,
       actorId: id,
-      actorLink: false,
+      actorLink: actor.prototypeToken?.actorLink ?? false,
       texture: { src: "prototype.webp" },
       width: 1,
       height: 1,

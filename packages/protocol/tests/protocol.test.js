@@ -160,7 +160,10 @@ const BATCH_SCOPE_KEYS = Object.freeze({
   journal: []
 });
 
-const BATCH_EXTRA_PARAMS = Object.freeze({ "actor.delete-many": ["force"] });
+const BATCH_EXTRA_PARAMS = Object.freeze({
+  "actor.delete-many": ["force"],
+  "scene.token.create-many": ["placement"]
+});
 
 const validate = (command, params) =>
   validateCommandRequest({
@@ -5529,7 +5532,8 @@ describe("protocol contract", () => {
         "unchanged",
         "alreadyDeleted",
         "dropped",
-        "unknown"
+        "unknown",
+        "notAttempted"
       ]);
 
       expect(BATCH_WRITE_SUCCESS_STATUSES).toEqual([
@@ -5548,6 +5552,7 @@ describe("protocol contract", () => {
       }
       expect(BATCH_WRITE_SUCCESS_STATUSES).not.toContain("dropped");
       expect(BATCH_WRITE_SUCCESS_STATUSES).not.toContain("unknown");
+      expect(BATCH_WRITE_SUCCESS_STATUSES).not.toContain("notAttempted");
       expect(BATCH_WRITE_PERSISTED_STATUSES).not.toContain("unchanged");
       expect(BATCH_WRITE_PERSISTED_STATUSES).not.toContain("alreadyDeleted");
     });
@@ -5629,7 +5634,7 @@ describe("protocol contract", () => {
 
       expect(
         COMMAND_DEFINITIONS["scene.token.create-many"].paramsSchema.properties.data.items.properties.actorId
-      ).toEqual({ type: "string", minLength: 1 });
+      ).toEqual({ type: ["string", "null"], minLength: 1 });
       expectValid("scene.token.create-many", {
         sceneId: "scene-1",
         data: [
@@ -6633,6 +6638,30 @@ describe("protocol contract", () => {
     });
   });
 
+  it("accepts null where Foundry's document schema declares the field nullable", () => {
+    /** @type {Array<[string, Record<string, unknown>]>} */
+    const cases = [
+      ["scene.drawing.create-many", { sceneId: "s", data: [{ x: 0, texture: null }] }],
+      ["scene.template.update", { sceneId: "s", templateId: "t", patch: { texture: null } }],
+      ["scene.sound.create", { sceneId: "s", data: { path: null, x: 0 } }],
+      ["scene.token.update", { sceneId: "s", tokenId: "t", patch: { actorId: null } }],
+      ["actor.update", { actorId: "a", patch: { img: null } }],
+      ["item.create", { data: { name: "Torch", type: "loot", img: null } }],
+      ["actor.effect.update", { actorId: "a", effectId: "e", patch: { img: null } }],
+      ["macro.update", { macroId: "m", patch: { img: null } }],
+      ["chat.create", { data: { content: "Hi", sound: null } }],
+      ["journal.page.update", { journalId: "j", pageId: "p", patch: { src: null } }],
+      ["playlist.update", { playlistId: "p", patch: { fade: null, seed: null } }],
+      [
+        "playlist.sound.update",
+        { playlistId: "p", soundId: "s", patch: { path: null, fade: null, pausedTime: null } }
+      ],
+      ["scene.update", { sceneId: "s", patch: { width: null, height: null, shiftX: null, shiftY: null } }],
+      ["scene.update", { sceneId: "s", patch: { background: { src: null } } }]
+    ];
+    for (const [command, params] of cases) expectValid(command, params);
+  });
+
   describe("include opt-in on detailed reads", () => {
     const INCLUDE_BASES = Object.freeze({
       "actor.get": { actorId: "actor-1" },
@@ -6659,8 +6688,12 @@ describe("protocol contract", () => {
         itemId: "item-1",
         patch: { name: "Renamed" }
       },
+      "scene.token.item.get": { sceneId: "scene-1", tokenId: "token-1", itemId: "item-1" },
       "scene.token.get": { sceneId: "scene-1", tokenId: "token-1" },
       "scene.token.list": { sceneId: "scene-1" },
+      "scene.token.create": { sceneId: "scene-1", data: { x: 0 } },
+      "scene.token.update": { sceneId: "scene-1", tokenId: "token-1", patch: { x: 0 } },
+      "scene.token.clone": { sceneId: "scene-1", tokenId: "token-1" },
       "compendium.get": { pack: "world.x", entryId: "e-1" },
       "compendium.get-many": { pack: "world.x", ids: ["e-1"] },
       "system.info": {}
@@ -6677,15 +6710,29 @@ describe("protocol contract", () => {
       "items.effects",
       "prepared"
     ]);
+    const ITEM_GET_INCLUDE_ENUM = Object.freeze(["flags", "effects", "prepared"]);
+    const ITEM_GET_COMMANDS = Object.freeze([
+      "item.get",
+      "item.get-many",
+      "actor.item.get",
+      "scene.token.item.get"
+    ]);
     const TOKEN_INCLUDE_ENUM = Object.freeze(["prepared", "delta"]);
-    const TOKEN_LIST_INCLUDE_ENUM = Object.freeze(["delta"]);
+    const TOKEN_DELTA_INCLUDE_ENUM = Object.freeze(["delta"]);
 
     const COMPENDIUM_INCLUDE_ENUM = Object.freeze(["effects"]);
     const SYSTEM_INFO_INCLUDE_ENUM = Object.freeze(["modules"]);
     const expectedIncludeEnum = (command) => {
       if (command === "actor.get" || command === "actor.get-many") return ACTOR_INCLUDE_ENUM;
+      if (ITEM_GET_COMMANDS.includes(command)) return ITEM_GET_INCLUDE_ENUM;
       if (command === "scene.token.get") return TOKEN_INCLUDE_ENUM;
-      if (command === "scene.token.list") return TOKEN_LIST_INCLUDE_ENUM;
+      if (
+        ["scene.token.list", "scene.token.create", "scene.token.update", "scene.token.clone"].includes(
+          command
+        )
+      ) {
+        return TOKEN_DELTA_INCLUDE_ENUM;
+      }
       if (command === "compendium.get" || command === "compendium.get-many") return COMPENDIUM_INCLUDE_ENUM;
       if (command === "system.info") return SYSTEM_INFO_INCLUDE_ENUM;
       return BASE_INCLUDE_ENUM;
@@ -6731,6 +6778,9 @@ describe("protocol contract", () => {
           command === "actor.get-many" ||
           command === "scene.token.get" ||
           command === "scene.token.list" ||
+          command === "scene.token.create" ||
+          command === "scene.token.update" ||
+          command === "scene.token.clone" ||
           command === "compendium.get" ||
           command === "compendium.get-many" ||
           command === "system.info"
@@ -6744,6 +6794,23 @@ describe("protocol contract", () => {
           "$.params.include[0] must be one of flags"
         );
         expectRejected(command, { ...base, include: ["items"] }, "$.params.include[0] must be one of flags");
+      }
+    });
+
+    it("token creates accept a closed placement object with center and snap", () => {
+      /** @type {Array<[string, Record<string, unknown>]>} */
+      const cases = [
+        ["scene.token.create", { sceneId: "scene-1", data: { x: 0 } }],
+        ["scene.token.create-many", { sceneId: "scene-1", data: [{ x: 0 }] }]
+      ];
+      for (const [command, base] of cases) {
+        expectValid(command, { ...base, placement: { center: true, snap: true } });
+        expectValid(command, { ...base, placement: {} });
+        expectRejected(
+          command,
+          { ...base, placement: { grid: true } },
+          "$.params.placement.grid is not allowed"
+        );
       }
     });
 
@@ -6913,7 +6980,7 @@ describe("protocol contract", () => {
       });
       expect(COMMAND_DEFINITIONS["item.get-many"].paramsSchema.properties.include).toEqual({
         type: "array",
-        items: { type: "string", enum: ["flags", "effects"] }
+        items: { type: "string", enum: ["flags", "effects", "prepared"] }
       });
 
       for (const command of [

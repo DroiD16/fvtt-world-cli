@@ -159,6 +159,11 @@ data. Check the command's help for available projections and filters.
 Actor results carry `itemCount` in place of the owned items; `actor get` and `actor get-many`
 return the items with `--include items`. `system info --include modules` lists installed modules.
 
+Stored `system` data holds what was authored. Values the game system computes, such as an armor
+class, a skill total or an attack bonus, appear only with `--include prepared` on actor, token and
+item reads. For an item's values, `actor item get` and `scene token item get` read the item as its
+owner prepared it; `actor get --include items,prepared` does not add them per item.
+
 ### Updates and merge semantics
 
 Use JSON flags such as `--data-json` and `--patch-json` for structured values. Updates are patches:
@@ -170,6 +175,10 @@ Use JSON flags such as `--data-json` and `--patch-json` for structured values. U
 - Foundry's operator keys work at any permitted nested level: `{"-=key": null}` deletes the key,
   and `{"==key": value}` replaces the key's whole value instead of merging into it.
 - Embedded collections follow their family's Foundry semantics.
+
+Fields that Foundry's document schema declares nullable accept `null`, such as an item's `img`, a
+drawing's `texture`, an ambient sound's `path` or a token's `actorId`, so data copied out of Foundry,
+for example from an Adventure, can be written back as it is.
 
 Read arrays before editing and preserve unchanged values. For a wall's `c` field, send the complete
 `[x1, y1, x2, y2]`, not `c.0`. Array writes that Foundry would discard return `INVALID_PARAMS`
@@ -204,8 +213,20 @@ cached state survives. Reuse it only for the same request; a corrected or remain
 new operation and needs a fresh key. Follow the [delivery rules](protocol.md#delivery-states-and-retries)
 when a connection fails, since some failures also lose the cached state.
 
+Token `x` and `y` are the top-left corner. `scene token create` and `create-many` take `--center`
+to read them as the token's center and `--snap` to align the token to the scene grid, the two
+adjustments Foundry makes when a token is dropped on the canvas.
+
+A token created from an actor is linked or unlinked as the actor's prototype token says, unless
+`--linked` or `--unlinked` (`actorLink` in the data) is given. Item and effect writes on a linked
+token change the world actor.
+
 Bulk writes are not transactions. Inspect `complete` and every entry in `outcomes` before deciding
-what to retry.
+what to retry. The other `create-many` commands send all elements to Foundry in one create call.
+`scene token create-many` sends one create per token, in order, so Foundry numbers the tokens as it
+does when they are placed by hand. It stops after the first token that fails to prepare, whose create
+call throws, or that Foundry does not store. `failure` names that token's index when there was an
+error, and the tokens after it report `notAttempted`.
 
 ### Actions
 

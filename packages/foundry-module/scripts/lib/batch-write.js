@@ -29,7 +29,8 @@ export const BATCH_STATUS = Object.freeze({
   UNCHANGED: "unchanged",
   ALREADY_DELETED: "alreadyDeleted",
   DROPPED: "dropped",
-  UNKNOWN: "unknown"
+  UNKNOWN: "unknown",
+  NOT_ATTEMPTED: "notAttempted"
 });
 
 const SUCCESS_STATUSES = new Set(BATCH_WRITE_SUCCESS_STATUSES);
@@ -108,16 +109,21 @@ export function generateUnusedDocumentId(isTaken) {
 /**
  * @param {string} message
  * @param {{ command: string, index: number, id?: string }} coordinates
+ * @param {{ nothingWritten?: boolean, emptyText?: string }} [options]
  */
-function stampBatchRefusalMessage(message, { command, index, id }) {
+function stampBatchRefusalMessage(
+  message,
+  { command, index, id },
+  { nothingWritten = true, emptyText = "was refused." } = {}
+) {
   const text = typeof message === "string" ? message.trim() : "";
   const coordinate = `${command} element ${index}${typeof id === "string" ? ` (id ${id})` : ""}`;
   let stamped = text.startsWith(`${command} element ${index} `)
     ? text
     : text
       ? `${coordinate}: ${text}`
-      : `${coordinate} was refused.`;
-  if (!BATCH_NO_WRITE_ASSURANCE_PATTERN.test(stamped)) {
+      : `${coordinate} ${emptyText}`;
+  if (nothingWritten && !BATCH_NO_WRITE_ASSURANCE_PATTERN.test(stamped)) {
     stamped = `${/[.!?]$/.test(stamped) ? stamped : `${stamped}.`} ${BATCH_NO_WRITE_ASSURANCE}`;
   }
   return stamped;
@@ -175,9 +181,11 @@ function assertBatchPersistedSomething({ command, outcomes, verb }) {
   const unestablished = outcomes.filter((outcome) => outcome.status === BATCH_STATUS.UNKNOWN).length;
   const refused = outcomes.filter((outcome) => outcome.status === BATCH_STATUS.DROPPED).length;
   const converged = outcomes.filter((outcome) => SUCCESS_STATUSES.has(outcome.status)).length;
+  const notAttempted = outcomes.filter((outcome) => outcome.status === BATCH_STATUS.NOT_ATTEMPTED).length;
   const tally =
     `${refused} ${verb === "update" ? "dropped" : "refused"}, ${unestablished} unestablished` +
-    (converged > 0 ? `, ${converged} already converged (never sent to Foundry)` : "");
+    (converged > 0 ? `, ${converged} already converged (never sent to Foundry)` : "") +
+    (notAttempted > 0 ? `, ${notAttempted} not attempted after the first failure` : "");
   if (unestablished > 0) {
     throw createBridgeError(
       ERROR_CODES.INTERNAL_ERROR,
@@ -206,11 +214,12 @@ function assertBatchPersistedSomething({ command, outcomes, verb }) {
   );
 }
 
-/** @param {{ command: string, items: any[], dryRun: boolean, prepare: (data: any, index: number) => any | Promise<any>, preview: (prepared: any, index: number) => any, isIdTaken: (id: string) => boolean, create: (payloads: any[]) => Promise<any[]>, readBack: (id: string) => any, summarize?: (document: any) => Record<string, unknown> }} args */
+/** @param {{ command: string, items: any[], dryRun: boolean, sequential?: boolean, prepare: (data: any, index: number) => any | Promise<any>, preview: (prepared: any, index: number) => any, isIdTaken: (id: string) => boolean, create: (payloads: any[]) => Promise<any[]>, readBack: (id: string) => any, summarize?: (document: any) => Record<string, unknown> }} args */
 export async function executeBatchCreate({
   command,
   items,
   dryRun,
+  sequential = false,
   prepare,
   preview,
   isIdTaken,
@@ -221,11 +230,12 @@ export async function executeBatchCreate({
   assertBatchWithinLimit(items, { command, field: "data" });
 
   const prepared = [];
+  const previews = [];
   for (let index = 0; index < items.length; index += 1) {
     let payload;
     try {
       payload = await prepare(items[index], index);
-      preview(structuredCloneish(payload), index);
+      previews.push(preview(structuredCloneish(payload), index));
     } catch (error) {
       throw annotateBatchElementFailure(error, { command, index });
     }
@@ -234,14 +244,18 @@ export async function executeBatchCreate({
 
   if (dryRun) {
     return buildBatchResult({
-      outcomes: prepared.map((_payload, index) => ({
+      outcomes: previews.map((previewDocument, index) => ({
         index,
         id: null,
         status: BATCH_STATUS.CREATED,
-        ...(summarize ? summarize(null) : {})
+        ...(summarize ? summarize(previewDocument) : {})
       })),
       dryRun: true
     });
+  }
+
+  if (sequential) {
+    return createSequentially({ command, items, prepare, isIdTaken, create, readBack, summarize });
   }
 
   const minted = new Set();
@@ -286,6 +300,85 @@ export async function executeBatchCreate({
   }
   assertBatchPersistedSomething({ command, outcomes, verb: "create" });
   return buildBatchResult({ outcomes });
+}
+
+/** @param {{ command: string, items: any[], prepare: (data: any, index: number) => any | Promise<any>, isIdTaken: (id: string) => boolean, create: (payloads: any[]) => Promise<any[]>, readBack: (id: string) => any, summarize?: (document: any) => Record<string, unknown> }} args */
+async function createSequentially({ command, items, prepare, isIdTaken, create, readBack, summarize }) {
+  /** @type {Array<{index:number,id:string|null,status:string}>} */
+  const outcomes = [];
+  const outcome = (index, id, status, document = null) => ({
+    index,
+    id,
+    status,
+    ...(summarize ? summarize(document) : {})
+  });
+  let failure = null;
+  let stopped = false;
+  for (let index = 0; index < items.length; index += 1) {
+    if (stopped) {
+      outcomes.push(outcome(index, null, BATCH_STATUS.NOT_ATTEMPTED));
+      continue;
+    }
+
+    let payload;
+    try {
+      payload = await prepare(items[index], index);
+    } catch (error) {
+      failure = sequentialElementFailure(error, {
+        command,
+        index,
+        nothingWritten: persistedCount(outcomes) === 0
+      });
+      stopped = true;
+      outcomes.push(outcome(index, null, BATCH_STATUS.DROPPED));
+      continue;
+    }
+
+    const id = generateUnusedDocumentId(isIdTaken);
+    let created = null;
+    try {
+      created = await create([{ ...payload, _id: id }]);
+    } catch (error) {
+      failure = sequentialElementFailure(error, {
+        command,
+        index,
+        id,
+        nothingWritten: false,
+        emptyText: "failed without a message."
+      });
+      stopped = true;
+    }
+
+    const stored = readBack(id);
+    if (stored || (Array.isArray(created) && created.some((document) => document?.id === id))) {
+      outcomes.push(outcome(index, id, BATCH_STATUS.CREATED, stored ?? null));
+    } else {
+      stopped = true;
+      outcomes.push(outcome(index, id, failure ? BATCH_STATUS.UNKNOWN : BATCH_STATUS.DROPPED));
+    }
+  }
+
+  if (failure) {
+    return finishThrownBatch({ outcomes, failure, error: failure.error });
+  }
+  assertBatchPersistedSomething({ command, outcomes, verb: "create" });
+  return buildBatchResult({ outcomes });
+}
+
+/**
+ * @param {unknown} error
+ * @param {{ command: string, index: number, id?: string, nothingWritten: boolean, emptyText?: string }} context
+ */
+function sequentialElementFailure(error, { command, index, id, nothingWritten, emptyText }) {
+  const mapped = isFoundryValidationError(error) ? toFoundryValidationError(error) : toProtocolError(error);
+  const message = stampBatchRefusalMessage(
+    mapped.message,
+    { command, index, id },
+    { nothingWritten, emptyText }
+  );
+  const coordinates = typeof id === "string" ? { index, id } : { index };
+  const annotated = createBridgeError(mapped.code, message, { ...coordinates, ...(mapped.details ?? {}) });
+  return { error: annotated, code: mapped.code, message };
 }
 
 /** @param {{ command: string, patches: Array<{ id: string, patch: any }>, dryRun: boolean, resolve: (id: string, index: number) => any, prepare: (patch: any, index: number, document: any) => any | Promise<any>, diff: (document: any, patch: any) => Promise<Record<string, any>>, mergePreview: (document: any, patch: any) => Promise<any>, documentClass?: any, update: (entries: Array<Record<string, any>>) => Promise<any[]>, summarize?: (document: any) => Record<string, unknown> }} args */

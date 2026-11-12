@@ -3043,6 +3043,32 @@ function runTokenDeltaCoverage(summary, { targetSceneId, actorId, stamp, created
     );
     return;
   }
+  const tokenItemPrepared = runFoundryctl([
+    "scene",
+    "token",
+    "item",
+    "get",
+    "--scene-id",
+    targetSceneId,
+    "--token-id",
+    tokenId,
+    "--item-id",
+    inheritedItem.id,
+    "--include",
+    "prepared"
+  ]);
+  markAndPush(
+    summary,
+    "scene.token.item.get(--include prepared on an unlinked token's item)",
+    isCommandSuccess(tokenItemPrepared) &&
+      tokenItemPrepared.response?.result?.actorLink === false &&
+      typeof tokenItemPrepared.response?.result?.item?.prepared?.system === "object" &&
+      tokenItemPrepared.response.result.item.prepared.system !== null,
+    {
+      ...summarizeCommand(tokenItemPrepared),
+      omitted: tokenItemPrepared.response?.result?.item?.prepared?.omitted ?? null
+    }
+  );
   const overrideName = `${inheritedItem.name} Smoke Override ${stamp}`;
   expectOk(
     summary,
@@ -3076,6 +3102,32 @@ function runTokenDeltaCoverage(summary, { targetSceneId, actorId, stamp, created
     {
       deltaKeys: Object.keys(withDelta?.token?.delta ?? {}),
       deltaItemIds: deltaItems.map((item) => item?._id)
+    }
+  );
+
+  const deltaPreviewName = `Smoke Delta Preview ${stamp}`;
+  const deltaPreview = runFoundryctl([
+    "--dry-run",
+    ...tokenArgs("update", tokenId, [
+      "--patch-json",
+      JSON.stringify({ delta: { name: deltaPreviewName } }),
+      "--include",
+      "delta"
+    ])
+  ]);
+  const storedAfterPreview = runFoundryctl(tokenArgs("get", tokenId, ["--include", "delta"]));
+  markAndPush(
+    summary,
+    "scene.token.update(dry run with --include delta shows the patched delta and writes nothing)",
+    isCommandSuccess(deltaPreview) &&
+      deltaPreview.response.result.dryRun === true &&
+      deltaPreview.response.result.token?.delta?.name === deltaPreviewName &&
+      isCommandSuccess(storedAfterPreview) &&
+      storedAfterPreview.response.result.token?.delta?.name !== deltaPreviewName,
+    {
+      ...summarizeCommand(deltaPreview),
+      previewDeltaName: deltaPreview.response?.result?.token?.delta?.name ?? null,
+      storedDeltaName: storedAfterPreview.response?.result?.token?.delta?.name ?? null
     }
   );
 
@@ -3718,6 +3770,201 @@ function runReferenceSourceCoverage(summary, { scratchUuid, journalId, introPage
       ),
       { expectedRow, defaultScopes: byDefault.scopes, chatRows: chat.rows }
     );
+  }
+}
+
+const TOKEN_SORT_SCRIPT = (sceneId, tokenIds) => `
+  const scene = game.scenes.get(${JSON.stringify(sceneId)});
+  return { viewed: canvas?.scene?.id ?? null, sorts: ${JSON.stringify(tokenIds)}.map((id) => scene.tokens.get(id)?.sort ?? null) };
+`;
+
+const TOKEN_PLACEMENT_SCRIPT = (sceneId, tokenId) => `
+  const token = game.scenes.get(${JSON.stringify(sceneId)}).tokens.get(${JSON.stringify(tokenId)});
+  const center = token.getCenterPoint();
+  const snapped = token.getSnappedPosition();
+  return { x: token.x, y: token.y, center: { x: center.x, y: center.y }, snapped: { x: snapped.x, y: snapped.y } };
+`;
+
+async function runTokenPlacementCoverage(summary, { actorId, targetSceneId, stamp, isV14, gmControlUrl }) {
+  const actorType =
+    runFoundryctl(["actor", "get", "--actor-id", actorId]).response?.result?.actor?.type ?? null;
+  if (!targetSceneId || !actorType) {
+    markAndPush(summary, "token placement coverage (target scene and fixture actor type)", false, {
+      targetSceneId,
+      actorType
+    });
+    return;
+  }
+  const actors = [];
+  const tokens = [];
+  const createActor = (label, prototypeToken) => {
+    const run = runFoundryctl([
+      "actor",
+      "create",
+      "--name",
+      `Smoke ${label} ${stamp}`,
+      "--type",
+      actorType,
+      "--data-json",
+      JSON.stringify({ prototypeToken })
+    ]);
+    const id = expectOk(summary, `actor.create(${label} scratch)`, run)?.actor?.id ?? null;
+    if (id) actors.push(id);
+    return id;
+  };
+
+  try {
+    const linkedActorId = createActor("Linked Prototype", { actorLink: true });
+    if (linkedActorId) {
+      const linked = expectOk(
+        summary,
+        "scene.token.create(linked prototype, no --linked flag)",
+        runFoundryctl(["scene", "token", "create", "--scene-id", targetSceneId, "--actor-id", linkedActorId])
+      )?.token;
+      if (linked?.id) tokens.push(linked.id);
+      markAndPush(
+        summary,
+        "scene.token.create(a linked prototype token gives a linked token)",
+        linked?.actorLink === true,
+        {
+          observed: linked?.actorLink ?? null
+        }
+      );
+    }
+
+    for (const [flags, label] of [
+      [["--center"], "center"],
+      [["--snap"], "snap"]
+    ]) {
+      const placed = expectOk(
+        summary,
+        `scene.token.create(--${label})`,
+        runFoundryctl([
+          "scene",
+          "token",
+          "create",
+          "--scene-id",
+          targetSceneId,
+          "--name",
+          `Smoke Placement ${label} ${stamp}`,
+          "--x",
+          "1234",
+          "--y",
+          "1567",
+          "--data-json",
+          JSON.stringify({ width: 2, height: 1 }),
+          ...flags
+        ])
+      )?.token;
+      if (!placed?.id) continue;
+      tokens.push(placed.id);
+      if (!gmControlUrl) continue;
+      const observed = await evaluateInGmPage(gmControlUrl, TOKEN_PLACEMENT_SCRIPT(targetSceneId, placed.id));
+      const passed =
+        label === "center"
+          ? Math.abs(observed.center.x - 1234) <= 1 && Math.abs(observed.center.y - 1567) <= 1
+          : observed.snapped.x === observed.x && observed.snapped.y === observed.y;
+      markAndPush(
+        summary,
+        label === "center"
+          ? "scene.token.create(--center: Foundry's center point of the token is the given x, y)"
+          : "scene.token.create(--snap: the stored position is already on Foundry's grid snap)",
+        passed,
+        { observed }
+      );
+    }
+    if (!gmControlUrl) {
+      summary.notes.push(
+        "token placement: no --gm-control, so --center and --snap were created but not measured"
+      );
+    }
+
+    const numberedName = `Smoke Numbered ${stamp}`;
+    const numberedActorId = createActor("Numbered", {
+      name: numberedName,
+      actorLink: false,
+      appendNumber: true,
+      prependAdjective: false
+    });
+    if (!numberedActorId) return;
+
+    const view = gmControlUrl
+      ? await evaluateInGmPage(gmControlUrl, TOKEN_SORT_SCRIPT(targetSceneId, []))
+      : null;
+    if (!isV14 && view?.viewed !== targetSceneId) {
+      summary.notes.push(
+        `token numbering: on Foundry v13 Foundry numbers tokens against the scene the GM is viewing (${view?.viewed ?? "unknown, no --gm-control"}), not the target scene ${targetSceneId}, so the numbering assertions were not run`
+      );
+      return;
+    }
+
+    const elements = [0, 1, 2].map((index) => ({ actorId: numberedActorId, x: 1700 + index * 100, y: 1800 }));
+    const dry = runFoundryctl([
+      "--dry-run",
+      "scene",
+      "token",
+      "create-many",
+      "--scene-id",
+      targetSceneId,
+      "--data-json",
+      JSON.stringify(elements)
+    ]);
+    markAndPush(
+      summary,
+      "scene.token.create-many(dry run warns that numbers advance at write time)",
+      isCommandSuccess(dry) &&
+        dry.response.result.dryRun === true &&
+        typeof dry.response.result.warning === "string",
+      { ...summarizeCommand(dry), warning: dry.response?.result?.warning ?? null }
+    );
+
+    const batch = expectOk(
+      summary,
+      "scene.token.create-many(3 tokens of an appendNumber actor)",
+      runFoundryctl([
+        "scene",
+        "token",
+        "create-many",
+        "--scene-id",
+        targetSceneId,
+        "--data-json",
+        JSON.stringify(elements)
+      ])
+    );
+    const ids = (batch?.outcomes ?? []).map((outcome) => outcome.id).filter(Boolean);
+    tokens.push(...ids);
+    markAndPush(
+      summary,
+      "scene.token.create-many(Foundry numbers the tokens (1), (2), (3))",
+      batch?.complete === true &&
+        JSON.stringify(batch.outcomes.map((outcome) => outcome.name)) ===
+          JSON.stringify([1, 2, 3].map((n) => `${numberedName} (${n})`)),
+      { observed: (batch?.outcomes ?? []).map((outcome) => outcome.name) }
+    );
+    if (gmControlUrl && ids.length === 3) {
+      const { sorts } = await evaluateInGmPage(gmControlUrl, TOKEN_SORT_SCRIPT(targetSceneId, ids));
+      markAndPush(
+        summary,
+        "scene.token.create-many(default sort climbs by one per token)",
+        sorts.every((sort) => Number.isInteger(sort)) &&
+          sorts[1] === sorts[0] + 1 &&
+          sorts[2] === sorts[1] + 1,
+        { sorts }
+      );
+    }
+  } finally {
+    if (tokens.length > 0) {
+      runFoundryctl([
+        "scene",
+        "token",
+        "delete-many",
+        "--scene-id",
+        targetSceneId,
+        "--ids",
+        tokens.join(",")
+      ]);
+    }
+    for (const id of actors) runFoundryctl(["actor", "delete", "--actor-id", id]);
   }
 }
 
@@ -7596,7 +7843,13 @@ function runExtendedCoverage(
           idKey: "drawingId",
           ledger: created.drawings,
           data: [
-            { shape: { type: "r", width: 60, height: 60 }, x: 1900, y: 100, text: `Bulk zone A ${stamp}` },
+            {
+              shape: { type: "r", width: 60, height: 60 },
+              x: 1900,
+              y: 100,
+              text: `Bulk zone A ${stamp}`,
+              texture: null
+            },
             { shape: { type: "r", width: 60, height: 60 }, x: 1900, y: 250, text: `Bulk zone B ${stamp}` },
             { shape: { type: "r", width: 60, height: 60 }, x: 1900, y: 400, text: `Bulk zone C ${stamp}` }
           ],
@@ -8127,9 +8380,12 @@ function runExtendedCoverage(
       );
 
       if (actorId) {
+        const fixtureLink =
+          runFoundryctl(["actor", "get", "--actor-id", actorId]).response?.result?.actor?.prototypeToken
+            ?.actorLink ?? null;
         const bulkTokenCreate = expectOk(
           summary,
-          "scene.token.create-many(2 actor-backed + 1 raw, ONE call)",
+          "scene.token.create-many(2 actor-backed + 1 raw, one command)",
           runFoundryctl([
             "scene",
             "token",
@@ -8139,7 +8395,7 @@ function runExtendedCoverage(
             "--data-json",
             JSON.stringify([
               { actorId, x: 1800, y: 100 },
-              { actorId, x: 1800, y: 250, actorLink: true },
+              { actorId, x: 1800, y: 250, actorLink: !fixtureLink },
               { name: `Bulk marker ${stamp}`, x: 1800, y: 400 }
             ]),
             "--idempotency-key",
@@ -8167,15 +8423,25 @@ function runExtendedCoverage(
 
           markAndPush(
             summary,
-            "scene.token.create-many(element 0: actor resolved, actorLink defaults to false)",
-            tokens[0]?.actorId === actorId && tokens[0]?.actorLink === false,
-            { observed: { actorId: tokens[0]?.actorId, actorLink: tokens[0]?.actorLink } }
+            "scene.token.create-many(element 0: actor resolved, actorLink follows the prototype token)",
+            tokens[0]?.actorId === actorId &&
+              typeof fixtureLink === "boolean" &&
+              tokens[0]?.actorLink === fixtureLink,
+            {
+              observed: { actorId: tokens[0]?.actorId, actorLink: tokens[0]?.actorLink },
+              prototype: fixtureLink
+            }
           );
           markAndPush(
             summary,
             "scene.token.create-many(element 1: explicit actorLink override wins for THAT element)",
-            tokens[1]?.actorId === actorId && tokens[1]?.actorLink === true,
-            { observed: { actorId: tokens[1]?.actorId, actorLink: tokens[1]?.actorLink } }
+            typeof fixtureLink === "boolean" &&
+              tokens[1]?.actorId === actorId &&
+              tokens[1]?.actorLink === !fixtureLink,
+            {
+              observed: { actorId: tokens[1]?.actorId, actorLink: tokens[1]?.actorLink },
+              requested: !fixtureLink
+            }
           );
           markAndPush(
             summary,
@@ -15040,6 +15306,133 @@ function runExtendedCoverage(
   }
 }
 
+function objectKeyPaths(value) {
+  const paths = [];
+  const visit = (node, prefix) => {
+    if (!node || typeof node !== "object") return;
+    for (const [key, entry] of Object.entries(node)) {
+      const path = prefix ? `${prefix}.${key}` : key;
+      paths.push(path);
+      visit(entry, path);
+    }
+  };
+  visit(value, "");
+  return paths;
+}
+
+const PREPARED_SCHEMA_PATHS_SCRIPT = (actorId, itemId) => `
+  const paths = (value) => {
+    const out = [];
+    const visit = (node, prefix) => {
+      if (!node || typeof node !== "object") return;
+      for (const [key, entry] of Object.entries(node)) {
+        const path = prefix ? prefix + "." + key : key;
+        out.push(path);
+        visit(entry, path);
+      }
+    };
+    visit(JSON.parse(JSON.stringify(value)), "");
+    return out;
+  };
+  const actor = game.actors.get(${JSON.stringify(actorId)});
+  const item = ${JSON.stringify(itemId)} ? actor.items.get(${JSON.stringify(itemId)}) : null;
+  return {
+    actor: paths(actor.system.toObject(false)),
+    item: item ? paths(item.system.toObject(false)) : null
+  };
+`;
+
+async function runPreparedCoverage(summary, { actorId, fixtureActor, gmControlUrl, systemId }) {
+  const actorRun = runFoundryctl(["actor", "get", "--actor-id", actorId, "--include", "prepared"]);
+  const actor = actorRun.response?.result?.actor ?? null;
+  const preparedSystem = actor?.prepared?.system ?? null;
+  const storedPaths = new Set(objectKeyPaths(actor?.system));
+  const preparedPaths = objectKeyPaths(preparedSystem);
+  const derivedOnly = preparedPaths.filter((path) => !storedPaths.has(path));
+  markAndPush(
+    summary,
+    "actor.get(--include prepared adds values the stored system does not hold)",
+    isCommandSuccess(actorRun) && preparedSystem !== null && derivedOnly.length > 0,
+    {
+      ...summarizeCommand(actorRun),
+      omitted: actor?.prepared?.omitted ?? null,
+      derivedOnly: derivedOnly.slice(0, 10)
+    }
+  );
+  if (systemId === "dnd5e") {
+    markAndPush(
+      summary,
+      "actor.get(--include prepared: dnd5e attributes.ac.value is a number)",
+      typeof preparedSystem?.attributes?.ac?.value === "number",
+      { observed: preparedSystem?.attributes?.ac?.value ?? null }
+    );
+  } else {
+    summary.notes.push(
+      `prepared: the world runs system ${systemId}, so the dnd5e armor-class check was not run; the generic derived-value and schema-superset checks still ran`
+    );
+  }
+
+  const item = Array.isArray(fixtureActor?.items) ? (fixtureActor.items[0] ?? null) : null;
+  let itemPrepared = null;
+  if (item?.id) {
+    const itemRun = runFoundryctl([
+      "actor",
+      "item",
+      "get",
+      "--actor-id",
+      actorId,
+      "--item-id",
+      item.id,
+      "--include",
+      "prepared"
+    ]);
+    itemPrepared = itemRun.response?.result?.item?.prepared?.system ?? null;
+    markAndPush(
+      summary,
+      "actor.item.get(--include prepared returns the item's prepared system)",
+      isCommandSuccess(itemRun) && itemPrepared !== null && typeof itemPrepared === "object",
+      {
+        ...summarizeCommand(itemRun),
+        itemId: item.id,
+        omitted: itemRun.response?.result?.item?.prepared?.omitted ?? null
+      }
+    );
+  } else {
+    summary.notes.push(
+      `prepared: actor ${actorId} owns no item, so actor.item.get --include prepared was not run`
+    );
+  }
+
+  if (!gmControlUrl) {
+    summary.notes.push(
+      "prepared: no --gm-control, so the check that prepared keys cover every toObject(false) key was not run"
+    );
+    return;
+  }
+  const schemaPaths = await evaluateInGmPage(
+    gmControlUrl,
+    PREPARED_SCHEMA_PATHS_SCRIPT(actorId, item?.id ?? null)
+  );
+  const preparedSet = new Set(preparedPaths);
+  const missingActor = (schemaPaths?.actor ?? []).filter((path) => !preparedSet.has(path));
+  markAndPush(
+    summary,
+    "actor.get(--include prepared covers every key of the system's toObject(false))",
+    Array.isArray(schemaPaths?.actor) && missingActor.length === 0,
+    { checked: schemaPaths?.actor?.length ?? null, missing: missingActor.slice(0, 20) }
+  );
+  if (item?.id && itemPrepared) {
+    const itemSet = new Set(objectKeyPaths(itemPrepared));
+    const missingItem = (schemaPaths?.item ?? []).filter((path) => !itemSet.has(path));
+    markAndPush(
+      summary,
+      "actor.item.get(--include prepared covers every key of the item system's toObject(false))",
+      Array.isArray(schemaPaths?.item) && missingItem.length === 0,
+      { checked: schemaPaths?.item?.length ?? null, missing: missingItem.slice(0, 20) }
+    );
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const summary = {
@@ -15212,6 +15605,13 @@ async function main() {
         items: Array.isArray(fixtureWithItems?.items) ? fixtureWithItems.items.length : null
       }
     );
+
+    await runPreparedCoverage(summary, {
+      actorId: options.actorId,
+      fixtureActor: fixtureWithItems,
+      gmControlUrl: options.gmControlUrl,
+      systemId: systemInfo.system?.id ?? null
+    });
 
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const sceneUpdatedNameSuffix = ` [smoke ${stamp}]`;
@@ -16243,6 +16643,14 @@ async function main() {
       stamp,
       worldId,
       isV14
+    });
+
+    await runTokenPlacementCoverage(summary, {
+      actorId: options.actorId,
+      targetSceneId: targetScene?.id ?? null,
+      stamp,
+      isV14,
+      gmControlUrl: options.gmControlUrl
     });
 
     const missingSceneRun = runFoundryctl(["scene", "get", "--scene-id", createMissingId("scene", stamp)]);
