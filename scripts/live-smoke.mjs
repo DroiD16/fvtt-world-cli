@@ -7843,7 +7843,13 @@ function runExtendedCoverage(
           idKey: "drawingId",
           ledger: created.drawings,
           data: [
-            { shape: { type: "r", width: 60, height: 60 }, x: 1900, y: 100, text: `Bulk zone A ${stamp}` },
+            {
+              shape: { type: "r", width: 60, height: 60 },
+              x: 1900,
+              y: 100,
+              text: `Bulk zone A ${stamp}`,
+              texture: null
+            },
             { shape: { type: "r", width: 60, height: 60 }, x: 1900, y: 250, text: `Bulk zone B ${stamp}` },
             { shape: { type: "r", width: 60, height: 60 }, x: 1900, y: 400, text: `Bulk zone C ${stamp}` }
           ],
