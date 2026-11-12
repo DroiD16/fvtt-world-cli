@@ -32,8 +32,7 @@ and the raw size of a `file.read`, the second accounts for encoding and envelope
 never lower than what legitimate large read responses require. The daemon advertises its effective
 limits during the handshake, and the bridge checks response size before sending, so an oversized
 response, or one the browser cannot serialize, returns `PAYLOAD_TOO_LARGE` instead of destroying the
-shared session. `file.read` is capped at about 383 MiB, the largest file whose base64 form fits one
-browser string. A persisted upload-limit change is applied to the transport only after the daemon
+shared session. A persisted upload-limit change is applied to the transport only after the daemon
 restarts.
 
 ## Pairing
@@ -189,39 +188,16 @@ World document reads carry `compendiumSource` and `duplicateSource`, hoisted fro
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.
 
-### Reference results
-
-`world.references` returns `target` (`uuid`, `documentName`, `id`, `exists`, `name`), one page of
-`references` with `total` and `hasMore`, `scannedDocuments`, `selfReferences` (references stored
-inside the target, which get no row) and `scopes` (the families searched; users are always searched
-too). `target.exists` is `null` when a compendium entry cannot be resolved without loading its pack.
-
-Each row names the owning document (`uuid`, `documentName`, `name`), the dotted `field` path inside
-its stored source, and a `match` kind:
-
-- `uuid`: a string holds the target UUID.
-- `link`: an `@UUID[...]` or legacy content link names the target.
-- `embedded`: a string holds the UUID of a document embedded in the target, given in `matchedUuid`.
-- `key`: an object key names the target; a literal key naming an embedded document gives it in
-  `matchedUuid`.
-- `relative`: a relative link resolves to the target or a document embedded in it; `matchedUuid` is
-  the resolved UUID.
-- `id`: a Foundry foreign-key field or a user's hotbar slot holds the target's id.
-
-An embedded type without its parent chain, such as `Token.<id>`, returns `INVALID_PARAMS` with
-`details.documentName`. More than `REFERENCES_MAX_MATCHES` (10,000) rows returns `QUERY_TOO_BROAD`.
+A setting value or macro return value node with no JSON form, such as a function, an own accessor
+property or a circular reference, is replaced by `{"$unserializable": "<reason>"}` and listed with
+its path in an `...Omissions` field. A value with omissions is incomplete; writing it back stores the
+markers as data.
 
 ### Macro results
 
 `macro.execute` returns the macro's value and observed chat messages. `chatCapture` describes the
 observation: `captured` for all expected messages, `not-created` when a chat macro created none,
 `partial` for incomplete capture, or `unknown` when the client could not observe the chat log.
-
-A return-value node with no JSON form, such as a function, an own accessor property or a circular
-reference, is replaced by `{"$unserializable": "<reason>"}` and listed with its path in
-`returnedOmissions`, at most `SERIALIZE_OMISSIONS_MAX` (100) entries; `returnedOmissionsTruncated:
-true` marks a longer list. A return value over the size limits is dropped and explained in
-`returnedOmitted`.
 
 `MACRO_TIMEOUT` is indeterminate because the macro keeps running. A thrown error can follow partial
 effects, while a macro that catches its own errors may return normally. Consumers must verify
@@ -232,11 +208,9 @@ world state when the return value does not establish the effect.
 Setting writes return the observed `value` and its `previous` value, as `game.settings.get`
 returns them after the registered type's cast. Confirmation compares the JSON Foundry stores with
 the JSON of the validated request; a different stored value, for example one rewritten by an
-`onChange` callback, is a mismatch error with a `paths` entry for `value`. Setting reads and write
-results mark such nodes the same way, in `valueOmissions` and `previousOmissions` with matching
-`...Truncated` flags. A value read with omissions is incomplete, and writing it back stores the
-markers as data. Writing an already-stored value succeeds as unchanged without calling Foundry.
-`requiresReload: true` indicates that the GM client needs a reload.
+`onChange` callback, is a mismatch error with a `paths` entry for `value`. Writing an
+already-stored value succeeds as unchanged without calling Foundry. `requiresReload: true`
+indicates that the GM client needs a reload.
 
 ## Write confirmation
 
