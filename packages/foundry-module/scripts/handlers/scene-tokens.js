@@ -42,7 +42,7 @@ export function createSceneTokenHandlers() {
     resultKey: "token",
     pluralKey: "tokens",
     notFoundCode: ERROR_CODES.TOKEN_NOT_FOUND,
-    serialize: (document) => serializeToken(document),
+    serialize: (document, params) => serializeToken(document, { include: params?.include }),
     serializeSummary: (document, params) => serializeTokenSummary(document, { include: params?.include }),
     listFilter: (tokens, params) => filterByName(tokens, params.name),
 
@@ -136,10 +136,13 @@ export function createSceneTokenHandlers() {
       const tokenData = await prepareTokenCreate(params.data, scene, params.placement);
       if (isDryRun(params)) {
         const preview = previewPreparedSceneEmbeddedCreate(scene, TOKEN, tokenData);
-        return dryRunResponse({ sceneId: params.sceneId, token: serializeToken(preview) });
+        return dryRunResponse({
+          sceneId: params.sceneId,
+          token: serializeToken(preview, { include: params.include })
+        });
       }
       const token = await createSceneEmbedded(scene, TOKEN, tokenData);
-      return { sceneId: params.sceneId, token: serializeToken(token) };
+      return { sceneId: params.sceneId, token: serializeToken(token, { include: params.include }) };
     }
   };
 }

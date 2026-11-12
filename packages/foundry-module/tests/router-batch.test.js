@@ -613,7 +613,7 @@ describe("command router", () => {
         expect(fixture.collection(scene).get("spoofedid00000001")).toBeFalsy();
       });
 
-      it(`${family}.create-many --dry-run mints NO id and writes nothing`, async () => {
+      it(`${family}.create-many --dry-run mints NO id, writes nothing and names each element as the write does`, async () => {
         const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
         const scene = globalThis.game.scenes.get("scene-1");
         const before = fixture.collection(scene).size;
@@ -626,10 +626,9 @@ describe("command router", () => {
         expect(response.result.dryRun).toBe(true);
         expect(response.result.complete).toBe(true);
 
-        const summary = fixture.summarized ? { name: null } : {};
-        expect(response.result.outcomes).toEqual([
-          { index: 0, id: null, status: "created", ...summary },
-          { index: 1, id: null, status: "created", ...summary }
+        expect(response.result.outcomes.map(({ index, id, status }) => ({ index, id, status }))).toEqual([
+          { index: 0, id: null, status: "created" },
+          { index: 1, id: null, status: "created" }
         ]);
         expect(scene.createEmbeddedDocuments).not.toHaveBeenCalledWith(
           fixture.type,
@@ -637,6 +636,15 @@ describe("command router", () => {
           expect.anything()
         );
         expect(fixture.collection(scene).size).toBe(before);
+
+        const written = await router.route(
+          createRequest(`${family}.create-many`, { sceneId: "scene-1", data: fixture.create })
+        );
+        const names = (outcomes) =>
+          outcomes.map((outcome) => ("name" in outcome ? outcome.name : "(absent)"));
+        expect(names(response.result.outcomes), "dry-run names match the written names").toEqual(
+          names(written.result.outcomes)
+        );
       });
 
       it(`${family}.update-many patches in ONE diff:true call and reports input order`, async () => {
@@ -1649,8 +1657,8 @@ describe("command router", () => {
       expect(created.result.dryRun).toBe(true);
       expect(created.result.complete).toBe(true);
       expect(created.result.outcomes).toEqual([
-        { index: 0, id: null, status: "created", name: null },
-        { index: 1, id: null, status: "created", name: null }
+        { index: 0, id: null, status: "created", name: "Preview Bless" },
+        { index: 1, id: null, status: "created", name: "Preview Bane" }
       ]);
 
       expect(created.result).toMatchObject(fixture.scope);

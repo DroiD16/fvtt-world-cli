@@ -1810,6 +1810,23 @@ describe("fvtt-world-cli commands", () => {
       { sceneId: "scene-1", tokenId: "token-a", patch: { x: 5, hidden: true } }
     ],
     [
+      [
+        "scene",
+        "token",
+        "update",
+        "--scene-id",
+        "scene-1",
+        "--token-id",
+        "token-a",
+        "--x",
+        "5",
+        "--include",
+        "delta"
+      ],
+      "scene.token.update",
+      { sceneId: "scene-1", tokenId: "token-a", patch: { x: 5 }, include: ["delta"] }
+    ],
+    [
       ["scene", "token", "clone", "--scene-id", "scene-1", "--token-id", "token-a", "--x", "9"],
       "scene.token.clone",
       { sceneId: "scene-1", tokenId: "token-a", patch: { x: 9 } }

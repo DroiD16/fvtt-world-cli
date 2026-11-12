@@ -4647,6 +4647,41 @@ describe("token actor deltas", () => {
     expect(Object.hasOwn(plain.result.token, "delta")).toBe(false);
   });
 
+  it("token writes return the delta with include delta, and an update dry run shows the patched delta", async () => {
+    const scene = globalThis.game.scenes.get("scene-1");
+    const before = JSON.stringify(scene.tokens.get("token-a").toObject());
+    const dry = await router().route(
+      createRequest("scene.token.update", {
+        sceneId: "scene-1",
+        tokenId: "token-a",
+        patch: { delta: { name: "Valeros the Bold" } },
+        include: ["delta"],
+        dryRun: true
+      })
+    );
+    expect(dry.ok).toBe(true);
+    expect(dry.result.dryRun).toBe(true);
+    expect(dry.result.token.delta).toMatchObject({ name: "Valeros the Bold" });
+    expect(JSON.stringify(scene.tokens.get("token-a").toObject())).toBe(before);
+
+    const created = await router().route(
+      createRequest("scene.token.create", {
+        sceneId: "scene-1",
+        data: { name: "Marker", actorLink: false, delta: { name: "Marked" } },
+        include: ["delta"]
+      })
+    );
+    expect(created.result.token.delta).toMatchObject({ name: "Marked" });
+    const cloned = await router().route(
+      createRequest("scene.token.clone", { sceneId: "scene-1", tokenId: "token-a", include: ["delta"] })
+    );
+    expect(Object.hasOwn(cloned.result.token, "delta")).toBe(true);
+    const plain = await router().route(
+      createRequest("scene.token.update", { sceneId: "scene-1", tokenId: "token-a", patch: { x: 3 } })
+    );
+    expect(Object.hasOwn(plain.result.token, "delta")).toBe(false);
+  });
+
   it("scene.token.list carries a derived deltaSummary per row only with include delta", async () => {
     attachDelta("token-a", OVERRIDES);
     attachDelta("token-linked", OVERRIDES);

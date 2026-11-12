@@ -112,7 +112,7 @@ export const tokenIncludeProperty = {
   include: { type: "array", items: { type: "string", enum: ["prepared", "delta"] } }
 };
 
-export const tokenListIncludeProperty = {
+export const tokenDeltaIncludeProperty = {
   include: { type: "array", items: { type: "string", enum: ["delta"] } }
 };
 

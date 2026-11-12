@@ -225,11 +225,12 @@ export async function executeBatchCreate({
   assertBatchWithinLimit(items, { command, field: "data" });
 
   const prepared = [];
+  const previews = [];
   for (let index = 0; index < items.length; index += 1) {
     let payload;
     try {
       payload = await prepare(items[index], index);
-      preview(structuredCloneish(payload), index);
+      previews.push(preview(structuredCloneish(payload), index));
     } catch (error) {
       throw annotateBatchElementFailure(error, { command, index });
     }
@@ -238,11 +239,11 @@ export async function executeBatchCreate({
 
   if (dryRun) {
     return buildBatchResult({
-      outcomes: prepared.map((_payload, index) => ({
+      outcomes: previews.map((previewDocument, index) => ({
         index,
         id: null,
         status: BATCH_STATUS.CREATED,
-        ...(summarize ? summarize(null) : {})
+        ...(summarize ? summarize(previewDocument) : {})
       })),
       dryRun: true
     });

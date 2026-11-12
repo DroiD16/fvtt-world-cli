@@ -86,8 +86,9 @@ Token `x`/`y` are its top-left corner. To put a token's center on a point, pass 
 A token created from an actor takes `actorLink` from the actor's prototype token. Pass `--unlinked`
 when the token needs its own items, effects, or data, and check `actorLink` in the result: token
 item and effect writes on a linked token change the world actor.
-An unlinked token keeps its own overrides, which edits to its world actor never reach. Before
-editing an actor that has placed tokens, read its tokens' overrides
+An unlinked token keeps its own overrides, which edits to its world actor never reach. To check a
+`delta` patch, dry-run `scene token update` with `--include delta`; the result shows the overrides it
+would store. Before editing an actor that has placed tokens, read its tokens' overrides
 (`scene token get --include delta,prepared`) and tell the user which tokens the edit will not
 change.
 Before deleting or relinking a document, run `world references --uuid <uuid>` and tell the user

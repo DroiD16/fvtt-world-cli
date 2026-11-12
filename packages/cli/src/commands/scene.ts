@@ -66,7 +66,7 @@ import {
   parseIdList,
   parseNumber,
   parseTokenIncludeFields,
-  parseTokenListIncludeFields
+  parseTokenDeltaIncludeFields
 } from "../parse.js";
 import {
   addEffectFieldOptions,
@@ -344,7 +344,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     .option(
       "--include <fields>",
       "Comma-separated extra fields to include (allowed: delta — a derived per-token summary of the token-level overrides, null when there are none)",
-      parseTokenListIncludeFields
+      parseTokenDeltaIncludeFields
     )
     .addHelpText(
       "after",

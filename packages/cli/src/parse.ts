@@ -277,7 +277,7 @@ export function parseTokenIncludeFields(value: string) {
   return parseAllowedIncludeFields(value, ["prepared", "delta"]);
 }
 
-export function parseTokenListIncludeFields(value: string) {
+export function parseTokenDeltaIncludeFields(value: string) {
   return parseAllowedIncludeFields(value, ["delta"]);
 }
 

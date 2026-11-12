@@ -347,7 +347,7 @@ var batchIdsProperty = {
 var tokenIncludeProperty = {
   include: { type: "array", items: { type: "string", enum: ["prepared", "delta"] } }
 };
-var tokenListIncludeProperty = {
+var tokenDeltaIncludeProperty = {
   include: { type: "array", items: { type: "string", enum: ["delta"] } }
 };
 var compendiumIncludeProperty = {
@@ -3362,7 +3362,7 @@ var sceneEmbeddedCommands = {
       sceneId: { type: "string", minLength: 1 },
       ...nameFilterProperty,
       ...paginationProperties,
-      ...tokenListIncludeProperty
+      ...tokenDeltaIncludeProperty
     },
     additionalProperties: false
   }),
@@ -3384,6 +3384,7 @@ var sceneEmbeddedCommands = {
         sceneId: { type: "string", minLength: 1 },
         data: tokenCreateSchema,
         ...tokenPlacementProperty,
+        ...tokenDeltaIncludeProperty,
         ...dryRunProperty,
         ...idempotencyKeyProperty
       },
@@ -3399,6 +3400,7 @@ var sceneEmbeddedCommands = {
         sceneId: { type: "string", minLength: 1 },
         tokenId: { type: "string", minLength: 1 },
         patch: tokenPatchSchema,
+        ...tokenDeltaIncludeProperty,
         ...dryRunProperty
       },
       additionalProperties: false
@@ -3426,6 +3428,7 @@ var sceneEmbeddedCommands = {
         sceneId: { type: "string", minLength: 1 },
         tokenId: { type: "string", minLength: 1 },
         patch: tokenPatchSchema,
+        ...tokenDeltaIncludeProperty,
         ...dryRunProperty,
         ...idempotencyKeyProperty
       },

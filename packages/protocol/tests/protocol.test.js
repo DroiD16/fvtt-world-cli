@@ -6667,6 +6667,9 @@ describe("protocol contract", () => {
       "scene.token.item.get": { sceneId: "scene-1", tokenId: "token-1", itemId: "item-1" },
       "scene.token.get": { sceneId: "scene-1", tokenId: "token-1" },
       "scene.token.list": { sceneId: "scene-1" },
+      "scene.token.create": { sceneId: "scene-1", data: { x: 0 } },
+      "scene.token.update": { sceneId: "scene-1", tokenId: "token-1", patch: { x: 0 } },
+      "scene.token.clone": { sceneId: "scene-1", tokenId: "token-1" },
       "compendium.get": { pack: "world.x", entryId: "e-1" },
       "compendium.get-many": { pack: "world.x", ids: ["e-1"] },
       "system.info": {}
@@ -6691,7 +6694,7 @@ describe("protocol contract", () => {
       "scene.token.item.get"
     ]);
     const TOKEN_INCLUDE_ENUM = Object.freeze(["prepared", "delta"]);
-    const TOKEN_LIST_INCLUDE_ENUM = Object.freeze(["delta"]);
+    const TOKEN_DELTA_INCLUDE_ENUM = Object.freeze(["delta"]);
 
     const COMPENDIUM_INCLUDE_ENUM = Object.freeze(["effects"]);
     const SYSTEM_INFO_INCLUDE_ENUM = Object.freeze(["modules"]);
@@ -6699,7 +6702,13 @@ describe("protocol contract", () => {
       if (command === "actor.get" || command === "actor.get-many") return ACTOR_INCLUDE_ENUM;
       if (ITEM_GET_COMMANDS.includes(command)) return ITEM_GET_INCLUDE_ENUM;
       if (command === "scene.token.get") return TOKEN_INCLUDE_ENUM;
-      if (command === "scene.token.list") return TOKEN_LIST_INCLUDE_ENUM;
+      if (
+        ["scene.token.list", "scene.token.create", "scene.token.update", "scene.token.clone"].includes(
+          command
+        )
+      ) {
+        return TOKEN_DELTA_INCLUDE_ENUM;
+      }
       if (command === "compendium.get" || command === "compendium.get-many") return COMPENDIUM_INCLUDE_ENUM;
       if (command === "system.info") return SYSTEM_INFO_INCLUDE_ENUM;
       return BASE_INCLUDE_ENUM;
@@ -6745,6 +6754,9 @@ describe("protocol contract", () => {
           command === "actor.get-many" ||
           command === "scene.token.get" ||
           command === "scene.token.list" ||
+          command === "scene.token.create" ||
+          command === "scene.token.update" ||
+          command === "scene.token.clone" ||
           command === "compendium.get" ||
           command === "compendium.get-many" ||
           command === "system.info"

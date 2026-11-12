@@ -3105,6 +3105,32 @@ function runTokenDeltaCoverage(summary, { targetSceneId, actorId, stamp, created
     }
   );
 
+  const deltaPreviewName = `Smoke Delta Preview ${stamp}`;
+  const deltaPreview = runFoundryctl([
+    "--dry-run",
+    ...tokenArgs("update", tokenId, [
+      "--patch-json",
+      JSON.stringify({ delta: { name: deltaPreviewName } }),
+      "--include",
+      "delta"
+    ])
+  ]);
+  const storedAfterPreview = runFoundryctl(tokenArgs("get", tokenId, ["--include", "delta"]));
+  markAndPush(
+    summary,
+    "scene.token.update(dry run with --include delta shows the patched delta and writes nothing)",
+    isCommandSuccess(deltaPreview) &&
+      deltaPreview.response.result.dryRun === true &&
+      deltaPreview.response.result.token?.delta?.name === deltaPreviewName &&
+      isCommandSuccess(storedAfterPreview) &&
+      storedAfterPreview.response.result.token?.delta?.name !== deltaPreviewName,
+    {
+      ...summarizeCommand(deltaPreview),
+      previewDeltaName: deltaPreview.response?.result?.token?.delta?.name ?? null,
+      storedDeltaName: storedAfterPreview.response?.result?.token?.delta?.name ?? null
+    }
+  );
+
   const listRow = () => {
     const listed = runFoundryctl([
       "scene",

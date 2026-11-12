@@ -364,7 +364,7 @@ command scene token list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
-  opt --include <fields> | parser=parseTokenListIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: delta — a derived per-token summary of the token-level overrides, null when there are none)
+  opt --include <fields> | parser=parseTokenDeltaIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: delta — a derived per-token summary of the token-level overrides, null when there are none)
 
 command scene token get
   aliases=[]
@@ -388,6 +388,7 @@ command scene token create
   opt --disposition <disposition> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token disposition
   opt --linked | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Link the token to the world actor (default: as the actor's prototype token says)
   opt --unlinked | parser=- | conflicts=["linked"] | choices=- | required=false | hidden=false | default=- | help=Create the token unlinked, with a per-token actor delta (default: as the actor's prototype token says)
+  opt --include <fields> | parser=parseTokenDeltaIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields in the result token (allowed: delta — the stored ActorDelta source, null for a linked token or when none is stored)
   opt --center | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Read x and y as the token's center instead of its top-left corner, as Foundry does for a dropped token
   opt --snap | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Snap the position to the scene grid, as Foundry does for a dropped token
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Full/extra token data as a JSON object (merged last)
@@ -406,6 +407,7 @@ command scene token update
   opt --disposition <disposition> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token disposition
   opt --linked | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Link the token to the world actor
   opt --unlinked | parser=- | conflicts=["linked"] | choices=- | required=false | hidden=false | default=- | help=Unlink the token (per-token actor delta)
+  opt --include <fields> | parser=parseTokenDeltaIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields in the result token (allowed: delta — the stored ActorDelta source, null for a linked token or when none is stored)
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Full/extra token patch as a JSON object (merged last)
 
 command scene token clone
@@ -423,6 +425,7 @@ command scene token clone
   opt --disposition <disposition> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token disposition
   opt --linked | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Link the clone to the world actor
   opt --unlinked | parser=- | conflicts=["linked"] | choices=- | required=false | hidden=false | default=- | help=Unlink the clone (per-token actor delta)
+  opt --include <fields> | parser=parseTokenDeltaIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields in the result token (allowed: delta — the stored ActorDelta source, null for a linked token or when none is stored)
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Override fields for the clone as a JSON object (merged last)
 
 command scene token delete

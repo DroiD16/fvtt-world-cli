@@ -7,7 +7,8 @@ import {
   parseCsvList,
   parseIncludeFields,
   parseNumber,
-  parsePositiveInt
+  parsePositiveInt,
+  parseTokenDeltaIncludeFields
 } from "../parse.js";
 
 export type FieldVerb = "create" | "update" | "clone";
@@ -199,7 +200,11 @@ export function addTokenFieldOptions(command: Command, verb: FieldVerb): Command
     verb === "create"
       ? [...TOKEN_POSITION_FIELDS, TOKEN_NAME_FIELD, ...TOKEN_BODY_FIELDS]
       : [TOKEN_NAME_FIELD, ...TOKEN_POSITION_FIELDS, ...TOKEN_BODY_FIELDS];
-  return addFieldOptions(command, verb, ordered);
+  return addFieldOptions(command, verb, ordered).option(
+    "--include <fields>",
+    "Comma-separated extra fields in the result token (allowed: delta — the stored ActorDelta source, null for a linked token or when none is stored)",
+    parseTokenDeltaIncludeFields
+  );
 }
 
 export function addTokenPlacementOptions(command: Command): Command {

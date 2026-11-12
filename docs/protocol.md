@@ -294,6 +294,12 @@ before execution are reported: random selection, rendering, hooks, and other exe
 observations may be absent or explicitly unconfirmed. A successful preview reserves nothing; the
 world can change between preview and commit.
 
+A single create, update or clone preview returns the document as Foundry would build it from the
+request. A `create-many` preview carries `id: null` and, in families whose outcomes carry a name,
+the name of each element's preview. `include: ["delta"]` on `scene.token.create`, `update` and
+`clone` adds the token's stored `delta` to the result, in a dry run as in a write, so the overrides a
+patch produces can be checked before they are written.
+
 ## Idempotency
 
 An idempotency key identifies one logical request. Reusing it with another command or payload

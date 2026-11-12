@@ -16,7 +16,7 @@ import {
   sceneTokenItemScopeProperties,
   sceneTokenScopeProperties,
   tokenIncludeProperty,
-  tokenListIncludeProperty
+  tokenDeltaIncludeProperty
 } from "./shared.js";
 
 const tokenWriteProperties = {
@@ -446,7 +446,7 @@ export const sceneEmbeddedCommands = {
       sceneId: { type: "string", minLength: 1 },
       ...nameFilterProperty,
       ...paginationProperties,
-      ...tokenListIncludeProperty
+      ...tokenDeltaIncludeProperty
     },
     additionalProperties: false
   }),
@@ -468,6 +468,7 @@ export const sceneEmbeddedCommands = {
         sceneId: { type: "string", minLength: 1 },
         data: tokenCreateSchema,
         ...tokenPlacementProperty,
+        ...tokenDeltaIncludeProperty,
         ...dryRunProperty,
         ...idempotencyKeyProperty
       },
@@ -483,6 +484,7 @@ export const sceneEmbeddedCommands = {
         sceneId: { type: "string", minLength: 1 },
         tokenId: { type: "string", minLength: 1 },
         patch: tokenPatchSchema,
+        ...tokenDeltaIncludeProperty,
         ...dryRunProperty
       },
       additionalProperties: false
@@ -510,6 +512,7 @@ export const sceneEmbeddedCommands = {
         sceneId: { type: "string", minLength: 1 },
         tokenId: { type: "string", minLength: 1 },
         patch: tokenPatchSchema,
+        ...tokenDeltaIncludeProperty,
         ...dryRunProperty,
         ...idempotencyKeyProperty
       },
