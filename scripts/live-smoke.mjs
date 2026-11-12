@@ -1679,7 +1679,6 @@ async function runPolicySegment(summary, options, { stamp, coverage }) {
   }
 }
 
-/** @returns {Promise<boolean>} whether the run may still issue the system.reload branch */
 async function runReferenceGmCoverage(summary, { gmControlUrl, gmUserId, scriptMacroId, actorId }) {
   if (gmUserId && scriptMacroId) {
     let hotbar = null;
@@ -1798,6 +1797,7 @@ async function runReferenceGmCoverage(summary, { gmControlUrl, gmUserId, scriptM
   }
 }
 
+/** @returns {Promise<boolean>} whether the run may still issue the system.reload branch */
 async function runDangerousSegment(summary, options, { stamp, coverage }) {
   const gmControlUrl = options.gmControlUrl;
   if (!gmControlUrl) {
