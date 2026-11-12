@@ -78,7 +78,7 @@ export async function createCard(stack, data) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Card create API is not available");
   }
   const cards = await stack.createEmbeddedDocuments("Card", [data], { render: true });
-  return getCreateResult(cards, "Card creation returned no document");
+  return getCreateResult(cards, "Card creation");
 }
 
 export async function updateCard(stack, cardId, patch) {

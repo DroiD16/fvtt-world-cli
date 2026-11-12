@@ -83,7 +83,7 @@ export async function createPlaylistSound(playlist, data, { dryRun = false } = {
     return data;
   }
   const results = await playlist.createEmbeddedDocuments("PlaylistSound", [data], { render: true });
-  return getCreateResult(results, "PlaylistSound creation returned no document");
+  return getCreateResult(results, "PlaylistSound creation");
 }
 
 export async function updatePlaylistSound(playlistId, soundId, patch, { dryRun = false } = {}) {

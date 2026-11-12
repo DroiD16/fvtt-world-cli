@@ -49,7 +49,7 @@ export async function createEmbeddedItem(actor, data, { dryRun = false } = {}) {
   }
 
   const results = await actor.createEmbeddedDocuments("Item", [prepared], { render: true });
-  return getCreateResult(results, "Embedded item creation returned no document");
+  return getCreateResult(results, "Embedded item creation");
 }
 
 export async function importActorItemFromCompendium(

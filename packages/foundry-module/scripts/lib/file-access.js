@@ -967,6 +967,18 @@ export async function uploadDataFile(
     throw toFileError(error, normalizedPath, "upload");
   }
 
+  if (response === false) {
+    throw createBridgeError(
+      ERROR_CODES.INTERNAL_ERROR,
+      `Foundry's server rejected the upload of ${normalizedPath}. FilePicker.upload returns false only ` +
+        "after the server answers with an error, and Foundry shows that error solely as a notification in " +
+        "the GM browser, so the bridge cannot report the reason. Possible causes include a GM session that " +
+        "was logged out and a file type the server refuses. Check the GM browser and the destination with " +
+        "file.stat before retrying",
+      { path: normalizedPath, reason: "server_rejected", response: summarizeUploadResponse(response) }
+    );
+  }
+
   if (typeof response?.path !== "string" || !response.path) {
     throw createBridgeError(
       ERROR_CODES.INTERNAL_ERROR,

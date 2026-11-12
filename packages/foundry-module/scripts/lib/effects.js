@@ -120,7 +120,7 @@ export async function createEmbeddedEffect(parent, data, { dryRun = false } = {}
   const results = await parent.createEmbeddedDocuments("ActiveEffect", [prepared], {
     render: true
   });
-  return getCreateResult(results, "Embedded effect creation returned no document");
+  return getCreateResult(results, "Embedded effect creation");
 }
 
 export async function updateEmbeddedEffect(parent, effectId, patch, details = {}, { dryRun = false } = {}) {

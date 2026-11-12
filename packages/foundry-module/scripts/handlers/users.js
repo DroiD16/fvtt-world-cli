@@ -5,7 +5,11 @@ import { createBridgeError, isFoundryValidationError, toFailureSummary } from ".
 import { getUserById, getUsersCollection } from "../lib/game-collections.js";
 import { buildMismatchReport, createMismatchError } from "../lib/mismatch-report.js";
 import { filterByName, paginate, serializeUser } from "../lib/serializers.js";
-import { previewDocumentCreate, previewDocumentUpdate } from "../lib/world-docs.js";
+import {
+  createReturnedNothingError,
+  previewDocumentCreate,
+  previewDocumentUpdate
+} from "../lib/world-docs.js";
 import { applyConfirmedUpdate, assertRequestedWriteStorable } from "../lib/write-confirmation.js";
 import { assertAssignableUserRole, assertKnownUserPermissions, getGame } from "../lib/validators.js";
 
@@ -231,7 +235,7 @@ export function createUserHandlers() {
       }
 
       if (!created?.id) {
-        throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "User.create returned no document");
+        throw createReturnedNothingError("User.create");
       }
 
       const stored = getUsersCollection().get?.(created.id) ?? null;

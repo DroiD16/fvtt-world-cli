@@ -17,6 +17,7 @@ import {
 } from "./region-behavior-guards.js";
 import {
   cloneDocument,
+  createReturnedNothingError,
   previewDocumentCreate,
   previewDocumentUpdate,
   resolveEmbeddedDocumentClass
@@ -252,7 +253,7 @@ export async function createSceneEmbedded(scene, type, data, { dryRun = false } 
   });
   const document = Array.isArray(results) ? (results[0] ?? null) : results;
   if (!document) {
-    throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, `${type} creation returned no document`);
+    throw createReturnedNothingError(`${type} creation`);
   }
 
   return document;

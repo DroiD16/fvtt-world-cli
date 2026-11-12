@@ -469,6 +469,32 @@ describe("command router", () => {
     }
   );
 
+  it("marks an upload FilePicker.upload answers with false as rejected by the server", async () => {
+    const router = createCommandRouter({
+      bridgeClient: { getStatus: () => ({ status: "connected" }) }
+    });
+
+    await router.route(createRequest("file.mkdir", { path: "worlds/world-1/fvtt-world-cli" }));
+    await router.route(createRequest("file.mkdir", { path: "worlds/world-1/fvtt-world-cli/assets" }));
+
+    globalThis.foundry.applications.apps.FilePicker.implementation.upload = vi.fn(async () => false);
+
+    const uploadResponse = await router.route(
+      createRequest("file.upload", {
+        path: "worlds/world-1/fvtt-world-cli/assets/ghost.txt",
+        contentBase64: Buffer.from("never-written", "utf8").toString("base64"),
+        mimeType: "text/plain"
+      })
+    );
+
+    expect(uploadResponse.error.code).toBe("INTERNAL_ERROR");
+    expect(uploadResponse.error.details).toMatchObject({
+      path: "worlds/world-1/fvtt-world-cli/assets/ghost.txt",
+      reason: "server_rejected"
+    });
+    expect(uploadResponse.error.message).toContain("notification");
+  });
+
   function installMovePrimitive() {
     const spy = vi.fn(async (_source, _from, _to) => {});
     globalThis.foundry.applications.apps.FilePicker.implementation.move = spy;

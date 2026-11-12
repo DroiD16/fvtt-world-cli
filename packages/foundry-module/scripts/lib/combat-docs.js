@@ -388,7 +388,7 @@ export async function createCombatant(combat, data) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Combatant create API is not available");
   }
   const created = await combat.createEmbeddedDocuments("Combatant", [data], { render: true });
-  return getCreateResult(created, "Combatant creation returned no document");
+  return getCreateResult(created, "Combatant creation");
 }
 
 export async function createCombatantGroup(combat, data) {
@@ -396,7 +396,7 @@ export async function createCombatantGroup(combat, data) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "CombatantGroup create API is not available");
   }
   const created = await combat.createEmbeddedDocuments("CombatantGroup", [data], { render: true });
-  return getCreateResult(created, "CombatantGroup creation returned no document");
+  return getCreateResult(created, "CombatantGroup creation");
 }
 
 export async function updateCombatant(combat, combatantId, patch) {

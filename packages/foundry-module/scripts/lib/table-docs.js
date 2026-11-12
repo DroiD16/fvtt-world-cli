@@ -128,7 +128,7 @@ export async function createTableResult(table, data, { dryRun = false } = {}) {
     return data;
   }
   const results = await table.createEmbeddedDocuments("TableResult", [data], { render: true });
-  return getCreateResult(results, "TableResult creation returned no document");
+  return getCreateResult(results, "TableResult creation");
 }
 
 export async function updateTableResult(tableId, resultId, patch, { dryRun = false } = {}) {
