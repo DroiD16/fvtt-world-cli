@@ -611,6 +611,11 @@ const DANGEROUS_SEGMENT_BRANCHES = Object.freeze([
     branch: "an enabled macro.execute runs a script macro and reports its return value"
   },
   {
+    step: "dangerous.macro.execute(partial return)",
+    branch:
+      "an accessor and a circular reference in a return value become markers listed in returnedOmissions"
+  },
+  {
     step: "dangerous.macro.execute(chat)",
     branch: "a chat macro's created message is captured in chatMessageIds"
   },
@@ -626,6 +631,11 @@ const DANGEROUS_SEGMENT_BRANCHES = Object.freeze([
     step: "dangerous.setting.set(type cast)",
     branch:
       "a setting whose registered type casts on read reports its read form and is confirmed on stored JSON, even when the cast is lossy"
+  },
+  {
+    step: "dangerous.setting(partial value)",
+    branch:
+      "a setting whose cast value carries an own accessor reads with valueOmissions, and setting set still writes it and reports previousOmissions"
   },
   {
     step: "dangerous.user.lifecycle",
@@ -1738,6 +1748,41 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
       { ...summarizeCommand(scriptExecuteRun), returned: scriptResult?.returned ?? null }
     );
 
+    const partialCommand =
+      'const value = { kept: 1 }; Object.defineProperty(value, "lazy", { get() { return 2; }, enumerable: true }); value.self = value; return value;';
+    const partialUpdateRun = runFoundryctl([
+      "macro",
+      "update",
+      "--macro-id",
+      scriptMacroId,
+      "--command",
+      partialCommand
+    ]);
+    const partialExecuteRun = partialUpdateRun.response?.ok
+      ? runFoundryctl(["macro", "execute", "--macro-id", scriptMacroId])
+      : partialUpdateRun;
+    const partialResult = partialExecuteRun.response?.result || null;
+    markAndPush(
+      summary,
+      "dangerous.macro.execute(partial return)",
+      Boolean(
+        partialExecuteRun.response?.ok &&
+        partialResult?.returned?.kept === 1 &&
+        partialResult?.returned?.lazy?.$unserializable === "accessor-property" &&
+        partialResult?.returned?.self?.$unserializable === "circular-reference" &&
+        JSON.stringify(partialResult?.returnedOmissions ?? []) ===
+          JSON.stringify([
+            { path: "$.lazy", reason: "accessor-property" },
+            { path: "$.self", reason: "circular-reference" }
+          ])
+      ),
+      {
+        ...summarizeCommand(partialExecuteRun),
+        returned: partialResult?.returned ?? null,
+        returnedOmissions: partialResult?.returnedOmissions ?? null
+      }
+    );
+
     const chatExecuteRun = runFoundryctl(["macro", "execute", "--macro-id", chatMacroId]);
     const chatResult = chatExecuteRun.response?.result || null;
     capturedChatMessageIds = Array.isArray(chatResult?.chatMessageIds) ? chatResult.chatMessageIds : [];
@@ -1812,17 +1857,26 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
     }
 
     const castNamespace = "fvtt-world-cli-smoke";
-    const castSettings = [`${castNamespace}.color`, `${castNamespace}.flag`];
+    const castSettings = [`${castNamespace}.color`, `${castNamespace}.flag`, `${castNamespace}.partial`];
     let castRegistered = null;
     let castColorRun = null;
     let castFlagRun = null;
     let castFlagStored = null;
+    let partialGetRun = null;
+    let partialSetRun = null;
     try {
       castRegistered = await evaluateInGmPage(
         gmControlUrl,
         `const ns = ${JSON.stringify(castNamespace)};
         game.settings.register(ns, "color", { scope: "client", config: false, type: foundry.utils.Color, default: "#000000" });
         game.settings.register(ns, "flag", { scope: "world", config: false, type: Boolean, default: true });
+        class PartialConfig {
+          constructor(data) {
+            Object.assign(this, data ?? {});
+            Object.defineProperty(this, "lazy", { get: () => "computed", enumerable: true });
+          }
+        }
+        game.settings.register(ns, "partial", { scope: "client", config: false, type: PartialConfig, default: { kept: 1 } });
         return true;`
       );
       castColorRun = runFoundryctl([
@@ -1844,6 +1898,17 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
         "flag",
         "--value-json",
         JSON.stringify("false")
+      ]);
+      partialGetRun = runFoundryctl(["setting", "get", "--namespace", castNamespace, "--key", "partial"]);
+      partialSetRun = runFoundryctl([
+        "setting",
+        "set",
+        "--namespace",
+        castNamespace,
+        "--key",
+        "partial",
+        "--value-json",
+        JSON.stringify({ kept: 2 })
       ]);
       castFlagStored = await evaluateInGmPage(
         gmControlUrl,
@@ -1883,6 +1948,29 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
         flag: castFlagRun ? summarizeCommand(castFlagRun) : null,
         flagResult: castFlagRun?.response?.result ?? null,
         flagStoredJson: castFlagStored
+      }
+    );
+    const lazyOmission = JSON.stringify([{ path: "$.lazy", reason: "accessor-property" }]);
+    const partialGot = partialGetRun?.response?.result?.setting ?? null;
+    const partialSet = partialSetRun?.response?.result ?? null;
+    markAndPush(
+      summary,
+      "dangerous.setting(partial value)",
+      Boolean(
+        castRegistered === true &&
+        partialGot?.value?.kept === 1 &&
+        partialGot?.value?.lazy?.$unserializable === "accessor-property" &&
+        JSON.stringify(partialGot?.valueOmissions ?? null) === lazyOmission &&
+        partialSetRun?.response?.ok &&
+        partialSet?.changed === true &&
+        partialSet?.value?.kept === 2 &&
+        JSON.stringify(partialSet?.previousOmissions ?? null) === lazyOmission
+      ),
+      {
+        get: partialGetRun ? summarizeCommand(partialGetRun) : null,
+        getSetting: partialGot,
+        set: partialSetRun ? summarizeCommand(partialSetRun) : null,
+        setResult: partialSet
       }
     );
 
@@ -2946,6 +3034,312 @@ function runTokenDeltaCoverage(summary, { targetSceneId, actorId, stamp, created
       tokenItems: sortedItems(tokenItems.response?.result?.items),
       actorItems: sortedItems(actorItems.response?.result?.items)
     }
+  );
+}
+
+function runPageReferenceItemBulkCoverage(summary, { targetSceneId, actorId, stamp, created }) {
+  const fixture = runFoundryctl(["actor", "get", "--actor-id", actorId, "--include", "items"]).response
+    ?.result?.actor;
+  const actorType = fixture?.type ?? null;
+  const itemType = fixture?.items?.[0]?.type ?? "loot";
+  if (!actorType) {
+    markAndPush(summary, "actor.get(fixture type for the reference target)", false, { actorId });
+    return;
+  }
+
+  const scratchActor = expectOk(
+    summary,
+    "actor.create(reference target scratch)",
+    runFoundryctl(["actor", "create", "--name", `Smoke Ref Target ${stamp}`, "--type", actorType])
+  );
+  const scratchActorId = scratchActor?.actor?.id ?? null;
+  if (!scratchActorId) return;
+  created.actors.push(scratchActorId);
+  const scratchUuid = `Actor.${scratchActorId}`;
+
+  const itemsCreate = expectOk(
+    summary,
+    "actor.item.create-many(2 elements, ONE call)",
+    runFoundryctl([
+      "actor",
+      "item",
+      "create-many",
+      "--actor-id",
+      scratchActorId,
+      "--data-json",
+      JSON.stringify([
+        { name: `Smoke Lamp ${stamp}`, type: itemType },
+        { name: `Smoke Rope ${stamp}`, type: itemType }
+      ])
+    ])
+  );
+  const itemIds = (itemsCreate?.outcomes ?? []).map((outcome) => outcome.id);
+  markAndPush(
+    summary,
+    "actor.item.create-many(complete, both created and listed)",
+    Boolean(
+      itemsCreate?.complete === true &&
+      itemIds.length === 2 &&
+      itemsCreate.outcomes.every((outcome) => outcome.status === "created")
+    ),
+    { outcomes: itemsCreate?.outcomes ?? null }
+  );
+  if (itemIds.length === 2) {
+    const [lampId, ropeId] = itemIds;
+    const itemsUpdate = expectOk(
+      summary,
+      "actor.item.update-many(one rename, one no-op)",
+      runFoundryctl([
+        "actor",
+        "item",
+        "update-many",
+        "--actor-id",
+        scratchActorId,
+        "--patches-json",
+        JSON.stringify([
+          { id: lampId, patch: { name: `Smoke Lantern ${stamp}` } },
+          { id: ropeId, patch: { name: `Smoke Rope ${stamp}` } }
+        ])
+      ])
+    );
+    markAndPush(
+      summary,
+      "actor.item.update-many(updated + unchanged statuses)",
+      JSON.stringify((itemsUpdate?.outcomes ?? []).map((outcome) => outcome.status)) ===
+        JSON.stringify(["updated", "unchanged"]),
+      { outcomes: itemsUpdate?.outcomes ?? null }
+    );
+    const missingItemId = createMissingId("item", stamp);
+    const previewDelete = expectOk(
+      summary,
+      "actor.item.delete-many(dry run)",
+      runFoundryctl([
+        "--dry-run",
+        "actor",
+        "item",
+        "delete-many",
+        "--actor-id",
+        scratchActorId,
+        "--ids",
+        lampId
+      ])
+    );
+    const itemsDelete = expectOk(
+      summary,
+      "actor.item.delete-many",
+      runFoundryctl([
+        "actor",
+        "item",
+        "delete-many",
+        "--actor-id",
+        scratchActorId,
+        "--ids",
+        `${lampId},${missingItemId}`
+      ])
+    );
+    const remaining = runFoundryctl(["actor", "item", "list", "--actor-id", scratchActorId]).response?.result
+      ?.items;
+    markAndPush(
+      summary,
+      "actor.item.delete-many(deleted + alreadyDeleted, dry run deleted nothing)",
+      Boolean(
+        previewDelete?.dryRun === true &&
+        JSON.stringify((itemsDelete?.outcomes ?? []).map((outcome) => outcome.status)) ===
+          JSON.stringify(["deleted", "alreadyDeleted"]) &&
+        Array.isArray(remaining) &&
+        remaining.length === 1 &&
+        remaining[0].id === ropeId
+      ),
+      { outcomes: itemsDelete?.outcomes ?? null, remaining: remaining ?? null }
+    );
+  }
+
+  const journalCreate = expectOk(
+    summary,
+    "journal.create(page family fixture)",
+    runFoundryctl([
+      "journal",
+      "create",
+      "--name",
+      `Smoke Page Family ${stamp}`,
+      "--pages-json",
+      JSON.stringify([{ name: "Intro", type: "text", text: { content: "<p>intro</p>", format: 1 } }])
+    ])
+  );
+  const journalId = journalCreate?.journal?.id ?? null;
+  const introPageId = journalCreate?.journal?.pages?.[0]?.id ?? null;
+  if (journalId) created.journals.push(journalId);
+  if (journalId && introPageId) {
+    const pageArgs = (verb, extra = []) => ["journal", "page", verb, "--journal-id", journalId, ...extra];
+    const list = expectOk(summary, "journal.page.list", runFoundryctl(pageArgs("list")));
+    markAndPush(
+      summary,
+      "journal.page.list(summary row without text)",
+      Boolean(
+        list?.total === 1 && list.pages?.[0]?.id === introPageId && !("text" in (list.pages?.[0] ?? {}))
+      ),
+      { pages: list?.pages ?? null }
+    );
+    const got = expectOk(
+      summary,
+      "journal.page.get",
+      runFoundryctl(pageArgs("get", ["--page-id", introPageId]))
+    );
+    markAndPush(
+      summary,
+      "journal.page.get(full text and ownership)",
+      Boolean(got?.page?.text?.content === "<p>intro</p>" && typeof got?.page?.ownership === "object"),
+      { text: got?.page?.text ?? null }
+    );
+
+    const preview = expectOk(
+      summary,
+      "journal.page.create(dry run)",
+      runFoundryctl(["--dry-run", ...pageArgs("create", ["--name", "Draft", "--type", "text"])])
+    );
+    const created2 = expectOk(
+      summary,
+      "journal.page.create(image page)",
+      runFoundryctl(
+        pageArgs("create", [
+          "--name",
+          "Map",
+          "--type",
+          "image",
+          "--src",
+          "icons/svg/book.svg",
+          "--data-json",
+          JSON.stringify({ image: { caption: "Old map" } })
+        ])
+      )
+    );
+    const mapPageId = created2?.page?.id ?? null;
+    const afterCreate = runFoundryctl(pageArgs("list")).response?.result;
+    markAndPush(
+      summary,
+      "journal.page.create(dry run persisted nothing; real create listed)",
+      Boolean(preview?.dryRun === true && mapPageId && afterCreate?.total === 2),
+      { total: afterCreate?.total ?? null, mapPageId }
+    );
+    expectErr(
+      summary,
+      "journal.page.create(text on an image page → INVALID_PARAMS, nothing written)",
+      runFoundryctl(
+        pageArgs("create", [
+          "--name",
+          "Bad",
+          "--type",
+          "image",
+          "--data-json",
+          JSON.stringify({ text: { content: "x" } })
+        ])
+      ),
+      ERROR_CODES.INVALID_PARAMS
+    );
+
+    const linkContent = `<p>@UUID[${scratchUuid}]{Target}</p>`;
+    const updated = expectOk(
+      summary,
+      "journal.page.update(text content with a UUID link)",
+      runFoundryctl(
+        pageArgs("update", [
+          "--page-id",
+          introPageId,
+          "--patch-json",
+          JSON.stringify({ text: { content: linkContent } })
+        ])
+      )
+    );
+    markAndPush(
+      summary,
+      "journal.page.update(confirmed content)",
+      updated?.page?.text?.content === linkContent,
+      { content: updated?.page?.text?.content ?? null }
+    );
+
+    if (mapPageId) {
+      const deletePreview = expectOk(
+        summary,
+        "journal.page.delete(dry run)",
+        runFoundryctl(["--dry-run", ...pageArgs("delete", ["--page-id", mapPageId])])
+      );
+      expectOk(summary, "journal.page.delete", runFoundryctl(pageArgs("delete", ["--page-id", mapPageId])));
+      const deletedGet = runFoundryctl(pageArgs("get", ["--page-id", mapPageId]));
+      markAndPush(
+        summary,
+        "journal.page.delete(dry run kept it; deleted page → JOURNAL_PAGE_NOT_FOUND)",
+        Boolean(
+          deletePreview?.dryRun === true &&
+          deletePreview?.deleted === false &&
+          isExpectedError(deletedGet, ERROR_CODES.JOURNAL_PAGE_NOT_FOUND)
+        ),
+        { ...summarizeCommand(deletedGet) }
+      );
+    }
+  }
+
+  const tokenCreate = expectOk(
+    summary,
+    "scene.token.create(references target token)",
+    runFoundryctl([
+      "scene",
+      "token",
+      "create",
+      "--scene-id",
+      targetSceneId,
+      "--actor-id",
+      scratchActorId,
+      "--x",
+      "1800",
+      "--y",
+      "1600"
+    ])
+  );
+  const tokenId = tokenCreate?.token?.id ?? null;
+  if (tokenId) created.tokens.push({ sceneId: targetSceneId, tokenId });
+
+  const references = expectOk(
+    summary,
+    "world.references(actor)",
+    runFoundryctl(["world", "references", "--uuid", scratchUuid])
+  );
+  const rows = (references?.references ?? []).map((ref) => `${ref.uuid}|${ref.field}|${ref.match}`);
+  const expectedRows = [
+    ...(journalId && introPageId
+      ? [`JournalEntry.${journalId}.JournalEntryPage.${introPageId}|text.content|link`]
+      : []),
+    ...(tokenId ? [`Scene.${targetSceneId}.Token.${tokenId}|actorId|id`] : [])
+  ];
+  markAndPush(
+    summary,
+    "world.references(token actorId id-match and journal @UUID link found)",
+    Boolean(
+      references?.target?.exists === true &&
+      expectedRows.length === 2 &&
+      expectedRows.every((row) => rows.includes(row))
+    ),
+    { rows, expectedRows, target: references?.target ?? null, scannedDocuments: references?.scannedDocuments }
+  );
+  const sceneOnly = expectOk(
+    summary,
+    "world.references(--scope scene)",
+    runFoundryctl(["world", "references", "--uuid", scratchUuid, "--scope", "scene"])
+  );
+  markAndPush(
+    summary,
+    "world.references(--scope scene lists only the token)",
+    Boolean(
+      tokenId &&
+      sceneOnly?.total === 1 &&
+      sceneOnly.references?.[0]?.uuid === `Scene.${targetSceneId}.Token.${tokenId}`
+    ),
+    { references: sceneOnly?.references ?? null }
+  );
+  expectErr(
+    summary,
+    "world.references(malformed uuid → INVALID_PARAMS)",
+    runFoundryctl(["world", "references", "--uuid", "actor.lowercase"]),
+    ERROR_CODES.INVALID_PARAMS
   );
 }
 
@@ -5844,6 +6238,7 @@ function runExtendedCoverage(
         }
 
         runTokenDeltaCoverage(summary, { targetSceneId, actorId, stamp, created });
+        runPageReferenceItemBulkCoverage(summary, { targetSceneId, actorId, stamp, created });
 
         const tokenEffectName = `Smoke Token Buff ${stamp}`;
         const tokenEffectCreate = expectOk(
@@ -15209,6 +15604,20 @@ async function main() {
         error: error instanceof Error ? error.message : String(error)
       });
     }
+
+    const bigReadRun = runFoundryctl(["file", "read", "--path", bigRemotePath, "--encoding", "base64"]);
+    const bigReadBase64 = bigReadRun.response?.result?.content ?? null;
+    const bigReadBuffer = typeof bigReadBase64 === "string" ? Buffer.from(bigReadBase64, "base64") : null;
+    markAndPush(
+      summary,
+      "file.read(>1 MiB base64 under the transfer limit, hash matches)",
+      Boolean(bigReadRun.response?.ok && bigReadBuffer && sha256(bigReadBuffer) === sha256(bigBuffer)),
+      {
+        ...summarizeCommand(bigReadRun),
+        sizeBytes: bigBuffer.length,
+        actualSha256: bigReadBuffer ? sha256(bigReadBuffer) : null
+      }
+    );
 
     const specialLiteralName = "It's a (test) #1.ogg";
     const specialLocalPath = join(tempDir, "special.ogg");
