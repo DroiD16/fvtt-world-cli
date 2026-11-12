@@ -103,6 +103,8 @@ export function serializeJournalPage(page, { ownership = false } = {}) {
   };
 }
 
+const MEDIA_PAGE_TYPES = new Set(["image", "pdf", "video"]);
+
 /** @param {any} page */
 export function serializeJournalPageSummary(page) {
   const data = documentData(page);
@@ -113,7 +115,7 @@ export function serializeJournalPageSummary(page) {
     sort: page.sort ?? data.sort ?? 0,
     category: page.category ?? data.category ?? null,
     src: page.src ?? data.src ?? null,
-    textFormat: (page.type ?? data.type) === "text" ? (data.text?.format ?? null) : null
+    textFormat: MEDIA_PAGE_TYPES.has(page.type ?? data.type) ? null : (data.text?.format ?? null)
   };
 }
 

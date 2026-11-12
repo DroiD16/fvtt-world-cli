@@ -1468,6 +1468,13 @@ describe("journal.page commands", () => {
     expect(html.result.pages.map((page) => [page.id, page.textFormat])).toEqual([["gp-text", 1]]);
   });
 
+  it("reports the stored text format of a system page type too", async () => {
+    const journal = /** @type {any} */ (globalThis.game.journal.get("journal-guard"));
+    journal.pages.get("gp-dnd5e").text = { content: "<p>rule</p>", format: 1 };
+    const response = await run("journal.page.list", { journalId: "journal-guard", name: "rule" });
+    expect(response.result.pages.map((page) => [page.id, page.textFormat])).toEqual([["gp-dnd5e", 1]]);
+  });
+
   it("filters the page list by name", async () => {
     const response = await run("journal.page.list", { journalId: "journal-guard", name: "markdown" });
     expect(response.result.pages.map((page) => page.id)).toEqual(["gp-md", "gp-md-derived"]);
