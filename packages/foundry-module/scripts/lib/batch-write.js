@@ -109,16 +109,20 @@ export function generateUnusedDocumentId(isTaken) {
 /**
  * @param {string} message
  * @param {{ command: string, index: number, id?: string }} coordinates
- * @param {{ nothingWritten?: boolean }} [options]
+ * @param {{ nothingWritten?: boolean, emptyText?: string }} [options]
  */
-function stampBatchRefusalMessage(message, { command, index, id }, { nothingWritten = true } = {}) {
+function stampBatchRefusalMessage(
+  message,
+  { command, index, id },
+  { nothingWritten = true, emptyText = "was refused." } = {}
+) {
   const text = typeof message === "string" ? message.trim() : "";
   const coordinate = `${command} element ${index}${typeof id === "string" ? ` (id ${id})` : ""}`;
   let stamped = text.startsWith(`${command} element ${index} `)
     ? text
     : text
       ? `${coordinate}: ${text}`
-      : `${coordinate} was refused.`;
+      : `${coordinate} ${emptyText}`;
   if (nothingWritten && !BATCH_NO_WRITE_ASSURANCE_PATTERN.test(stamped)) {
     stamped = `${/[.!?]$/.test(stamped) ? stamped : `${stamped}.`} ${BATCH_NO_WRITE_ASSURANCE}`;
   }
@@ -335,7 +339,13 @@ async function createSequentially({ command, items, prepare, isIdTaken, create, 
     try {
       created = await create([{ ...payload, _id: id }]);
     } catch (error) {
-      failure = sequentialElementFailure(error, { command, index, id, nothingWritten: false });
+      failure = sequentialElementFailure(error, {
+        command,
+        index,
+        id,
+        nothingWritten: false,
+        emptyText: "failed without a message."
+      });
       stopped = true;
     }
 
@@ -357,11 +367,15 @@ async function createSequentially({ command, items, prepare, isIdTaken, create, 
 
 /**
  * @param {unknown} error
- * @param {{ command: string, index: number, id?: string, nothingWritten: boolean }} context
+ * @param {{ command: string, index: number, id?: string, nothingWritten: boolean, emptyText?: string }} context
  */
-function sequentialElementFailure(error, { command, index, id, nothingWritten }) {
+function sequentialElementFailure(error, { command, index, id, nothingWritten, emptyText }) {
   const mapped = isFoundryValidationError(error) ? toFoundryValidationError(error) : toProtocolError(error);
-  const message = stampBatchRefusalMessage(mapped.message, { command, index, id }, { nothingWritten });
+  const message = stampBatchRefusalMessage(
+    mapped.message,
+    { command, index, id },
+    { nothingWritten, emptyText }
+  );
   const coordinates = typeof id === "string" ? { index, id } : { index };
   const annotated = createBridgeError(mapped.code, message, { ...coordinates, ...(mapped.details ?? {}) });
   return { error: annotated, code: mapped.code, message };

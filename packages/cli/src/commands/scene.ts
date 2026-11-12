@@ -478,7 +478,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       'Token data as a JSON ARRAY of objects (each may carry actorId, e.g. [{"actorId":"…","x":0,"y":0}])',
     createExtras: {
       description:
-        "Create many tokens, one Foundry create per token in order (per-element outcomes; nothing is written if any element is invalid; the batch stops at the first token that does not land)",
+        "Create many tokens, one Foundry create per token in order (per-element outcomes; nothing is written if any element is invalid; the batch stops after the first token that fails to prepare, whose create call throws, or that Foundry does not store)",
       addOptions: addTokenPlacementOptions,
       params: tokenPlacementParams
     }

@@ -895,6 +895,40 @@ describe("command router", () => {
     expect(scene.tokens.size).toBe(before);
   });
 
+  it("scene.token.create-many does not call a create that threw without a message refused", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const scene = globalThis.game.scenes.get("scene-1");
+    const original = scene.createEmbeddedDocuments.getMockImplementation();
+    let call = 0;
+    scene.createEmbeddedDocuments.mockImplementation(async (type, entries, options) => {
+      call += 1;
+      if (call === 2) {
+        await original(type, entries, options);
+        throw new Error("");
+      }
+      return original(type, entries, options);
+    });
+
+    const response = await router.route(
+      createRequest("scene.token.create-many", {
+        sceneId: "scene-1",
+        data: [{ name: "A" }, { name: "B" }, { name: "C" }]
+      })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result.outcomes.map((outcome) => outcome.status)).toEqual([
+      "created",
+      "created",
+      "notAttempted"
+    ]);
+    const id = response.result.outcomes[1].id;
+    expect(response.result.failure.message).toBe(
+      `scene.token.create-many element 1 (id ${id}) failed without a message.`
+    );
+    scene.createEmbeddedDocuments.mockImplementation(original);
+  });
+
   it("scene.token.create-many names a write-time failure that carries no message", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
     const actor = globalThis.game.actors.get("actor-1");
