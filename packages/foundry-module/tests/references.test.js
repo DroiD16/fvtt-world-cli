@@ -54,7 +54,14 @@ const CONFIG = {
       }
     )
   },
-  ActiveEffect: { documentClass: documentClass({}, { origin: new StringField() }) },
+  ActiveEffect: {
+    documentClass: documentClass(
+      {},
+      { origin: new StringField(), duration: new SchemaField({ combat: new ForeignDocumentField("Combat") }) }
+    )
+  },
+  ActorDelta: { documentClass: documentClass({ Item: "items", ActiveEffect: "effects" }, {}) },
+  User: { documentClass: documentClass({}, { character: new ForeignDocumentField("Actor") }) },
   Scene: {
     documentClass: documentClass(
       { Token: "tokens", Note: "notes" },
@@ -196,12 +203,17 @@ beforeEach(() => {
     WORLD_DOCUMENT_TYPES: [
       "Actor",
       "Cards",
+      "ChatMessage",
+      "Combat",
+      "Folder",
       "Item",
-      "Scene",
       "JournalEntry",
       "Macro",
+      "Playlist",
       "RollTable",
-      "Playlist"
+      "Scene",
+      "Setting",
+      "User"
     ]
   };
   globalThis.fromUuidSync = vi.fn((uuid) => (uuid === `Actor.${ACTOR_ID}` ? { name: "Goblin Boss" } : null));
@@ -367,6 +379,68 @@ describe("world.references lookup", () => {
     expect(doubled.scopes).toEqual(["item"]);
     expect(doubled.scannedDocuments).toBe(single.scannedDocuments);
     expect(doubled.total).toBe(single.total);
+  });
+
+  it("reads foreign keys inside a token's delta and reports them on the token", () => {
+    globalThis.game.scenes = collection("Scene", [
+      {
+        _id: "scene00000000001",
+        name: "Cave",
+        tokens: [
+          {
+            _id: "token00000000001",
+            name: "Boss",
+            actorId: ACTOR_ID,
+            delta: {
+              _id: "token00000000001",
+              effects: [{ _id: "deltaeffect00001", name: "Hex", duration: { combat: "combat0000000001" } }],
+              items: []
+            }
+          }
+        ],
+        notes: []
+      }
+    ]);
+
+    expect(rows(runReferenceLookup({ uuid: "Combat.combat0000000001", scope: ["scene"] }))).toEqual([
+      ["Scene.scene00000000001.Token.token00000000001", "delta.effects.0.duration.combat", "id", null]
+    ]);
+  });
+
+  it("always scans users, so an assigned character is found", () => {
+    globalThis.game.users = collection("User", [
+      { _id: "user000000000001", name: "Player", character: ACTOR_ID }
+    ]);
+
+    const result = runReferenceLookup({ uuid: `Actor.${ACTOR_ID}`, scope: ["scene"] });
+    expect(rows(result)).toContainEqual(["User.user000000000001", "character", "id", null]);
+  });
+
+  it("refuses an embedded document type addressed without its parent", () => {
+    expect(() => runReferenceLookup({ uuid: "JournalEntryPage.page000000000001" })).toThrow(
+      expect.objectContaining({
+        code: "INVALID_PARAMS",
+        details: expect.objectContaining({ documentName: "JournalEntryPage" })
+      })
+    );
+  });
+
+  it("fails loudly when a document schema cannot be read instead of skipping id matching", () => {
+    globalThis.CONFIG = {
+      ...CONFIG,
+      Token: {
+        documentClass: {
+          metadata: { embedded: {} },
+          get schema() {
+            throw new Error("schema unavailable");
+          }
+        }
+      }
+    };
+
+    expect(() => runReferenceLookup({ uuid: "Actor.zzzzzzzzzzzzzzzz", scope: ["scene"] })).toThrow(
+      "schema unavailable"
+    );
   });
 
   it("restricts the walk to the requested scopes and paginates the sorted rows", () => {

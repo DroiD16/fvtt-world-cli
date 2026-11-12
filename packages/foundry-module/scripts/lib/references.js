@@ -81,6 +81,16 @@ export function parseReferenceTarget(uuid) {
     };
   }
   if (!isTypeIdChain(parts)) throw invalidUuid(uuid);
+  const worldTypes = /** @type {any} */ (globalThis).CONST?.WORLD_DOCUMENT_TYPES;
+  if (parts.length === 2 && Array.isArray(worldTypes) && !worldTypes.includes(parts[0])) {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      `${parts[0]} is an embedded document type, so ${uuid} names no single document: its id is unique only ` +
+        "within its parent. Pass the full UUID with the parent chain, such as " +
+        "JournalEntry.<journalId>.JournalEntryPage.<pageId> or Scene.<sceneId>.Token.<tokenId>",
+      { uuid, documentName: parts[0] }
+    );
+  }
   return {
     uuid,
     compendium: null,
@@ -178,8 +188,8 @@ function createStringMatcher(target) {
   };
 }
 
-/** @type {Map<string, Array<{ segments: string[], documentName: string }>>} */
-const foreignKeyCache = new Map();
+/** @type {WeakMap<object, Array<{ segments: string[], documentName: string }>>} */
+const foreignKeyCache = new WeakMap();
 
 /**
  * @param {string} documentName
@@ -208,17 +218,6 @@ function collectForeignKeys(field, segments, out, fields) {
     for (const [key, child] of Object.entries(field.fields ?? {})) {
       collectForeignKeys(child, [...segments, key], out, fields);
     }
-    return;
-  }
-  if (
-    (fields.ArrayField && field instanceof fields.ArrayField) ||
-    (fields.SetField && field instanceof fields.SetField)
-  ) {
-    collectForeignKeys(field.element, [...segments, "[]"], out, fields);
-    return;
-  }
-  if (fields.TypedObjectField && field instanceof fields.TypedObjectField) {
-    collectForeignKeys(field.element, [...segments, "*"], out, fields);
   }
 }
 
@@ -226,17 +225,15 @@ function collectForeignKeys(field, segments, out, fields) {
  * @param {string} documentName
  */
 function foreignKeysOf(documentName) {
-  const cached = foreignKeyCache.get(documentName);
+  const documentClass = resolveDocumentClass(documentName);
+  if (!documentClass) return [];
+  const cached = foreignKeyCache.get(documentClass);
   if (cached) return cached;
   /** @type {Array<{ segments: string[], documentName: string }>} */
   const out = [];
   const fields = /** @type {any} */ (globalThis).foundry?.data?.fields ?? {};
-  try {
-    collectForeignKeys(resolveDocumentClass(documentName)?.schema, [], out, fields);
-  } catch {
-    out.length = 0;
-  }
-  foreignKeyCache.set(documentName, out);
+  collectForeignKeys(documentClass.schema, [], out, fields);
+  foreignKeyCache.set(documentClass, out);
   return out;
 }
 
@@ -247,34 +244,6 @@ function foreignKeysOf(documentName) {
 function embeddedCollectionsOf(documentName) {
   const embedded = resolveDocumentClass(documentName)?.metadata?.embedded;
   return embedded && typeof embedded === "object" ? embedded : {};
-}
-
-/**
- * @param {unknown} value
- * @param {string[]} segments
- * @param {string[]} path
- * @param {(path: string[], value: unknown) => void} visit
- */
-function readForeignKey(value, segments, path, visit) {
-  if (segments.length === 0) {
-    visit(path, value);
-    return;
-  }
-  const [head, ...rest] = segments;
-  if (head === "[]") {
-    if (Array.isArray(value))
-      value.forEach((entry, index) => readForeignKey(entry, rest, [...path, String(index)], visit));
-    return;
-  }
-  if (head === "*") {
-    if (value && typeof value === "object") {
-      for (const [key, entry] of Object.entries(value)) readForeignKey(entry, rest, [...path, key], visit);
-    }
-    return;
-  }
-  if (value && typeof value === "object" && Object.hasOwn(value, head)) {
-    readForeignKey(/** @type {any} */ (value)[head], rest, [...path, head], visit);
-  }
 }
 
 /**
@@ -388,6 +357,57 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
   /**
    * @param {string} documentName
    * @param {Record<string, any>} source
+   * @param {{ uuid: string, documentName: string, name: string | null }} owner
+   * @param {string[]} prefix
+   * @param {ReferenceOwner | null} container
+   */
+  const walkSource = (documentName, source, owner, prefix, container) => {
+    if (target.compendium === null) {
+      for (const foreignKey of foreignKeysOf(documentName)) {
+        if (foreignKey.documentName !== target.documentName) continue;
+        if (foreignKey.segments.some((segment) => segment.startsWith("_"))) continue;
+        if (readAt(source, foreignKey.segments) !== target.id) continue;
+        if (
+          foreignKeyNamesTargetParent(
+            target,
+            { documentName, source, uuid: owner.uuid, container },
+            foreignKey,
+            foreignKey.segments
+          )
+        ) {
+          record(owner, [...prefix, ...foreignKey.segments], { match: "id" });
+        }
+      }
+    }
+
+    const embeddedFields = new Map(
+      Object.entries(embeddedCollectionsOf(documentName)).map(([name, field]) => [field, name])
+    );
+    const self = { documentName, source, uuid: owner.uuid };
+    for (const [key, value] of Object.entries(source ?? {})) {
+      const embeddedName = embeddedFields.get(key);
+      if (embeddedName && Array.isArray(value)) {
+        value.forEach((child, index) => {
+          if (!child || typeof child !== "object" || typeof child._id !== "string") return;
+          if (prefix.length > 0) {
+            walkSource(embeddedName, child, owner, [...prefix, key, String(index)], self);
+          } else {
+            walkDocument(embeddedName, child, `${owner.uuid}.${embeddedName}.${child._id}`, self);
+          }
+        });
+        continue;
+      }
+      if (embeddedName && value && typeof value === "object") {
+        walkSource(embeddedName, value, owner, [...prefix, key], self);
+        continue;
+      }
+      walkValue(value, [...prefix, key], owner);
+    }
+  };
+
+  /**
+   * @param {string} documentName
+   * @param {Record<string, any>} source
    * @param {string} ownerUuid
    * @param {ReferenceOwner | null} container
    */
@@ -398,49 +418,11 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
       documentName,
       name: typeof source?.name === "string" ? source.name : null
     };
-
-    if (target.compendium === null) {
-      for (const foreignKey of foreignKeysOf(documentName)) {
-        if (foreignKey.documentName !== target.documentName) continue;
-        if (foreignKey.segments.some((segment) => segment.startsWith("_"))) continue;
-        readForeignKey(source, foreignKey.segments, [], (path, value) => {
-          if (
-            value === target.id &&
-            foreignKeyNamesTargetParent(
-              target,
-              { documentName, source, uuid: ownerUuid, container },
-              foreignKey,
-              path
-            )
-          ) {
-            record(owner, path, { match: "id" });
-          }
-        });
-      }
-    }
-
-    const embedded = Object.entries(embeddedCollectionsOf(documentName));
-    const embeddedFields = new Map(embedded.map(([name, field]) => [field, name]));
-    for (const [key, value] of Object.entries(source ?? {})) {
-      const embeddedName = embeddedFields.get(key);
-      if (embeddedName && Array.isArray(value)) {
-        for (const child of value) {
-          if (child && typeof child === "object" && typeof child._id === "string") {
-            walkDocument(embeddedName, child, `${ownerUuid}.${embeddedName}.${child._id}`, {
-              documentName,
-              source,
-              uuid: ownerUuid
-            });
-          }
-        }
-        continue;
-      }
-      walkValue(value, [key], owner);
-    }
+    walkSource(documentName, source, owner, [], container);
   };
 
-  for (const scopeName of scopes) {
-    const collection = /** @type {any} */ (game)?.[SCOPE_COLLECTIONS[scopeName]];
+  /** @param {any} collection */
+  const walkCollection = (collection) => {
     for (const document of Array.from(collection ?? [])) {
       const source = typeof document?.toObject === "function" ? document.toObject() : document;
       const documentName = document?.documentName ?? collection?.documentName;
@@ -448,7 +430,12 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
       if (typeof documentName !== "string" || typeof id !== "string") continue;
       walkDocument(documentName, source, `${documentName}.${id}`, null);
     }
+  };
+
+  for (const scopeName of scopes) {
+    walkCollection(/** @type {any} */ (game)?.[SCOPE_COLLECTIONS[scopeName]]);
   }
+  walkCollection(/** @type {any} */ (game)?.users);
 
   const compare = (/** @type {string} */ left, /** @type {string} */ right) =>
     left < right ? -1 : left > right ? 1 : 0;

@@ -198,11 +198,13 @@ UUID of a document embedded in the target (carried in `matchedUuid`), and `id` f
 Foundry foreign-key field of the target's document type. Embedded ids repeat across parents, for
 example in a duplicated scene, so an `id` match on an embedded target also requires the record to
 name the target's parent or to sit inside it. Underscore fields that Foundry maintains itself, such
-as `_stats.lastModifiedBy`, take no part in `id` matching. `scopes` lists the document families
-searched. `target.exists` is `null` when a compendium entry cannot be resolved without loading the
-pack. A reference stored inside the target
-itself gets no row and counts toward `selfReferences`. A lookup with more than
-`REFERENCES_MAX_MATCHES` rows returns `QUERY_TOO_BROAD`.
+as `_stats.lastModifiedBy`, take no part in `id` matching. A match inside a token's delta belongs to
+the token, with a `delta.` field path. `scopes` lists the document families searched; users are
+always searched as well. An embedded document type given without its parent chain, such as
+`Token.<id>`, is refused with `INVALID_PARAMS`. `target.exists` is `null` when a compendium entry
+cannot be resolved without loading the pack. A reference stored inside the target itself gets no row
+and counts toward `selfReferences`. A lookup with more than `REFERENCES_MAX_MATCHES` (10,000) rows
+returns `QUERY_TOO_BROAD`.
 
 ### Macro results
 
