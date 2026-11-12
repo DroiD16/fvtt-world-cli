@@ -878,6 +878,24 @@ describe("world.references lookup", () => {
     });
   });
 
+  it("says no narrower scope exists when one family alone exceeds the match cap", () => {
+    globalThis.game.messages = collection(
+      "ChatMessage",
+      Array.from({ length: REFERENCES_MAX_MATCHES + 1 }, (_, index) => ({
+        _id: `message${String(index).padStart(9, "0")}`,
+        speaker: { scene: null, actor: ACTOR_ID, token: null }
+      }))
+    );
+
+    expect(() => runReferenceLookup({ uuid: `Actor.${ACTOR_ID}`, scope: ["chat"] })).toThrow(
+      expect.objectContaining({
+        code: "QUERY_TOO_BROAD",
+        details: { uuid: `Actor.${ACTOR_ID}`, cap: REFERENCES_MAX_MATCHES, scope: ["chat"] },
+        message: expect.stringContaining("no narrower scope")
+      })
+    );
+  });
+
   it("refuses a lookup above the match cap", () => {
     const many = Array.from({ length: REFERENCES_MAX_MATCHES + 1 }, (_, index) => ({
       _id: `item${String(index).padStart(12, "0")}`,

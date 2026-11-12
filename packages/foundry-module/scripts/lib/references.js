@@ -452,7 +452,10 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
       throw createBridgeError(
         ERROR_CODES.QUERY_TOO_BROAD,
         `More than ${REFERENCES_MAX_MATCHES} stored references to ${target.uuid} were found; the lookup is ` +
-          "refused rather than answered with an inexact total. Narrow it with scope (one document family per call)",
+          "refused rather than answered with an inexact total. " +
+          (scopes.length === 1
+            ? `The ${scopes[0]} family alone holds that many, so no narrower scope exists`
+            : "Narrow it with scope (one document family per call)"),
         { uuid: target.uuid, cap: REFERENCES_MAX_MATCHES, scope: scopes }
       );
     }
