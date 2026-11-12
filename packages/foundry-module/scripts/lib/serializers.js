@@ -3,7 +3,9 @@ export { paginate, filterByName, filterByPath } from "./pagination.js";
 
 export function cloneValue(value) {
   if (typeof globalThis.structuredClone === "function") {
-    return globalThis.structuredClone(value);
+    try {
+      return globalThis.structuredClone(value);
+    } catch {}
   }
 
   return JSON.parse(JSON.stringify(value));

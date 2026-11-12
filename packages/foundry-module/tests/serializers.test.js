@@ -407,6 +407,40 @@ describe("placeable level membership", () => {
 });
 
 describe("serializeItem", () => {
+  it("serializes stored source holding a value structuredClone rejects through its JSON form", () => {
+    class ForcedReplacement {
+      toJSON() {
+        return { __$OPERATOR$__: "ForcedReplacement", value: { cast: { type: "cast" } } };
+      }
+    }
+    const operator = new ForcedReplacement();
+    const nativeClone = globalThis.structuredClone;
+    vi.stubGlobal("structuredClone", (value) => {
+      const visit = (node) => {
+        if (node instanceof ForcedReplacement) {
+          throw new DOMException("#<ForcedReplacement> could not be cloned.", "DataCloneError");
+        }
+        if (node && typeof node === "object") Object.values(node).forEach(visit);
+      };
+      visit(value);
+      return nativeClone(value);
+    });
+    const item = {
+      id: "item-1",
+      name: "Torch",
+      type: "loot",
+      toObject() {
+        return { _id: "item-1", name: "Torch", type: "loot", system: { activities: operator } };
+      }
+    };
+
+    const result = serializeItem(item);
+
+    expect(result.system).toEqual({
+      activities: { __$OPERATOR$__: "ForcedReplacement", value: { cast: { type: "cast" } } }
+    });
+  });
+
   it("prefers the persisted source system from toObject() over the prepared live system", () => {
     const item = {
       id: "item-1",
