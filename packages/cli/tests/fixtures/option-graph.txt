@@ -2922,6 +2922,27 @@ command actor item
   aliases=[]
   summary=Foundry actor embedded item commands
 
+command actor item create-many
+  aliases=[]
+  summary=Create many items in ONE call (per-element outcomes; nothing is written if any element is invalid)
+  opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
+  opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Actor id
+  opt --data-json <json> | parser=<anonymous> | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Item data as a JSON ARRAY of objects; each element takes what `actor item create --data-json` takes plus name and type
+
+command actor item update-many
+  aliases=[]
+  summary=Patch many items in ONE call (a no-op element reports `unchanged`)
+  opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
+  opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Actor id
+  opt --patches-json <json> | parser=<anonymous> | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Item patches as a JSON ARRAY of {"id","patch"} objects
+
+command actor item delete-many
+  aliases=[]
+  summary=Delete many items in ONE call (an already-gone id reports `alreadyDeleted`)
+  opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
+  opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Actor id
+  opt --ids <list> | parser=parseIdList | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Comma-separated item ids
+
 command actor item list
   aliases=[]
   summary=

@@ -1459,3 +1459,108 @@ describe("command router", () => {
     });
   });
 });
+
+describe("actor.item batch writes", () => {
+  beforeEach(() => {
+    installFakeFoundry();
+  });
+
+  const route = (command, params) =>
+    createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } }).route(
+      createRequest(command, params)
+    );
+
+  it("creates several items in one call with the single create's sanitizing and path canonicalization", async () => {
+    const actor = globalThis.game.actors.get("actor-1");
+    const response = await route("actor.item.create-many", {
+      actorId: "actor-1",
+      data: [
+        { name: "Torch", type: "loot", img: "worlds/world-1/art/torch light.png" },
+        {
+          name: "Longsword",
+          type: "weapon",
+          effects: [{ name: "Bless", _id: "spoofed", _stats: { hacked: true }, ownership: { default: 3 } }]
+        }
+      ]
+    });
+
+    expect(response.ok, JSON.stringify(response.error)).toBe(true);
+    expect(response.result.actorId).toBe("actor-1");
+    expect(response.result.complete).toBe(true);
+    expect(response.result.outcomes.map((outcome) => [outcome.status, outcome.name])).toEqual([
+      ["created", "Torch"],
+      ["created", "Longsword"]
+    ]);
+    const [, payloads, options] = actor.createEmbeddedDocuments.mock.calls.find(([type]) => type === "Item");
+    expect(options).toMatchObject({ keepId: true });
+    expect(payloads[0].img).toBe("worlds/world-1/art/torch%20light.png");
+    expect(payloads[1].effects[0]).not.toHaveProperty("_id");
+    expect(payloads[1].effects[0]).not.toHaveProperty("_stats");
+    expect(payloads[1].effects[0]).not.toHaveProperty("ownership");
+    for (const outcome of response.result.outcomes) {
+      expect(actor.items.get(outcome.id)).toBeTruthy();
+    }
+  });
+
+  it("previews a batch create without writing", async () => {
+    const actor = globalThis.game.actors.get("actor-1");
+    const before = actor.items.size;
+    const response = await route("actor.item.create-many", {
+      actorId: "actor-1",
+      data: [{ name: "Torch", type: "loot" }],
+      dryRun: true
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.result.dryRun).toBe(true);
+    expect(response.result.outcomes[0]).toMatchObject({ status: "created", id: null });
+    expect(actor.items.size).toBe(before);
+  });
+
+  it("updates items, reports a no-op element as unchanged, and refuses an unknown id before writing", async () => {
+    const actor = globalThis.game.actors.get("actor-1");
+    const response = await route("actor.item.update-many", {
+      actorId: "actor-1",
+      patches: [{ id: "actor-item-1", patch: { name: "Tower Shield", system: { armor: 4 } } }]
+    });
+    expect(response.ok, JSON.stringify(response.error)).toBe(true);
+    expect(response.result.outcomes).toEqual([
+      { index: 0, id: "actor-item-1", status: "updated", name: "Tower Shield" }
+    ]);
+    expect(actor.items.get("actor-item-1").name).toBe("Tower Shield");
+
+    const unchanged = await route("actor.item.update-many", {
+      actorId: "actor-1",
+      patches: [{ id: "actor-item-1", patch: { name: "Tower Shield" } }]
+    });
+    expect(unchanged.result.outcomes[0].status).toBe("unchanged");
+
+    actor.updateEmbeddedDocuments.mockClear();
+    const missing = await route("actor.item.update-many", {
+      actorId: "actor-1",
+      patches: [
+        { id: "actor-item-1", patch: { name: "Buckler" } },
+        { id: "nope", patch: { name: "Ghost" } }
+      ]
+    });
+    expect(missing.error.code).toBe("ITEM_NOT_FOUND");
+    expect(missing.error.details).toMatchObject({ actorId: "actor-1", itemId: "nope", index: 1 });
+    expect(actor.updateEmbeddedDocuments).not.toHaveBeenCalled();
+    expect(actor.items.get("actor-item-1").name).toBe("Tower Shield");
+  });
+
+  it("deletes items and reports an already-gone id as alreadyDeleted", async () => {
+    const actor = globalThis.game.actors.get("actor-1");
+    const response = await route("actor.item.delete-many", {
+      actorId: "actor-1",
+      ids: ["actor-item-1", "gone"]
+    });
+
+    expect(response.ok, JSON.stringify(response.error)).toBe(true);
+    expect(response.result.outcomes).toEqual([
+      { index: 0, id: "actor-item-1", status: "deleted" },
+      { index: 1, id: "gone", status: "alreadyDeleted" }
+    ]);
+    expect(actor.items.get("actor-item-1")).toBeFalsy();
+  });
+});

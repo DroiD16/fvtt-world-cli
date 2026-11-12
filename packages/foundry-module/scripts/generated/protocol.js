@@ -839,6 +839,11 @@ var actorCommands = {
     },
     { mutation: true }
   ),
+  ...batchWriteCommands("actor.item", {
+    scopeProperties: actorScopeProperties,
+    createSchema: embeddedItemDataSchema,
+    patchSchema: itemPatchSchema
+  }),
   ...batchWriteCommands("actor", {
     scopeProperties: emptyScopeProperties,
     patchSchema: actorPatchSchema,
@@ -5674,6 +5679,9 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "actor.item.delete": "approve",
   "actor.item.clone": "allow",
   "actor.item.import-from-compendium": "allow",
+  "actor.item.create-many": "allow",
+  "actor.item.update-many": "allow",
+  "actor.item.delete-many": "approve",
   "actor.update-many": "allow",
   "actor.delete-many": "approve",
   "actor.effect.list": "allow",

@@ -212,8 +212,12 @@ describe("command router", () => {
     "scene.token.item.effect"
   ].sort();
 
+  const EMBEDDED_ITEM_BATCH_FAMILIES = ["actor.item"];
+
   const declaredPlaceableBatchFamilies = () =>
-    declaredBatchCreateFamilies().filter((family) => !EFFECT_BATCH_FAMILIES.includes(family));
+    declaredBatchCreateFamilies().filter(
+      (family) => !EFFECT_BATCH_FAMILIES.includes(family) && !EMBEDDED_ITEM_BATCH_FAMILIES.includes(family)
+    );
 
   const declaredWorldBatchFamilies = () =>
     COMMAND_NAMES.filter((name) => name.endsWith(".update-many"))
@@ -391,9 +395,9 @@ describe("command router", () => {
       "scene.token.effect",
       "scene.token.item.effect"
     ]);
-    expect([...declaredPlaceableBatchFamilies(), ...EFFECT_BATCH_FAMILIES].sort()).toEqual(
-      declaredBatchCreateFamilies()
-    );
+    expect(
+      [...declaredPlaceableBatchFamilies(), ...EFFECT_BATCH_FAMILIES, ...EMBEDDED_ITEM_BATCH_FAMILIES].sort()
+    ).toEqual(declaredBatchCreateFamilies());
 
     expect(Object.keys(BATCH_FAMILY_FIXTURES).sort()).toEqual(
       declaredPlaceableBatchFamilies().filter((family) => family !== "scene.wall")
@@ -430,6 +434,7 @@ describe("command router", () => {
     "actor.item.effect": { 13.351: true, 14.365: true },
     "scene.token.effect": { 13.351: true, 14.365: true },
     "scene.token.item.effect": { 13.351: true, 14.365: true },
+    "actor.item": { 13.351: true, 14.365: true },
 
     item: { 13.351: true, 14.365: true },
     actor: { 13.351: true, 14.365: true },
@@ -449,7 +454,11 @@ describe("command router", () => {
     expect(Object.keys(PLACEABLE_NAME_FIELD).sort()).toEqual(declared);
     expect(Object.keys(BATCH_NAME_PARITY_FIXTURES).sort()).toEqual(declaredPlaceableBatchFamilies());
 
-    for (const family of [...EFFECT_BATCH_FAMILIES, ...declaredWorldBatchFamilies()]) {
+    for (const family of [
+      ...EFFECT_BATCH_FAMILIES,
+      ...EMBEDDED_ITEM_BATCH_FAMILIES,
+      ...declaredWorldBatchFamilies()
+    ]) {
       expect(PLACEABLE_NAME_FIELD[family], `${family} name table row`).toEqual({
         13.351: true,
         14.365: true
@@ -495,7 +504,11 @@ describe("command router", () => {
           Object.values(PLACEABLE_NAME_FIELD[family]).includes(true)
       )
     );
-    for (const family of [...EFFECT_BATCH_FAMILIES, ...declaredWorldBatchFamilies()]) {
+    for (const family of [
+      ...EFFECT_BATCH_FAMILIES,
+      ...EMBEDDED_ITEM_BATCH_FAMILIES,
+      ...declaredWorldBatchFamilies()
+    ]) {
       expect(
         KNOWN_NAME_READ_GAPS,
         `${family} declares a name on both versions and reports it`

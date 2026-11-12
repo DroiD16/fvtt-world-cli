@@ -150,6 +150,7 @@ const BATCH_SCOPE_KEYS = Object.freeze({
   "actor.effect": ["actorId"],
   "item.effect": ["itemId"],
   "actor.item.effect": ["actorId", "itemId"],
+  "actor.item": ["actorId"],
   "scene.token.effect": ["sceneId", "tokenId"],
   "scene.token.item.effect": ["sceneId", "tokenId", "itemId"],
   item: [],
@@ -217,8 +218,10 @@ const EXPECTED_CLOSED_PAYLOADS = Object.freeze([
   "actor.create.data",
   "actor.import-from-compendium.patch",
   "actor.item.clone.patch",
+  "actor.item.create-many.data[]",
   "actor.item.create.data",
   "actor.item.import-from-compendium.patch",
+  "actor.item.update-many.patches[].patch",
   "actor.item.update.patch",
   "actor.update-many.patches[].patch",
   "actor.update.patch",
@@ -764,6 +767,9 @@ const MUTATION_BASES = Object.freeze({
     patches: [{ id: "eff-1", patch: { disabled: true } }]
   },
   "actor.item.effect.delete-many": { actorId: "actor-1", itemId: "item-1", ids: ["eff-1"] },
+  "actor.item.create-many": { actorId: "actor-1", data: [{ name: "Torch", type: "loot" }] },
+  "actor.item.update-many": { actorId: "actor-1", patches: [{ id: "item-1", patch: { name: "Lamp" } }] },
+  "actor.item.delete-many": { actorId: "actor-1", ids: ["item-1"] },
   "scene.token.effect.create-many": { sceneId: "scene-1", tokenId: "token-1", data: [{ name: "Bless" }] },
   "scene.token.effect.update-many": {
     sceneId: "scene-1",
@@ -2557,7 +2563,7 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 61 approve-listed, 8 denied and 277 self-running commands in a registry of 346", () => {
+    it("counts 62 approve-listed, 8 denied and 279 self-running commands in a registry of 349", () => {
       const bucket = (behavior) =>
         COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
@@ -2569,10 +2575,10 @@ describe("protocol contract", () => {
           allow: bucket("allow")
         },
         "the totals moved: re-check the default-policy prose in docs/commands.md and docs/security.md (they name the buckets, not the counts) in the same change"
-      ).toEqual({ commands: 346, approve: 61, deny: 8, allow: 277 });
+      ).toEqual({ commands: 349, approve: 62, deny: 8, allow: 279 });
     });
 
-    it("leaves 341 governed commands in 19 top-level groups once the exempt ones are removed", () => {
+    it("leaves 344 governed commands in 19 top-level groups once the exempt ones are removed", () => {
       const exempt = new Set(POLICY_EXEMPT_COMMANDS);
       const governed = COMMAND_NAMES.filter((command) => !exempt.has(command));
 
@@ -2582,7 +2588,7 @@ describe("protocol contract", () => {
           groups: new Set(governed.map((command) => command.split(".")[0])).size
         },
         "the window totals moved: the permissions window renders one section per top-level group, so re-check its rendering assumptions in the same change"
-      ).toEqual({ governed: 341, groups: 19 });
+      ).toEqual({ governed: 344, groups: 19 });
     });
 
     it("cannot be mutated in place", () => {
@@ -5356,6 +5362,7 @@ describe("protocol contract", () => {
     it("pins BOTH batched-family SETS by name so the derived pins below cannot shrink", () => {
       expect(BATCHED_FAMILIES).toEqual([
         "actor.effect",
+        "actor.item",
         "actor.item.effect",
         "item.effect",
         "scene.drawing",
@@ -6244,6 +6251,9 @@ describe("protocol contract", () => {
         patches: [{ id: "eff-1", patch: { disabled: true } }]
       },
       "actor.item.effect.delete-many": { actorId: "actor-1", itemId: "item-1", ids: ["eff-1"] },
+      "actor.item.create-many": { actorId: "actor-1", data: [{ name: "Torch", type: "loot" }] },
+      "actor.item.update-many": { actorId: "actor-1", patches: [{ id: "item-1", patch: { name: "Lamp" } }] },
+      "actor.item.delete-many": { actorId: "actor-1", ids: ["item-1"] },
       "scene.token.effect.create-many": { sceneId: "scene-1", tokenId: "token-1", data: [{ name: "Bless" }] },
       "scene.token.effect.update-many": {
         sceneId: "scene-1",
@@ -6363,10 +6373,13 @@ describe("protocol contract", () => {
         "actor.effect.delete-many",
         "actor.effect.update-many",
         "actor.import-from-compendium",
+        "actor.item.create-many",
+        "actor.item.delete-many",
         "actor.item.effect.create-many",
         "actor.item.effect.delete-many",
         "actor.item.effect.update-many",
         "actor.item.import-from-compendium",
+        "actor.item.update-many",
         "actor.update-many",
 
         "cards.deal",
@@ -6901,6 +6914,9 @@ describe("protocol contract", () => {
       "actor.item.effect.create-many",
       "actor.item.effect.update-many",
       "actor.item.effect.delete-many",
+      "actor.item.create-many",
+      "actor.item.update-many",
+      "actor.item.delete-many",
       "scene.token.effect.create-many",
       "scene.token.effect.update-many",
       "scene.token.effect.delete-many",

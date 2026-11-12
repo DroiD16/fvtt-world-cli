@@ -2002,6 +2002,38 @@ describe("fvtt-world-cli commands", () => {
 
     [
       [
+        "actor",
+        "item",
+        "create-many",
+        "--actor-id",
+        "actor-1",
+        "--data-json",
+        '[{"name":"Torch","type":"loot"}]'
+      ],
+      "actor.item.create-many",
+      { actorId: "actor-1", data: [{ name: "Torch", type: "loot" }] }
+    ],
+    [
+      [
+        "actor",
+        "item",
+        "update-many",
+        "--actor-id",
+        "actor-1",
+        "--patches-json",
+        '[{"id":"item-1","patch":{"name":"Lamp"}}]'
+      ],
+      "actor.item.update-many",
+      { actorId: "actor-1", patches: [{ id: "item-1", patch: { name: "Lamp" } }] }
+    ],
+    [
+      ["actor", "item", "delete-many", "--actor-id", "actor-1", "--ids", "item-1,item-2"],
+      "actor.item.delete-many",
+      { actorId: "actor-1", ids: ["item-1", "item-2"] }
+    ],
+
+    [
+      [
         "scene",
         "wall",
         "create-many",

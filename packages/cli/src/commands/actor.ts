@@ -198,6 +198,13 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     });
 
   const actorItem = actor.command("item").description("Foundry actor embedded item commands");
+  registerBatchWriteCommands(actorItem, {
+    prefix: "actor.item",
+    noun: "item",
+    scope: "actor",
+    dataHelp:
+      "Item data as a JSON ARRAY of objects; each element takes what `actor item create --data-json` takes plus name and type"
+  });
   addNameFilterOption(
     addPaginationOptions(actorItem.command("list").requiredOption("--actor-id <actorId>", "Actor id")).option(
       "--include <fields>",

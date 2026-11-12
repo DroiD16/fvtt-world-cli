@@ -211,6 +211,11 @@ export const actorCommands = {
     },
     { mutation: true }
   ),
+  ...batchWriteCommands("actor.item", {
+    scopeProperties: actorScopeProperties,
+    createSchema: embeddedItemDataSchema,
+    patchSchema: itemPatchSchema
+  }),
   ...batchWriteCommands("actor", {
     scopeProperties: emptyScopeProperties,
     patchSchema: actorPatchSchema,
