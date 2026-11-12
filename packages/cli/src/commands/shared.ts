@@ -225,6 +225,7 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
       verbs?: Array<"create-many" | "update-many" | "delete-many">;
       withForce?: boolean;
       createExtras?: {
+        description: string;
         addOptions: (command: Command) => Command;
         params: (options: Record<string, any>) => Record<string, unknown>;
       };
@@ -246,7 +247,8 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
       const command = scopeOption(addIdempotencyKeyOption(group.command("create-many")));
       (createExtras ? createExtras.addOptions(command) : command)
         .description(
-          `Create many ${noun}s in ONE call (per-element outcomes; nothing is written if any element is invalid)`
+          createExtras?.description ??
+            `Create many ${noun}s in ONE call (per-element outcomes; nothing is written if any element is invalid)`
         )
         .requiredOption(
           "--data-json <json>",

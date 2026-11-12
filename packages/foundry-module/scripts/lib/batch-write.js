@@ -301,16 +301,17 @@ export async function executeBatchCreate({
 async function createSequentially({ command, items, prepare, isIdTaken, create, readBack, summarize }) {
   /** @type {Array<{index:number,id:string|null,status:string}>} */
   const outcomes = [];
+  const outcome = (index, id, status, document = null) => ({
+    index,
+    id,
+    status,
+    ...(summarize ? summarize(document) : {})
+  });
   let failure = null;
   let stopped = false;
   for (let index = 0; index < items.length; index += 1) {
     if (stopped) {
-      outcomes.push({
-        index,
-        id: null,
-        status: BATCH_STATUS.NOT_ATTEMPTED,
-        ...(summarize ? summarize(null) : {})
-      });
+      outcomes.push(outcome(index, null, BATCH_STATUS.NOT_ATTEMPTED));
       continue;
     }
 
@@ -318,14 +319,13 @@ async function createSequentially({ command, items, prepare, isIdTaken, create, 
     try {
       payload = await prepare(items[index], index);
     } catch (error) {
-      failure = describeBatchFailure(error);
-      stopped = true;
-      outcomes.push({
+      failure = sequentialElementFailure(error, {
+        command,
         index,
-        id: null,
-        status: BATCH_STATUS.NOT_ATTEMPTED,
-        ...(summarize ? summarize(null) : {})
+        nothingWritten: persistedCount(outcomes) === 0
       });
+      stopped = true;
+      outcomes.push(outcome(index, null, BATCH_STATUS.DROPPED));
       continue;
     }
 
@@ -334,26 +334,16 @@ async function createSequentially({ command, items, prepare, isIdTaken, create, 
     try {
       created = await create([{ ...payload, _id: id }]);
     } catch (error) {
-      failure = describeBatchFailure(error);
+      failure = sequentialElementFailure(error, { command, index, id, nothingWritten: false });
       stopped = true;
     }
 
     const stored = readBack(id);
     if (stored || (Array.isArray(created) && created.some((document) => document?.id === id))) {
-      outcomes.push({
-        index,
-        id,
-        status: BATCH_STATUS.CREATED,
-        ...(summarize ? summarize(stored ?? null) : {})
-      });
+      outcomes.push(outcome(index, id, BATCH_STATUS.CREATED, stored ?? null));
     } else {
       stopped = true;
-      outcomes.push({
-        index,
-        id,
-        status: failure ? BATCH_STATUS.UNKNOWN : BATCH_STATUS.DROPPED,
-        ...(summarize ? summarize(null) : {})
-      });
+      outcomes.push(outcome(index, id, failure ? BATCH_STATUS.UNKNOWN : BATCH_STATUS.DROPPED));
     }
   }
 
@@ -362,6 +352,28 @@ async function createSequentially({ command, items, prepare, isIdTaken, create, 
   }
   assertBatchPersistedSomething({ command, outcomes, verb: "create" });
   return buildBatchResult({ outcomes });
+}
+
+/**
+ * @param {unknown} error
+ * @param {{ command: string, index: number, id?: string, nothingWritten: boolean }} context
+ */
+function sequentialElementFailure(error, { command, index, id, nothingWritten }) {
+  const mapped = isFoundryValidationError(error) ? toFoundryValidationError(error) : toProtocolError(error);
+  const coordinate = `${command} element ${index}${typeof id === "string" ? ` (id ${id})` : ""}`;
+  const text = mapped.message.startsWith(`${command} element ${index} `)
+    ? mapped.message
+    : `${coordinate}: ${mapped.message}`;
+  const message =
+    nothingWritten && !BATCH_NO_WRITE_ASSURANCE_PATTERN.test(text)
+      ? `${/[.!?]$/.test(text) ? text : `${text}.`} ${BATCH_NO_WRITE_ASSURANCE}`
+      : text;
+  const annotated = createBridgeError(mapped.code, message, {
+    ...(mapped.details ?? {}),
+    index,
+    ...(typeof id === "string" ? { id } : {})
+  });
+  return { error: annotated, code: mapped.code, message };
 }
 
 /** @param {{ command: string, patches: Array<{ id: string, patch: any }>, dryRun: boolean, resolve: (id: string, index: number) => any, prepare: (patch: any, index: number, document: any) => any | Promise<any>, diff: (document: any, patch: any) => Promise<Record<string, any>>, mergePreview: (document: any, patch: any) => Promise<any>, documentClass?: any, update: (entries: Array<Record<string, any>>) => Promise<any[]>, summarize?: (document: any) => Record<string, unknown> }} args */

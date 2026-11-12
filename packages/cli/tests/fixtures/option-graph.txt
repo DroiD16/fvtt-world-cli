@@ -442,7 +442,7 @@ command scene token restore-delta
 
 command scene token create-many
   aliases=[]
-  summary=Create many tokens in ONE call (per-element outcomes; nothing is written if any element is invalid)
+  summary=Create many tokens, one Foundry create per token in order (per-element outcomes; nothing is written if any element is invalid; the batch stops at the first token that does not land)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
   opt --center | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Read x and y as the token's center instead of its top-left corner, as Foundry does for a dropped token

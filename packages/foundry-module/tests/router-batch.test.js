@@ -830,7 +830,69 @@ describe("command router", () => {
       "notAttempted"
     ]);
     expect(thrown.result.failure.message).toContain("socket closed");
+    expect(thrown.result.failure.message).toContain("scene.token.create-many element 1 (id ");
     scene.createEmbeddedDocuments.mockImplementation(original);
+  });
+
+  it("scene.token.create-many reports a token that fails to prepare at write time as dropped, with its index", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const actor = globalThis.game.actors.get("actor-1");
+    const prepare = actor.getTokenDocument.getMockImplementation();
+    let calls = 0;
+    actor.getTokenDocument.mockImplementation(async (...args) => {
+      calls += 1;
+      if (calls === 5) throw new Error("actor sheet closed mid-batch");
+      return prepare(...args);
+    });
+
+    const response = await router.route(
+      createRequest("scene.token.create-many", {
+        sceneId: "scene-1",
+        data: [{ actorId: "actor-1" }, { actorId: "actor-1" }, { actorId: "actor-1" }]
+      })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result.complete).toBe(false);
+    expect(response.result.outcomes.map(({ id, status }) => [id === null, status])).toEqual([
+      [false, "created"],
+      [true, "dropped"],
+      [true, "notAttempted"]
+    ]);
+    expect(response.result.failure.message).toContain("scene.token.create-many element 1:");
+    expect(response.result.failure.message).toContain("actor sheet closed mid-batch");
+    expect(response.result.failure.message).not.toContain("Nothing was written");
+  });
+
+  it("scene.token.create-many fails the request, naming element 0, when the first token fails at write time", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const scene = globalThis.game.scenes.get("scene-1");
+    const before = scene.tokens.size;
+    const actor = globalThis.game.actors.get("actor-1");
+    const prepare = actor.getTokenDocument.getMockImplementation();
+    let calls = 0;
+    actor.getTokenDocument.mockImplementation(async (...args) => {
+      calls += 1;
+      if (calls === 3) throw new Error("actor sheet closed mid-batch");
+      return prepare(...args);
+    });
+
+    const response = await router.route(
+      createRequest("scene.token.create-many", {
+        sceneId: "scene-1",
+        data: [{ actorId: "actor-1" }, { actorId: "actor-1" }]
+      })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.message).toContain("scene.token.create-many element 0:");
+    expect(response.error.message).toContain("Nothing was written");
+    expect(response.error.details.index).toBe(0);
+    expect(response.error.details.outcomes.map((outcome) => outcome.status)).toEqual([
+      "dropped",
+      "notAttempted"
+    ]);
+    expect(scene.tokens.size).toBe(before);
   });
 
   it("a token create-many dry run with actor elements warns that names are drawn again at write time", async () => {

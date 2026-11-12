@@ -476,7 +476,12 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     noun: "token",
     dataHelp:
       'Token data as a JSON ARRAY of objects (each may carry actorId, e.g. [{"actorId":"…","x":0,"y":0}])',
-    createExtras: { addOptions: addTokenPlacementOptions, params: tokenPlacementParams }
+    createExtras: {
+      description:
+        "Create many tokens, one Foundry create per token in order (per-element outcomes; nothing is written if any element is invalid; the batch stops at the first token that does not land)",
+      addOptions: addTokenPlacementOptions,
+      params: tokenPlacementParams
+    }
   });
 
   const sceneTokenItem = sceneToken

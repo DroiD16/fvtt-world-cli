@@ -222,8 +222,10 @@ A token created from an actor is linked or unlinked as the actor's prototype tok
 token change the world actor.
 
 Bulk writes are not transactions. Inspect `complete` and every entry in `outcomes` before deciding
-what to retry. `scene token create-many` creates its tokens one at a time so Foundry numbers them as
-it does when they are placed by hand, and stops at the first token that does not land. The tokens
+what to retry. The other `create-many` commands send all elements to Foundry in one create call.
+`scene token create-many` sends one create per token, in order, so Foundry numbers the tokens as it
+does when they are placed by hand. It stops at the first token that does not land: that token reports
+`dropped` (or `unknown` when Foundry's create call failed), `failure` names its index, and the tokens
 after it report `notAttempted`.
 
 ### Actions
