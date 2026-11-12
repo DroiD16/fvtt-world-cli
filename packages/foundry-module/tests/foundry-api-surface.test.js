@@ -201,6 +201,7 @@ const OWNERSHIP_READ_COMMANDS = [
   "item.get-many",
   "journal.get",
   "journal.get-many",
+  "journal.page.get",
   "scene.get",
   "scene.get-many",
   "macro.get",

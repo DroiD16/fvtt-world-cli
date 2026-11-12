@@ -1,20 +1,101 @@
+import { ERROR_CODES } from "../generated/protocol.js";
 import {
   cloneActorItem,
   createEmbeddedItem,
+  createEmbeddedItemMany,
   deleteActorItem,
+  deleteEmbeddedItemMany,
   getActorItemById,
   importActorItemFromCompendium,
+  prepareEmbeddedItemCreateData,
+  prepareEmbeddedItemUpdateData,
   previewEmbeddedItemCreate,
-  updateActorItem
+  previewPreparedEmbeddedItemCreate,
+  updateActorItem,
+  updateEmbeddedItemMany
 } from "../lib/embedded-items.js";
 import { getActorById } from "../lib/game-collections.js";
-import { previewDocumentUpdate } from "../lib/world-docs.js";
+import { computeDocumentUpdateDiff, previewDocumentUpdate } from "../lib/world-docs.js";
+import { executeBatchCreate, executeBatchDelete, executeBatchUpdate } from "../lib/batch-write.js";
+import { createBridgeError } from "../lib/errors.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
 import { canonicalizeFilePathFields } from "../lib/file-access.js";
-import { filterByName, paginate, serializeItem, serializeItemSummary } from "../lib/serializers.js";
+import {
+  filterByName,
+  paginate,
+  serializeItem,
+  serializeItemSummary,
+  worldDocumentName
+} from "../lib/serializers.js";
+
+/** @param {any} document */
+const summarizeItem = (document) => ({ name: document ? worldDocumentName(document) : null });
+
+function createActorItemBatchHandlers() {
+  return {
+    async "actor.item.create-many"(params) {
+      const command = "actor.item.create-many";
+      const actor = getActorById(params.actorId);
+      const result = await executeBatchCreate({
+        command,
+        items: params.data,
+        dryRun: isDryRun(params),
+        prepare: (data) => prepareEmbeddedItemCreateData(data),
+        preview: (preparedCopy) => previewPreparedEmbeddedItemCreate(actor, preparedCopy),
+        isIdTaken: (id) => Boolean(actor.items?.get?.(id)),
+        create: (payloads) => createEmbeddedItemMany(actor, payloads),
+        readBack: (id) => actor.items?.get?.(id) ?? null,
+        summarize: summarizeItem
+      });
+      return { actorId: params.actorId, ...result };
+    },
+
+    async "actor.item.update-many"(params) {
+      const command = "actor.item.update-many";
+      const actor = getActorById(params.actorId);
+      const result = await executeBatchUpdate({
+        command,
+        patches: params.patches,
+        dryRun: isDryRun(params),
+        resolve: (id, index) => {
+          const item = actor.items?.get?.(id) ?? null;
+          if (!item) {
+            throw createBridgeError(
+              ERROR_CODES.ITEM_NOT_FOUND,
+              `${command} element ${index} names item ${id}, which was not found on actor ${params.actorId}; use actor.item.list to find valid ids. Nothing was written.`,
+              { actorId: params.actorId, itemId: id, index }
+            );
+          }
+          return item;
+        },
+        prepare: (patch) => prepareEmbeddedItemUpdateData(patch),
+        diff: (document, patch) => computeDocumentUpdateDiff(document, patch),
+        mergePreview: (document, patch) => previewDocumentUpdate(document, patch),
+        update: (entries) => updateEmbeddedItemMany(actor, entries),
+        summarize: summarizeItem
+      });
+      return { actorId: params.actorId, ...result };
+    },
+
+    async "actor.item.delete-many"(params) {
+      const actor = getActorById(params.actorId);
+      const result = await executeBatchDelete({
+        command: "actor.item.delete-many",
+        ids: params.ids,
+        dryRun: isDryRun(params),
+        resolve: (id) => actor.items?.get?.(id) ?? null,
+        remove: (ids) => deleteEmbeddedItemMany(actor, ids),
+        exists: (id) => Boolean(actor.items?.get?.(id))
+      });
+      return { actorId: params.actorId, ...result };
+    }
+  };
+}
 
 export function createActorItemHandlers() {
   return {
+    ...createActorItemBatchHandlers(),
+
     async "actor.item.list"(params) {
       const actor = getActorById(params.actorId);
       const items = filterByName(Array.from(actor.items ?? []), params.name);

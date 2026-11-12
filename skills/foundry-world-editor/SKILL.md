@@ -19,10 +19,11 @@ fvtt-world-cli system info --json
 ```
 
 Proceed only when `.result.bridge.status` is `connected`, and verify the reported world and GM are
-the intended targets. If the daemon is not running, start `fvtt-world-cli bridge serve` as a
-persistent background process (it does not daemonize itself) and leave it running for the whole
-session. If no bridge connects, a GM must have the target world open in a browser with the
-`fvtt-world-cli` module enabled and paired.
+the intended targets. If `system info` answers at all, a daemon is running; use it. Start
+`fvtt-world-cli bridge serve` only when the daemon is unreachable, as a persistent background
+process (it does not daemonize itself), and leave it running for the whole session. If no bridge
+connects, a GM must have the target world open in a browser with the `fvtt-world-cli` module
+enabled and paired.
 
 Pairing is a first-run trust decision that needs the human: ask the GM to open Module Settings →
 Authorization, name the browser in the `Browser label` field, and choose Pair; run
@@ -81,8 +82,11 @@ Deleting a level also deletes its tokens and every placeable only on that level,
 does not list them: read the scene's placeables (token `level`, others' `levels`) and tell the user
 what the delete removes before running it.
 An unlinked token keeps its own overrides, which edits to its world actor never reach. Before
-editing an actor that has placed tokens, read its tokens' overrides and tell the user which tokens
-the edit will not change.
+editing an actor that has placed tokens, read its tokens' overrides
+(`scene token get --include delta,prepared`) and tell the user which tokens the edit will not
+change.
+Before deleting or relinking a document, run `world references --uuid <uuid>` and tell the user
+which stored references will point at nothing.
 `setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
 When a setting write returns `requiresReload: true`, the change needs a GM-client reload to take
 effect; `system.reload` performs it, drops the bridge, and requires a reconnect wait before the

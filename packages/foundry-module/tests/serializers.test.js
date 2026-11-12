@@ -407,6 +407,71 @@ describe("placeable level membership", () => {
 });
 
 describe("serializeItem", () => {
+  it("serializes stored source holding a value structuredClone rejects through its JSON form", () => {
+    class ForcedReplacement {
+      toJSON() {
+        return { __$OPERATOR$__: "ForcedReplacement", value: { cast: { type: "cast" } } };
+      }
+    }
+    const operator = new ForcedReplacement();
+    const nativeClone = globalThis.structuredClone;
+    vi.stubGlobal("structuredClone", (value) => {
+      const visit = (node) => {
+        if (node instanceof ForcedReplacement) {
+          throw new DOMException("#<ForcedReplacement> could not be cloned.", "DataCloneError");
+        }
+        if (node && typeof node === "object") Object.values(node).forEach(visit);
+      };
+      visit(value);
+      return nativeClone(value);
+    });
+    const item = {
+      id: "item-1",
+      name: "Torch",
+      type: "loot",
+      toObject() {
+        return { _id: "item-1", name: "Torch", type: "loot", system: { activities: operator } };
+      }
+    };
+
+    const result = serializeItem(item);
+
+    expect(result.system).toEqual({
+      activities: { __$OPERATOR$__: "ForcedReplacement", value: { cast: { type: "cast" } } }
+    });
+  });
+
+  it("serializes a stored operator that structuredClone would copy as an empty object in its JSON form", () => {
+    const VALUE = Symbol("DataFieldOperatorValue");
+    class ForcedDeletion {
+      constructor() {
+        this[VALUE] = undefined;
+      }
+      toJSON() {
+        return { __$OPERATOR$__: "ForcedDeletion", value: this[VALUE] };
+      }
+    }
+    const operator = new ForcedDeletion();
+    expect(structuredClone(operator)).toEqual({});
+    const item = {
+      id: "item-1",
+      name: "Fighter",
+      type: "class",
+      toObject() {
+        return {
+          _id: "item-1",
+          name: "Fighter",
+          type: "class",
+          system: { advancement: { hp: { chosen: operator } } }
+        };
+      }
+    };
+
+    expect(serializeItem(item).system).toEqual({
+      advancement: { hp: { chosen: { __$OPERATOR$__: "ForcedDeletion" } } }
+    });
+  });
+
   it("prefers the persisted source system from toObject() over the prepared live system", () => {
     const item = {
       id: "item-1",
@@ -1762,6 +1827,34 @@ describe("serializeActor", () => {
       detectionModes: null
     });
     assertStructuredCloneable(withPrepared);
+  });
+
+  it("reports a prepared colour in the stored #rrggbb form Foundry's Color#toJSON gives", () => {
+    class Color extends Number {
+      toJSON() {
+        return `#${this.toString(16).padStart(6, "0")}`;
+      }
+    }
+    const actor = {
+      id: "actor-1",
+      name: "Valeros",
+      type: "character",
+      items: [],
+      system: null,
+      prototypeToken: {
+        toObject() {
+          return { light: { color: new Color(0xff0000) } };
+        }
+      },
+      detectionModes: null,
+      toObject() {
+        return { _id: "actor-1", name: "Valeros", type: "character", system: {} };
+      }
+    };
+
+    const prepared = /** @type {any} */ (serializeActor(actor, { include: ["prepared"] }).prepared);
+
+    expect(prepared.prototypeToken.light.color).toBe("#ff0000");
   });
 
   it("degrades a derived subtree to null when its toObject(false) throws, without crashing", () => {

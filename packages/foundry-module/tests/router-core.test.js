@@ -2310,7 +2310,8 @@ describe("command router", () => {
 
       expect(response.ok).toBe(false);
       expect(response.error.code).toBe("INTERNAL_ERROR");
-      expect(response.error.details.message).toBe("Actor.create returned no document");
+      expect(response.error.details.reason).toBe("create_returned_nothing");
+      expect(response.error.details.message).toContain("Actor.create returned no document");
     });
 
     it("includes raw message on toFileError FILE_NOT_FOUND while preserving the code", async () => {

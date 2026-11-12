@@ -11,6 +11,7 @@ The bridge supports Foundry VTT v13 and v14. Check your connected version with
 | Scene thumbnail rendering | Renders the scene | Renders the scene's initial level by default | On v14, expect the initial level in the thumbnail. Check the returned dimensions and image. |
 | Scene thumbnail files | Uses a stable scene-based filename | Uses a filename based on the image content | Use the returned path. On v14, a changed image can leave an older thumbnail file behind. |
 | User permission names | `TEMPLATE_CREATE` | `REGION_CREATE` | Use the permission keys reported by the connected Foundry version when calling `user.permissions.set`. |
+| Relative content links | `@UUID[..<id>]` points at nothing | `@UUID[..<id>]` names a document one parent up | `world.references` reports a `..` link only on v14. |
 | Legacy update operators `-=key` (deletion) and `==key` (forced replacement) | Work without a warning | Work, and the GM browser console logs a deprecation warning for each such key, stating that support will be removed in Version 16 | Nothing changes for v13 or v14 writes. The bridge passes the operator keys through without translating them to Foundry 14's operator objects, so they will stop working once Foundry removes them. |
 
 Scene placeable fields and available region behavior types also differ. Read the target document

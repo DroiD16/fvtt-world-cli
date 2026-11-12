@@ -103,6 +103,18 @@ const journalPagePatchSchema = patchFrom(journalPageCreateSchema, {
   prepend: { id: { type: "string", minLength: 1 } }
 });
 
+const journalPageOwnPatchSchema = patchFrom(journalPageCreateSchema);
+
+const journalPageIdSchema = {
+  type: "object",
+  required: ["journalId", "pageId"],
+  properties: {
+    journalId: { type: "string", minLength: 1 },
+    pageId: { type: "string", minLength: 1 }
+  },
+  additionalProperties: false
+};
+
 const journalDataSchema = {
   type: "object",
   required: ["name"],
@@ -278,6 +290,58 @@ export const journalCommands = {
     patchSchema: journalDocumentPatchSchema,
     verbs: ["update-many", "delete-many"]
   }),
+  "journal.page.list": cmd({
+    type: "object",
+    required: ["journalId"],
+    properties: {
+      journalId: { type: "string", minLength: 1 },
+      ...nameFilterProperty,
+      ...paginationProperties
+    },
+    additionalProperties: false
+  }),
+  "journal.page.get": cmd(journalPageIdSchema),
+  "journal.page.create": cmd(
+    {
+      type: "object",
+      required: ["journalId", "data"],
+      properties: {
+        journalId: { type: "string", minLength: 1 },
+        data: journalPageCreateSchema,
+        ...dryRunProperty,
+        ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "journal.page.update": cmd(
+    {
+      type: "object",
+      required: ["journalId", "pageId", "patch"],
+      properties: {
+        journalId: { type: "string", minLength: 1 },
+        pageId: { type: "string", minLength: 1 },
+        patch: journalPageOwnPatchSchema,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "journal.page.delete": cmd(
+    {
+      type: "object",
+      required: ["journalId", "pageId"],
+      properties: {
+        journalId: { type: "string", minLength: 1 },
+        pageId: { type: "string", minLength: 1 },
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
   "journal.category.list": cmd({
     type: "object",
     required: ["journalId"],

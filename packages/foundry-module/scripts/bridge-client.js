@@ -541,14 +541,37 @@ export class BridgeClient {
       return;
     }
 
-    const serialized = JSON.stringify(payload);
-
     const maxResponseBytes = this.limits?.wsMaxPayloadBytes ?? this.maxResponseBytes;
-    if (
-      payload?.type === MESSAGE_TYPES.COMMAND_RESPONSE &&
-      typeof payload.id === "string" &&
-      serialized.length * 3 > maxResponseBytes
-    ) {
+    const isCorrelatedResponse =
+      payload?.type === MESSAGE_TYPES.COMMAND_RESPONSE && typeof payload.id === "string";
+
+    let serialized;
+    try {
+      serialized = JSON.stringify(payload);
+    } catch (error) {
+      if (!isCorrelatedResponse || !(error instanceof RangeError)) {
+        throw error;
+      }
+      this.logger("warn", "Response is too large to serialize; returning PAYLOAD_TOO_LARGE", {
+        id: payload.id,
+        limitBytes: maxResponseBytes
+      });
+      this.socket.send(
+        JSON.stringify(
+          createErrorResponse({
+            id: payload.id,
+            error: createProtocolError({
+              code: ERROR_CODES.PAYLOAD_TOO_LARGE,
+              message: `Response for request ${payload.id} is too large for the browser to serialize as one JSON string (${error.message}); the transport frame cap is ${maxResponseBytes} bytes, so narrow or paginate the query, or read a file as base64 instead of text`,
+              details: { limitBytes: maxResponseBytes, reason: "serialization_limit" }
+            })
+          })
+        )
+      );
+      return;
+    }
+
+    if (isCorrelatedResponse && serialized.length * 3 > maxResponseBytes) {
       const responseBytes = new TextEncoder().encode(serialized).length;
       if (responseBytes > maxResponseBytes) {
         this.logger("warn", "Response exceeds transport frame cap; returning PAYLOAD_TOO_LARGE", {

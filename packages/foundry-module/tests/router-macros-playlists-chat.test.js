@@ -947,14 +947,39 @@ describe("macro execution", () => {
     expect(response.result).toMatchObject({ chatMessageIds: [], chatCapture: "not-created" });
   });
 
-  it("omits a return value it cannot serialize within the bridge's bounds", async () => {
-    macroDoc().execute = vi.fn(async () => ({ run: () => true }));
+  it("returns the serializable part of a return value and lists each omitted node", async () => {
+    const getter = vi.fn(() => 1);
+    const value = { run: () => true, kept: "yes" };
+    Object.defineProperty(value, "lazy", { get: getter, enumerable: true });
+    value.self = value;
+    macroDoc().execute = vi.fn(async () => value);
+
+    const response = await router.route(createRequest("macro.execute", { macroId: "macro-1" }));
+
+    expect(response.ok).toBe(true);
+    expect(getter).not.toHaveBeenCalled();
+    expect(response.result.returned).toEqual({
+      run: { $unserializable: "function" },
+      kept: "yes",
+      lazy: { $unserializable: "accessor-property" },
+      self: { $unserializable: "circular-reference" }
+    });
+    expect(response.result.returnedOmissions).toEqual([
+      { path: "$.run", reason: "function" },
+      { path: "$.lazy", reason: "accessor-property" },
+      { path: "$.self", reason: "circular-reference" }
+    ]);
+    expect(response.result).not.toHaveProperty("returnedOmitted");
+  });
+
+  it("omits a whole return value that exceeds the bridge's size bounds", async () => {
+    macroDoc().execute = vi.fn(async () => ({ blob: "z".repeat(300 * 1024) }));
 
     const response = await router.route(createRequest("macro.execute", { macroId: "macro-1" }));
 
     expect(response.ok).toBe(true);
     expect(response.result.returned).toBeNull();
-    expect(response.result.returnedOmitted.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
+    expect(response.result.returnedOmitted.code).toBe(ERROR_CODES.PAYLOAD_TOO_LARGE);
   });
 
   it("reports an unknown macro", async () => {

@@ -31,7 +31,9 @@ export function registerConfig({ program, dependencies }: RegistrationContext) {
     });
   config
     .command("set-upload-limit")
-    .description("Persist the file.upload size limit (raw bytes, pre-base64) for the daemon and CLI")
+    .description(
+      "Persist the file.upload and file.read size limit (raw bytes, pre-base64) for the daemon and CLI"
+    )
     .argument("<size>", "Upload size limit as bytes or a size like 100MiB (max 512MiB)")
     .action(function setUploadLimit(this: Command, size: string) {
       const uploadLimitBytes = parseUploadLimitBytes(size);

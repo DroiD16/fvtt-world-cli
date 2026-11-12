@@ -60,7 +60,7 @@ export async function createRegionBehavior(region, data) {
     throw createBridgeError(
       ERROR_CODES.INTERNAL_ERROR,
       `Region behavior was NOT created on region ${region?.id ?? "(unknown)"}: RegionBehavior creation returned no document, which means a module's preCreateRegionBehavior hook or a core _preCreate refused the write, or the payload failed Foundry's own client-side validation (which Foundry reports only as a UI notification). Nothing was created. ${REGION_BEHAVIOR_VETO_REMEDY}`,
-      { regionId: region?.id ?? null }
+      { regionId: region?.id ?? null, reason: "create_returned_nothing" }
     );
   }
   return behavior;

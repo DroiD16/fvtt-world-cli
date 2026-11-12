@@ -2,7 +2,7 @@ import { BATCH_GET_MAX_IDS, ERROR_CODES, MACRO_EXECUTE_TIMEOUT_DEFAULT_MS } from
 import { deriveChatCaptureStatus, startAuthoredChatCapture } from "../lib/chat-capture.js";
 import { getActorById, getMacroById, getMacrosCollection } from "../lib/game-collections.js";
 import { getSceneEmbeddedById } from "../lib/scene-embedded.js";
-import { serializeSettingValue } from "../lib/setting-values.js";
+import { omissionFields, serializeValueWithOmissions } from "../lib/setting-values.js";
 import {
   cloneDocument,
   createMacro,
@@ -182,7 +182,8 @@ function serializeMacroReturn(value) {
   }
 
   try {
-    return { returned: serializeSettingValue(value) };
+    const read = serializeValueWithOmissions(value);
+    return { returned: read.value, ...omissionFields("returned", read) };
   } catch (error) {
     return { returned: null, returnedOmitted: toFailureSummary(error) };
   }

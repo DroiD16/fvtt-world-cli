@@ -40,16 +40,14 @@ export async function createEmbeddedItem(actor, data, { dryRun = false } = {}) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Embedded document create API is not available");
   }
 
-  data = canonicalizeFilePathFields(data, "Item");
-
-  const prepared = sanitizeEmbeddedItemData(data);
+  const prepared = prepareEmbeddedItemCreateData(data);
 
   if (dryRun) {
     return prepared;
   }
 
   const results = await actor.createEmbeddedDocuments("Item", [prepared], { render: true });
-  return getCreateResult(results, "Embedded item creation returned no document");
+  return getCreateResult(results, "Embedded item creation");
 }
 
 export async function importActorItemFromCompendium(
@@ -98,7 +96,7 @@ export async function updateEmbeddedItem(actor, itemId, patch, details = {}, { d
 
   const current = getEmbeddedItem(actor, itemId, details);
 
-  const canonicalPatch = canonicalizeFilePathFields(patch, "Item");
+  const canonicalPatch = prepareEmbeddedItemUpdateData(patch);
   if (dryRun) {
     await assertRequestedWriteStorable({
       document: current,
@@ -149,12 +147,47 @@ export async function updateActorItem(actorId, itemId, patch, { dryRun = false }
   return updateEmbeddedItem(getActorById(actorId), itemId, patch, { actorId }, { dryRun });
 }
 
+/** @param {Record<string, any>} data */
+export function prepareEmbeddedItemCreateData(data) {
+  return sanitizeEmbeddedItemData(canonicalizeFilePathFields(data, "Item"));
+}
+
+/** @param {Record<string, any>} patch */
+export function prepareEmbeddedItemUpdateData(patch) {
+  return canonicalizeFilePathFields(patch, "Item");
+}
+
 export function previewEmbeddedItemCreate(parent, data) {
-  return previewDocumentCreate(
-    resolveEmbeddedDocumentClass(parent?.items, "Item"),
-    sanitizeEmbeddedItemData(canonicalizeFilePathFields(data, "Item")),
-    { parent }
-  );
+  return previewPreparedEmbeddedItemCreate(parent, prepareEmbeddedItemCreateData(data));
+}
+
+/**
+ * @param {any} parent
+ * @param {Record<string, any>} preparedData
+ */
+export function previewPreparedEmbeddedItemCreate(parent, preparedData) {
+  return previewDocumentCreate(resolveEmbeddedDocumentClass(parent?.items, "Item"), preparedData, { parent });
+}
+
+export async function createEmbeddedItemMany(parent, payloads) {
+  if (typeof parent?.createEmbeddedDocuments !== "function") {
+    throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Embedded document create API is not available");
+  }
+  return parent.createEmbeddedDocuments("Item", payloads, { keepId: true, render: true });
+}
+
+export async function updateEmbeddedItemMany(parent, entries) {
+  if (typeof parent?.updateEmbeddedDocuments !== "function") {
+    throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Embedded document update API is not available");
+  }
+  return parent.updateEmbeddedDocuments("Item", entries, { diff: true, render: true });
+}
+
+export async function deleteEmbeddedItemMany(parent, ids) {
+  if (typeof parent?.deleteEmbeddedDocuments !== "function") {
+    throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Embedded document delete API is not available");
+  }
+  return parent.deleteEmbeddedDocuments("Item", ids, { render: true });
 }
 
 export async function deleteActorItem(actorId, itemId, { dryRun = false } = {}) {

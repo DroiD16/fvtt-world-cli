@@ -55,7 +55,7 @@ export {
   COMBAT_ROLL_MODES,
   COMBAT_TRANSITIONS
 } from "./schemas/combat.js";
-export { AUDIT_FILE_SCOPES } from "./schemas/file.js";
+export { AUDIT_FILE_SCOPES, REFERENCE_DEFAULT_SCOPES, REFERENCE_SCOPES } from "./schemas/file.js";
 export { TABLE_MUTATION_OUTCOMES, TABLE_ROLL_MODES } from "./schemas/table.js";
 
 export const COMMAND_DEFINITIONS = deepFreeze(

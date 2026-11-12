@@ -2,6 +2,7 @@ import { ERROR_CODES } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
 
 import { getFoldersCollection, getGame } from "./game-collections.js";
+import { createReturnedNothingError } from "./world-docs.js";
 
 export function resolveFolderDocumentClass() {
   return getFoldersCollection().documentClass ?? globalThis.Folder;
@@ -15,7 +16,7 @@ export async function createFolder(data) {
 
   const folder = await FolderCtor.create(data, { render: true });
   if (!folder) {
-    throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Folder.create returned no document");
+    throw createReturnedNothingError("Folder.create");
   }
 
   return folder;

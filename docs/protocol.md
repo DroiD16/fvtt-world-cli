@@ -27,12 +27,13 @@ a correlated control-request error.
 
 ## Size limits
 
-The upload limit and the transport frame limit are distinct: the first bounds raw upload content,
-the second accounts for encoding and envelope overhead and is never lower than what legitimate
-large read responses require. The daemon advertises its effective limits during the handshake, and
-the bridge checks response size before sending, so an oversized response returns
-`PAYLOAD_TOO_LARGE` instead of destroying the shared session. A persisted upload-limit change is
-applied to the transport only after the daemon restarts.
+The upload limit and the transport frame limit are distinct: the first bounds raw upload content
+and the raw size of a `file.read`, the second accounts for encoding and envelope overhead and is
+never lower than what legitimate large read responses require. The daemon advertises its effective
+limits during the handshake, and the bridge checks response size before sending, so an oversized
+response, or one the browser cannot serialize, returns `PAYLOAD_TOO_LARGE` instead of destroying the
+shared session. A persisted upload-limit change is applied to the transport only after the daemon
+restarts.
 
 ## Pairing
 
@@ -186,6 +187,11 @@ World document reads carry `compendiumSource` and `duplicateSource`, hoisted fro
 
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.
+
+A setting value or macro return value node with no JSON form, such as a function, an own accessor
+property or a circular reference, is replaced by `{"$unserializable": "<reason>"}` and listed with
+its path in an `...Omissions` field. A value with omissions is incomplete; writing it back stores the
+markers as data.
 
 ### Macro results
 

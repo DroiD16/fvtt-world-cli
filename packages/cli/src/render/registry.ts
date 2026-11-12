@@ -44,7 +44,12 @@ import {
 } from "./files.js";
 import { renderFolderDetails } from "./folders.js";
 import { renderItemDetails, renderItemSummaryLine } from "./items.js";
-import { renderJournalCategoryDetails, renderJournalDetails, renderJournalShowResult } from "./journals.js";
+import {
+  renderJournalCategoryDetails,
+  renderJournalDetails,
+  renderJournalPageDetails,
+  renderJournalShowResult
+} from "./journals.js";
 import { renderMacroDetails, renderMacroExecuteResult } from "./macros.js";
 import { renderPlaylistDetails, renderPlaylistSoundDetails } from "./playlists.js";
 import {
@@ -310,6 +315,29 @@ export const RENDERERS = registerRenderers([
     return lines.join("\n");
   }),
 
+  customRenderer("world.references", (result, offset) => {
+    const references = result.references ?? [];
+    const target = result.target ?? {};
+    const lines = [
+      `target: ${target.uuid ?? ""}\t${humanCell(target.name)}\texists=${target.exists === null ? "unknown" : String(target.exists)}`
+    ];
+    if (references.length) {
+      lines.push(
+        `References (${references.length})`,
+        ...references.map(
+          (ref: any) =>
+            `${ref.uuid}\t${humanCell(ref.name)}\t${ref.field}\t${ref.match}${ref.matchedUuid ? `\t${ref.matchedUuid}` : ""}`
+        )
+      );
+    } else {
+      lines.push("No stored references found.");
+    }
+    lines.push(...listFooterLines(result, references.length, offset));
+    lines.push(
+      `summary: references=${result.total ?? references.length} scannedDocuments=${result.scannedDocuments ?? 0} selfReferences=${result.selfReferences ?? 0} scopes=${(result.scopes ?? []).join(",")}`
+    );
+    return lines.join("\n");
+  }),
   listRenderer("scene.list", {
     key: "scenes",
     empty: "No scenes found.",
@@ -771,6 +799,24 @@ export const RENDERERS = registerRenderers([
   }),
   deleteRenderer("journal.delete", "journal"),
   detailRenderer("journal.show", (result) => renderJournalShowResult(result)),
+  listRenderer("journal.page.list", {
+    key: "pages",
+    empty: "No pages found.",
+    heading: "Pages",
+    prefix: (result) => [`journal: ${result.journalId}`],
+    row: (page) =>
+      `${page.id}\t${page.name ?? ""}\t${page.type ?? ""}\tsort=${page.sort ?? 0}${
+        page.textFormat === 2 ? "\tformat=markdown" : page.textFormat === 1 ? "\tformat=html" : ""
+      }`
+  }),
+  detailRenderer(["journal.page.get", "journal.page.create", "journal.page.update"], (result) =>
+    renderJournalPageDetails(result.journalId, result.page)
+  ),
+  detailRenderer("journal.page.delete", (result) =>
+    result.deleted
+      ? `Deleted journal page ${result.id} from journal ${result.journalId}`
+      : `Would delete journal page ${result.id} from journal ${result.journalId}`
+  ),
   listRenderer("journal.category.list", {
     key: "categories",
     empty: "No categories found.",

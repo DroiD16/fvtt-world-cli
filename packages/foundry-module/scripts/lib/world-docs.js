@@ -14,10 +14,22 @@ import {
   getTablesCollection
 } from "./game-collections.js";
 
-export function getCreateResult(results, errorMessage) {
+export function createReturnedNothingError(subject) {
+  return createBridgeError(
+    ERROR_CODES.INTERNAL_ERROR,
+    `${subject} returned no document: Foundry created nothing and gave no reason. One possible cause is a ` +
+      "preCreate hook of Foundry core, the game system or a module that refused the document; another is a " +
+      "payload that failed a client-side check Foundry reports only as a notification in the GM browser. " +
+      "The GM browser's notifications and console show the cause; re-read the parent before deciding whether " +
+      "to resend, change the payload, or make the change from the Foundry UI",
+    { reason: "create_returned_nothing" }
+  );
+}
+
+export function getCreateResult(results, subject) {
   const document = Array.isArray(results) ? (results[0] ?? null) : results;
   if (!document) {
-    throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, errorMessage);
+    throw createReturnedNothingError(subject);
   }
 
   return document;
@@ -50,7 +62,7 @@ export async function createWorldDocument(type, data) {
 
   const document = await DocumentClass.create(data, { render: true });
   if (!document) {
-    throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, `${type}.create returned no document`);
+    throw createReturnedNothingError(`${type}.create`);
   }
 
   return document;
@@ -132,7 +144,7 @@ export async function cloneDocument(document, patch = {}, { dryRun = false } = {
   const result = await document.clone(patch, { save: true, render: true });
   const clone = Array.isArray(result) ? (result[0] ?? null) : result;
   if (!clone) {
-    throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Document clone returned no document");
+    throw createReturnedNothingError("Document clone");
   }
 
   return clone;

@@ -212,8 +212,12 @@ describe("command router", () => {
     "scene.token.item.effect"
   ].sort();
 
+  const EMBEDDED_ITEM_BATCH_FAMILIES = ["actor.item"];
+
   const declaredPlaceableBatchFamilies = () =>
-    declaredBatchCreateFamilies().filter((family) => !EFFECT_BATCH_FAMILIES.includes(family));
+    declaredBatchCreateFamilies().filter(
+      (family) => !EFFECT_BATCH_FAMILIES.includes(family) && !EMBEDDED_ITEM_BATCH_FAMILIES.includes(family)
+    );
 
   const declaredWorldBatchFamilies = () =>
     COMMAND_NAMES.filter((name) => name.endsWith(".update-many"))
@@ -391,9 +395,9 @@ describe("command router", () => {
       "scene.token.effect",
       "scene.token.item.effect"
     ]);
-    expect([...declaredPlaceableBatchFamilies(), ...EFFECT_BATCH_FAMILIES].sort()).toEqual(
-      declaredBatchCreateFamilies()
-    );
+    expect(
+      [...declaredPlaceableBatchFamilies(), ...EFFECT_BATCH_FAMILIES, ...EMBEDDED_ITEM_BATCH_FAMILIES].sort()
+    ).toEqual(declaredBatchCreateFamilies());
 
     expect(Object.keys(BATCH_FAMILY_FIXTURES).sort()).toEqual(
       declaredPlaceableBatchFamilies().filter((family) => family !== "scene.wall")
@@ -430,6 +434,7 @@ describe("command router", () => {
     "actor.item.effect": { 13.351: true, 14.365: true },
     "scene.token.effect": { 13.351: true, 14.365: true },
     "scene.token.item.effect": { 13.351: true, 14.365: true },
+    "actor.item": { 13.351: true, 14.365: true },
 
     item: { 13.351: true, 14.365: true },
     actor: { 13.351: true, 14.365: true },
@@ -449,7 +454,11 @@ describe("command router", () => {
     expect(Object.keys(PLACEABLE_NAME_FIELD).sort()).toEqual(declared);
     expect(Object.keys(BATCH_NAME_PARITY_FIXTURES).sort()).toEqual(declaredPlaceableBatchFamilies());
 
-    for (const family of [...EFFECT_BATCH_FAMILIES, ...declaredWorldBatchFamilies()]) {
+    for (const family of [
+      ...EFFECT_BATCH_FAMILIES,
+      ...EMBEDDED_ITEM_BATCH_FAMILIES,
+      ...declaredWorldBatchFamilies()
+    ]) {
       expect(PLACEABLE_NAME_FIELD[family], `${family} name table row`).toEqual({
         13.351: true,
         14.365: true
@@ -495,7 +504,11 @@ describe("command router", () => {
           Object.values(PLACEABLE_NAME_FIELD[family]).includes(true)
       )
     );
-    for (const family of [...EFFECT_BATCH_FAMILIES, ...declaredWorldBatchFamilies()]) {
+    for (const family of [
+      ...EFFECT_BATCH_FAMILIES,
+      ...EMBEDDED_ITEM_BATCH_FAMILIES,
+      ...declaredWorldBatchFamilies()
+    ]) {
       expect(
         KNOWN_NAME_READ_GAPS,
         `${family} declares a name on both versions and reports it`
@@ -1203,6 +1216,54 @@ describe("command router", () => {
     );
     expect(response.ok).toBe(false);
     expect(response.error.code).toBe("SCENE_NOT_FOUND");
+  });
+
+  it("prepares an actor.item batch create element EXACTLY as actor.item.create does", async () => {
+    expect(EMBEDDED_ITEM_BATCH_FAMILIES).toEqual(
+      declaredBatchCreateFamilies().filter(
+        (family) =>
+          !EFFECT_BATCH_FAMILIES.includes(family) && !declaredPlaceableBatchFamilies().includes(family)
+      )
+    );
+    const data = {
+      name: "Longsword",
+      type: "weapon",
+      img: "worlds/world-1/art/long sword.png",
+      flags: { mod: { a: 1 } },
+      effects: [
+        {
+          name: "Bless",
+          img: "worlds/world-1/art/glow #1.png",
+          _id: "spoofed",
+          _stats: { hacked: true },
+          ownership: { default: 3 }
+        }
+      ]
+    };
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const actor = /** @type {any} */ (globalThis.game.actors.get("actor-1"));
+    const payloadsFor = () =>
+      actor.createEmbeddedDocuments.mock.calls
+        .filter((call) => call[0] === "Item")
+        .flatMap((call) => call[1]);
+
+    actor.createEmbeddedDocuments.mockClear();
+    const single = await router.route(createRequest("actor.item.create", { actorId: "actor-1", data }));
+    expect(single.ok, JSON.stringify(single.error)).toBe(true);
+    const singlePayloads = payloadsFor();
+    expect(singlePayloads).toHaveLength(1);
+
+    actor.createEmbeddedDocuments.mockClear();
+    const batch = await router.route(
+      createRequest("actor.item.create-many", { actorId: "actor-1", data: [data] })
+    );
+    expect(batch.ok, JSON.stringify(batch.error)).toBe(true);
+    const batchPayloads = payloadsFor();
+    expect(batchPayloads).toHaveLength(1);
+
+    const { _id, ...batchPayload } = batchPayloads[0];
+    expect(typeof _id).toBe("string");
+    expect(batchPayload).toEqual(singlePayloads[0]);
   });
 
   it("prepares a batch create element EXACTLY as the single create verb does (every batched family)", async () => {

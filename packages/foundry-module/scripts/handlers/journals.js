@@ -43,6 +43,7 @@ import {
   serializeJournalCategory,
   serializeJournalCategorySummary,
   serializeJournalPage,
+  serializeJournalPageSummary,
   serializeJournalSummary,
   sortJournalCategories,
   storedJournalCategoryName,
@@ -98,7 +99,7 @@ function splitJournalPatch(patch, journal) {
 
   for (const page of pages) {
     const { id, ...pagePatch } = page;
-    const payload = normalizePageCategory(compactObject(pagePatch));
+    const payload = canonicalizePageSrc(normalizePageCategory(compactObject(pagePatch)));
 
     assertJournalCategoryMember(journal, payload.category);
     if (id) {
@@ -150,6 +151,89 @@ function danglingPageReport(journal, categoryId) {
     danglingPageIds: ids.slice(0, JOURNAL_CATEGORY_DANGLING_PAGE_ID_CAP),
     danglingPageIdsTruncated: ids.length > JOURNAL_CATEGORY_DANGLING_PAGE_ID_CAP
   };
+}
+
+/**
+ * @param {any} journal
+ * @param {string} journalId
+ * @param {ReturnType<typeof splitJournalPatch>} split
+ */
+async function previewJournalChanges(journal, journalId, split) {
+  const { documentPatch, deletePageIds } = split;
+
+  if (Object.keys(documentPatch).length > 0) {
+    await assertRequestedWriteStorable({
+      document: journal,
+      patch: documentPatch,
+      subject: `Journal ${journal.id ?? journalId}`,
+      details: { journalId: journal.id ?? journalId }
+    });
+  }
+  if (deletePageIds.length > 0) {
+    assertJournalPagesExist(journalId, deletePageIds);
+  }
+
+  return previewJournalUpdate(journal, split);
+}
+
+/**
+ * @param {any} journal
+ * @param {string} journalId
+ * @param {ReturnType<typeof splitJournalPatch>} split
+ * @returns {Promise<any[]>}
+ */
+async function applyJournalChanges(journal, journalId, split) {
+  const { documentPatch, createPagesPayload, updatePagesPayload, deletePageIds } = split;
+
+  assertJournalPageOpsValid(journal, { createPagesPayload, updatePagesPayload });
+
+  if (Object.keys(documentPatch).length > 0) {
+    await applyConfirmedUpdate({
+      document: journal,
+      patch: documentPatch,
+      write: (payload) => journal.update(payload, { diff: true, render: true }),
+      subject: `Journal ${journal.id ?? journalId}`,
+      hookName: "preUpdateJournalEntry",
+      details: { journalId: journal.id ?? journalId }
+    });
+  }
+
+  const created =
+    createPagesPayload.length > 0 ? await createJournalPages(journalId, createPagesPayload) : [];
+
+  if (updatePagesPayload.length > 0) {
+    await updateJournalPages(journalId, updatePagesPayload);
+  }
+
+  if (deletePageIds.length > 0) {
+    await deleteJournalPages(journalId, deletePageIds);
+  }
+
+  return created;
+}
+
+/**
+ * @param {string} journalId
+ * @param {string} pageId
+ */
+function getJournalPageById(journalId, pageId) {
+  const journal = getJournalById(journalId);
+  const page = journal.pages?.get?.(pageId) ?? null;
+  if (!page) {
+    throw createBridgeError(
+      ERROR_CODES.JOURNAL_PAGE_NOT_FOUND,
+      `Journal page ${pageId} was not found on journal ${journalId}; use journal.page.list to find valid page ids`,
+      { journalId, pageId }
+    );
+  }
+  return { journal, page };
+}
+
+/**
+ * @param {any} journal
+ */
+function sortedJournalPages(journal) {
+  return Array.from(journal.pages ?? []).sort((a, b) => a.sort - b.sort);
 }
 
 export function createJournalHandlers() {
@@ -215,65 +299,16 @@ export function createJournalHandlers() {
 
     async "journal.update"(params) {
       const journal = getJournalById(params.journalId);
-
-      const { documentPatch, createPagesPayload, updatePagesPayload, deletePageIds } = splitJournalPatch(
-        params.patch,
-        journal
-      );
-
-      for (const page of [...createPagesPayload, ...updatePagesPayload]) {
-        canonicalizePageSrc(page);
-      }
+      const split = splitJournalPatch(params.patch, journal);
 
       if (isDryRun(params)) {
-        if (Object.keys(documentPatch).length > 0) {
-          await assertRequestedWriteStorable({
-            document: journal,
-            patch: documentPatch,
-            subject: `Journal ${journal.id ?? params.journalId}`,
-            details: { journalId: journal.id ?? params.journalId }
-          });
-        }
-        if (deletePageIds.length > 0) {
-          assertJournalPagesExist(params.journalId, deletePageIds);
-        }
-
-        const { preview, pages } = await previewJournalUpdate(journal, {
-          documentPatch,
-          createPagesPayload,
-          updatePagesPayload,
-          deletePageIds
-        });
+        const { preview, pages } = await previewJournalChanges(journal, params.journalId, split);
         const previewJournal = serializeJournal(preview);
         previewJournal.pages = pages.map((page) => serializeJournalPage(page));
         return dryRunResponse({ journal: previewJournal });
       }
 
-      assertJournalPageOpsValid(journal, { createPagesPayload, updatePagesPayload });
-
-      if (Object.keys(documentPatch).length > 0) {
-        await applyConfirmedUpdate({
-          document: journal,
-          patch: documentPatch,
-          write: (payload) => journal.update(payload, { diff: true, render: true }),
-          subject: `Journal ${journal.id ?? params.journalId}`,
-          hookName: "preUpdateJournalEntry",
-          details: { journalId: journal.id ?? params.journalId }
-        });
-      }
-
-      if (createPagesPayload.length > 0) {
-        await createJournalPages(params.journalId, createPagesPayload);
-      }
-
-      if (updatePagesPayload.length > 0) {
-        await updateJournalPages(params.journalId, updatePagesPayload);
-      }
-
-      if (deletePageIds.length > 0) {
-        await deleteJournalPages(params.journalId, deletePageIds);
-      }
-
+      await applyJournalChanges(journal, params.journalId, split);
       return {
         journal: serializeJournal(getJournalById(params.journalId))
       };
@@ -340,6 +375,68 @@ export function createJournalHandlers() {
         inactiveUserIds: users.inactive,
         dispatched: true
       };
+    },
+
+    async "journal.page.list"(params) {
+      const journal = getJournalById(params.journalId);
+      const pages = filterByName(sortedJournalPages(journal), params.name);
+      const { page, total, hasMore } = paginate(pages, params);
+      return {
+        journalId: params.journalId,
+        pages: page.map((entry) => serializeJournalPageSummary(entry)),
+        total,
+        hasMore
+      };
+    },
+
+    async "journal.page.get"(params) {
+      const { page } = getJournalPageById(params.journalId, params.pageId);
+      return { journalId: params.journalId, page: serializeJournalPage(page, { ownership: true }) };
+    },
+
+    async "journal.page.create"(params) {
+      const journal = getJournalById(params.journalId);
+      const split = splitJournalPatch({ pages: [params.data] }, journal);
+
+      if (isDryRun(params)) {
+        const { pages } = await previewJournalChanges(journal, params.journalId, split);
+        return dryRunResponse({
+          journalId: params.journalId,
+          page: serializeJournalPage(pages[pages.length - 1])
+        });
+      }
+
+      const [created] = await applyJournalChanges(journal, params.journalId, split);
+      const { page } = getJournalPageById(params.journalId, created.id);
+      return { journalId: params.journalId, page: serializeJournalPage(page) };
+    },
+
+    async "journal.page.update"(params) {
+      const { journal } = getJournalPageById(params.journalId, params.pageId);
+      const split = splitJournalPatch({ pages: [{ ...params.patch, id: params.pageId }] }, journal);
+
+      if (isDryRun(params)) {
+        const { pages } = await previewJournalChanges(journal, params.journalId, split);
+        const preview = pages.find((entry) => entry.id === params.pageId);
+        return dryRunResponse({ journalId: params.journalId, page: serializeJournalPage(preview) });
+      }
+
+      await applyJournalChanges(journal, params.journalId, split);
+      const { page } = getJournalPageById(params.journalId, params.pageId);
+      return { journalId: params.journalId, page: serializeJournalPage(page) };
+    },
+
+    async "journal.page.delete"(params) {
+      const { journal } = getJournalPageById(params.journalId, params.pageId);
+      const split = splitJournalPatch({ deletePageIds: [params.pageId] }, journal);
+
+      if (isDryRun(params)) {
+        await previewJournalChanges(journal, params.journalId, split);
+        return dryRunResponse({ journalId: params.journalId, id: params.pageId, deleted: false });
+      }
+
+      await applyJournalChanges(journal, params.journalId, split);
+      return { journalId: params.journalId, id: params.pageId, deleted: true };
     },
 
     async "journal.category.list"(params) {

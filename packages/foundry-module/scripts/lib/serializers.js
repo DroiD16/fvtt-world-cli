@@ -2,11 +2,7 @@ import { hasSceneLevels } from "./foundry-capabilities.js";
 export { paginate, filterByName, filterByPath } from "./pagination.js";
 
 export function cloneValue(value) {
-  if (typeof globalThis.structuredClone === "function") {
-    return globalThis.structuredClone(value);
-  }
-
-  return JSON.parse(JSON.stringify(value));
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
 function safeDerived(modelOrDoc) {
@@ -104,6 +100,22 @@ export function serializeJournalPage(page, { ownership = false } = {}) {
     system: cloneValue(data.system ?? {}),
     flags: cloneValue(data.flags ?? {}),
     ...(ownership ? { ownership: serializeOwnership(page, data) } : {})
+  };
+}
+
+const MEDIA_PAGE_TYPES = new Set(["image", "pdf", "video"]);
+
+/** @param {any} page */
+export function serializeJournalPageSummary(page) {
+  const data = documentData(page);
+  return {
+    ...identityFields(page, data),
+    name: page.name ?? data.name ?? null,
+    type: page.type ?? data.type ?? null,
+    sort: page.sort ?? data.sort ?? 0,
+    category: page.category ?? data.category ?? null,
+    src: page.src ?? data.src ?? null,
+    textFormat: MEDIA_PAGE_TYPES.has(page.type ?? data.type) ? null : (data.text?.format ?? null)
   };
 }
 

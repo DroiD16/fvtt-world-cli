@@ -1,3 +1,4 @@
+import { SERIALIZE_OMISSIONS_MAX } from "@fvtt-world-cli/protocol";
 import { Option } from "commander";
 
 import { createSettingSetParams, resolveSettingItems } from "../params.js";
@@ -47,6 +48,10 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
     .command("get")
     .requiredOption("--namespace <namespace>", 'Setting namespace (e.g. "core" or a module id)')
     .requiredOption("--key <key>", "Setting key within the namespace")
+    .addHelpText(
+      "after",
+      `\nA value node with no JSON form (an accessor property, a function, a circular reference) comes back as {"$unserializable": "<reason>"} and is listed in .result.setting.valueOmissions (at most ${SERIALIZE_OMISSIONS_MAX} entries; valueOmissionsTruncated marks a longer list). Such a value is incomplete: writing it back with setting set stores the markers as data.`
+    )
     .action(async function getSetting(options: { namespace: string; key: string }) {
       await executeRemoteCommand({
         commandName: "setting.get",
@@ -65,6 +70,7 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
       'Comma-separated setting ids in "namespace.key" form (e.g. core.chatBubbles,my-module.apiKey)',
       parseIdList
     )
+    .addHelpText("after", "\nEach row reports omissions like setting get, in valueOmissions.")
     .action(async function getManySettings(options: { ids: string[] }) {
       await executeRemoteCommand({
         commandName: "setting.get-many",
@@ -82,6 +88,10 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
       "--value-json <json>",
       'New value as a JSON literal — true, 42, "text", [..] or {..}; a quoted string stays distinct from a boolean or a number',
       (value: string) => parseJsonValue(value, "--value-json")
+    )
+    .addHelpText(
+      "after",
+      '\nprevious and value report omissions like setting get, in previousOmissions and valueOmissions. {"$unserializable": ...} markers in --value-json are stored as data.'
     )
     .action(async function setSetting(options: { namespace: string; key: string; valueJson: unknown }) {
       await executeRemoteCommand({

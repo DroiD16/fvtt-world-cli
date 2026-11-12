@@ -2,6 +2,8 @@ import { join } from "node:path";
 
 import {
   AUDIT_FILE_SCOPES,
+  REFERENCE_DEFAULT_SCOPES,
+  REFERENCE_SCOPES,
   SEARCH_INDEXED_TYPES,
   SEARCH_MODES,
   SEARCH_SOURCES
@@ -12,6 +14,13 @@ import { executeRemoteCommand } from "../exec.js";
 import { parseScopeList, parseSearchTypeList } from "../parse.js";
 import { type RegistrationContext, addPaginationOptions, paginationParams } from "./shared.js";
 
+interface WorldReferencesOptions {
+  uuid: string;
+  scope?: string[];
+  limit?: number;
+  offset?: number;
+}
+
 export function registerWorld({ program, dependencies }: RegistrationContext) {
   const world = program.command("world").description("Foundry world-wide maintenance commands");
   world.addHelpText(
@@ -20,6 +29,7 @@ export function registerWorld({ program, dependencies }: RegistrationContext) {
       "",
       "Result key (--json): .result.broken[] (+ .result.checkedRefs / .result.checkedFiles / .result.skipped[], total/hasMore over broken) for audit-files.",
       "Result key (--json): .result.results[] (+ .result.total / .result.hasMore / .result.index) for search.",
+      "Result key (--json): .result.references[] (+ .result.target / .result.total / .result.hasMore / .result.scannedDocuments / .result.selfReferences / .result.scopes) for references.",
       "",
       "search: results are SECTIONED — world rows first, then pack rows, each ranked among itself.",
       "`score` is comparable only WITHIN a section (the two corpora are separate indexes), so compare",
@@ -48,6 +58,59 @@ export function registerWorld({ program, dependencies }: RegistrationContext) {
     await executeRemoteCommand({
       commandName: "world.audit-files",
       params: {
+        ...(options.scope ? { scope: options.scope } : {}),
+        ...paginationParams(options)
+      },
+      command: this,
+      dependencies
+    });
+  });
+
+  addPaginationOptions(
+    world
+      .command("references")
+      .description("Report where stored world data references a document, by its UUID")
+      .requiredOption(
+        "--uuid <uuid>",
+        "Target document UUID: Actor.<id>, Scene.<id>.Token.<id>, Compendium.<package>.<pack>.<Type>.<id>, …"
+      )
+      .option(
+        "--scope <list>",
+        `Comma-separated document families to scan: ${REFERENCE_SCOPES.join(",")} (default: ${REFERENCE_DEFAULT_SCOPES.join(",")}; chat only on request)`,
+        parseScopeList
+      )
+      .addHelpText(
+        "after",
+        [
+          "",
+          "Scans the stored data, flags and _stats included, of every world document in scope, its embedded",
+          "documents, and every user. Each row names the owning document by UUID and the dotted field path in it;",
+          "a match inside a token's delta is reported on the token (field delta.…). An embedded target needs its",
+          "full UUID (Scene.<s>.Token.<t>).",
+          "match: uuid      a field holds the target UUID",
+          "       link      an @UUID[...] link or a legacy @Actor[<id>] / @Compendium[<pack>.<id>] link names the target",
+          "       embedded  a field holds the UUID of a document embedded in the target (matchedUuid); deleting the",
+          "                 target breaks it too",
+          "       key       an object key names the target; a dotted key Foundry stored nested is reported at the",
+          "                 target's id (flags.mod.Actor.<id>)",
+          "       relative  a relative link (@UUID[.<id>], @Embed[.<id>]) in journal page text or a roll table or",
+          "                 table result description resolves to the target or a document in it (matchedUuid)",
+          "       id        a foreign-key field of the target's type (token actorId, note entryId, folder, setting user,",
+          "                 chat speaker, …) or a hotbar slot (hotbar.<slot>) holds the target's id; for an embedded",
+          "                 target only where the record also names its parent or sits inside it, and never for a",
+          "                 deeper target such as a token's actor",
+          "setting: world and user settings, read as stored JSON (rows Setting.<id>, name = key, field value[.<path>]).",
+          "Not found: compendium contents, client settings, bare ids outside foreign-key fields (system data, object",
+          "keys, chat whisper lists) or in fields Foundry maintains itself (_stats.lastModifiedBy), name-based links",
+          "(@Actor[Goblin]), relative links in other fields. References inside the target itself are counted in",
+          "selfReferences. target.exists is null for a compendium target, whose pack is not loaded."
+        ].join("\n")
+      )
+  ).action(async function findReferences(options: WorldReferencesOptions) {
+    await executeRemoteCommand({
+      commandName: "world.references",
+      params: {
+        uuid: options.uuid,
         ...(options.scope ? { scope: options.scope } : {}),
         ...paginationParams(options)
       },

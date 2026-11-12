@@ -49,6 +49,7 @@ import {
   type EffectFieldOptions,
   jsonObjectField,
   numberField,
+  optionalJsonObject,
   optionalPatch,
   type RegionBehaviorFieldOptions,
   type SceneFieldOptions,
@@ -131,6 +132,17 @@ function addSceneLevelScopeOption(command: Command): Command {
 
 function addSceneLevelTargetOptions(command: Command, levelDescription = "Level id"): Command {
   return addSceneLevelScopeOption(command).requiredOption("--level-id <levelId>", levelDescription);
+}
+
+interface SceneTokenItemCloneOptions {
+  sceneId: string;
+  tokenId: string;
+  itemId: string;
+  name?: string;
+  img?: string;
+  sort?: number;
+  systemJson?: string;
+  patchJson?: string;
 }
 
 export function registerScene({ program, dependencies }: RegistrationContext) {
@@ -217,14 +229,16 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       .requiredOption("--scene-id <sceneId>", "Source scene id")
       .option("--name <name>", "Name override for the clone"),
     "clone"
-  ).action(async function cloneScene(options: SceneFieldOptions & { sceneId: string }) {
-    await executeRemoteCommand({
-      commandName: "scene.clone",
-      params: createSceneCloneParams(options),
-      command: this,
-      dependencies
+  )
+    .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
+    .action(async function cloneScene(options: SceneFieldOptions & { sceneId: string; patchJson?: string }) {
+      await executeRemoteCommand({
+        commandName: "scene.clone",
+        params: createSceneCloneParams(options),
+        command: this,
+        dependencies
+      });
     });
-  });
   scene
     .command("delete")
     .requiredOption("--scene-id <sceneId>", "Scene id")
@@ -328,6 +342,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       "Comma-separated extra fields to include (allowed: delta — a derived per-token summary of the token-level overrides, null when there are none)",
       parseTokenListIncludeFields
     )
+    .addHelpText(
+      "after",
+      "\nThe tokens of one actor across all scenes: world references --uuid Actor.<actorId> --scope scene"
+    )
     .action(async function listSceneTokens(options: SceneTokenListOptions) {
       await executeRemoteCommand({
         commandName: "scene.token.list",
@@ -387,6 +405,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     "update"
   )
     .option("--patch-json <json>", "Full/extra token patch as a JSON object (merged last)")
+    .addHelpText(
+      "after",
+      '\nA patch with "delta": {"items": []} keeps the token\'s item overrides. scene token restore-delta drops every token override; scene token item update/delete changes single items.'
+    )
     .action(async function updateSceneToken(
       options: TokenFieldOptions & { sceneId: string; tokenId: string; patchJson?: string }
     ) {
@@ -563,33 +585,28 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       .requiredOption("--item-id <itemId>", "Source item id")
       .option("--name <name>", "Name override for the clone"),
     "clone"
-  ).action(async function cloneSceneTokenItem(options: {
-    sceneId: string;
-    tokenId: string;
-    itemId: string;
-    name?: string;
-    img?: string;
-    sort?: number;
-    systemJson?: string;
-  }) {
-    const patch = {
-      ...stringField("name", options.name),
-      ...stringField("img", options.img),
-      ...numberField("sort", options.sort),
-      ...jsonObjectField("system", options.systemJson, "--system-json")
-    };
-    await executeRemoteCommand({
-      commandName: "scene.token.item.clone",
-      params: {
-        sceneId: options.sceneId,
-        tokenId: options.tokenId,
-        itemId: options.itemId,
-        ...optionalPatch(patch)
-      },
-      command: this,
-      dependencies
+  )
+    .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
+    .action(async function cloneSceneTokenItem(options: SceneTokenItemCloneOptions) {
+      const patch = {
+        ...stringField("name", options.name),
+        ...stringField("img", options.img),
+        ...numberField("sort", options.sort),
+        ...jsonObjectField("system", options.systemJson, "--system-json"),
+        ...(optionalJsonObject(options.patchJson, "--patch-json") ?? {})
+      };
+      await executeRemoteCommand({
+        commandName: "scene.token.item.clone",
+        params: {
+          sceneId: options.sceneId,
+          tokenId: options.tokenId,
+          itemId: options.itemId,
+          ...optionalPatch(patch)
+        },
+        command: this,
+        dependencies
+      });
     });
-  });
   sceneTokenItem
     .command("delete")
     .requiredOption("--scene-id <sceneId>", "Scene id")

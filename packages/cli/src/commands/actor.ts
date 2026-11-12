@@ -35,6 +35,16 @@ import {
 } from "./shared.js";
 import { write } from "../deps.js";
 
+interface ActorItemCloneOptions {
+  actorId: string;
+  itemId: string;
+  name?: string;
+  img?: string;
+  sort?: number;
+  systemJson?: string;
+  patchJson?: string;
+}
+
 export function registerActor({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerBatchWriteCommands } = createSharedRegistrars(dependencies);
   const actor = program.command("actor").description("Foundry actor commands");
@@ -144,14 +154,18 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
       .requiredOption("--actor-id <actorId>", "Source actor id")
       .option("--name <name>", "Name override for the clone"),
     "clone"
-  ).action(async function cloneActorCommand(options: ActorFieldOptions & { actorId: string }) {
-    await executeRemoteCommand({
-      commandName: "actor.clone",
-      params: createActorCloneParams(options),
-      command: this,
-      dependencies
+  )
+    .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
+    .action(async function cloneActorCommand(
+      options: ActorFieldOptions & { actorId: string; patchJson?: string }
+    ) {
+      await executeRemoteCommand({
+        commandName: "actor.clone",
+        params: createActorCloneParams(options),
+        command: this,
+        dependencies
+      });
     });
-  });
   actor
     .command("delete")
     .requiredOption("--actor-id <actorId>", "Actor id")
@@ -194,6 +208,13 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     });
 
   const actorItem = actor.command("item").description("Foundry actor embedded item commands");
+  registerBatchWriteCommands(actorItem, {
+    prefix: "actor.item",
+    noun: "item",
+    scope: "actor",
+    dataHelp:
+      "Item data as a JSON ARRAY of objects; each element takes what `actor item create --data-json` takes plus name and type"
+  });
   addNameFilterOption(
     addPaginationOptions(actorItem.command("list").requiredOption("--actor-id <actorId>", "Actor id")).option(
       "--include <fields>",
@@ -296,21 +317,16 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
       .requiredOption("--item-id <itemId>", "Source item id")
       .option("--name <name>", "Name override for the clone"),
     "clone"
-  ).action(async function cloneActorItem(options: {
-    actorId: string;
-    itemId: string;
-    name?: string;
-    img?: string;
-    sort?: number;
-    systemJson?: string;
-  }) {
-    await executeRemoteCommand({
-      commandName: "actor.item.clone",
-      params: createActorItemCloneParams(options),
-      command: this,
-      dependencies
+  )
+    .option("--patch-json <json>", "Override fields for the clone as a JSON object (merged last)")
+    .action(async function cloneActorItem(options: ActorItemCloneOptions) {
+      await executeRemoteCommand({
+        commandName: "actor.item.clone",
+        params: createActorItemCloneParams(options),
+        command: this,
+        dependencies
+      });
     });
-  });
   addReservedIncludeOption(
     addIdempotencyKeyOption(actorItem.command("import-from-compendium"))
       .requiredOption("--actor-id <actorId>", "Actor id")

@@ -734,14 +734,14 @@ describe("settings read surface", () => {
     });
   });
 
-  it("keeps the three codes DISCRIMINATING: a walk failure is never SETTING_READ_FAILED", async () => {
-    setupGame({ registry: createRegistry([CORE_TOKEN_DRAG]), get: () => ({ token: 42n }) });
-    const notSerializable = await router.route(
+  it("returns the readable part of a value and lists what it left out, never SETTING_READ_FAILED", async () => {
+    setupGame({ registry: createRegistry([CORE_TOKEN_DRAG]), get: () => ({ token: 42n, keep: 1 }) });
+    const partial = await router.route(
       createRequest("setting.get", { namespace: "core", key: "tokenDragPreview" })
     );
-    expect(notSerializable.ok).toBe(false);
-    expect(notSerializable.error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
-    expect(notSerializable.error.details).toMatchObject({ reason: "bigint", path: "$.token" });
+    expect(partial.ok).toBe(true);
+    expect(partial.result.setting.value).toEqual({ token: { $unserializable: "bigint" }, keep: 1 });
+    expect(partial.result.setting.valueOmissions).toEqual([{ path: "$.token", reason: "bigint" }]);
 
     setupGame({
       registry: createRegistry([CORE_TOKEN_DRAG]),
@@ -755,7 +755,7 @@ describe("settings read surface", () => {
     expect(tooLarge.error.details).toMatchObject({ limit: "value-bytes" });
   });
 
-  it("a DataModel whose SOURCE read throws is SETTING_VALUE_NOT_SERIALIZABLE, never INTERNAL_ERROR", async () => {
+  it("marks a DataModel whose SOURCE read throws as data-model-read, never INTERNAL_ERROR", async () => {
     const previousFoundry = globalThis.foundry;
     try {
       class DataModel {
@@ -771,14 +771,46 @@ describe("settings read surface", () => {
       const response = await router.route(
         createRequest("setting.get", { namespace: "core", key: "tokenDragPreview" })
       );
-      expect(response.ok).toBe(false);
-      expect(response.error.code).toBe(ERROR_CODES.SETTING_VALUE_NOT_SERIALIZABLE);
-      expect(response.error.details).toMatchObject({ reason: "data-model-read", path: "$" });
+      expect(response.ok).toBe(true);
+      expect(response.result.setting.value).toEqual({ $unserializable: "data-model-read" });
+      expect(response.result.setting.valueOmissions).toEqual([{ path: "$", reason: "data-model-read" }]);
 
-      expect(JSON.stringify(response.error)).not.toContain("Maximum depth exceeded");
+      expect(JSON.stringify(response.result)).not.toContain("Maximum depth exceeded");
     } finally {
       globalThis.foundry = previousFoundry;
     }
+  });
+
+  it("never invokes an accessor while returning the rest of the value", async () => {
+    const getter = vi.fn(() => "computed");
+    const value = { plain: "x", nested: { ok: true } };
+    Object.defineProperty(value, "useDamageDetail", { get: getter, enumerable: true });
+    const cycle = { name: "loop" };
+    cycle.self = cycle;
+    setupGame({ registry: createRegistry([CORE_TOKEN_DRAG]), get: () => ({ config: value, cycle }) });
+
+    const response = await router.route(
+      createRequest("setting.get", { namespace: "core", key: "tokenDragPreview" })
+    );
+
+    expect(response.ok, JSON.stringify(response.error)).toBe(true);
+    expect(getter).not.toHaveBeenCalled();
+    expect(response.result.setting.value).toEqual({
+      config: { plain: "x", nested: { ok: true }, useDamageDetail: { $unserializable: "accessor-property" } },
+      cycle: { name: "loop", self: { $unserializable: "circular-reference" } }
+    });
+    expect(response.result.setting.valueOmissions).toEqual([
+      { path: "$.config.useDamageDetail", reason: "accessor-property" },
+      { path: "$.cycle.self", reason: "circular-reference" }
+    ]);
+  });
+
+  it("omits the omission list when the whole value serializes", async () => {
+    setupGame({ registry: createRegistry([CORE_TOKEN_DRAG]), get: () => ({ a: 1 }) });
+    const response = await router.route(
+      createRequest("setting.get", { namespace: "core", key: "tokenDragPreview" })
+    );
+    expect(response.result.setting).not.toHaveProperty("valueOmissions");
   });
 
   it("guard order: a missing registration map is BRIDGE_NOT_READY, before any key resolution", async () => {
@@ -922,6 +954,22 @@ describe("settings write surface", () => {
     expect(store.get("my-module.mode")).toBe("deny");
   });
 
+  it("writes a setting whose previous value holds an accessor and lists that omission", async () => {
+    const previous = { level: 1 };
+    Object.defineProperty(previous, "detail", { get: () => "computed", enumerable: true });
+    setupWorld({ values: [["my-module.mode", previous]] });
+
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "my-module", key: "mode", value: "deny" })
+    );
+
+    expect(response.ok, JSON.stringify(response.error)).toBe(true);
+    expect(response.result.previous).toEqual({ level: 1, detail: { $unserializable: "accessor-property" } });
+    expect(response.result.previousOmissions).toEqual([{ path: "$.detail", reason: "accessor-property" }]);
+    expect(response.result).not.toHaveProperty("valueOmissions");
+    expect(response.result.value).toBe("deny");
+  });
+
   it("previews a write without calling Foundry", async () => {
     setupWorld({ values: [["my-module.mode", "allow"]] });
 
@@ -1060,6 +1108,27 @@ describe("settings write surface", () => {
       paths: [{ path: "value", requested: "deny", stored: "audit" }],
       changedFields: ["value"],
       partial: true
+    });
+  });
+
+  it("names the omitted parts of a partial previous value in a mismatch error", async () => {
+    const previous = { a: 1 };
+    Object.defineProperty(previous, "lazy", { get: () => 2, enumerable: true });
+    setupWorld({
+      values: [["my-module.mode", previous]],
+      set: vi.fn(async () => {
+        store.set("my-module.mode", "audit");
+      })
+    });
+
+    const response = await router.route(
+      createRequest("setting.set", { namespace: "my-module", key: "mode", value: "deny" })
+    );
+
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.details).toMatchObject({
+      previous: { a: 1, lazy: { $unserializable: "accessor-property" } },
+      previousOmissions: [{ path: "$.lazy", reason: "accessor-property" }]
     });
   });
 
