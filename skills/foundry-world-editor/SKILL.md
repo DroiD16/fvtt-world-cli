@@ -81,6 +81,8 @@ level ids in a preview are provisional.
 Deleting a level also deletes its tokens and every placeable only on that level, and the dry run
 does not list them: read the scene's placeables (token `level`, others' `levels`) and tell the user
 what the delete removes before running it.
+Token `x`/`y` are its top-left corner. To put a token's center on a point, pass `--center` to
+`scene token create`/`create-many`, plus `--snap` to align it to the grid.
 A token created from an actor takes `actorLink` from the actor's prototype token. Pass `--unlinked`
 when the token needs its own items, effects, or data, and check `actorLink` in the result: token
 item and effect writes on a linked token change the world actor.

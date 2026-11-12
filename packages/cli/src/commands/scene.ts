@@ -56,7 +56,9 @@ import {
   type SoundFieldOptions,
   stringField,
   type TileFieldOptions,
-  type TokenFieldOptions
+  tokenPlacementParams,
+  type TokenFieldOptions,
+  type TokenPlacementOptions
 } from "../params.js";
 import { executeRemoteCommand } from "../exec.js";
 import {
@@ -76,7 +78,8 @@ import {
   addSceneFieldOptions,
   addSceneSoundFieldOptions,
   addTileFieldOptions,
-  addTokenFieldOptions
+  addTokenFieldOptions,
+  addTokenPlacementOptions
 } from "./field-options.js";
 import {
   type RegistrationContext,
@@ -381,15 +384,17 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
         dependencies
       });
     });
-  addTokenFieldOptions(
-    addIdempotencyKeyOption(sceneToken.command("create"))
-      .requiredOption("--scene-id <sceneId>", "Scene id")
-      .option("--actor-id <actorId>", "Create the token from this actor's prototype token"),
-    "create"
+  addTokenPlacementOptions(
+    addTokenFieldOptions(
+      addIdempotencyKeyOption(sceneToken.command("create"))
+        .requiredOption("--scene-id <sceneId>", "Scene id")
+        .option("--actor-id <actorId>", "Create the token from this actor's prototype token"),
+      "create"
+    )
   )
     .option("--data-json <json>", "Full/extra token data as a JSON object (merged last)")
     .action(async function createSceneToken(
-      options: TokenFieldOptions & { sceneId: string; dataJson?: string }
+      options: TokenFieldOptions & TokenPlacementOptions & { sceneId: string; dataJson?: string }
     ) {
       await executeRemoteCommand({
         commandName: "scene.token.create",
@@ -470,7 +475,8 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     prefix: "scene.token",
     noun: "token",
     dataHelp:
-      'Token data as a JSON ARRAY of objects (each may carry actorId, e.g. [{"actorId":"…","x":0,"y":0}])'
+      'Token data as a JSON ARRAY of objects (each may carry actorId, e.g. [{"actorId":"…","x":0,"y":0}])',
+    createExtras: { addOptions: addTokenPlacementOptions, params: tokenPlacementParams }
   });
 
   const sceneTokenItem = sceneToken

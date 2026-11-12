@@ -326,6 +326,13 @@ Its input ids and line indexes belong to CLI output, not the wire contract.
 Bulk writes accept bounded arrays and prevalidate their elements. Persistence is not transactional;
 results report `complete` and per-element `outcomes`, all of which the caller must inspect.
 
+`scene.token.create` and `scene.token.create-many` accept `placement: { center?, snap? }`. Without
+it, `x` and `y` are the token's top-left corner, as Foundry stores them. `center` reads them as the
+token's center and subtracts the offset Foundry's `TokenDocument#getCenterPoint` gives for the
+token's size and shape. `snap` then moves the position to `TokenDocument#getSnappedPosition` on the
+target scene's grid. Both round `x` and `y` to whole pixels, as Foundry does for a dropped token;
+elevation and level stay as sent.
+
 `scene.token.create-many` validates every element first and writes nothing if one fails. It then
 prepares and creates the tokens one at a time, in order, so each token is prepared against a scene
 that already holds the tokens before it. That is how Foundry's appended numbers and default `sort`

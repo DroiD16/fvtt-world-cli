@@ -202,6 +202,15 @@ export function addTokenFieldOptions(command: Command, verb: FieldVerb): Command
   return addFieldOptions(command, verb, ordered);
 }
 
+export function addTokenPlacementOptions(command: Command): Command {
+  return command
+    .option(
+      "--center",
+      "Read x and y as the token's center instead of its top-left corner, as Foundry does for a dropped token"
+    )
+    .option("--snap", "Snap the position to the scene grid, as Foundry does for a dropped token");
+}
+
 const TILE_FIELDS: readonly FieldSpec[] = [
   { flag: "--x <x>", help: "Tile x position", parser: parseNumber },
   { flag: "--y <y>", help: "Tile y position", parser: parseNumber },

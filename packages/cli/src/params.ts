@@ -1407,13 +1407,26 @@ function buildTokenFields(options: TokenFieldOptions, json: Record<string, unkno
   };
 }
 
+export interface TokenPlacementOptions {
+  center?: boolean;
+  snap?: boolean;
+}
+
+export function tokenPlacementParams(options: TokenPlacementOptions) {
+  if (!options.center && !options.snap) return {};
+  return {
+    placement: { ...(options.center ? { center: true } : {}), ...(options.snap ? { snap: true } : {}) }
+  };
+}
+
 export function createSceneTokenCreateParams(
-  options: TokenFieldOptions & { sceneId: string; dataJson?: string }
+  options: TokenFieldOptions & TokenPlacementOptions & { sceneId: string; dataJson?: string }
 ) {
   const json = optionalJsonObject(options.dataJson, "--data-json");
   return {
     sceneId: options.sceneId,
-    data: buildTokenFields(options, json)
+    data: buildTokenFields(options, json),
+    ...tokenPlacementParams(options)
   };
 }
 

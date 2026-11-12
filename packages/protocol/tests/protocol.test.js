@@ -160,7 +160,10 @@ const BATCH_SCOPE_KEYS = Object.freeze({
   journal: []
 });
 
-const BATCH_EXTRA_PARAMS = Object.freeze({ "actor.delete-many": ["force"] });
+const BATCH_EXTRA_PARAMS = Object.freeze({
+  "actor.delete-many": ["force"],
+  "scene.token.create-many": ["placement"]
+});
 
 const validate = (command, params) =>
   validateCommandRequest({
@@ -6755,6 +6758,23 @@ describe("protocol contract", () => {
           "$.params.include[0] must be one of flags"
         );
         expectRejected(command, { ...base, include: ["items"] }, "$.params.include[0] must be one of flags");
+      }
+    });
+
+    it("token creates accept a closed placement object with center and snap", () => {
+      /** @type {Array<[string, Record<string, unknown>]>} */
+      const cases = [
+        ["scene.token.create", { sceneId: "scene-1", data: { x: 0 } }],
+        ["scene.token.create-many", { sceneId: "scene-1", data: [{ x: 0 }] }]
+      ];
+      for (const [command, base] of cases) {
+        expectValid(command, { ...base, placement: { center: true, snap: true } });
+        expectValid(command, { ...base, placement: {} });
+        expectRejected(
+          command,
+          { ...base, placement: { grid: true } },
+          "$.params.placement.grid is not allowed"
+        );
       }
     });
 

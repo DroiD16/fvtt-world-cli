@@ -1769,6 +1769,16 @@ describe("fvtt-world-cli commands", () => {
       { sceneId: "scene-1", data: { actorId: "actor-1", actorLink: true } }
     ],
     [
+      ["scene", "token", "create", "--scene-id", "scene-1", "--x", "50", "--center", "--snap"],
+      "scene.token.create",
+      { sceneId: "scene-1", data: { x: 50 }, placement: { center: true, snap: true } }
+    ],
+    [
+      ["scene", "token", "create-many", "--scene-id", "scene-1", "--snap", "--data-json", '[{"x":10}]'],
+      "scene.token.create-many",
+      { sceneId: "scene-1", data: [{ x: 10 }], placement: { snap: true } }
+    ],
+    [
       [
         "scene",
         "token",

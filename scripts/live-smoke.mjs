@@ -3752,6 +3752,13 @@ const TOKEN_SORT_SCRIPT = (sceneId, tokenIds) => `
   return { viewed: canvas?.scene?.id ?? null, sorts: ${JSON.stringify(tokenIds)}.map((id) => scene.tokens.get(id)?.sort ?? null) };
 `;
 
+const TOKEN_PLACEMENT_SCRIPT = (sceneId, tokenId) => `
+  const token = game.scenes.get(${JSON.stringify(sceneId)}).tokens.get(${JSON.stringify(tokenId)});
+  const center = token.getCenterPoint();
+  const snapped = token.getSnappedPosition();
+  return { x: token.x, y: token.y, center: { x: center.x, y: center.y }, snapped: { x: snapped.x, y: snapped.y } };
+`;
+
 async function runTokenPlacementCoverage(summary, { actorId, targetSceneId, stamp, isV14, gmControlUrl }) {
   const actorType =
     runFoundryctl(["actor", "get", "--actor-id", actorId]).response?.result?.actor?.type ?? null;
@@ -3796,6 +3803,53 @@ async function runTokenPlacementCoverage(summary, { actorId, targetSceneId, stam
         {
           observed: linked?.actorLink ?? null
         }
+      );
+    }
+
+    for (const [flags, label] of [
+      [["--center"], "center"],
+      [["--snap"], "snap"]
+    ]) {
+      const placed = expectOk(
+        summary,
+        `scene.token.create(--${label})`,
+        runFoundryctl([
+          "scene",
+          "token",
+          "create",
+          "--scene-id",
+          targetSceneId,
+          "--name",
+          `Smoke Placement ${label} ${stamp}`,
+          "--x",
+          "1234",
+          "--y",
+          "1567",
+          "--data-json",
+          JSON.stringify({ width: 2, height: 1 }),
+          ...flags
+        ])
+      )?.token;
+      if (!placed?.id) continue;
+      tokens.push(placed.id);
+      if (!gmControlUrl) continue;
+      const observed = await evaluateInGmPage(gmControlUrl, TOKEN_PLACEMENT_SCRIPT(targetSceneId, placed.id));
+      const passed =
+        label === "center"
+          ? Math.abs(observed.center.x - 1234) <= 1 && Math.abs(observed.center.y - 1567) <= 1
+          : observed.snapped.x === observed.x && observed.snapped.y === observed.y;
+      markAndPush(
+        summary,
+        label === "center"
+          ? "scene.token.create(--center: Foundry's center point of the token is the given x, y)"
+          : "scene.token.create(--snap: the stored position is already on Foundry's grid snap)",
+        passed,
+        { observed }
+      );
+    }
+    if (!gmControlUrl) {
+      summary.notes.push(
+        "token placement: no --gm-control, so --center and --snap were created but not measured"
       );
     }
 

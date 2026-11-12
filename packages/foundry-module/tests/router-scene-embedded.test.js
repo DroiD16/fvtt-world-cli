@@ -106,6 +106,54 @@ describe("command router", () => {
     expect(response.result.token.actorLink).toBe(true);
   });
 
+  it("places a token by its center and on the grid only when placement asks for it", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const scene = globalThis.game.scenes.get("scene-1");
+    class GridToken {
+      constructor(data) {
+        this._source = { x: 0, y: 0, elevation: 0, width: 1, height: 1, shape: 0, ...data };
+      }
+      getCenterPoint({ x, y, width, height }) {
+        return { x: x + (width * 100) / 2, y: y + (height * 100) / 2, elevation: 0 };
+      }
+      getSnappedPosition({ x, y }) {
+        return { x: Math.round(x / 100) * 100, y: Math.round(y / 100) * 100, elevation: 0 };
+      }
+      toObject() {
+        return { ...this._source, _id: null };
+      }
+    }
+    scene.tokens.documentClass = GridToken;
+    const place = async (placement) => {
+      const response = await router.route(
+        createRequest("scene.token.create", {
+          sceneId: "scene-1",
+          data: { name: "Ogre", x: 250, y: 260, width: 2, height: 1, elevation: 7 },
+          ...(placement ? { placement } : {}),
+          dryRun: true
+        })
+      );
+      expect(response.ok).toBe(true);
+      const { x, y, elevation } = response.result.token;
+      return { x, y, elevation };
+    };
+
+    expect(await place(undefined)).toEqual({ x: 250, y: 260, elevation: 7 });
+    expect(await place({ center: true })).toEqual({ x: 150, y: 210, elevation: 7 });
+    expect(await place({ snap: true })).toEqual({ x: 300, y: 300, elevation: 7 });
+    expect(await place({ center: true, snap: true })).toEqual({ x: 200, y: 200, elevation: 7 });
+
+    const batch = await router.route(
+      createRequest("scene.token.create-many", {
+        sceneId: "scene-1",
+        data: [{ name: "Ogre", x: 250, y: 260, width: 2, height: 1 }],
+        placement: { center: true }
+      })
+    );
+    expect(batch.ok).toBe(true);
+    expect(scene.tokens.get(batch.result.outcomes[0].id)).toMatchObject({ x: 150, y: 210 });
+  });
+
   it("creates a raw token without an actor", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 

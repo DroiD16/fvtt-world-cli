@@ -3,8 +3,9 @@ import { getSceneById } from "../lib/game-collections.js";
 import {
   createSceneEmbedded,
   getSceneEmbeddedById,
+  placeTokenData,
   prepareSceneEmbeddedCreateData,
-  previewSceneEmbeddedCreate,
+  previewPreparedSceneEmbeddedCreate,
   resolveSceneTokenCreateData
 } from "../lib/scene-embedded.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
@@ -23,6 +24,16 @@ import { createScenePlaceableHandlers } from "./scene-placeables.js";
 
 const TOKEN = "Token";
 
+/**
+ * @param {Record<string, any>} data
+ * @param {any} scene
+ * @param {{ center?: boolean, snap?: boolean } | undefined} placement
+ */
+async function prepareTokenCreate(data, scene, placement) {
+  const prepared = prepareSceneEmbeddedCreateData(TOKEN, await resolveSceneTokenCreateData(data, scene));
+  return placeTokenData(scene, prepared, placement);
+}
+
 export function createSceneTokenHandlers() {
   const placeables = createScenePlaceableHandlers({
     type: TOKEN,
@@ -36,8 +47,7 @@ export function createSceneTokenHandlers() {
     listFilter: (tokens, params) => filterByName(tokens, params.name),
 
     sequentialCreate: true,
-    prepareCreate: async (data, scene) =>
-      prepareSceneEmbeddedCreateData(TOKEN, await resolveSceneTokenCreateData(data, scene)),
+    prepareCreate: (data, scene, params) => prepareTokenCreate(data, scene, params.placement),
 
     summarize: (document) => ({ name: tokenName(document) }),
     omitVerbs: ["get", "create"]
@@ -123,16 +133,13 @@ export function createSceneTokenHandlers() {
 
     async "scene.token.create"(params) {
       const scene = getSceneById(params.sceneId);
-
-      const tokenData = await resolveSceneTokenCreateData(params.data, scene);
-
-      const token = await createSceneEmbedded(scene, TOKEN, tokenData, { dryRun: isDryRun(params) });
-      const result = { sceneId: params.sceneId, token: serializeToken(token) };
+      const tokenData = await prepareTokenCreate(params.data, scene, params.placement);
       if (isDryRun(params)) {
-        const preview = previewSceneEmbeddedCreate(scene, TOKEN, tokenData);
-        return dryRunResponse({ ...result, token: serializeToken(preview) });
+        const preview = previewPreparedSceneEmbeddedCreate(scene, TOKEN, tokenData);
+        return dryRunResponse({ sceneId: params.sceneId, token: serializeToken(preview) });
       }
-      return result;
+      const token = await createSceneEmbedded(scene, TOKEN, tokenData);
+      return { sceneId: params.sceneId, token: serializeToken(token) };
     }
   };
 }

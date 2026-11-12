@@ -377,6 +377,27 @@ export async function resolveSceneTokenCreateData(data, scene) {
   return actorId ? buildTokenDataFromActor(actorId, overrides, scene) : overrides;
 }
 
+/**
+ * @param {any} scene
+ * @param {Record<string, any>} data
+ * @param {{ center?: boolean, snap?: boolean } | undefined} placement
+ */
+export function placeTokenData(scene, data, placement) {
+  if (!placement?.center && !placement?.snap) return data;
+  const token = previewPreparedSceneEmbeddedCreate(scene, "Token", data);
+  const { x, y, elevation, width, height, shape } = token._source;
+  let position = { x, y, elevation, width, height, shape };
+  if (placement.center) {
+    const pivot = token.getCenterPoint({ x: 0, y: 0, elevation: 0, width, height, shape });
+    position = { ...position, x: x - pivot.x, y: y - pivot.y };
+  }
+  if (placement.snap) {
+    const snapped = token.getSnappedPosition(position);
+    position = { ...position, x: snapped.x, y: snapped.y };
+  }
+  return { ...data, x: Math.round(position.x), y: Math.round(position.y) };
+}
+
 /** @param {any} scene */
 function nextTokenSort(scene) {
   let max = -Infinity;

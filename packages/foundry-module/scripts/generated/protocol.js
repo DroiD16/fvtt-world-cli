@@ -3000,6 +3000,14 @@ var tokenCreateSchema = {
   additionalProperties: true,
   minProperties: 1
 };
+var tokenPlacementProperty = {
+  placement: {
+    type: "object",
+    required: [],
+    properties: { center: { type: "boolean" }, snap: { type: "boolean" } },
+    additionalProperties: false
+  }
+};
 var tokenPatchSchema = {
   type: "object",
   required: [],
@@ -3375,6 +3383,7 @@ var sceneEmbeddedCommands = {
       properties: {
         sceneId: { type: "string", minLength: 1 },
         data: tokenCreateSchema,
+        ...tokenPlacementProperty,
         ...dryRunProperty,
         ...idempotencyKeyProperty
       },
@@ -3440,7 +3449,8 @@ var sceneEmbeddedCommands = {
   ...batchWriteCommands("scene.token", {
     scopeProperties: sceneScopeProperties,
     createSchema: tokenCreateSchema,
-    patchSchema: tokenPatchSchema
+    patchSchema: tokenPatchSchema,
+    extraProperties: { "create-many": tokenPlacementProperty }
   }),
   "scene.token.item.list": cmd({
     type: "object",

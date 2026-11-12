@@ -388,6 +388,8 @@ command scene token create
   opt --disposition <disposition> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token disposition
   opt --linked | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Link the token to the world actor (default: as the actor's prototype token says)
   opt --unlinked | parser=- | conflicts=["linked"] | choices=- | required=false | hidden=false | default=- | help=Create the token unlinked, with a per-token actor delta (default: as the actor's prototype token says)
+  opt --center | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Read x and y as the token's center instead of its top-left corner, as Foundry does for a dropped token
+  opt --snap | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Snap the position to the scene grid, as Foundry does for a dropped token
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Full/extra token data as a JSON object (merged last)
 
 command scene token update
@@ -440,6 +442,8 @@ command scene token create-many
   summary=Create many tokens in ONE call (per-element outcomes; nothing is written if any element is invalid)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --center | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Read x and y as the token's center instead of its top-left corner, as Foundry does for a dropped token
+  opt --snap | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Snap the position to the scene grid, as Foundry does for a dropped token
   opt --data-json <json> | parser=<anonymous> | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Token data as a JSON ARRAY of objects (each may carry actorId, e.g. [{"actorId":"…","x":0,"y":0}])
 
 command scene token update-many

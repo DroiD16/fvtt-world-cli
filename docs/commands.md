@@ -209,6 +209,10 @@ cached state survives. Reuse it only for the same request; a corrected or remain
 new operation and needs a fresh key. Follow the [delivery rules](protocol.md#delivery-states-and-retries)
 when a connection fails, since some failures also lose the cached state.
 
+Token `x` and `y` are the top-left corner. `scene token create` and `create-many` take `--center`
+to read them as the token's center and `--snap` to align the token to the scene grid, the two
+adjustments Foundry makes when a token is dropped on the canvas.
+
 A token created from an actor is linked or unlinked as the actor's prototype token says, unless
 `--linked` or `--unlinked` (`actorLink` in the data) is given. Item and effect writes on a linked
 token change the world actor.
