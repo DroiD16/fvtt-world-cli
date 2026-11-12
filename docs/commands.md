@@ -277,8 +277,7 @@ For scripts and JSON output, pass `--yes` to skip the listing and prompt.
 ## Local configuration
 
 `config get` shows the config path and non-secret settings. `config set-upload-limit <size>`
-changes the raw byte limit for uploads and file reads, and the CLI's own receive limit; restart the
-daemon for it to take effect.
+changes the raw byte limit for uploads and file reads; it takes effect after a daemon restart.
 
 If set, `XDG_CONFIG_HOME` places configuration under `$XDG_CONFIG_HOME/fvtt-world-cli`. Otherwise:
 
