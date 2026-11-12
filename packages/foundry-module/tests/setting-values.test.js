@@ -1103,6 +1103,31 @@ describe("serializeValueWithOmissions", () => {
     ).toBe(true);
   });
 
+  it("counts each accessor it replaces against the node and depth limits", () => {
+    const wide = {};
+    for (let index = 0; index < 10; index += 1) {
+      Object.defineProperty(wide, `a${index}`, { get: () => index, enumerable: true });
+    }
+    expect(() => serializeValueWithOmissions(wide, { maxNodes: 5 })).toThrow(
+      expect.objectContaining({
+        code: ERROR_CODES.PAYLOAD_TOO_LARGE,
+        details: expect.objectContaining({ limit: "value-nodes" })
+      })
+    );
+
+    const deep = { level: {} };
+    Object.defineProperty(deep.level, "lazy", { get: () => 1, enumerable: true });
+    expect(() => serializeValueWithOmissions(deep, { maxDepth: 1 })).toThrow(
+      expect.objectContaining({
+        code: ERROR_CODES.PAYLOAD_TOO_LARGE,
+        details: expect.objectContaining({ limit: "value-depth" })
+      })
+    );
+    expect(serializeValueWithOmissions(deep, { maxDepth: 2 }).omissions).toEqual([
+      { path: "$.level.lazy", reason: "accessor-property" }
+    ]);
+  });
+
   it("still refuses a value over the size limits", () => {
     expect(() => serializeValueWithOmissions({ blob: "z".repeat(64) }, { maxBytes: 16 })).toThrow(
       expect.objectContaining({ code: ERROR_CODES.PAYLOAD_TOO_LARGE })

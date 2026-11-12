@@ -268,6 +268,21 @@ function serializeValue(value, limits, omit) {
   };
 
   /**
+   * @param {string} path
+   * @param {number} depth
+   */
+  const omitAccessor = (path, depth) => {
+    nodes += 1;
+    if (nodes > maxNodes) {
+      throw tooLarge("value-nodes", path, maxNodes);
+    }
+    if (depth > maxDepth) {
+      throw tooLarge("value-depth", path, maxDepth);
+    }
+    return unserializable("accessor-property", path);
+  };
+
+  /**
    * @param {number} amount
    * @param {string} path
    */
@@ -469,7 +484,7 @@ function serializeValue(value, limits, omit) {
           const descriptor = Object.getOwnPropertyDescriptor(node, index);
           const elementPath = `${path}[${index}]`;
           if (descriptor && (typeof descriptor.get === "function" || typeof descriptor.set === "function")) {
-            items.push(unserializable("accessor-property", elementPath));
+            items.push(omitAccessor(elementPath, depth + 1));
             continue;
           }
 
@@ -507,7 +522,7 @@ function serializeValue(value, limits, omit) {
         const isAccessor = typeof descriptor.get === "function" || typeof descriptor.set === "function";
         Object.defineProperty(result, key, {
           value: isAccessor
-            ? unserializable("accessor-property", childPath)
+            ? omitAccessor(childPath, depth + 1)
             : walk(descriptor.value, childPath, depth + 1),
           writable: true,
           enumerable: true,
