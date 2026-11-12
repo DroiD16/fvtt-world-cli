@@ -141,7 +141,7 @@ export function getColorClass() {
  * @param {number} numeric
  * @returns {string}
  */
-export function colorToCss(numeric) {
+function colorToCss(numeric) {
   if (!Number.isInteger(numeric) || numeric < 0 || numeric > 0xffffff) {
     return "";
   }
@@ -154,7 +154,7 @@ export function colorToCss(numeric) {
  * @param {object} node
  * @returns {{ ok: boolean, value: any }}
  */
-export function unbox(intrinsic, node) {
+function unbox(intrinsic, node) {
   try {
     return { ok: true, value: intrinsic.call(node) };
   } catch {
@@ -180,7 +180,43 @@ function dataModelToObject(value) {
   }
 }
 
-const UNSERIALIZABLE_MARKER_KEY = "$unserializable";
+export const UNSERIALIZABLE_MARKER_KEY = "$unserializable";
+
+/**
+ * @param {object} node
+ * @param {Function | null} ColorClass
+ * @returns {{ ok: boolean, value?: unknown }}
+ */
+export function readScalarObject(node, ColorClass) {
+  if (node instanceof Date) {
+    const time = unbox(Date.prototype.getTime, node);
+    if (time.ok) {
+      return { ok: true, value: Number.isFinite(time.value) ? Date.prototype.toISOString.call(node) : null };
+    }
+  }
+
+  if (ColorClass !== null && node instanceof ColorClass) {
+    const numeric = unbox(Number.prototype.valueOf, node);
+    if (numeric.ok) {
+      return { ok: true, value: colorToCss(numeric.value) };
+    }
+  }
+
+  if (node instanceof Number || node instanceof String || node instanceof Boolean) {
+    const intrinsic =
+      node instanceof Number
+        ? Number.prototype.valueOf
+        : node instanceof String
+          ? String.prototype.valueOf
+          : Boolean.prototype.valueOf;
+    const unboxed = unbox(intrinsic, node);
+    if (unboxed.ok) {
+      return { ok: true, value: unboxed.value };
+    }
+  }
+
+  return { ok: false };
+}
 
 /**
  * @param {unknown} value
@@ -300,40 +336,9 @@ export function serializeValueWithOmissions(value, limits = {}) {
 
     ancestors.add(/** @type {object} */ (node));
     try {
-      if (node instanceof Date) {
-        const time = unbox(Date.prototype.getTime, /** @type {object} */ (node));
-        if (time.ok) {
-          if (!Number.isFinite(time.value)) {
-            chargeBytes(4, path);
-            return null;
-          }
-
-          const iso = Date.prototype.toISOString.call(node);
-          chargeBytes(jsonStringByteLength(iso), path);
-          return iso;
-        }
-      }
-
-      if (ColorClass !== null && node instanceof ColorClass) {
-        const numeric = unbox(Number.prototype.valueOf, /** @type {object} */ (node));
-        if (numeric.ok) {
-          const css = colorToCss(numeric.value);
-          chargeBytes(jsonStringByteLength(css), path);
-          return css;
-        }
-      }
-
-      if (node instanceof Number || node instanceof String || node instanceof Boolean) {
-        const intrinsic =
-          node instanceof Number
-            ? Number.prototype.valueOf
-            : node instanceof String
-              ? String.prototype.valueOf
-              : Boolean.prototype.valueOf;
-        const unboxed = unbox(intrinsic, /** @type {object} */ (node));
-        if (unboxed.ok) {
-          return walk(unboxed.value, path, depth, wrapperHops + 1);
-        }
+      const scalar = readScalarObject(/** @type {object} */ (node), ColorClass);
+      if (scalar.ok) {
+        return walk(scalar.value, path, depth, wrapperHops + 1);
       }
 
       if (node instanceof Map) {

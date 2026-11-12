@@ -243,9 +243,17 @@ export async function createSceneEmbedded(scene, type, data, { dryRun = false } 
   }
 
   const prepared = prepareSceneEmbeddedCreateData(type, data);
+  return dryRun ? prepared : createPreparedSceneEmbedded(scene, type, prepared);
+}
 
-  if (dryRun) {
-    return prepared;
+/**
+ * @param {any} scene
+ * @param {string} type
+ * @param {Record<string, any>} prepared
+ */
+export async function createPreparedSceneEmbedded(scene, type, prepared) {
+  if (typeof scene.createEmbeddedDocuments !== "function") {
+    throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Scene embedded document API is not available");
   }
 
   const results = await scene.createEmbeddedDocuments(type, [prepared], {

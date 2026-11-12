@@ -1,7 +1,7 @@
 import { ERROR_CODES } from "../generated/protocol.js";
 import { getSceneById } from "../lib/game-collections.js";
 import {
-  createSceneEmbedded,
+  createPreparedSceneEmbedded,
   getSceneEmbeddedById,
   placeTokenData,
   prepareSceneEmbeddedCreateData,
@@ -141,7 +141,7 @@ export function createSceneTokenHandlers() {
           token: serializeToken(preview, { include: params.include })
         });
       }
-      const token = await createSceneEmbedded(scene, TOKEN, tokenData);
+      const token = await createPreparedSceneEmbedded(scene, TOKEN, tokenData);
       return { sceneId: params.sceneId, token: serializeToken(token, { include: params.include }) };
     }
   };

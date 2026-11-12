@@ -3,9 +3,13 @@ import {
   PREPARED_VALUE_MAX_DEPTH,
   PREPARED_VALUE_MAX_NODES
 } from "../generated/protocol.js";
-import { colorToCss, getColorClass, isDataModelInstance, unbox, utf8ByteLength } from "./setting-values.js";
-
-const UNSERIALIZABLE_MARKER_KEY = "$unserializable";
+import {
+  UNSERIALIZABLE_MARKER_KEY,
+  getColorClass,
+  isDataModelInstance,
+  readScalarObject,
+  utf8ByteLength
+} from "./setting-values.js";
 
 class PreparedLimitReached extends Error {
   /** @param {"depth" | "nodes"} limit */
@@ -84,38 +88,18 @@ export function serializePreparedValue(value) {
 
     ancestors.add(object);
     try {
-      if (object instanceof Date) {
-        const time = unbox(Date.prototype.getTime, object);
-        if (time.ok) return Number.isFinite(time.value) ? Date.prototype.toISOString.call(object) : null;
-      }
-      if (ColorClass !== null && object instanceof ColorClass) {
-        const numeric = unbox(Number.prototype.valueOf, object);
-        if (numeric.ok) return colorToCss(numeric.value);
-      }
-      if (object instanceof Number || object instanceof String || object instanceof Boolean) {
-        const intrinsic =
-          object instanceof Number
-            ? Number.prototype.valueOf
-            : object instanceof String
-              ? String.prototype.valueOf
-              : Boolean.prototype.valueOf;
-        const unboxed = unbox(intrinsic, object);
-        if (unboxed.ok) return unboxed.value;
-      }
+      const scalar = readScalarObject(object, ColorClass);
+      if (scalar.ok) return walk(scalar.value, null, depth);
       if (object instanceof Map) {
-        const iterator = unbox(Map.prototype.entries, object);
-        if (iterator.ok) {
-          /** @type {Record<string, unknown>} */
-          const result = {};
-          for (const [key, entry] of iterator.value) {
-            defineEntry(result, String(key), walk(entry, null, depth + 1));
-          }
-          return result;
+        /** @type {Record<string, unknown>} */
+        const result = {};
+        for (const [key, entry] of Map.prototype.entries.call(object)) {
+          defineEntry(result, String(key), walk(entry, null, depth + 1));
         }
+        return result;
       }
       if (object instanceof Set) {
-        const iterator = unbox(Set.prototype.values, object);
-        if (iterator.ok) return Array.from(iterator.value, (entry) => walk(entry, null, depth + 1));
+        return Array.from(Set.prototype.values.call(object), (entry) => walk(entry, null, depth + 1));
       }
       if (Array.isArray(object)) {
         const element = elementFieldOf(field);
