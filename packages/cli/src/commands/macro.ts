@@ -185,7 +185,7 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
     )
     .addHelpText(
       "after",
-      `\nA return value node with no JSON form (a function, an own accessor, a circular reference) comes back as {"$unserializable": "<reason>"} and is listed in .result.returnedOmissions (at most ${SERIALIZE_OMISSIONS_MAX} entries); a return value over the size limits is dropped whole and explained in .result.returnedOmitted.`
+      `\nA return value node with no JSON form (a function, an own accessor, a circular reference) comes back as {"$unserializable": "<reason>"} and is listed in .result.returnedOmissions (at most ${SERIALIZE_OMISSIONS_MAX} entries); a return value over the size limits is dropped and explained in .result.returnedOmitted.`
     )
     .action(async function executeMacroCommand(options: {
       macroId: string;
