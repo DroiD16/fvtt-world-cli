@@ -195,8 +195,9 @@ Classify a failure before reacting:
 Bulk commands (`create-many`, `update-many`, `delete-many`) share single-command validation but
 are not transactions: check the top-level `complete` flag and inspect every entry in `outcomes`.
 Persisted statuses such as `created`, `updated`, and `deleted` mean something different from
-`unchanged`, `alreadyDeleted`, `dropped`, and `unknown`; the authoritative status set lives in the
-protocol constants, not here. Action commands
+`unchanged`, `alreadyDeleted`, `dropped`, `unknown`, and `notAttempted` (never sent, because an
+earlier element of a sequential batch failed); the authoritative status set lives in the protocol
+constants, not here. Action commands
 (playback, draws, deals, combat transitions, thumbnails, fog) call fixed typed Foundry methods and
 can trigger hooks, chat output, and system automation; read the schema, dry-run first, and
 interpret confirmation fields literally rather than assuming an ordinary update happened.

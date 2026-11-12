@@ -210,7 +210,9 @@ new operation and needs a fresh key. Follow the [delivery rules](protocol.md#del
 when a connection fails, since some failures also lose the cached state.
 
 Bulk writes are not transactions. Inspect `complete` and every entry in `outcomes` before deciding
-what to retry.
+what to retry. `scene token create-many` creates its tokens one at a time so Foundry numbers them as
+it does when they are placed by hand, and stops at the first token that does not land. The tokens
+after it report `notAttempted`.
 
 ### Actions
 

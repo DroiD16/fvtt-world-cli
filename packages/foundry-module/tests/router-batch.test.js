@@ -558,7 +558,7 @@ describe("command router", () => {
         globalThis.game.release = fixture.release;
       });
 
-      it(`${family}.create-many creates every element in ONE keepId call`, async () => {
+      it(`${family}.create-many creates its elements with keepId (tokens one call each, others in ONE call)`, async () => {
         const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
         const scene = globalThis.game.scenes.get("scene-1");
         const before = fixture.collection(scene).size;
@@ -575,9 +575,9 @@ describe("command router", () => {
           [1, "created"]
         ]);
         const calls = scene.createEmbeddedDocuments.mock.calls.filter((call) => call[0] === fixture.type);
-        expect(calls).toHaveLength(1);
-        expect(calls[0][1]).toHaveLength(2);
-        expect(calls[0][2]).toEqual({ keepId: true, render: true });
+        const perCall = family === "scene.token" ? [1, 1] : [2];
+        expect(calls.map((call) => call[1].length)).toEqual(perCall);
+        for (const call of calls) expect(call[2]).toEqual({ keepId: true, render: true });
 
         for (const outcome of response.result.outcomes) {
           expect(fixture.collection(scene).get(outcome.id)).toBeTruthy();
@@ -738,9 +738,9 @@ describe("command router", () => {
       "created"
     ]);
 
-    expect(actor.getTokenDocument).toHaveBeenCalledTimes(2);
-    expect(actor.getTokenDocument.mock.calls[0][0]).toMatchObject({ x: 10, y: 10, actorLink: false });
-    expect(actor.getTokenDocument.mock.calls[1][0]).toMatchObject({ x: 20, y: 20, actorLink: true });
+    expect(actor.getTokenDocument).toHaveBeenCalledTimes(4);
+    expect(actor.getTokenDocument.mock.calls[2][0]).toMatchObject({ x: 10, y: 10, actorLink: false });
+    expect(actor.getTokenDocument.mock.calls[3][0]).toMatchObject({ x: 20, y: 20, actorLink: true });
     const [placed, linked, raw] = response.result.outcomes.map((outcome) => scene.tokens.get(outcome.id));
 
     expect(placed.texture).toEqual({ src: "prototype.webp" });
@@ -750,6 +750,126 @@ describe("command router", () => {
 
     expect(raw.actorId ?? null).toBe(null);
     expect(raw.texture).toEqual({ src: "markers/trap.webp" });
+  });
+
+  it("scene.token.create-many prepares each element against the scene the previous elements were added to", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const scene = globalThis.game.scenes.get("scene-1");
+    const actor = globalThis.game.actors.get("actor-1");
+    actor.getTokenDocument.mockImplementation(async (overrides, { parent }) => {
+      const placed = Array.from(parent.tokens).filter((token) => token.actorId === "actor-1").length;
+      const data = { name: `Goblin (${placed + 1})`, actorId: "actor-1", width: 1, height: 1, ...overrides };
+      return { toObject: () => data };
+    });
+
+    const response = await router.route(
+      createRequest("scene.token.create-many", {
+        sceneId: "scene-1",
+        data: [{ actorId: "actor-1" }, { actorId: "actor-1" }, { actorId: "actor-1" }]
+      })
+    );
+
+    expect(response.ok).toBe(true);
+    const tokens = response.result.outcomes.map((outcome) => scene.tokens.get(outcome.id));
+    const before = Array.from(scene.tokens).filter((token) => token.actorId === "actor-1").length - 3;
+    expect(tokens.map((token) => token.name)).toEqual([1, 2, 3].map((n) => `Goblin (${before + n})`));
+    expect(tokens[1].sort).toBe(tokens[0].sort + 1);
+    expect(tokens[2].sort).toBe(tokens[1].sort + 1);
+  });
+
+  it("scene.token.create-many stops at the first element Foundry does not confirm and marks the rest notAttempted", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const scene = globalThis.game.scenes.get("scene-1");
+    const original = scene.createEmbeddedDocuments.getMockImplementation();
+    let call = 0;
+    scene.createEmbeddedDocuments.mockImplementation(async (type, entries, options) => {
+      call += 1;
+      return call === 2 ? [] : original(type, entries, options);
+    });
+
+    const dropped = await router.route(
+      createRequest("scene.token.create-many", {
+        sceneId: "scene-1",
+        data: [{ name: "A" }, { name: "B" }, { name: "C" }]
+      })
+    );
+    expect(dropped.ok).toBe(true);
+    expect(dropped.result.complete).toBe(false);
+    expect(dropped.result.outcomes.map((outcome) => outcome.status)).toEqual([
+      "created",
+      "dropped",
+      "notAttempted"
+    ]);
+    expect(dropped.result.outcomes[2].id).toBe(null);
+
+    call = 0;
+    scene.createEmbeddedDocuments.mockImplementation(async (type, entries, options) => {
+      call += 1;
+      if (call === 2) throw new Error("socket closed");
+      return original(type, entries, options);
+    });
+    const thrown = await router.route(
+      createRequest("scene.token.create-many", {
+        sceneId: "scene-1",
+        data: [{ name: "D" }, { name: "E" }, { name: "F" }]
+      })
+    );
+    expect(thrown.ok).toBe(true);
+    expect(thrown.result.outcomes.map((outcome) => outcome.status)).toEqual([
+      "created",
+      "unknown",
+      "notAttempted"
+    ]);
+    expect(thrown.result.failure.message).toContain("socket closed");
+    scene.createEmbeddedDocuments.mockImplementation(original);
+  });
+
+  it("a token create-many dry run with actor elements warns that names are drawn again at write time", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const scene = globalThis.game.scenes.get("scene-1");
+    const before = scene.tokens.size;
+
+    const fromActor = await router.route(
+      createRequest("scene.token.create-many", {
+        sceneId: "scene-1",
+        data: [{ actorId: "actor-1" }],
+        dryRun: true
+      })
+    );
+    expect(fromActor.ok).toBe(true);
+    expect(fromActor.result.dryRun).toBe(true);
+    expect(fromActor.result.warning).toContain("appended numbers advance");
+
+    const raw = await router.route(
+      createRequest("scene.token.create-many", {
+        sceneId: "scene-1",
+        data: [{ name: "Marker" }],
+        dryRun: true
+      })
+    );
+    expect("warning" in raw.result).toBe(false);
+    expect(scene.tokens.size).toBe(before);
+  });
+
+  it("scene token creates default sort above the scene's highest token, never below 0, and keep a caller's sort", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const scene = globalThis.game.scenes.get("scene-1");
+    for (const token of Array.from(scene.tokens)) scene.tokens.delete(token.id);
+    const payloads = () =>
+      scene.createEmbeddedDocuments.mock.calls
+        .filter((call) => call[0] === "Token")
+        .flatMap((call) => call[1]);
+
+    scene.createEmbeddedDocuments.mockClear();
+    await router.route(
+      createRequest("scene.token.create", { sceneId: "scene-1", data: { name: "Low", sort: -5 } })
+    );
+    await router.route(createRequest("scene.token.create", { sceneId: "scene-1", data: { name: "First" } }));
+    await router.route(
+      createRequest("scene.token.create", { sceneId: "scene-1", data: { name: "Kept", sort: 40 } })
+    );
+    await router.route(createRequest("scene.token.create", { sceneId: "scene-1", data: { name: "Next" } }));
+    expect(payloads().map((payload) => payload.sort)).toEqual([-5, 0, 40, 41]);
   });
 
   it("both token create verbs build against the TARGET scene, never the viewed one", async () => {
@@ -782,7 +902,7 @@ describe("command router", () => {
         })
       );
       expect(batch.ok).toBe(true);
-      expect(actor.getTokenDocument).toHaveBeenCalledTimes(2);
+      expect(actor.getTokenDocument).toHaveBeenCalledTimes(4);
       for (const call of actor.getTokenDocument.mock.calls) {
         expect(call[1].parent).toBe(target);
 
@@ -1333,8 +1453,12 @@ describe("command router", () => {
 
       const { _id, ...batchPayload } = batchPayloads[0];
       expect(typeof _id, `${family}.create-many must pre-generate an id`).toBe("string");
+      const expected =
+        family === "scene.token"
+          ? { ...singlePayloads[0], sort: singlePayloads[0].sort + 1 }
+          : singlePayloads[0];
       expect(batchPayload, `${family} batch element preparation diverged from the single verb`).toEqual(
-        singlePayloads[0]
+        expected
       );
 
       for (const spelling of ["author", "user"]) {

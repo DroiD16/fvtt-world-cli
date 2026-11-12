@@ -5529,7 +5529,8 @@ describe("protocol contract", () => {
         "unchanged",
         "alreadyDeleted",
         "dropped",
-        "unknown"
+        "unknown",
+        "notAttempted"
       ]);
 
       expect(BATCH_WRITE_SUCCESS_STATUSES).toEqual([
@@ -5548,6 +5549,7 @@ describe("protocol contract", () => {
       }
       expect(BATCH_WRITE_SUCCESS_STATUSES).not.toContain("dropped");
       expect(BATCH_WRITE_SUCCESS_STATUSES).not.toContain("unknown");
+      expect(BATCH_WRITE_SUCCESS_STATUSES).not.toContain("notAttempted");
       expect(BATCH_WRITE_PERSISTED_STATUSES).not.toContain("unchanged");
       expect(BATCH_WRITE_PERSISTED_STATUSES).not.toContain("alreadyDeleted");
     });

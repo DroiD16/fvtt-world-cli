@@ -13,7 +13,7 @@ import { paginate } from "../lib/serializers.js";
 import { createSceneEmbeddedBatchHandlers } from "./scene-embedded-batch.js";
 
 /**
- * @param {{ type: string, prefix: string, idField: string, resultKey: string, pluralKey: string, notFoundCode: string, serialize: (document: any) => any, serializeSummary: (document: any, params?: any) => any, listFilter?: (rows: any[], params: any) => any[], omitVerbs?: string[], prepareCreate?: (data: Record<string, any>, scene: any) => any, assertSupported?: (scene: any) => void, assertDeleteAllowed?: (scene: any, ids: string[]) => void, summarize?: (document: any) => Record<string, unknown> }} config
+ * @param {{ type: string, prefix: string, idField: string, resultKey: string, pluralKey: string, notFoundCode: string, serialize: (document: any) => any, serializeSummary: (document: any, params?: any) => any, listFilter?: (rows: any[], params: any) => any[], omitVerbs?: string[], sequentialCreate?: boolean, prepareCreate?: (data: Record<string, any>, scene: any, params: any) => any, assertSupported?: (scene: any) => void, assertDeleteAllowed?: (scene: any, ids: string[]) => void, summarize?: (document: any) => Record<string, unknown> }} config
  */
 export function createScenePlaceableHandlers({
   type,
@@ -26,6 +26,7 @@ export function createScenePlaceableHandlers({
   serializeSummary,
   listFilter,
   omitVerbs = [],
+  sequentialCreate,
   prepareCreate,
   assertSupported,
   assertDeleteAllowed,
@@ -120,6 +121,7 @@ export function createScenePlaceableHandlers({
       idField,
       notFoundCode,
       listCommand: `${prefix}.list`,
+      sequentialCreate,
       prepareCreate,
       assertSupported,
       assertDeleteAllowed,

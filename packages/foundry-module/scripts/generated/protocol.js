@@ -88,7 +88,8 @@ var BATCH_WRITE_STATUSES = Object.freeze([
   "unchanged",
   "alreadyDeleted",
   "dropped",
-  "unknown"
+  "unknown",
+  "notAttempted"
 ]);
 var BATCH_WRITE_SUCCESS_STATUSES = Object.freeze([
   "created",

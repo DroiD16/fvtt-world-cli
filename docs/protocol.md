@@ -326,6 +326,15 @@ Its input ids and line indexes belong to CLI output, not the wire contract.
 Bulk writes accept bounded arrays and prevalidate their elements. Persistence is not transactional;
 results report `complete` and per-element `outcomes`, all of which the caller must inspect.
 
+`scene.token.create-many` validates every element first and writes nothing if one fails. It then
+prepares and creates the tokens one at a time, in order, so each token is prepared against a scene
+that already holds the tokens before it. That is how Foundry's appended numbers and default `sort`
+advance within one batch. The first element that is not confirmed created, or that fails to prepare,
+stops the batch: the elements after it report `notAttempted` with a `null` id and were never sent.
+A token create-many dry run with actor elements adds a `warning`, because each preview is prepared
+against the current scene and the write draws appended numbers, random adjectives and random images
+again.
+
 `get-many` fails the request if any requested id cannot be read. `setting.get-many` is the exception;
 it reports an unregistered key as `SETTING_NOT_FOUND` on that row without failing the whole request.
 

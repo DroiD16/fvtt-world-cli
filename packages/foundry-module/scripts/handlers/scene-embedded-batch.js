@@ -13,13 +13,14 @@ import { executeBatchCreate, executeBatchDelete, executeBatchUpdate } from "../l
 import { createBridgeError } from "../lib/errors.js";
 import { isDryRun } from "../lib/dry-run.js";
 
-/** @param {{ type: string, prefix: string, idField: string, notFoundCode: string, listCommand: string, prepareCreate?: (data: Record<string, any>, scene: any) => any, assertSupported?: (scene: any) => void, assertDeleteAllowed?: (scene: any, ids: string[]) => void, summarize?: (document: any) => Record<string, unknown> }} config */
+/** @param {{ type: string, prefix: string, idField: string, notFoundCode: string, listCommand: string, sequentialCreate?: boolean, prepareCreate?: (data: Record<string, any>, scene: any, params: any) => any, assertSupported?: (scene: any) => void, assertDeleteAllowed?: (scene: any, ids: string[]) => void, summarize?: (document: any) => Record<string, unknown> }} config */
 export function createSceneEmbeddedBatchHandlers({
   type,
   prefix,
   idField,
   notFoundCode,
   listCommand,
+  sequentialCreate = false,
   prepareCreate,
   assertSupported,
   assertDeleteAllowed,
@@ -52,9 +53,9 @@ export function createSceneEmbeddedBatchHandlers({
         command: createCommand,
         items: params.data,
         dryRun: isDryRun(params),
-
+        sequential: sequentialCreate,
         prepare: (data) =>
-          prepareCreate ? prepareCreate(data, scene) : prepareSceneEmbeddedCreateData(type, data),
+          prepareCreate ? prepareCreate(data, scene, params) : prepareSceneEmbeddedCreateData(type, data),
         preview: (preparedCopy) => previewPreparedSceneEmbeddedCreate(scene, type, preparedCopy),
         isIdTaken: (id) => Boolean(collection?.has?.(id)),
         create: (payloads) => createSceneEmbeddedMany(scene, type, payloads),

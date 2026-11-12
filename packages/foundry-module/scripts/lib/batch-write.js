@@ -29,7 +29,8 @@ export const BATCH_STATUS = Object.freeze({
   UNCHANGED: "unchanged",
   ALREADY_DELETED: "alreadyDeleted",
   DROPPED: "dropped",
-  UNKNOWN: "unknown"
+  UNKNOWN: "unknown",
+  NOT_ATTEMPTED: "notAttempted"
 });
 
 const SUCCESS_STATUSES = new Set(BATCH_WRITE_SUCCESS_STATUSES);
@@ -175,9 +176,11 @@ function assertBatchPersistedSomething({ command, outcomes, verb }) {
   const unestablished = outcomes.filter((outcome) => outcome.status === BATCH_STATUS.UNKNOWN).length;
   const refused = outcomes.filter((outcome) => outcome.status === BATCH_STATUS.DROPPED).length;
   const converged = outcomes.filter((outcome) => SUCCESS_STATUSES.has(outcome.status)).length;
+  const notAttempted = outcomes.filter((outcome) => outcome.status === BATCH_STATUS.NOT_ATTEMPTED).length;
   const tally =
     `${refused} ${verb === "update" ? "dropped" : "refused"}, ${unestablished} unestablished` +
-    (converged > 0 ? `, ${converged} already converged (never sent to Foundry)` : "");
+    (converged > 0 ? `, ${converged} already converged (never sent to Foundry)` : "") +
+    (notAttempted > 0 ? `, ${notAttempted} not attempted after the first failure` : "");
   if (unestablished > 0) {
     throw createBridgeError(
       ERROR_CODES.INTERNAL_ERROR,
@@ -206,11 +209,12 @@ function assertBatchPersistedSomething({ command, outcomes, verb }) {
   );
 }
 
-/** @param {{ command: string, items: any[], dryRun: boolean, prepare: (data: any, index: number) => any | Promise<any>, preview: (prepared: any, index: number) => any, isIdTaken: (id: string) => boolean, create: (payloads: any[]) => Promise<any[]>, readBack: (id: string) => any, summarize?: (document: any) => Record<string, unknown> }} args */
+/** @param {{ command: string, items: any[], dryRun: boolean, sequential?: boolean, prepare: (data: any, index: number) => any | Promise<any>, preview: (prepared: any, index: number) => any, isIdTaken: (id: string) => boolean, create: (payloads: any[]) => Promise<any[]>, readBack: (id: string) => any, summarize?: (document: any) => Record<string, unknown> }} args */
 export async function executeBatchCreate({
   command,
   items,
   dryRun,
+  sequential = false,
   prepare,
   preview,
   isIdTaken,
@@ -242,6 +246,10 @@ export async function executeBatchCreate({
       })),
       dryRun: true
     });
+  }
+
+  if (sequential) {
+    return createSequentially({ command, items, prepare, isIdTaken, create, readBack, summarize });
   }
 
   const minted = new Set();
@@ -280,6 +288,73 @@ export async function executeBatchCreate({
       ...(summarize ? summarize(null) : {})
     };
   });
+
+  if (failure) {
+    return finishThrownBatch({ outcomes, failure, error: failure.error });
+  }
+  assertBatchPersistedSomething({ command, outcomes, verb: "create" });
+  return buildBatchResult({ outcomes });
+}
+
+/** @param {{ command: string, items: any[], prepare: (data: any, index: number) => any | Promise<any>, isIdTaken: (id: string) => boolean, create: (payloads: any[]) => Promise<any[]>, readBack: (id: string) => any, summarize?: (document: any) => Record<string, unknown> }} args */
+async function createSequentially({ command, items, prepare, isIdTaken, create, readBack, summarize }) {
+  /** @type {Array<{index:number,id:string|null,status:string}>} */
+  const outcomes = [];
+  let failure = null;
+  let stopped = false;
+  for (let index = 0; index < items.length; index += 1) {
+    if (stopped) {
+      outcomes.push({
+        index,
+        id: null,
+        status: BATCH_STATUS.NOT_ATTEMPTED,
+        ...(summarize ? summarize(null) : {})
+      });
+      continue;
+    }
+
+    let payload;
+    try {
+      payload = await prepare(items[index], index);
+    } catch (error) {
+      failure = describeBatchFailure(error);
+      stopped = true;
+      outcomes.push({
+        index,
+        id: null,
+        status: BATCH_STATUS.NOT_ATTEMPTED,
+        ...(summarize ? summarize(null) : {})
+      });
+      continue;
+    }
+
+    const id = generateUnusedDocumentId(isIdTaken);
+    let created = null;
+    try {
+      created = await create([{ ...payload, _id: id }]);
+    } catch (error) {
+      failure = describeBatchFailure(error);
+      stopped = true;
+    }
+
+    const stored = readBack(id);
+    if (stored || (Array.isArray(created) && created.some((document) => document?.id === id))) {
+      outcomes.push({
+        index,
+        id,
+        status: BATCH_STATUS.CREATED,
+        ...(summarize ? summarize(stored ?? null) : {})
+      });
+    } else {
+      stopped = true;
+      outcomes.push({
+        index,
+        id,
+        status: failure ? BATCH_STATUS.UNKNOWN : BATCH_STATUS.DROPPED,
+        ...(summarize ? summarize(null) : {})
+      });
+    }
+  }
 
   if (failure) {
     return finishThrownBatch({ outcomes, failure, error: failure.error });

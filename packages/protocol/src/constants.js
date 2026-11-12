@@ -107,7 +107,8 @@ export const BATCH_WRITE_STATUSES = Object.freeze([
   "unchanged",
   "alreadyDeleted",
   "dropped",
-  "unknown"
+  "unknown",
+  "notAttempted"
 ]);
 
 export const BATCH_WRITE_SUCCESS_STATUSES = Object.freeze([

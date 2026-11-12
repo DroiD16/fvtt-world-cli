@@ -24,24 +24,37 @@ import { createScenePlaceableHandlers } from "./scene-placeables.js";
 const TOKEN = "Token";
 
 export function createSceneTokenHandlers() {
+  const placeables = createScenePlaceableHandlers({
+    type: TOKEN,
+    prefix: "scene.token",
+    idField: "tokenId",
+    resultKey: "token",
+    pluralKey: "tokens",
+    notFoundCode: ERROR_CODES.TOKEN_NOT_FOUND,
+    serialize: (document) => serializeToken(document),
+    serializeSummary: (document, params) => serializeTokenSummary(document, { include: params?.include }),
+    listFilter: (tokens, params) => filterByName(tokens, params.name),
+
+    sequentialCreate: true,
+    prepareCreate: async (data, scene) =>
+      prepareSceneEmbeddedCreateData(TOKEN, await resolveSceneTokenCreateData(data, scene)),
+
+    summarize: (document) => ({ name: tokenName(document) }),
+    omitVerbs: ["get", "create"]
+  });
+
   return {
-    ...createScenePlaceableHandlers({
-      type: TOKEN,
-      prefix: "scene.token",
-      idField: "tokenId",
-      resultKey: "token",
-      pluralKey: "tokens",
-      notFoundCode: ERROR_CODES.TOKEN_NOT_FOUND,
-      serialize: (document) => serializeToken(document),
-      serializeSummary: (document, params) => serializeTokenSummary(document, { include: params?.include }),
-      listFilter: (tokens, params) => filterByName(tokens, params.name),
+    ...placeables,
 
-      prepareCreate: async (data, scene) =>
-        prepareSceneEmbeddedCreateData(TOKEN, await resolveSceneTokenCreateData(data, scene)),
-
-      summarize: (document) => ({ name: tokenName(document) }),
-      omitVerbs: ["get", "create"]
-    }),
+    async "scene.token.create-many"(params) {
+      const result = await placeables["scene.token.create-many"](params);
+      if (!isDryRun(params) || !params.data.some((data) => data?.actorId)) return result;
+      return {
+        ...result,
+        warning:
+          "Each element was prepared against the scene as it is now. The write prepares each token again after the tokens before it are placed, so appended numbers advance and random adjectives and images are drawn again; the created names can differ from these."
+      };
+    },
 
     async "scene.token.get"(params) {
       const { document } = getSceneEmbeddedById(

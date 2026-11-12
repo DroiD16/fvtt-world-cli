@@ -76,7 +76,7 @@ export function renderBatchWriteResult(commandName: string, result: any) {
       `mutatesWorldActor: ${String(result.mutatesWorldActor)} (actorLink: ${String(Boolean(result.actorLink))})`
     );
   }
-  if (result?.nonDurable === true && typeof result?.warning === "string") {
+  if (typeof result?.warning === "string") {
     tokenSide.push(`WARNING: ${result.warning}`);
   }
   return [
