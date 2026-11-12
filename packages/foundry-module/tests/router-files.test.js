@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createCommandRouter } from "../scripts/command-router.js";
-import { BROWSER_STRING_MAX_LENGTH, READ_ENCODING_CEILING_BYTES } from "../scripts/generated/protocol.js";
+import { READ_ENCODING_CEILING_BYTES } from "../scripts/generated/protocol.js";
 
 import {
   createFetchResponse,
@@ -1029,7 +1029,7 @@ describe("command router", () => {
       limitBytes: READ_ENCODING_CEILING_BYTES,
       sizeBytes: declared
     });
-    expect(Math.ceil(READ_ENCODING_CEILING_BYTES / 3) * 4).toBeLessThan(BROWSER_STRING_MAX_LENGTH);
+    expect(Math.ceil(READ_ENCODING_CEILING_BYTES / 3) * 4).toBeLessThan(536_870_888);
   });
 
   it("checks the actual byte count when the server declares no length", async () => {
