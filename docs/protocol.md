@@ -203,10 +203,11 @@ owning document by `uuid`, the dotted `field` path inside its stored source, and
   target, such as `flags.mod.Actor.<id>.Item.<itemId>`, gets that one row at the target's id. Only a
   literal key, as kept inside a setting's JSON, names an embedded document whole: it is reported at
   that key with the document in `matchedUuid`.
-- `relative`: a relative link (`@UUID[.<id>]`, `@Embed[.<id>]`) names the target once resolved
-  against the document that stores it, with the connected Foundry version's own rules. `matchedUuid`
-  is the resolved UUID. Only the fields Foundry resolves that way are read: a journal page's
-  `text.content` and the `description` of a roll table and of a table result.
+- `relative`: a relative link (`@UUID[.<id>]`, `@Embed[.<id>]`) names the target, or a document
+  embedded in it, once resolved against the document that stores it with the connected Foundry
+  version's own rules. `matchedUuid` is the resolved UUID. Only the fields Foundry resolves that way
+  are read, a journal page's `text.content` and the `description` of a roll table and of a table
+  result, and only their text as Foundry enriches it: a link inside an HTML attribute is not one.
 - `id`: a bare id in a Foundry foreign-key field of the target's document type, or a user's hotbar
   slot holding the target macro (`hotbar.<slot>`).
 
@@ -219,8 +220,10 @@ inside a token's delta belongs to the token, with a `delta.` field path.
 `scopes` lists the document families searched. Without `scope`, every family except `chat` is
 searched (`REFERENCE_DEFAULT_SCOPES`); `chat` is searched only when named. Users are always searched
 as well. The `setting` scope reads world- and user-scope settings from their stored JSON text: rows
-are `Setting.<id>`, `name` is the setting key, and `field` starts with `value.`. Client-scope settings
-live in each browser and are not searched.
+are `Setting.<id>` and `name` is the setting key. A match in the stored value has the `field` `value`
+for a scalar or `value.<path>` inside an object; the setting's other fields keep their own names, such
+as `user` for the user a user-scope setting belongs to. Client-scope settings live in each browser and
+are not searched.
 
 An embedded document type given without its parent chain, such as `Token.<id>`, is refused with
 `INVALID_PARAMS`. `target.exists` is `null` when a compendium entry cannot be resolved without
