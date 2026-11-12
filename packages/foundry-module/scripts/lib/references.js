@@ -1,4 +1,4 @@
-import { AUDIT_FILE_SCOPES, ERROR_CODES, REFERENCES_MAX_MATCHES } from "../generated/protocol.js";
+import { ERROR_CODES, REFERENCE_DEFAULT_SCOPES, REFERENCES_MAX_MATCHES } from "../generated/protocol.js";
 import { SCOPE_COLLECTIONS } from "./audit.js";
 import { createBridgeError } from "./errors.js";
 import { paginate } from "./pagination.js";
@@ -11,6 +11,29 @@ const EMBEDDED_CONTINUATION = /^(?:\.[A-Z][A-Za-z]*\.[A-Za-z0-9]+)+/;
 const BEFORE_BOUNDARY = /[A-Za-z0-9.]/;
 const AFTER_BOUNDARY = /[A-Za-z0-9]/;
 const LINK_PREFIX = /@[A-Za-z]+\[$/;
+const UUID_LINK = /@UUID\[([^#\]]+)(?:#[^\]]+)?]/g;
+const EMBED_LINK = /@Embed\[([^\]]+)]/gi;
+const EMBED_CONFIG_PART = /(?:[^\s"]+|"[^"]*")+/g;
+
+const REFERENCE_SCOPE_COLLECTIONS = Object.freeze({
+  ...Object.fromEntries(
+    Object.entries(SCOPE_COLLECTIONS).map(([scope, key]) => [scope, (/** @type {any} */ game) => game?.[key]])
+  ),
+  folder: (/** @type {any} */ game) => game?.folders,
+  setting: (/** @type {any} */ game) => game?.settings?.storage?.get?.("world"),
+  chat: (/** @type {any} */ game) => game?.messages
+});
+
+// Foundry declares User.hotbar as a plain ObjectField of slot -> Macro id, so the schema walk cannot find it.
+const ID_MAP_FIELDS = Object.freeze({
+  User: Object.freeze([Object.freeze({ segments: Object.freeze(["hotbar"]), documentName: "Macro" })])
+});
+
+const RELATIVE_LINK_FIELDS = Object.freeze({
+  JournalEntryPage: Object.freeze([Object.freeze(["text", "content"])]),
+  RollTable: Object.freeze([Object.freeze(["description"])]),
+  TableResult: Object.freeze([Object.freeze(["description"])])
+});
 
 /**
  * @param {string} documentName
@@ -155,11 +178,54 @@ function buildLegacyLinkPatterns(target) {
 /**
  * @param {ReturnType<typeof parseReferenceTarget>} target
  */
-function createStringMatcher(target) {
+function referenceNeedles(target) {
   const needles = [target.uuid];
   if (target.compendium !== null && target.primary) {
     needles.push(`Compendium.${target.compendium}.${target.id}`);
   }
+  return needles;
+}
+
+function knownDocumentTypes() {
+  const constants = /** @type {any} */ (globalThis).CONST ?? {};
+  if (Array.isArray(constants.ALL_DOCUMENT_TYPES)) return new Set(constants.ALL_DOCUMENT_TYPES);
+  return new Set([
+    ...(Array.isArray(constants.WORLD_DOCUMENT_TYPES) ? constants.WORLD_DOCUMENT_TYPES : []),
+    ...(Array.isArray(constants.EMBEDDED_DOCUMENT_TYPES) ? constants.EMBEDDED_DOCUMENT_TYPES : [])
+  ]);
+}
+
+/**
+ * @param {ReturnType<typeof parseReferenceTarget>} target
+ */
+function createKeyPathMatcher(target) {
+  const needles = referenceNeedles(target);
+  const documentTypes = knownDocumentTypes();
+
+  /**
+   * @param {string[]} path
+   */
+  return (path) => {
+    const joined = path.join(".");
+    return needles.some((needle) => {
+      if (joined !== needle && !joined.endsWith(`.${needle}`)) return false;
+      const before = joined.slice(0, Math.max(0, joined.length - needle.length - 1));
+      const segments = before ? before.split(".") : [];
+      if (segments.at(-3) === "Compendium") return false;
+      return !(
+        segments.length >= 2 &&
+        documentTypes.has(segments[segments.length - 2]) &&
+        DOCUMENT_ID_PATTERN.test(segments[segments.length - 1])
+      );
+    });
+  };
+}
+
+/**
+ * @param {ReturnType<typeof parseReferenceTarget>} target
+ */
+function createStringMatcher(target) {
+  const needles = referenceNeedles(target);
   const legacy = buildLegacyLinkPatterns(target);
 
   /**
@@ -192,6 +258,79 @@ function createStringMatcher(target) {
     }
     return found;
   };
+}
+
+/**
+ * @param {string} raw
+ * @param {(value: string) => any} parse
+ */
+function embedConfigUuid(raw, parse) {
+  const values = [];
+  for (const part of raw.match(EMBED_CONFIG_PART) ?? []) {
+    const [key, value] = part.split("=");
+    if (value === undefined) values.push(key.replace(/(^"|"$)/g, ""));
+    else if (key === "uuid") return value.replace(/(^"|"$)/g, "");
+  }
+  return (
+    values.find((value) => {
+      try {
+        return Boolean(parse(value)?.documentId);
+      } catch {
+        return false;
+      }
+    }) ?? null
+  );
+}
+
+/**
+ * @param {string} text
+ * @param {string} ownerUuid
+ * @returns {string[]}
+ */
+function resolveRelativeLinks(text, ownerUuid) {
+  const parseUuid = /** @type {any} */ (globalThis).foundry?.utils?.parseUuid;
+  const resolveDocument = /** @type {any} */ (globalThis).fromUuidSync;
+  if (typeof parseUuid !== "function" || typeof resolveDocument !== "function") return [];
+  const relative = resolveDocument(ownerUuid, { strict: false });
+  if (!relative) return [];
+  const parse = (/** @type {string} */ value) => parseUuid(value, { relative });
+  const candidates = [];
+  for (const match of text.matchAll(UUID_LINK)) {
+    if (match[1].startsWith(".")) candidates.push(match[1]);
+  }
+  for (const match of text.matchAll(EMBED_LINK)) {
+    const uuid = embedConfigUuid(match[1], parse);
+    if (uuid?.startsWith(".")) candidates.push(uuid);
+  }
+  const resolved = [];
+  for (const candidate of candidates) {
+    const uuid = parse(candidate)?.uuid;
+    if (typeof uuid === "string") resolved.push(uuid);
+  }
+  return resolved;
+}
+
+/**
+ * @param {string} documentName
+ * @param {any} source
+ */
+function storedSource(documentName, source) {
+  if (documentName !== "Setting" || typeof source?.value !== "string") return source;
+  try {
+    return { ...source, value: JSON.parse(source.value) };
+  } catch {
+    return source;
+  }
+}
+
+/**
+ * @param {string} documentName
+ * @param {any} source
+ */
+function ownerName(documentName, source) {
+  if (typeof source?.name === "string") return source.name;
+  if (documentName === "Setting" && typeof source?.key === "string") return source.key;
+  return null;
 }
 
 /** @type {WeakMap<object, Array<{ segments: string[], documentName: string }>>} */
@@ -308,7 +447,9 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
   const game = getGame();
   const target = parseReferenceTarget(uuid);
   const matchString = createStringMatcher(target);
-  const scopes = Array.isArray(scope) && scope.length > 0 ? [...new Set(scope)] : [...AUDIT_FILE_SCOPES];
+  const keyPathNamesTarget = createKeyPathMatcher(target);
+  const scopes =
+    Array.isArray(scope) && scope.length > 0 ? [...new Set(scope)] : [...REFERENCE_DEFAULT_SCOPES];
 
   /** @type {Map<string, { uuid: string, documentName: string, name: string | null, field: string, match: string, matchedUuid?: string }>} */
   const references = new Map();
@@ -357,7 +498,16 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
       return;
     }
     if (value && typeof value === "object") {
-      for (const [key, entry] of Object.entries(value)) walkValue(entry, [...path, key], owner);
+      for (const [key, entry] of Object.entries(value)) {
+        const entryPath = [...path, key];
+        for (const { matchedUuid } of matchString(key)) {
+          record(owner, entryPath, matchedUuid ? { match: "key", matchedUuid } : { match: "key" });
+        }
+        if (key.endsWith(target.id) && keyPathNamesTarget(entryPath)) {
+          record(owner, entryPath, { match: "key" });
+        }
+        walkValue(entry, entryPath, owner);
+      }
     }
   };
 
@@ -383,6 +533,30 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
           )
         ) {
           record(owner, [...prefix, ...foreignKey.segments], { match: "id" });
+        }
+      }
+      if (target.parent === null) {
+        for (const idMap of ID_MAP_FIELDS[/** @type {keyof typeof ID_MAP_FIELDS} */ (documentName)] ?? []) {
+          if (idMap.documentName !== target.documentName) continue;
+          const entries = readAt(source, [...idMap.segments]);
+          if (!entries || typeof entries !== "object") continue;
+          for (const [slot, id] of Object.entries(entries)) {
+            if (id === target.id) record(owner, [...prefix, ...idMap.segments, slot], { match: "id" });
+          }
+        }
+      }
+    }
+
+    if (prefix.length === 0) {
+      for (const field of RELATIVE_LINK_FIELDS[
+        /** @type {keyof typeof RELATIVE_LINK_FIELDS} */ (documentName)
+      ] ?? []) {
+        const text = readAt(source, [...field]);
+        if (typeof text !== "string" || !/@UUID\[\.|@Embed\[/i.test(text)) continue;
+        for (const resolved of resolveRelativeLinks(text, owner.uuid)) {
+          if (resolved === target.uuid || resolved.startsWith(`${target.uuid}.`)) {
+            record(owner, [...field], { match: "relative", matchedUuid: resolved });
+          }
         }
       }
     }
@@ -420,11 +594,7 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
    */
   const walkDocument = (documentName, source, ownerUuid, container) => {
     scannedDocuments += 1;
-    const owner = {
-      uuid: ownerUuid,
-      documentName,
-      name: typeof source?.name === "string" ? source.name : null
-    };
+    const owner = { uuid: ownerUuid, documentName, name: ownerName(documentName, source) };
     walkSource(documentName, source, owner, [], container);
   };
 
@@ -435,12 +605,14 @@ export function runReferenceLookup({ uuid, scope, limit, offset }) {
       const documentName = document?.documentName ?? collection?.documentName;
       const id = document?.id ?? source?._id;
       if (typeof documentName !== "string" || typeof id !== "string") continue;
-      walkDocument(documentName, source, `${documentName}.${id}`, null);
+      walkDocument(documentName, storedSource(documentName, source), `${documentName}.${id}`, null);
     }
   };
 
   for (const scopeName of scopes) {
-    walkCollection(/** @type {any} */ (game)?.[SCOPE_COLLECTIONS[scopeName]]);
+    walkCollection(
+      REFERENCE_SCOPE_COLLECTIONS[/** @type {keyof typeof REFERENCE_SCOPE_COLLECTIONS} */ (scopeName)]?.(game)
+    );
   }
   walkCollection(/** @type {any} */ (game)?.users);
 

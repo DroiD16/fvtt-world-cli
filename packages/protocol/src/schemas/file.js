@@ -44,12 +44,20 @@ const auditFilesSchema = {
   additionalProperties: false
 };
 
+export const REFERENCE_SCOPES = deepFreeze([...AUDIT_FILE_SCOPES, "folder", "setting", "chat"]);
+
+export const REFERENCE_DEFAULT_SCOPES = deepFreeze(REFERENCE_SCOPES.filter((scope) => scope !== "chat"));
+
 const worldReferencesSchema = {
   type: "object",
   required: ["uuid"],
   properties: {
     uuid: { type: "string", minLength: 1 },
-    scope: auditFilesSchema.properties.scope,
+    scope: {
+      type: "array",
+      minItems: 1,
+      items: { type: "string", enum: [...REFERENCE_SCOPES] }
+    },
     ...paginationProperties
   },
   additionalProperties: false

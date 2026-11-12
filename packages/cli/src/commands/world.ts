@@ -2,6 +2,8 @@ import { join } from "node:path";
 
 import {
   AUDIT_FILE_SCOPES,
+  REFERENCE_DEFAULT_SCOPES,
+  REFERENCE_SCOPES,
   SEARCH_INDEXED_TYPES,
   SEARCH_MODES,
   SEARCH_SOURCES
@@ -74,7 +76,7 @@ export function registerWorld({ program, dependencies }: RegistrationContext) {
       )
       .option(
         "--scope <list>",
-        `Comma-separated document families to scan: ${AUDIT_FILE_SCOPES.join(",")} (default: all)`,
+        `Comma-separated document families to scan: ${REFERENCE_SCOPES.join(",")} (default: ${REFERENCE_DEFAULT_SCOPES.join(",")}; chat only on request)`,
         parseScopeList
       )
       .addHelpText(
@@ -89,16 +91,26 @@ export function registerWorld({ program, dependencies }: RegistrationContext) {
           "       link   the UUID sits in an @UUID[...] link, or a legacy @Actor[<id>] / @Compendium[<pack>.<id>] link",
           "       embedded  the field holds the UUID of a document embedded in the target (matchedUuid);",
           "              deleting the target breaks it too",
+          "       key    an object key names the target. Foundry stores a dotted key such as",
+          '              flags.mod["Actor.<id>"] as nested keys, so field is the path ending at the id',
+          "              (flags.mod.Actor.<id>); matchedUuid when a key names a document embedded in the target",
+          "       relative  a relative link (@UUID[.<id>], @Embed[.<id>]) that Foundry resolves against the",
+          "              document storing it names the target; matchedUuid is the resolved UUID. Only in the fields",
+          "              Foundry resolves that way: journal page text.content, roll table and table result description",
           "       id     a bare id in a Foundry foreign-key field of the target's type (token actorId, combatant",
-          "              actorId/tokenId, note entryId/pageId, folder, scene journal/playlist, ...); for an",
+          "              actorId/tokenId, note entryId/pageId, folder, scene journal/playlist, setting user,",
+          "              chat speaker, ...) or a user's hotbar slot holding a macro (field hotbar.<slot>); for an",
           "              embedded target only where the record also names its parent (a note's entryId, a",
           "              combatant's sceneId, or its combat's scene when that is empty) or sits inside that parent;",
           "              none for a target nested deeper, such as a token's actor",
-          "Bare ids elsewhere (system data) and fields Foundry maintains itself (_stats.lastModifiedBy, a",
-          "token's _regions) are not id-matched. References inside the target itself are left out",
-          "and counted in selfReferences. Not scanned: compendium contents, chat messages, settings, folders'",
-          "own parent links, user hotbar slots, UUIDs used as object keys, relative @UUID[.Item.<id>] links",
-          "and name-based legacy links.",
+          "Bare ids elsewhere (system data, object keys) and fields Foundry maintains itself (_stats.lastModifiedBy,",
+          "a token's _regions) are not id-matched; neither are chat whisper recipients. References inside the",
+          "target itself are left out and counted in selfReferences.",
+          "setting: world- and user-scope settings, read as their stored JSON (rows Setting.<id>, name = setting",
+          "key, field value.<path>). Client-scope settings live in each browser and are out of reach.",
+          "chat: chat messages (content, flavor, flags, rolls, speaker); scanned only when --scope names chat.",
+          "Not scanned: compendium contents, name-based legacy links (@Actor[Goblin]), relative links in other",
+          "fields (a system's item description, for example).",
           "",
           "The tokens of an actor across all scenes: world references --uuid Actor.<id> --scope scene",
           "(rows Scene.<s>.Token.<t> with field actorId)."

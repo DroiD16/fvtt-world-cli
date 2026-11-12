@@ -14,6 +14,7 @@ import * as moduleProtocol from "../../foundry-module/scripts/generated/protocol
 import * as protocol from "../src/index.js";
 import {
   APPROVAL_AWAIT_PARK_CAP_MS,
+  AUDIT_FILE_SCOPES,
   APPROVAL_PENDING_MAX,
   APPROVAL_RESULT_RETENTION_MS,
   APPROVAL_TIMEOUT_DEFAULT_MINUTES,
@@ -53,6 +54,8 @@ import {
   PROTOCOL_COMPONENTS,
   PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
+  REFERENCE_DEFAULT_SCOPES,
+  REFERENCE_SCOPES,
   defaultProfile,
   isDestructiveCommand,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
@@ -1950,17 +1953,28 @@ describe("protocol contract", () => {
   });
 
   describe("world.references params", () => {
-    it("is a read that requires a uuid and shares the audit scope enum", () => {
+    it("is a read that requires a uuid and accepts the reference scopes", () => {
       expect(COMMAND_DEFINITIONS["world.references"].mutation).toBe(false);
       expect(validate("world.references", {}).ok).toBe(false);
       expect(
         validate("world.references", { uuid: "Actor.abc", scope: ["scene"], limit: 5, offset: 0 }).ok
       ).toBe(true);
-      expect(COMMAND_DEFINITIONS["world.references"].paramsSchema.properties.scope).toEqual(
-        COMMAND_DEFINITIONS["world.audit-files"].paramsSchema.properties.scope
-      );
-      expectRejected("world.references", { uuid: "Actor.abc", scope: ["chat"] }, "$.params.scope[0]");
+      expect(COMMAND_DEFINITIONS["world.references"].paramsSchema.properties.scope.items.enum).toEqual([
+        ...REFERENCE_SCOPES
+      ]);
+      for (const scope of REFERENCE_SCOPES) {
+        expect(validate("world.references", { uuid: "Actor.abc", scope: [scope] }).ok, scope).toBe(true);
+      }
+      expectRejected("world.references", { uuid: "Actor.abc", scope: ["user"] }, "$.params.scope[0]");
       expectRejected("world.references", { uuid: "Actor.abc", path: "x" }, "$.params.path is not allowed");
+    });
+
+    it("scans every audit scope plus folders and settings by default and chat only on request", () => {
+      expect(REFERENCE_SCOPES).toEqual([...AUDIT_FILE_SCOPES, "folder", "setting", "chat"]);
+      expect(REFERENCE_DEFAULT_SCOPES).toEqual(REFERENCE_SCOPES.filter((scope) => scope !== "chat"));
+      expect(COMMAND_DEFINITIONS["world.audit-files"].paramsSchema.properties.scope.items.enum).toEqual([
+        ...AUDIT_FILE_SCOPES
+      ]);
     });
   });
 

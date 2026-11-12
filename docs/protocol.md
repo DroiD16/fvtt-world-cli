@@ -193,19 +193,37 @@ The active/inactive split is included where knowable.
 
 `world.references` reports where stored world data refers to one document. Each row names the
 owning document by `uuid`, the dotted `field` path inside its stored source, and a `match` kind:
-`uuid` for the UUID string, `link` for an `@UUID[...]` or legacy content link, `embedded` for the
-UUID of a document embedded in the target (carried in `matchedUuid`), and `id` for a bare id in a
-Foundry foreign-key field of the target's document type. Embedded ids repeat across parents, for
-example in a duplicated scene, so an `id` match on an embedded target also requires the record to
-name the target's parent or to sit inside it; a target below an embedded parent, such as a token's
-actor, gets no `id` matches. Underscore fields that Foundry maintains itself, such
-as `_stats.lastModifiedBy`, take no part in `id` matching. A match inside a token's delta belongs to
-the token, with a `delta.` field path. `scopes` lists the document families searched; users are
-always searched as well. An embedded document type given without its parent chain, such as
-`Token.<id>`, is refused with `INVALID_PARAMS`. `target.exists` is `null` when a compendium entry
-cannot be resolved without loading the pack. A reference stored inside the target itself gets no row
-and counts toward `selfReferences`. A lookup with more than `REFERENCES_MAX_MATCHES` (10,000) rows
-returns `QUERY_TOO_BROAD`.
+
+- `uuid`: a string holds the target UUID.
+- `link`: the UUID sits in an `@UUID[...]` or legacy content link.
+- `embedded`: a string holds the UUID of a document embedded in the target, carried in `matchedUuid`.
+- `key`: an object key names the target. Foundry stores a dotted key such as `flags.mod["Actor.<id>"]`
+  as nested keys, so `field` ends at the id (`flags.mod.Actor.<id>`) in both storage forms. A key
+  naming a document embedded in the target carries it in `matchedUuid`.
+- `relative`: a relative link (`@UUID[.<id>]`, `@Embed[.<id>]`) names the target once resolved
+  against the document that stores it, with the connected Foundry version's own rules. `matchedUuid`
+  is the resolved UUID. Only the fields Foundry resolves that way are read: a journal page's
+  `text.content` and the `description` of a roll table and of a table result.
+- `id`: a bare id in a Foundry foreign-key field of the target's document type, or a user's hotbar
+  slot holding the target macro (`hotbar.<slot>`).
+
+Embedded ids repeat across parents, for example in a duplicated scene, so an `id` match on an
+embedded target also requires the record to name the target's parent or to sit inside it; a target
+below an embedded parent, such as a token's actor, gets no `id` matches. Underscore fields that
+Foundry maintains itself, such as `_stats.lastModifiedBy`, take no part in `id` matching. A match
+inside a token's delta belongs to the token, with a `delta.` field path.
+
+`scopes` lists the document families searched. Without `scope`, every family except `chat` is
+searched (`REFERENCE_DEFAULT_SCOPES`); `chat` is searched only when named. Users are always searched
+as well. The `setting` scope reads world- and user-scope settings from their stored JSON text: rows
+are `Setting.<id>`, `name` is the setting key, and `field` starts with `value.`. Client-scope settings
+live in each browser and are not searched.
+
+An embedded document type given without its parent chain, such as `Token.<id>`, is refused with
+`INVALID_PARAMS`. `target.exists` is `null` when a compendium entry cannot be resolved without
+loading the pack. A reference stored inside the target itself gets no row and counts toward
+`selfReferences`. A lookup with more than `REFERENCES_MAX_MATCHES` (10,000) rows returns
+`QUERY_TOO_BROAD`.
 
 ### Macro results
 

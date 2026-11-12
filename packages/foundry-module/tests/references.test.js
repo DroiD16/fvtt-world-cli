@@ -99,8 +99,23 @@ const CONFIG = {
     )
   },
   ChatMessage: {
-    documentClass: documentClass({}, { whisper: new ArrayField(new ForeignDocumentField("User")) })
-  }
+    documentClass: documentClass(
+      {},
+      {
+        whisper: new ArrayField(new ForeignDocumentField("User")),
+        speaker: new SchemaField({
+          scene: new ForeignDocumentField("Scene"),
+          actor: new ForeignDocumentField("Actor"),
+          token: new ForeignDocumentField("Token")
+        })
+      }
+    )
+  },
+  Folder: { documentClass: documentClass({}, { folder: new ForeignDocumentField("Folder") }) },
+  Setting: { documentClass: documentClass({}, { user: new ForeignDocumentField("User") }) },
+  Macro: { documentClass: documentClass({}, { folder: new ForeignDocumentField("Folder") }) },
+  RollTable: { documentClass: documentClass({ TableResult: "results" }, {}) },
+  TableResult: { documentClass: documentClass({}, {}) }
 };
 
 function collection(documentName, sources) {
@@ -207,6 +222,7 @@ beforeEach(() => {
       "Item",
       "JournalEntryPage",
       "Note",
+      "TableResult",
       "Token"
     ],
     WORLD_DOCUMENT_TYPES: [
@@ -234,6 +250,49 @@ afterEach(() => {
   delete globalThis.CONST;
   vi.restoreAllMocks();
 });
+
+function settings(sources) {
+  const world = collection("Setting", sources);
+  const client = new Map([["mod.client", JSON.stringify({ [`Actor.${ACTOR_ID}`]: true })]]);
+  return {
+    storage: new Map([
+      ["world", world],
+      ["client", client],
+      ["user", world]
+    ])
+  };
+}
+
+function relativeDocument(uuid) {
+  const parts = uuid.split(".");
+  return {
+    uuid,
+    documentName: parts.at(-2),
+    parentUuid: parts.length > 2 ? parts.slice(0, -2).join(".") : null
+  };
+}
+
+/**
+ * @param {string} uuid
+ * @param {{ relative: { uuid: string, documentName: string, parentUuid: string | null } }} options
+ */
+function parseRelativeUuid(uuid, { relative }) {
+  if (!uuid.startsWith(".")) {
+    const parts = uuid.split(".");
+    return { uuid, documentId: parts.length >= 2 ? parts[1] : undefined };
+  }
+  const parts = uuid.slice(1).split(".");
+  if (parts.length % 2 === 0) {
+    return { uuid: `${relative.uuid}.${parts.join(".")}`, documentId: parts.at(-1) };
+  }
+  if (relative.parentUuid) {
+    return {
+      uuid: `${relative.parentUuid}.${relative.documentName}.${parts.join(".")}`,
+      documentId: parts.at(-1)
+    };
+  }
+  return { uuid: `${relative.documentName}.${parts.at(-1)}`, documentId: parts.at(-1) };
+}
 
 const rows = (result) =>
   result.references.map((ref) => [ref.uuid, ref.field, ref.match, ref.matchedUuid ?? null]);
@@ -273,7 +332,9 @@ describe("world.references lookup", () => {
       "macro",
       "table",
       "combat",
-      "cards"
+      "cards",
+      "folder",
+      "setting"
     ]);
   });
 
@@ -509,6 +570,260 @@ describe("world.references lookup", () => {
         expect.objectContaining({ code: "INVALID_PARAMS" })
       );
     }
+  });
+
+  it("finds a UUID used as an object key, both as Foundry stores dotted keys and as a literal key", () => {
+    globalThis.game.items = collection("Item", [
+      {
+        _id: "dddddddddddddddd",
+        name: "Tracker",
+        flags: { world: { Actor: { [ACTOR_ID]: { seen: true } } } },
+        effects: []
+      }
+    ]);
+    globalThis.game.settings = settings([
+      {
+        _id: "setting000000001",
+        key: "mod.links",
+        value: JSON.stringify({
+          [`Actor.${ACTOR_ID}`]: ["note"],
+          [`Actor.${ACTOR_ID}.Item.itemaaaaaaaaaaaa`]: 1
+        })
+      }
+    ]);
+
+    const result = runReferenceLookup({ uuid: `Actor.${ACTOR_ID}`, scope: ["item", "setting"] });
+    expect(rows(result)).toEqual([
+      ["Item.dddddddddddddddd", `flags.world.Actor.${ACTOR_ID}`, "key", null],
+      ["Setting.setting000000001", `value.Actor.${ACTOR_ID}`, "key", null],
+      [
+        "Setting.setting000000001",
+        `value.Actor.${ACTOR_ID}.Item.itemaaaaaaaaaaaa`,
+        "key",
+        `Actor.${ACTOR_ID}.Item.itemaaaaaaaaaaaa`
+      ]
+    ]);
+  });
+
+  it("matches no key that only contains the id or spells a longer UUID", () => {
+    globalThis.game.items = collection("Item", [
+      {
+        _id: "dddddddddddddddd",
+        name: "Noise",
+        flags: {
+          world: {
+            [ACTOR_ID]: 1,
+            [`${ACTOR_ID}x`]: 1,
+            [`note ${ACTOR_ID}`]: 1,
+            Actor: { [`${ACTOR_ID}x`]: 1 },
+            Compendium: { world: { monsters: { Actor: { [ACTOR_ID]: 1 } } } },
+            Scene: { scene00000000001: { Token: { token00000000001: { Actor: { [ACTOR_ID]: 1 } } } } },
+            [`Compendium.world.monsters.Actor.${ACTOR_ID}`]: 1
+          }
+        },
+        effects: []
+      }
+    ]);
+
+    expect(runReferenceLookup({ uuid: `Actor.${ACTOR_ID}`, scope: ["item"] }).total).toBe(0);
+  });
+
+  it("scans folders by default, so a child folder's parent link is found", () => {
+    globalThis.game.folders = collection("Folder", [
+      { _id: "folder0000000001", name: "Parent", folder: null },
+      { _id: "folder0000000002", name: "Child", folder: "folder0000000001" }
+    ]);
+
+    const result = runReferenceLookup({ uuid: "Folder.folder0000000001" });
+    expect(rows(result)).toEqual([["Folder.folder0000000002", "folder", "id", null]]);
+    expect(runReferenceLookup({ uuid: "Folder.folder0000000001", scope: ["actor"] }).total).toBe(0);
+    expect(runReferenceLookup({ uuid: "Folder.folder0000000001", scope: ["folder"] }).scannedDocuments).toBe(
+      2
+    );
+  });
+
+  it("finds a user's hotbar slot that holds the target macro and no other slot", () => {
+    globalThis.game.users = collection("User", [
+      { _id: "user000000000001", name: "Player", hotbar: { 1: "macro00000000001", 2: "macro00000000002" } }
+    ]);
+
+    expect(rows(runReferenceLookup({ uuid: "Macro.macro00000000001", scope: ["macro"] }))).toEqual([
+      ["User.user000000000001", "hotbar.1", "id", null]
+    ]);
+    expect(
+      runReferenceLookup({ uuid: "Compendium.world.macros.Macro.macro00000000001", scope: ["macro"] }).total
+    ).toBe(0);
+  });
+
+  it("scans world and user settings by their stored text, named by key, and never client settings", () => {
+    globalThis.game.settings = settings([
+      { _id: "setting000000001", key: "mod.boss", value: JSON.stringify({ boss: `Actor.${ACTOR_ID}` }) },
+      { _id: "setting000000002", key: "mod.raw", value: `not json @UUID[Actor.${ACTOR_ID}]` },
+      { _id: "setting000000003", key: "mod.mine", user: "user000000000001", value: "null" }
+    ]);
+
+    const result = runReferenceLookup({ uuid: `Actor.${ACTOR_ID}`, scope: ["setting"] });
+    expect(result.references.map((ref) => [ref.uuid, ref.name, ref.field, ref.match])).toEqual([
+      ["Setting.setting000000001", "mod.boss", "value.boss", "uuid"],
+      ["Setting.setting000000002", "mod.raw", "value", "link"]
+    ]);
+    expect(result.scannedDocuments).toBe(3);
+    expect(rows(runReferenceLookup({ uuid: "User.user000000000001", scope: ["setting"] }))).toEqual([
+      ["Setting.setting000000003", "user", "id", null]
+    ]);
+  });
+
+  it("scans chat messages only when the chat scope is requested", () => {
+    globalThis.game.messages = collection("ChatMessage", [
+      {
+        _id: "message000000001",
+        content: `<p>@UUID[Actor.${ACTOR_ID}]{Boss}</p>`,
+        speaker: { scene: null, actor: ACTOR_ID, token: null }
+      }
+    ]);
+
+    const byDefault = runReferenceLookup({ uuid: `Actor.${ACTOR_ID}` });
+    expect(byDefault.scopes).not.toContain("chat");
+    expect(byDefault.references.some((ref) => ref.documentName === "ChatMessage")).toBe(false);
+    const chat = runReferenceLookup({ uuid: `Actor.${ACTOR_ID}`, scope: ["chat"] });
+    expect(chat.scopes).toEqual(["chat"]);
+    expect(rows(chat)).toEqual([
+      ["ChatMessage.message000000001", "content", "link", null],
+      ["ChatMessage.message000000001", "speaker.actor", "id", null]
+    ]);
+  });
+
+  describe("relative links", () => {
+    beforeEach(() => {
+      globalThis.foundry = { ...globalThis.foundry, utils: { parseUuid: vi.fn(parseRelativeUuid) } };
+      globalThis.fromUuidSync = vi.fn((uuid) => relativeDocument(uuid));
+      globalThis.game.journal = collection("JournalEntry", [
+        {
+          _id: "journal000000001",
+          name: "Lore",
+          pages: [
+            {
+              _id: "page000000000001",
+              name: "Index",
+              text: {
+                content:
+                  "<p>@UUID[.page000000000002#lair]{Lair} and @Embed[.page000000000003 inline] and " +
+                  "@Embed[caption=false uuid=.page000000000004]</p>"
+              },
+              flags: { world: { note: "@UUID[.page000000000002]" } }
+            },
+            { _id: "page000000000002", name: "Lair" },
+            { _id: "page000000000003", name: "Map" },
+            { _id: "page000000000004", name: "Hall" }
+          ]
+        },
+        {
+          _id: "journal000000002",
+          name: "Other",
+          pages: [{ _id: "page000000000001", name: "Index", text: { content: "@UUID[.page000000000002]" } }]
+        }
+      ]);
+      globalThis.game.tables = collection("RollTable", [
+        {
+          _id: "table00000000001",
+          name: "Loot",
+          description: "@UUID[.TableResult.result0000000002]",
+          results: [
+            { _id: "result0000000001", description: "@UUID[.result0000000002]{Next}" },
+            { _id: "result0000000002", description: "" }
+          ]
+        }
+      ]);
+    });
+
+    it("resolves relative links against the document that stores them, in the fields Foundry enriches that way", () => {
+      const lair = runReferenceLookup({
+        uuid: "JournalEntry.journal000000001.JournalEntryPage.page000000000002"
+      });
+      expect(rows(lair)).toEqual([
+        [
+          "JournalEntry.journal000000001.JournalEntryPage.page000000000001",
+          "text.content",
+          "relative",
+          "JournalEntry.journal000000001.JournalEntryPage.page000000000002"
+        ]
+      ]);
+      expect(globalThis.foundry.utils.parseUuid).toHaveBeenCalledWith(".page000000000002", {
+        relative: expect.objectContaining({
+          uuid: "JournalEntry.journal000000001.JournalEntryPage.page000000000001"
+        })
+      });
+
+      for (const pageId of ["page000000000003", "page000000000004"]) {
+        expect(
+          rows(runReferenceLookup({ uuid: `JournalEntry.journal000000001.JournalEntryPage.${pageId}` })).map(
+            (row) => row.slice(1, 3)
+          ),
+          pageId
+        ).toEqual([["text.content", "relative"]]);
+      }
+
+      const result = rows(
+        runReferenceLookup({ uuid: "RollTable.table00000000001.TableResult.result0000000002" })
+      );
+      expect(result).toEqual([
+        [
+          "RollTable.table00000000001",
+          "description",
+          "relative",
+          "RollTable.table00000000001.TableResult.result0000000002"
+        ],
+        [
+          "RollTable.table00000000001.TableResult.result0000000001",
+          "description",
+          "relative",
+          "RollTable.table00000000001.TableResult.result0000000002"
+        ]
+      ]);
+    });
+
+    it("skips an embed value Foundry cannot parse, as Foundry does, and still reads the rest", () => {
+      globalThis.foundry.utils.parseUuid = vi.fn((uuid, options) => {
+        if (uuid === "broken") throw new Error("unparsable");
+        return parseRelativeUuid(uuid, options);
+      });
+      globalThis.game.journal = collection("JournalEntry", [
+        {
+          _id: "journal000000001",
+          name: "Lore",
+          pages: [
+            {
+              _id: "page000000000001",
+              name: "Index",
+              text: { content: "@Embed[broken .page000000000002] and @UUID[.page000000000003]" }
+            },
+            { _id: "page000000000002", name: "Lair" },
+            { _id: "page000000000003", name: "Map" }
+          ]
+        }
+      ]);
+
+      for (const pageId of ["page000000000002", "page000000000003"]) {
+        expect(
+          runReferenceLookup({ uuid: `JournalEntry.journal000000001.JournalEntryPage.${pageId}` }).total,
+          pageId
+        ).toBe(1);
+      }
+    });
+
+    it("matches no relative link of another journal or outside an enriched field, and counts one inside the target as self", () => {
+      const lair = runReferenceLookup({
+        uuid: "JournalEntry.journal000000001.JournalEntryPage.page000000000002"
+      });
+      expect(lair.references.map((ref) => ref.uuid)).not.toContain(
+        "JournalEntry.journal000000002.JournalEntryPage.page000000000001"
+      );
+      expect(lair.references.some((ref) => ref.field.startsWith("flags."))).toBe(false);
+
+      const journal = runReferenceLookup({ uuid: "JournalEntry.journal000000001", scope: ["journal"] });
+      expect(journal.total).toBe(0);
+      expect(journal.selfReferences).toBe(3);
+    });
   });
 
   it("refuses a lookup above the match cap", () => {
