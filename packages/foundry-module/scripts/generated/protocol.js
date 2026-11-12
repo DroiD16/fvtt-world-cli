@@ -1842,12 +1842,18 @@ var auditFilesSchema = {
   },
   additionalProperties: false
 };
+var REFERENCE_SCOPES = deepFreeze([...AUDIT_FILE_SCOPES, "folder", "setting", "chat"]);
+var REFERENCE_DEFAULT_SCOPES = deepFreeze(REFERENCE_SCOPES.filter((scope) => scope !== "chat"));
 var worldReferencesSchema = {
   type: "object",
   required: ["uuid"],
   properties: {
     uuid: { type: "string", minLength: 1 },
-    scope: auditFilesSchema.properties.scope,
+    scope: {
+      type: "array",
+      minItems: 1,
+      items: { type: "string", enum: [...REFERENCE_SCOPES] }
+    },
     ...paginationProperties
   },
   additionalProperties: false
@@ -6411,6 +6417,8 @@ export {
   RECONNECT_BASE_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
   REFERENCES_MAX_MATCHES,
+  REFERENCE_DEFAULT_SCOPES,
+  REFERENCE_SCOPES,
   REQUEST_SCHEMA,
   SCENE_THUMBNAIL_MAX_BYTES,
   SCENE_THUMBNAIL_MAX_DIMENSION,
