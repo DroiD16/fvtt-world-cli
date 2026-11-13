@@ -39,7 +39,7 @@ function createRecordingContext(element) {
 }
 
 /**
- * @returns {{ canvases: any[], encoded: { value: string } }}
+ * @returns {{ canvases: any[], encoded: { value: string }, bitmaps: { close: import("vitest").Mock }[] }}
  */
 function installImagePipeline() {
   /** @type {any[]} */
@@ -60,11 +60,15 @@ function installImagePipeline() {
       return element;
     })
   };
+  /** @type {{ close: import("vitest").Mock }[]} */
+  const bitmaps = [];
   globals.createImageBitmap = vi.fn(async () => {
     const element = canvases[canvases.length - 1];
-    return { width: element?.width ?? 2, height: element?.height ?? 2, close() {} };
+    const bitmap = { width: element?.width ?? 2, height: element?.height ?? 2, close: vi.fn() };
+    bitmaps.push(bitmap);
+    return bitmap;
   });
-  return { canvases, encoded };
+  return { canvases, encoded, bitmaps };
 }
 
 /** @param {any} scene */
@@ -149,6 +153,16 @@ describe("scene.snapshot", () => {
     expect(image.dataUrl.startsWith("data:image/webp;base64,")).toBe(true);
     expect(response.result.levelId).toBeNull();
     expect(scene.update).not.toHaveBeenCalled();
+    expect(pipeline.bitmaps.map((bitmap) => bitmap.close.mock.calls.length)).toEqual([1]);
+  });
+
+  it("releases the decoded background when composing the image fails", async () => {
+    globals.document.createElement = vi.fn(() => ({ getContext: () => null }));
+
+    const response = await routerFor().route(createRequest("scene.snapshot", { sceneId: "scene-1" }));
+
+    expect(response.error.code).toBe("BRIDGE_NOT_READY");
+    expect(pipeline.bitmaps.map((bitmap) => bitmap.close.mock.calls.length)).toEqual([1]);
   });
 
   it("places a v13 render of less than the whole scene inside a frame of the whole scene", async () => {

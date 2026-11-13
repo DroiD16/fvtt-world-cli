@@ -61,8 +61,6 @@ export function createSceneSnapshotHandlers() {
         format: "image/png",
         ...(level ? { level: level.id } : {})
       });
-      const background = await decodeDataUrlImage(rendered.thumb);
-
       // Foundry v13 fits the thumbnail to the bounds of what it drew, which it reports as the
       // result size; v14 always fits it to the scene rectangle and reports the output size. The
       // snapshot always covers the whole scene, so a v13 thumbnail is placed at its own fit.
@@ -79,43 +77,47 @@ export function createSceneSnapshotHandlers() {
         : transform;
       const ratio = transform.scale / drawn.scale;
 
-      const { element, context } = createImageCanvas(width, height);
-      context.fillStyle = String((level ? level.background?.color : scene.backgroundColor)?.css ?? "#000000");
-      context.fillRect(0, 0, width, height);
-      context.drawImage(
-        background,
-        transform.offsetX - drawn.offsetX * ratio,
-        transform.offsetY - drawn.offsetY * ratio,
-        width * ratio,
-        height * ratio
-      );
-      background.close();
+      const background = await decodeDataUrlImage(rendered.thumb);
+      try {
+        const { element, context } = createImageCanvas(width, height);
+        context.fillStyle = String(
+          (level ? level.background?.color : scene.backgroundColor)?.css ?? "#000000"
+        );
+        context.fillRect(0, 0, width, height);
+        context.drawImage(
+          background,
+          transform.offsetX - drawn.offsetX * ratio,
+          transform.offsetY - drawn.offsetY * ratio,
+          width * ratio,
+          height * ratio
+        );
 
-      await drawSnapshotOverlays(context, scene, {
-        layers,
-        level,
-        transform,
-        tokenImages: params.tokenImages === true
-      });
+        await drawSnapshotOverlays(context, scene, {
+          layers,
+          level,
+          transform,
+          tokenImages: params.tokenImages === true
+        });
 
-      const image = encodeRenderedImage(element, params.format ?? "webp", {
-        sceneId: scene.id,
-        size: Math.max(width, height)
-      });
-
-      return {
-        sceneId: scene.id,
-        levelId: level?.id ?? null,
-        layers,
-        image,
-        view: {
-          x: -transform.offsetX / transform.scale,
-          y: -transform.offsetY / transform.scale,
-          width: width / transform.scale,
-          height: height / transform.scale
-        },
-        transform
-      };
+        return {
+          sceneId: scene.id,
+          levelId: level?.id ?? null,
+          layers,
+          image: encodeRenderedImage(element, params.format ?? "webp", {
+            sceneId: scene.id,
+            size: Math.max(width, height)
+          }),
+          view: {
+            x: -transform.offsetX / transform.scale,
+            y: -transform.offsetY / transform.scale,
+            width: width / transform.scale,
+            height: height / transform.scale
+          },
+          transform
+        };
+      } finally {
+        background.close();
+      }
     }
   };
 }
