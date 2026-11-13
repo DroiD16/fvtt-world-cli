@@ -1,9 +1,12 @@
 import {
   ERROR_CODES,
   FOG_RESET_CONFIRM_POLL_INTERVAL_MS,
-  FOG_RESET_CONFIRM_TIMEOUT_MS
+  FOG_RESET_CONFIRM_TIMEOUT_MS,
+  RENDERED_IMAGE_MAX_BYTES
 } from "../generated/protocol.js";
 import { createBridgeError } from "./errors.js";
+
+const RENDERED_IMAGE_QUALITY = 0.85;
 
 /** @returns {boolean} */
 export function isCanvasDisabled() {
@@ -15,7 +18,7 @@ export function isCanvasDisabled() {
 }
 
 /** @param {any} scene */
-export function assertThumbnailApiAvailable(scene) {
+function assertThumbnailApiAvailable(scene) {
   if (typeof scene?.createThumbnail !== "function") {
     throw createBridgeError(
       ERROR_CODES.BRIDGE_NOT_READY,
@@ -24,23 +27,30 @@ export function assertThumbnailApiAvailable(scene) {
   }
 }
 
-/** @param {any} scene */
-export function assertThumbnailSupported(scene) {
-  assertThumbnailApiAvailable(scene);
-
+/** @param {string} command */
+export function assertCanvasEnabled(command) {
   if (isCanvasDisabled()) {
     throw createBridgeError(
       ERROR_CODES.UNSUPPORTED_OPERATION,
-      "Thumbnail generation requires a rendered game canvas, but the core `noCanvas` setting is enabled in this GM client session; disable it (Configure Settings → Core → Disable Canvas) and reload the client, then re-run scene.thumbnail.generate",
+      `${command} requires a rendered game canvas, but the core \`noCanvas\` setting is enabled in this GM client session; disable it (Configure Settings → Core → Disable Canvas) and reload the client, then re-run ${command}`,
       { setting: "core.noCanvas" }
     );
   }
+}
+
+/**
+ * @param {any} scene
+ * @param {string} command
+ */
+export function assertThumbnailSupported(scene, command) {
+  assertThumbnailApiAvailable(scene);
+  assertCanvasEnabled(command);
 
   const user = globalThis.game?.user;
   if (typeof user?.can === "function" && !user.can("FILES_UPLOAD")) {
     throw createBridgeError(
       ERROR_CODES.THUMBNAIL_UPLOAD_DENIED,
-      "The bridge GM session lacks the core FILES_UPLOAD permission, which Foundry requires to generate a scene thumbnail; grant the GM role File Upload permission (Configure Permissions) and retry",
+      `${command} renders through Foundry's Scene#createThumbnail, which refuses to run unless the user holds the core FILES_UPLOAD permission, and the bridge GM session lacks it; grant the GM role File Upload permission (Configure Permissions) and retry`,
       { permission: "FILES_UPLOAD" }
     );
   }
@@ -48,22 +58,22 @@ export function assertThumbnailSupported(scene) {
 
 /**
  * @param {any} scene
- * @param {{ width: number, height: number }} dimensions
+ * @param {Record<string, unknown>} options
  * @returns {Promise<{ thumb: string, reportedWidth: number | null, reportedHeight: number | null }>}
  */
-export async function renderSceneThumbnail(scene, { width, height }) {
+export async function renderSceneThumbnail(scene, options) {
   assertThumbnailApiAvailable(scene);
 
   let result;
   try {
-    result = await scene.createThumbnail({ width, height });
+    result = await scene.createThumbnail(options);
   } catch (error) {
     const raw = /** @type {any} */ (error);
 
     if (raw?.cause?.thumbUploadDenied) {
       throw createBridgeError(
         ERROR_CODES.THUMBNAIL_UPLOAD_DENIED,
-        "Foundry refused to generate the thumbnail: the bridge GM session lacks the core FILES_UPLOAD permission; grant the GM role File Upload permission (Configure Permissions) and retry",
+        "Foundry refused to render the scene: Scene#createThumbnail requires the core FILES_UPLOAD permission, which the bridge GM session lacks; grant the GM role File Upload permission (Configure Permissions) and retry",
         { sceneId: scene?.id ?? null, permission: "FILES_UPLOAD" }
       );
     }
@@ -71,13 +81,13 @@ export async function renderSceneThumbnail(scene, { width, height }) {
     if (isCanvasDisabled()) {
       throw createBridgeError(
         ERROR_CODES.UNSUPPORTED_OPERATION,
-        "Thumbnail generation requires a rendered game canvas, but the core `noCanvas` setting is enabled in this GM client session",
+        "Rendering a scene requires a rendered game canvas, but the core `noCanvas` setting is enabled in this GM client session",
         { setting: "core.noCanvas" }
       );
     }
     throw createBridgeError(
       ERROR_CODES.THUMBNAIL_RENDER_FAILED,
-      `Foundry could not render a thumbnail for scene ${scene?.id ?? "unknown"}: ${raw?.message ?? String(error)}`,
+      `Foundry could not render scene ${scene?.id ?? "unknown"}: ${raw?.message ?? String(error)}`,
       { sceneId: scene?.id ?? null, message: raw?.message ?? String(error) }
     );
   }
@@ -110,6 +120,81 @@ export function decodedDataUrlBytes(dataUrl) {
   }
   const padding = payload.endsWith("==") ? 2 : payload.endsWith("=") ? 1 : 0;
   return Math.max(0, Math.floor((payload.length * 3) / 4) - padding);
+}
+
+/**
+ * @param {string} dataUrl
+ * @returns {Promise<ImageBitmap>}
+ */
+export async function decodeDataUrlImage(dataUrl) {
+  try {
+    const binary = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    return await createImageBitmap(new Blob([bytes]));
+  } catch (error) {
+    const raw = /** @type {any} */ (error);
+    throw createBridgeError(
+      ERROR_CODES.THUMBNAIL_RENDER_FAILED,
+      `The GM client could not decode the image Foundry rendered: ${raw?.message ?? String(error)}`,
+      { message: raw?.message ?? String(error) }
+    );
+  }
+}
+
+/**
+ * @param {number} longSide
+ * @param {number} width
+ * @param {number} height
+ * @returns {{ width: number, height: number }}
+ */
+export function fitLongSide(longSide, width, height) {
+  return width >= height
+    ? { width: longSide, height: Math.max(1, Math.round((longSide * height) / width)) }
+    : { width: Math.max(1, Math.round((longSide * width) / height)), height: longSide };
+}
+
+/**
+ * @param {number} width
+ * @param {number} height
+ * @returns {{ element: HTMLCanvasElement, context: CanvasRenderingContext2D }}
+ */
+export function createImageCanvas(width, height) {
+  const element = globalThis.document.createElement("canvas");
+  element.width = width;
+  element.height = height;
+  const context = element.getContext("2d");
+  if (!context) {
+    throw createBridgeError(
+      ERROR_CODES.BRIDGE_NOT_READY,
+      "The GM client could not create a 2D canvas context to compose the image"
+    );
+  }
+  return { element, context };
+}
+
+/**
+ * @param {HTMLCanvasElement} element
+ * @param {string} format
+ * @param {Record<string, unknown>} details
+ * @returns {{ dataUrl: string, mimeType: string, width: number, height: number, sizeBytes: number }}
+ */
+export function encodeRenderedImage(element, format, details) {
+  const dataUrl = element.toDataURL(`image/${format}`, RENDERED_IMAGE_QUALITY);
+  const sizeBytes = decodedDataUrlBytes(dataUrl);
+  if (sizeBytes > RENDERED_IMAGE_MAX_BYTES) {
+    throw createBridgeError(
+      ERROR_CODES.PAYLOAD_TOO_LARGE,
+      `The rendered image is ${sizeBytes} bytes, above the ${RENDERED_IMAGE_MAX_BYTES}-byte limit for a rendered image; request a smaller size, or webp instead of png`,
+      { ...details, limit: "image-bytes", sizeBytes, limitBytes: RENDERED_IMAGE_MAX_BYTES }
+    );
+  }
+  return {
+    dataUrl,
+    mimeType: dataUrl.slice("data:".length, dataUrl.indexOf(";")),
+    width: element.width,
+    height: element.height,
+    sizeBytes
+  };
 }
 
 export function assertFogResetSupported() {

@@ -198,6 +198,25 @@ export const BATCH_WRITE_COMMANDS = COMMAND_NAMES.filter((name) =>
   /\.(create|update|delete)-many$/.test(name)
 );
 
+function renderPoint(point: any) {
+  return `(${Math.round(point?.x ?? NaN)}, ${Math.round(point?.y ?? NaN)})`;
+}
+
+function renderRect(rect: any) {
+  return `x ${Math.round(rect?.x ?? NaN)}, y ${Math.round(rect?.y ?? NaN)}, ${Math.round(rect?.width ?? NaN)}x${Math.round(rect?.height ?? NaN)}`;
+}
+
+function renderImageLines(result: any) {
+  const image = result.image ?? {};
+  const transform = result.transform ?? {};
+  return [
+    `image: ${image.path ?? "(not saved)"}`,
+    `size: ${image.width}x${image.height} px, ${image.mimeType}, ${image.sizeBytes} bytes`,
+    `covers: ${renderRect(result.view)}`,
+    `pixel = coordinate * ${transform.scale} + (${transform.offsetX}, ${transform.offsetY})`
+  ];
+}
+
 export const RENDERERS = registerRenderers([
   detailRenderer("system.ping", (result) =>
     [
@@ -232,6 +251,28 @@ export const RENDERERS = registerRenderers([
     [
       `Showed image ${result.src}${result.title ? ` as "${result.title}"` : ""} to other users`,
       ...renderBroadcastLines(result)
+    ].join("\n")
+  ),
+  detailRenderer("canvas.capture", (result) =>
+    [
+      `Captured the GM view of scene ${result.sceneId}${result.levelId ? ` level ${result.levelId}` : ""}`,
+      ...renderImageLines(result),
+      `zoom: ${result.position?.scale}`
+    ].join("\n")
+  ),
+  detailRenderer("canvas.pan", (result) =>
+    [
+      `GM view of scene ${result.sceneId}: center ${renderPoint(result.position)} at zoom ${result.position?.scale}`,
+      `previous: center ${renderPoint(result.previous)} at zoom ${result.previous?.scale}`,
+      `visible: ${renderRect(result.view)}`
+    ].join("\n")
+  ),
+  detailRenderer("canvas.view-scene", (result) =>
+    [
+      result.changed
+        ? `The GM client now views scene ${result.sceneId}${result.levelId ? ` level ${result.levelId}` : ""}`
+        : `The GM client already viewed scene ${result.sceneId}${result.levelId ? ` level ${result.levelId}` : ""}`,
+      `previous: ${result.previousSceneId ?? "no scene"}${result.previousLevelId ? ` level ${result.previousLevelId}` : ""}`
     ].join("\n")
   ),
   detailRenderer("system.reload", () =>
@@ -364,7 +405,11 @@ export const RENDERERS = registerRenderers([
       `${
         result.dryRun ? "[dry-run] would generate a thumbnail for scene" : "Generated thumbnail for scene"
       } ${result.sceneId}`,
-      `output: ${thumbnail.outputWidth ?? "?"}x${thumbnail.outputHeight ?? "?"}`,
+      `output: ${
+        thumbnail.outputWidth == null || thumbnail.outputHeight == null
+          ? "n/a (dry run)"
+          : `${thumbnail.outputWidth}x${thumbnail.outputHeight} px (decoded from the rendered image)`
+      }`,
       `source: ${
         thumbnail.sourceWidth == null || thumbnail.sourceHeight == null
           ? "not reported by this Foundry version"
@@ -385,6 +430,13 @@ export const RENDERERS = registerRenderers([
     }
     return lines.join("\n");
   }),
+  detailRenderer("scene.snapshot", (result) =>
+    [
+      `Rendered scene ${result.sceneId}${result.levelId ? ` level ${result.levelId}` : ""}`,
+      ...renderImageLines(result),
+      `layers: ${(result.layers ?? []).join(", ") || "none"}`
+    ].join("\n")
+  ),
   detailRenderer("scene.fog.reset", (result) =>
     [
       `${

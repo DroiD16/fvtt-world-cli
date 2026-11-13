@@ -195,6 +195,26 @@ export function assertInitialLevelExists(patch, levelIds, details) {
   );
 }
 
+/**
+ * @param {any} scene
+ * @param {string | undefined} levelId
+ * @param {string} command
+ */
+export function resolveSceneLevel(scene, levelId, command) {
+  if (levelId === undefined) {
+    return hasSceneLevels() ? (scene.initialLevel ?? null) : null;
+  }
+  assertLevelsSupported({ family: command, fields: ["levelId"] });
+  const level = scene.levels?.get?.(levelId) ?? null;
+  if (level) return level;
+  const levelIds = Array.from(scene.levels ?? [], (/** @type {any} */ entry) => entry.id);
+  throw createBridgeError(
+    ERROR_CODES.LEVEL_NOT_FOUND,
+    `Level ${levelId} is not a level of scene ${scene.id}; its levels are ${levelIds.join(", ")} (scene.level.list reports them with names). Pass one of these ids, or omit levelId`,
+    { sceneId: scene.id, levelId, levelIds }
+  );
+}
+
 export function getSceneEmbeddedById(sceneId, type, embeddedId, notFoundCode, idField) {
   const scene = getSceneById(sceneId);
   const document = sceneEmbeddedCollection(scene, type)?.get?.(embeddedId) ?? null;

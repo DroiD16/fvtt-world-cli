@@ -35,6 +35,9 @@ response, or one the browser cannot serialize, returns `PAYLOAD_TOO_LARGE` inste
 shared session. A persisted upload-limit change is applied to the transport only after the daemon
 restarts.
 
+A rendered image from `scene.snapshot` or `canvas.capture` is at most 2048 pixels on its long side
+and 8 MiB encoded; a larger one returns `PAYLOAD_TOO_LARGE` with `limit: "image-bytes"`.
+
 ## Pairing
 
 Pairing is the one-time exchange that lets a GM browser become a bridge. Its guarantees:
@@ -199,6 +202,24 @@ with `reason` (`too-large` or `unreadable`) and, for `too-large`, the `limit` (`
 `depth`) and its `max`. The read itself still succeeds. Actor results also carry
 `prepared.prototypeToken` and `prepared.detectionModes`; token results carry `detectionModes`,
 `sight` and `light`. Prepared values are derived: writing them back stores them as source.
+
+`scene.snapshot` and `canvas.capture` return the picture as `image`: `dataUrl` (base64), `mimeType`,
+and `width`, `height` and `sizeBytes`, all read from the encoded image. `transform`
+(`scale`, `offsetX`, `offsetY`) maps a document coordinate to an image pixel as
+`coordinate * scale + offset`, and `view` (`x`, `y`, `width`, `height`) is the canvas rectangle the
+image covers. A snapshot also reports the `layers` it drew and, on v14, the `levelId` it rendered.
+A capture reports the GM view's `position` (`x`, `y` at the screen center, and `scale`). The CLI
+writes the image to a file and replaces `dataUrl` with `path`; `exec --stdin` passes the response
+through unchanged, data URL included. `canvas.pan` returns `previous` and the `position` Foundry
+applied after constraining the zoom to its limits and the center point to the canvas plus a margin
+of 40% of the screen. Foundry's default minimum zoom always admits the `fit` zoom; a configured
+`CONFIG.Canvas.minZoom` can raise it. A `fit` combined with `x`, `y` or `scale` fails schema
+validation before the approval gate. `canvas.view-scene` returns `previousSceneId`,
+`previousLevelId` and `changed`. None of the four is a write, so none takes `dryRun`.
+
+`scene.thumbnail.generate` reports `outputWidth` and `outputHeight` from the rendered image. They
+can exceed the requested size when Foundry renders at the GM client's pixel ratio. A dry run
+reports them as `null`.
 
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.

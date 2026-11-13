@@ -134,6 +134,25 @@ export const SCENE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 
 export const SCENE_THUMBNAIL_RESPONSE_MAX_BYTES = 1024 * 1024;
 
+export const RENDERED_IMAGE_MIN_DIMENSION = 16;
+export const RENDERED_IMAGE_MAX_DIMENSION = 2048;
+
+export const RENDERED_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+export const RENDERED_IMAGE_FORMATS = Object.freeze(["webp", "png"]);
+
+export const SCENE_SNAPSHOT_LAYERS = Object.freeze([
+  "grid",
+  "regions",
+  "drawings",
+  "templates",
+  "walls",
+  "lights",
+  "sounds",
+  "notes",
+  "tokens"
+]);
+
 export const FOG_RESET_CONFIRM_TIMEOUT_MS = 5_000;
 export const FOG_RESET_CONFIRM_POLL_INTERVAL_MS = 250;
 

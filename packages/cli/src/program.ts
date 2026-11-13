@@ -3,6 +3,7 @@ import { Command, Option } from "commander";
 import { registerActor } from "./commands/actor.js";
 import { registerAuth } from "./commands/auth.js";
 import { registerBridge } from "./commands/bridge.js";
+import { registerCanvas } from "./commands/canvas.js";
 import { registerCards } from "./commands/cards.js";
 import { registerChat } from "./commands/chat.js";
 import { registerCombat } from "./commands/combat.js";
@@ -99,6 +100,7 @@ export function createProgram(partialDependencies: Partial<CliDependencies> = {}
   registerFile({ program, dependencies });
   registerGame({ program, dependencies });
   registerImage({ program, dependencies });
+  registerCanvas({ program, dependencies });
 
   applyOutputRouting(program, dependencies);
   applyExitOverride(program);

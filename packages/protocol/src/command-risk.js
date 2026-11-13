@@ -7,7 +7,12 @@ const DESTRUCTIVE_COMMANDS = Object.freeze([
   "scene.token.restore-delta"
 ]);
 
-export const APPROVE_EXTRA_COMMANDS = Object.freeze(["system.reload", "user.create"]);
+export const APPROVE_EXTRA_COMMANDS = Object.freeze([
+  "system.reload",
+  "user.create",
+  "canvas.pan",
+  "canvas.view-scene"
+]);
 
 export const DENIED_BY_DEFAULT_COMMANDS = Object.freeze([
   "macro.execute",

@@ -1,4 +1,11 @@
-import { SCENE_THUMBNAIL_MAX_DIMENSION, SCENE_THUMBNAIL_MIN_DIMENSION } from "../constants.js";
+import {
+  RENDERED_IMAGE_FORMATS,
+  RENDERED_IMAGE_MAX_DIMENSION,
+  RENDERED_IMAGE_MIN_DIMENSION,
+  SCENE_SNAPSHOT_LAYERS,
+  SCENE_THUMBNAIL_MAX_DIMENSION,
+  SCENE_THUMBNAIL_MIN_DIMENSION
+} from "../constants.js";
 import { ownershipLevelSchema, ownershipSetSchema } from "./ownership-users.js";
 import { levelCreateSchema } from "./scene-embedded.js";
 import {
@@ -195,6 +202,19 @@ export const sceneCommands = {
     },
     { mutation: true }
   ),
+  "scene.snapshot": cmd({
+    type: "object",
+    required: ["sceneId"],
+    properties: {
+      sceneId: { type: "string", minLength: 1 },
+      levelId: { type: "string", minLength: 1 },
+      size: { type: "integer", minimum: RENDERED_IMAGE_MIN_DIMENSION, maximum: RENDERED_IMAGE_MAX_DIMENSION },
+      format: { type: "string", enum: RENDERED_IMAGE_FORMATS },
+      layers: { type: "array", items: { type: "string", enum: SCENE_SNAPSHOT_LAYERS } },
+      tokenImages: { type: "boolean" }
+    },
+    additionalProperties: false
+  }),
   "scene.fog.reset": cmd(
     {
       type: "object",

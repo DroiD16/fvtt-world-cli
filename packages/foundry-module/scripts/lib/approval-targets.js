@@ -96,6 +96,11 @@ const COUNTERPART_PROPERTIES = Object.freeze({
   "cards.pass": "to"
 });
 
+// canvas.view-scene changes only the GM's view, but the scene it names is the target the GM must
+// see in the approval window.
+/** @type {Readonly<Record<string, string>>} */
+const TARGET_FAMILY_NAMES = Object.freeze({ "canvas.view-scene": "scene.view" });
+
 /**
  * @param {string} idField
  * @param {string} type
@@ -273,7 +278,7 @@ function buildStrategy(command) {
   const required = Array.isArray(schema.required) ? schema.required : [];
   const declares = (/** @type {string} */ property) => Object.hasOwn(properties, property);
 
-  const segments = command.split(".");
+  const segments = (TARGET_FAMILY_NAMES[command] ?? command).split(".");
   const verb = segments[segments.length - 1];
 
   /** @type {ApprovalTargetLink[]} */

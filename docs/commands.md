@@ -39,6 +39,7 @@ Use these families to narrow your search, then check their help for supported op
 | Manage assets | `file` |
 | Control playback and gameplay | Actions within `playlist`, `table`, `cards`, `combat`, `scene`, and `game` |
 | Show content to players | `scene pull-users`, `journal show`, `image show` |
+| Look at a scene or the GM's screen | `scene snapshot`, `canvas capture`, `canvas pan`, `canvas view-scene` |
 | Inspect the connection | `system info`, `system ping` |
 
 ## Common workflows
@@ -87,6 +88,40 @@ Deleting a level also deletes its tokens and every placeable that exists only on
 run does not list them, so read the scene's placeables before deleting a level.
 
 [Compatibility](compatibility.md) lists the scene map fields each Foundry version accepts.
+
+### Look at a scene
+
+```bash
+fvtt-world-cli scene snapshot --scene-id <sceneId> --format png --out scene.png --json
+fvtt-world-cli canvas view-scene --scene-id <sceneId> --json
+fvtt-world-cli canvas pan --fit --json
+fvtt-world-cli canvas capture --format png --out view.png --json
+```
+
+`scene snapshot` has Foundry render the scene's background and visible tiles, then draws walls,
+lights, sounds, tokens, regions, drawings, notes, measured templates (v13) and the grid over them
+from document data. It changes nothing in the world and writes nothing to Foundry's data. Its light
+overlay is a pair of rings at the dim and bright radius, or cones for directional lights, not
+rendered light. While it renders, Foundry shows its loading notice for the scene's images in the GM
+client; on v13 the notice appears on every snapshot.
+
+Rendered light, darkness and vision exist only on the GM client's screen, because Foundry computes
+them for the visible area. `canvas capture` saves that screen, so it shows only what the GM client
+currently views. `canvas view-scene` and `canvas pan` move that view to another scene or place.
+Players' views stay put, but a GM working in that browser sees the view move, and a scene switch
+does what any Foundry scene switch does. It can save the GM's fog exploration, tells the other
+clients which scene the GM is on, fires the `canvasTearDown` and `canvasReady` hooks modules listen
+to, and fires the viewed and unviewed events of region behaviors, so GM-authored script or macro
+behaviors subscribed to those events run. By default both commands wait for GM approval.
+`canvas pan` keeps the zoom within Foundry's limits and the center point within the canvas plus a
+margin of 40% of the screen. Foundry's default minimum zoom always lets `--fit` show the whole scene;
+only a world or module that sets its own minimum zoom can prevent that. The `pan` result's
+`previous` position and the `view-scene` result's `previousSceneId` put the view back.
+
+Both image commands save the image to a local file, the `--out` path or a new file in the system
+temp directory, and report its path as `image.path` instead of image data. `transform` converts a
+document coordinate to an image pixel (pixel = coordinate × scale + offset), and `view` is the
+canvas rectangle the image covers.
 
 ### Send a batch of commands
 
