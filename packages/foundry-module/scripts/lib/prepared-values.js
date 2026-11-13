@@ -13,17 +13,15 @@ import {
   utf8ByteLength
 } from "./setting-values.js";
 
-const PREPARED_LIMITS = Object.freeze({
-  depth: PREPARED_VALUE_MAX_DEPTH,
-  nodes: PREPARED_VALUE_MAX_NODES,
-  bytes: PREPARED_VALUE_MAX_BYTES
-});
-
 class PreparedLimitReached extends Error {
-  /** @param {"depth" | "nodes" | "bytes"} limit */
-  constructor(limit) {
+  /**
+   * @param {"depth" | "nodes" | "bytes"} limit
+   * @param {number} max
+   */
+  constructor(limit, max) {
     super(limit);
     this.limit = limit;
+    this.max = max;
   }
 }
 
@@ -58,7 +56,7 @@ export function serializePreparedValue(value) {
   /** @param {number} size */
   const charge = (size) => {
     bytes += size;
-    if (bytes > PREPARED_VALUE_MAX_BYTES) throw new PreparedLimitReached("bytes");
+    if (bytes > PREPARED_VALUE_MAX_BYTES) throw new PreparedLimitReached("bytes", PREPARED_VALUE_MAX_BYTES);
   };
   /**
    * @template T
@@ -97,8 +95,8 @@ export function serializePreparedValue(value) {
    */
   const walk = (node, field, depth) => {
     nodes += 1;
-    if (nodes > PREPARED_VALUE_MAX_NODES) throw new PreparedLimitReached("nodes");
-    if (depth > PREPARED_VALUE_MAX_DEPTH) throw new PreparedLimitReached("depth");
+    if (nodes > PREPARED_VALUE_MAX_NODES) throw new PreparedLimitReached("nodes", PREPARED_VALUE_MAX_NODES);
+    if (depth > PREPARED_VALUE_MAX_DEPTH) throw new PreparedLimitReached("depth", PREPARED_VALUE_MAX_DEPTH);
 
     if (node === undefined || node === null) return leaf(null);
     const kind = typeof node;
@@ -199,7 +197,7 @@ export function serializePreparedValue(value) {
     if (error instanceof PreparedLimitReached) {
       return {
         value: null,
-        omitted: { reason: "too-large", limit: error.limit, max: PREPARED_LIMITS[error.limit] }
+        omitted: { reason: "too-large", limit: error.limit, max: error.max }
       };
     }
     return { value: null, omitted: { reason: "unreadable" } };
