@@ -12,17 +12,18 @@ import {
   utf8ByteLength
 } from "./setting-values.js";
 
+const PREPARED_LIMITS = Object.freeze({
+  depth: PREPARED_VALUE_MAX_DEPTH,
+  nodes: PREPARED_VALUE_MAX_NODES,
+  bytes: PREPARED_VALUE_MAX_BYTES
+});
+
 class PreparedLimitReached extends Error {
-  /** @param {"depth" | "nodes"} limit */
+  /** @param {"depth" | "nodes" | "bytes"} limit */
   constructor(limit) {
     super(limit);
     this.limit = limit;
   }
-}
-
-function getDocumentClass() {
-  const Document = /** @type {any} */ (globalThis).foundry?.abstract?.Document;
-  return typeof Document === "function" ? Document : null;
 }
 
 /**
@@ -58,11 +59,37 @@ function ownDataValue(node, key) {
  * @returns {{ value: unknown, omitted?: { reason: string, limit?: string, max?: number } }}
  */
 export function serializePreparedValue(value) {
-  const DocumentClass = getDocumentClass();
+  const Document = /** @type {any} */ (globalThis).foundry?.abstract?.Document;
+  const DocumentClass = typeof Document === "function" ? Document : null;
   const ColorClass = getColorClass();
   /** @type {Set<object>} */
   const ancestors = new Set();
   let nodes = 0;
+  let bytes = 0;
+
+  /** @param {number} size */
+  const charge = (size) => {
+    bytes += size;
+    if (bytes > PREPARED_VALUE_MAX_BYTES) throw new PreparedLimitReached("bytes");
+  };
+  /**
+   * @template T
+   * @param {T} emitted
+   * @returns {T}
+   */
+  const leaf = (emitted) => {
+    charge(utf8ByteLength(JSON.stringify(emitted) ?? "null"));
+    return emitted;
+  };
+  /**
+   * @param {Record<string, unknown>} target
+   * @param {string} key
+   * @param {() => unknown} read
+   */
+  const entry = (target, key, read) => {
+    charge(utf8ByteLength(JSON.stringify(key)) + 2);
+    defineEntry(target, key, read());
+  };
 
   /**
    * @param {unknown} node
@@ -75,45 +102,56 @@ export function serializePreparedValue(value) {
     if (nodes > PREPARED_VALUE_MAX_NODES) throw new PreparedLimitReached("nodes");
     if (depth > PREPARED_VALUE_MAX_DEPTH) throw new PreparedLimitReached("depth");
 
-    if (node === undefined || node === null) return null;
+    if (node === undefined || node === null) return leaf(null);
     const kind = typeof node;
-    if (kind === "boolean" || kind === "string") return node;
-    if (kind === "number") return Number.isFinite(node) ? node : null;
-    if (kind !== "object") return { [UNSERIALIZABLE_MARKER_KEY]: kind };
+    if (kind === "boolean" || kind === "string") return leaf(node);
+    if (kind === "number") return leaf(Number.isFinite(node) ? node : null);
+    if (kind !== "object") return leaf({ [UNSERIALIZABLE_MARKER_KEY]: kind });
 
     const object = /** @type {any} */ (node);
     if (DocumentClass !== null && object instanceof DocumentClass) {
-      return { documentName: object.documentName ?? null, id: object.id ?? null, uuid: object.uuid ?? null };
+      return leaf({
+        documentName: object.documentName ?? null,
+        id: object.id ?? null,
+        uuid: object.uuid ?? null
+      });
     }
-    if (ancestors.has(object)) return { [UNSERIALIZABLE_MARKER_KEY]: "circular-reference" };
+    if (ancestors.has(object)) return leaf({ [UNSERIALIZABLE_MARKER_KEY]: "circular-reference" });
 
     ancestors.add(object);
     try {
       const scalar = readScalarObject(object, ColorClass);
       if (scalar.ok) {
-        return typeof scalar.value === "number" && !Number.isFinite(scalar.value) ? null : scalar.value;
+        return leaf(typeof scalar.value === "number" && !Number.isFinite(scalar.value) ? null : scalar.value);
       }
+      charge(2);
       if (object instanceof Map) {
         const iterator = unbox(Map.prototype.entries, object);
         if (iterator.ok) {
           /** @type {Record<string, unknown>} */
           const result = {};
-          for (const [key, entry] of iterator.value) {
-            defineEntry(result, String(key), walk(entry, null, depth + 1));
+          for (const [key, value] of iterator.value) {
+            entry(result, String(key), () => walk(value, null, depth + 1));
           }
           return result;
         }
       }
       if (object instanceof Set) {
         const iterator = unbox(Set.prototype.values, object);
-        if (iterator.ok) return Array.from(iterator.value, (entry) => walk(entry, null, depth + 1));
+        if (iterator.ok) {
+          return Array.from(iterator.value, (value) => {
+            charge(1);
+            return walk(value, null, depth + 1);
+          });
+        }
       }
       if (Array.isArray(object)) {
         const element = elementFieldOf(field);
         const items = [];
         for (let index = 0; index < object.length; index += 1) {
           const own = ownDataValue(object, String(index));
-          items.push(own.present ? walk(own.value, element, depth + 1) : null);
+          charge(1);
+          items.push(walk(own.present ? own.value : null, element, depth + 1));
         }
         return items;
       }
@@ -124,21 +162,21 @@ export function serializePreparedValue(value) {
       const result = {};
       if (fields) {
         for (const key of Object.keys(fields)) {
-          let entry;
+          let value;
           try {
-            entry = object[key];
+            value = object[key];
           } catch {
-            defineEntry(result, key, { [UNSERIALIZABLE_MARKER_KEY]: "getter-threw" });
+            entry(result, key, () => leaf({ [UNSERIALIZABLE_MARKER_KEY]: "getter-threw" }));
             continue;
           }
-          if (entry !== undefined) defineEntry(result, key, walk(entry, fields[key], depth + 1));
+          if (value !== undefined) entry(result, key, () => walk(value, fields[key], depth + 1));
         }
       }
       for (const key of Object.keys(object)) {
         if (fields && Object.hasOwn(fields, key)) continue;
         const own = ownDataValue(object, key);
         if (own.present && own.value !== undefined) {
-          defineEntry(result, key, walk(own.value, element, depth + 1));
+          entry(result, key, () => walk(own.value, element, depth + 1));
         }
       }
       return result;
@@ -147,27 +185,17 @@ export function serializePreparedValue(value) {
     }
   };
 
-  let serialized;
   try {
-    serialized = walk(value, null, 0);
+    return { value: walk(value, null, 0) };
   } catch (error) {
     if (error instanceof PreparedLimitReached) {
       return {
         value: null,
-        omitted: {
-          reason: "too-large",
-          limit: error.limit,
-          max: error.limit === "nodes" ? PREPARED_VALUE_MAX_NODES : PREPARED_VALUE_MAX_DEPTH
-        }
+        omitted: { reason: "too-large", limit: error.limit, max: PREPARED_LIMITS[error.limit] }
       };
     }
     return { value: null, omitted: { reason: "unreadable" } };
   }
-
-  if (utf8ByteLength(JSON.stringify(serialized) ?? "null") > PREPARED_VALUE_MAX_BYTES) {
-    return { value: null, omitted: { reason: "too-large", limit: "bytes", max: PREPARED_VALUE_MAX_BYTES } };
-  }
-  return { value: serialized };
 }
 
 /**

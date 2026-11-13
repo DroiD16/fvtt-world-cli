@@ -162,4 +162,35 @@ describe("serializePreparedValue", () => {
       omitted: { reason: "too-large", limit: "bytes", max: PREPARED_VALUE_MAX_BYTES }
     });
   });
+
+  it("stops at the byte limit while walking many references to one large string", () => {
+    const large = "y".repeat(64 * 1024);
+    const references = new Array(PREPARED_VALUE_MAX_NODES - 10).fill(large);
+    expect(serializePreparedValue({ references })).toEqual({
+      value: null,
+      omitted: { reason: "too-large", limit: "bytes", max: PREPARED_VALUE_MAX_BYTES }
+    });
+  });
+
+  it("counts the holes of a sparse array as nodes", () => {
+    expect(serializePreparedValue({ sparse: new Array(1e9) })).toEqual({
+      value: null,
+      omitted: { reason: "too-large", limit: "nodes", max: PREPARED_VALUE_MAX_NODES }
+    });
+    expect(serializePreparedValue([1, , 3]).value).toEqual([1, null, 3]);
+  });
+
+  it("keeps a value below the limits intact", () => {
+    const value = { name: "Ünïcode ✓", list: [1, null, true, 'a"b'], nested: { map: new Map([[1, "x"]]) } };
+    const result = serializePreparedValue(value);
+    expect(result.omitted).toBeUndefined();
+    expect(result.value).toEqual({
+      name: "Ünïcode ✓",
+      list: [1, null, true, 'a"b'],
+      nested: { map: { 1: "x" } }
+    });
+
+    const nearLimit = { text: "x".repeat(PREPARED_VALUE_MAX_BYTES - 20) };
+    expect(serializePreparedValue(nearLimit)).toEqual({ value: nearLimit });
+  });
 });
