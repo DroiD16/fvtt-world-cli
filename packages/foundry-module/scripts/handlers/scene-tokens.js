@@ -133,16 +133,21 @@ export function createSceneTokenHandlers() {
 
     async "scene.token.create"(params) {
       const scene = getSceneById(params.sceneId);
-      const tokenData = await prepareTokenCreate(params.data, scene, params.placement);
-      if (isDryRun(params)) {
-        const preview = previewPreparedSceneEmbeddedCreate(scene, TOKEN, tokenData);
+      const dryRun = isDryRun(params);
+      const created = await createPreparedSceneEmbedded(
+        scene,
+        TOKEN,
+        await prepareTokenCreate(params.data, scene, params.placement),
+        { dryRun }
+      );
+      if (dryRun) {
+        const preview = previewPreparedSceneEmbeddedCreate(scene, TOKEN, created);
         return dryRunResponse({
           sceneId: params.sceneId,
           token: serializeToken(preview, { include: params.include })
         });
       }
-      const token = await createPreparedSceneEmbedded(scene, TOKEN, tokenData);
-      return { sceneId: params.sceneId, token: serializeToken(token, { include: params.include }) };
+      return { sceneId: params.sceneId, token: serializeToken(created, { include: params.include }) };
     }
   };
 }

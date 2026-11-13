@@ -54,6 +54,21 @@ describe("command router", () => {
     });
   });
 
+  it.each([false, true])(
+    "refuses scene.token.create when the scene create API is missing (dryRun %s)",
+    async (dryRun) => {
+      const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+      delete globalThis.game.scenes.get("scene-1").createEmbeddedDocuments;
+
+      const response = await router.route(
+        createRequest("scene.token.create", { sceneId: "scene-1", data: { name: "Guard" }, dryRun })
+      );
+
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe("BRIDGE_NOT_READY");
+    }
+  );
+
   it("creates a token from an actor, linked as the actor's prototype token says unless actorLink is given", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
     const actor = globalThis.game.actors.get("actor-1");
