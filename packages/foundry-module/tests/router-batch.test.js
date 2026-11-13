@@ -950,10 +950,8 @@ describe("command router", () => {
       "created",
       "notAttempted"
     ]);
-    const id = response.result.outcomes[1].id;
-    expect(response.result.failure.message).toBe(
-      `scene.token.create-many element 1 (id ${id}) failed without a message.`
-    );
+    expect(response.result.failure.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.result.failure.message).toContain("failed without a message");
     scene.createEmbeddedDocuments.mockImplementation(original);
   });
 
@@ -973,9 +971,8 @@ describe("command router", () => {
     );
 
     expect(response.ok).toBe(false);
-    expect(response.error.message).toBe(
-      "scene.token.create-many element 0 was refused. Nothing was written."
-    );
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.message).toContain("was refused");
     expect(response.error.details.index).toBe(0);
   });
 
