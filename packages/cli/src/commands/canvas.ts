@@ -37,7 +37,10 @@ export function registerCanvas({ program, dependencies }: RegistrationContext) {
       ).argParser(parsePositiveInt)
     )
     .addOption(new Option("--format <format>", "Image format (default webp)").choices(["webp", "png"]))
-    .option("--out <file>", "Write the image to this file (default: a new file in the system temp directory)")
+    .option(
+      "--out <file>",
+      "Write the image to this file (default: <command>-<sceneId>[-<levelId>].<format> in a private fvtt-world-cli directory under the system temp directory, replaced by the next image of the same scene)"
+    )
     .action(async function captureCanvas(options: { size?: number; format?: string; out?: string }) {
       await executeRemoteCommand({
         commandName: "canvas.capture",

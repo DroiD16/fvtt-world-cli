@@ -118,8 +118,9 @@ margin of 40% of the screen. Foundry's default minimum zoom always lets `--fit` 
 only a world or module that sets its own minimum zoom can prevent that. The `pan` result's
 `previous` position and the `view-scene` result's `previousSceneId` put the view back.
 
-Both image commands save the image to a local file, the `--out` path or a new file in the system
-temp directory, and report its path as `image.path` instead of image data. `transform` converts a
+Both image commands save the image to a local file and report its path as `image.path` instead of
+image data. Without `--out`, the file goes into a private `fvtt-world-cli` directory under the
+system temp directory, and the next image of the same scene replaces it. `transform` converts a
 document coordinate to an image pixel (pixel = coordinate × scale + offset), and `view` is the
 canvas rectangle the image covers.
 

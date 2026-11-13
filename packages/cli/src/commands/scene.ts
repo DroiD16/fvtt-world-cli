@@ -353,7 +353,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     )
     .option("--no-layers", "Draw no overlays: only the background and tiles Foundry renders")
     .option("--token-images", "Draw each token's image inside its box")
-    .option("--out <file>", "Write the image to this file (default: a new file in the system temp directory)")
+    .option(
+      "--out <file>",
+      "Write the image to this file (default: <command>-<sceneId>[-<levelId>].<format> in a private fvtt-world-cli directory under the system temp directory, replaced by the next image of the same scene)"
+    )
     .addHelpText(
       "after",
       [

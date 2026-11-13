@@ -1,6 +1,15 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { Readable } from "node:stream";
 
 import {
@@ -11,7 +20,7 @@ import {
   validateCommandRequest
 } from "@fvtt-world-cli/protocol";
 import { CommanderError } from "commander";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createProgram, executeCli, IMPORT_PATCH_FLAGS, planCliErrorOutput } from "../src/index.js";
 import { createEmptyConfig } from "../src/config.js";
@@ -2449,7 +2458,7 @@ describe("fvtt-world-cli commands", () => {
         id: "req-1",
         ok: true,
         result: {
-          sceneId: "scene-1",
+          sceneId: "scene1",
           levelId: null,
           ...(kind === "snapshot" ? { layers: ["walls"] } : { position: { x: 1, y: 2, scale: 0.5 } }),
           image: {
@@ -2489,17 +2498,71 @@ describe("fvtt-world-cli commands", () => {
       }
     });
 
-    it("writes a capture to a new temporary file when no --out is given", async () => {
-      const result = await runCommand(["canvas", "capture"], imageResponse("capture"));
+    describe("without --out", () => {
+      let temp = "";
+      const previousTmpdir = process.env.TMPDIR;
 
-      expect(result.error).toBeNull();
-      const path = /image: (\S+)/.exec(result.stdout)?.[1] ?? "";
-      expect(path.startsWith(tmpdir())).toBe(true);
-      expect(path.endsWith("capture-scene-1.png")).toBe(true);
-      expect(readFileSync(path)).toEqual(pngBytes);
-      expect(result.stdout).toContain("size: 64x48 px, image/png");
-      expect(result.stdout).not.toContain("base64");
-      rmSync(dirname(path), { recursive: true, force: true });
+      beforeEach(() => {
+        temp = mkdtempSync(join(tmpdir(), "fvtt-world-cli-image-test-"));
+        process.env.TMPDIR = temp;
+      });
+
+      afterEach(() => {
+        if (previousTmpdir === undefined) delete process.env.TMPDIR;
+        else process.env.TMPDIR = previousTmpdir;
+        rmSync(temp, { recursive: true, force: true });
+      });
+
+      const imageDirectory = () => join(temp, `fvtt-world-cli-${process.getuid?.() ?? ""}`);
+
+      it("writes a capture into the private image directory under the system temp directory", async () => {
+        const result = await runCommand(["canvas", "capture"], imageResponse("capture"));
+
+        expect(result.error).toBeNull();
+        const path = /image: (\S+)/.exec(result.stdout)?.[1] ?? "";
+        expect(path).toBe(join(imageDirectory(), "capture-scene1.png"));
+        expect(readFileSync(path)).toEqual(pngBytes);
+        expect(statSync(imageDirectory()).mode & 0o777).toBe(0o700);
+        expect(statSync(path).mode & 0o777).toBe(0o600);
+        expect(result.stdout).toContain("size: 64x48 px, image/png");
+        expect(result.stdout).not.toContain("base64");
+      });
+
+      it("replaces the previous image of the same scene instead of adding files", async () => {
+        const first = await runCommand(["--json", "canvas", "capture"], imageResponse("capture"));
+        const second = await runCommand(["--json", "canvas", "capture"], imageResponse("capture"));
+
+        expect(first.error).toBeNull();
+        expect(second.error).toBeNull();
+        expect(JSON.parse(second.stdout).result.image.path).toBe(JSON.parse(first.stdout).result.image.path);
+        expect(readdirSync(imageDirectory())).toEqual(["capture-scene1.png"]);
+      });
+
+      it("keeps an id that is not a plain Foundry id out of the file name", async () => {
+        const hostile = vi.fn(async (...args: unknown[]) => {
+          const response = await (imageResponse("snapshot") as any)(...args);
+          return { ...response, result: { ...response.result, sceneId: "../../escape", levelId: "level1" } };
+        }) as unknown as SendCommandMock;
+
+        const result = await runCommand(["--json", "scene", "snapshot", "--scene-id", "scene1"], hostile);
+
+        expect(result.error).toBeNull();
+        expect(JSON.parse(result.stdout).result.image.path).toBe(
+          join(imageDirectory(), "snapshot-level1.png")
+        );
+        expect(readdirSync(temp)).toEqual([basename(imageDirectory())]);
+      });
+
+      it("refuses an image directory other users can open", async () => {
+        mkdirSync(imageDirectory(), { mode: 0o755 });
+        chmodSync(imageDirectory(), 0o755);
+
+        const result = await runCommand(["canvas", "capture"], imageResponse("capture"));
+
+        expect(result.error).toBeInstanceOf(CommanderError);
+        expect((result.error as CommanderError).code).toBe("fvtt-world-cli.localFileWriteError");
+        expect(readdirSync(imageDirectory())).toEqual([]);
+      });
     });
 
     it("reports an image it could not write as a local file error", async () => {

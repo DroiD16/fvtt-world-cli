@@ -354,7 +354,7 @@ command scene snapshot
   opt --layers <list> | parser=<anonymous> | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated overlays to draw: grid, regions, drawings, templates (v13), walls, lights, sounds, notes, tokens (default: all)
   opt --no-layers | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Draw no overlays: only the background and tiles Foundry renders
   opt --token-images | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Draw each token's image inside its box
-  opt --out <file> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Write the image to this file (default: a new file in the system temp directory)
+  opt --out <file> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Write the image to this file (default: <command>-<sceneId>[-<levelId>].<format> in a private fvtt-world-cli directory under the system temp directory, replaced by the next image of the same scene)
 
 command scene fog
   aliases=[]
@@ -3544,7 +3544,7 @@ command canvas capture
   summary=Capture the GM client's current view as an image, with lighting, darkness and vision as the GM sees them
   opt --size <px> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Long side of the image in px (16–2048, default: the GM screen's, at most 2048)
   opt --format <format> | parser=<anonymous> | conflicts=[] | choices=["webp","png"] | required=false | hidden=false | default=- | help=Image format (default webp)
-  opt --out <file> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Write the image to this file (default: a new file in the system temp directory)
+  opt --out <file> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Write the image to this file (default: <command>-<sceneId>[-<levelId>].<format> in a private fvtt-world-cli directory under the system temp directory, replaced by the next image of the same scene)
 
 command canvas pan
   aliases=[]

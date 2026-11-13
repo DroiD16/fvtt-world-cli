@@ -179,6 +179,20 @@ not rewrite document references. Reference changes require a separate document c
 `image show` also accepts off-host HTTP(S) URLs. These make the targeted players' browsers fetch
 and display the remote image; they are outside the managed-file boundary.
 
+## Local image files
+
+`scene snapshot` and `canvas capture` are the only commands that write files on the machine running
+the CLI. With `--out`, the CLI writes the image to that path with the permissions of the user who
+runs it. Without `--out`, it writes into one directory under the system temp directory:
+`fvtt-world-cli-<uid>` on Linux and macOS, and `fvtt-world-cli` on Windows, where the temp directory
+already belongs to one user. On Linux and macOS the CLI creates the directory with mode 700 and
+refuses to write into it when it is a symlink, belongs to another user, or is open to other users.
+
+The file name is the command name plus the scene id and, on v14, the level id. An id that is not 1
+to 32 letters and digits is left out of the name, so a value returned by the bridge cannot move the
+write out of that directory. The CLI writes the image under a random name and renames it over the
+previous image of the same command, scene and level, so the directory keeps one file per view.
+
 ## Availability and resource limits
 
 The daemon and module bound uploads, transport frames, search work, batches, and approval queues.
