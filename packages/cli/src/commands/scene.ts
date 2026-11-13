@@ -381,8 +381,8 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
         "The background and visible tiles are rendered by Foundry; the overlays are drawn from document",
         "data, not from Foundry's lighting or vision (canvas capture shows those). Nothing is written to",
         "the world or to Foundry's data. On v13, for a scene without a background image, Foundry fits its",
-        "render to the tiles it drew, so tiles can come out cropped or missing; the grid and overlays still",
-        "cover the whole scene.",
+        "render to the tiles it drew, so tiles can come out cropped or missing; the result then reports",
+        "partialRender: true, and the grid and overlays still cover the whole scene.",
         "",
         "Walls: white blocks movement and sight, grey dashed does not block movement, cyan blocks movement",
         "but not sight, yellow-green limits sight, orange blocks sight by proximity or distance. A thin",
@@ -406,7 +406,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
         "Result keys (--json): .result.image {path, mimeType, width, height, sizeBytes},",
         ".result.transform {scale, offsetX, offsetY} (image pixel = coordinate * scale + offset),",
         ".result.view {x, y, width, height} (the canvas rectangle the image covers), .result.layers,",
-        ".result.levelId (v14)."
+        ".result.levelId (v14), .result.partialRender (true when Foundry v13 drew only part of the tiles)."
       ].join("\n")
     )
     .action(async function snapshotScene(options: SceneSnapshotOptions) {
