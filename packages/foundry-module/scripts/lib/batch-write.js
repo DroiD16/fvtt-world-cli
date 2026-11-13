@@ -321,8 +321,10 @@ async function createSequentially({ command, items, prepare, isIdTaken, create, 
     }
 
     let payload;
+    let id;
     try {
       payload = await prepare(items[index], index);
+      id = generateUnusedDocumentId(isIdTaken);
     } catch (error) {
       failure = sequentialElementFailure(error, {
         command,
@@ -334,7 +336,6 @@ async function createSequentially({ command, items, prepare, isIdTaken, create, 
       continue;
     }
 
-    const id = generateUnusedDocumentId(isIdTaken);
     let created = null;
     try {
       created = await create([{ ...payload, _id: id }]);

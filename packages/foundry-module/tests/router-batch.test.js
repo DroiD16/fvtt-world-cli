@@ -864,6 +864,34 @@ describe("command router", () => {
     expect(response.result.failure.message).not.toContain("Nothing was written");
   });
 
+  it("scene.token.create-many keeps the confirmed outcomes when no unused id can be generated mid-batch", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const utils = globalThis.foundry.utils;
+    const originalRandomId = utils.randomID;
+    utils.randomID = () => "constantid000001";
+    try {
+      const response = await router.route(
+        createRequest("scene.token.create-many", {
+          sceneId: "scene-1",
+          data: [{ name: "A" }, { name: "B" }, { name: "C" }]
+        })
+      );
+
+      expect(response.ok).toBe(true);
+      expect(response.result.complete).toBe(false);
+      expect(response.result.outcomes.map(({ id, status }) => [id, status])).toEqual([
+        ["constantid000001", "created"],
+        [null, "dropped"],
+        [null, "notAttempted"]
+      ]);
+      expect(response.result.failure.code).toBe("INTERNAL_ERROR");
+      expect(response.result.failure.message).toContain("scene.token.create-many element 1:");
+      expect(response.result.failure.message).not.toContain("Nothing was written");
+    } finally {
+      utils.randomID = originalRandomId;
+    }
+  });
+
   it("scene.token.create-many fails the request, naming element 0, when the first token fails at write time", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
     const scene = globalThis.game.scenes.get("scene-1");

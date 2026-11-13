@@ -541,6 +541,9 @@ export function createCollection(
     get(id) {
       return byId.get(id) ?? null;
     },
+    has(id) {
+      return byId.has(id);
+    },
     set(document) {
       byId.set(document.id, document);
       return document;
