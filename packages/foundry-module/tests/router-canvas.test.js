@@ -379,6 +379,78 @@ describe("scene.snapshot", () => {
     }
   });
 
+  describe("token images", () => {
+    /** @type {any[]} */
+    let images;
+    /** @type {(image: any) => Promise<void>} */
+    let decode;
+
+    beforeEach(() => {
+      images = [];
+      globals.Image = class {
+        constructor() {
+          this.src = "";
+          images.push(this);
+        }
+        decode() {
+          return decode(this);
+        }
+      };
+    });
+
+    afterEach(() => {
+      delete globals.Image;
+      vi.useRealTimers();
+    });
+
+    const snapshotTokens = () =>
+      routerFor().route(
+        createRequest("scene.snapshot", { sceneId: "scene-1", layers: ["tokens"], tokenImages: true })
+      );
+    const drawnImages = () =>
+      pipeline.canvases[0].calls.filter((call) => call.name === "drawImage" && images.includes(call.args[0]));
+
+    it("draws each token's decoded image inside its box", async () => {
+      decode = async () => {};
+
+      const response = await snapshotTokens();
+
+      expect(response.ok).toBe(true);
+      expect(images.map((image) => image.src)).toEqual(["tokens/valeros.webp"]);
+      const { scale, offsetX, offsetY } = response.result.transform;
+      expect(drawnImages().map((call) => call.args.slice(1))).toEqual([
+        [100 * scale + offsetX, 120 * scale + offsetY, 100 * scale, 100 * scale]
+      ]);
+      expect(pipeline.canvases[0].calls.filter((call) => call.name === "strokeRect")).toHaveLength(2);
+    });
+
+    it("keeps the plain box for an image that fails to decode", async () => {
+      decode = async () => {
+        throw new Error("decode failed");
+      };
+
+      const response = await snapshotTokens();
+
+      expect(response.ok).toBe(true);
+      expect(drawnImages()).toEqual([]);
+      expect(images[0].src).toBe("");
+      expect(pipeline.canvases[0].calls.filter((call) => call.name === "strokeRect")).toHaveLength(2);
+    });
+
+    it("keeps the plain box for an image that does not load in time", async () => {
+      vi.useFakeTimers();
+      decode = () => new Promise(() => {});
+
+      const pending = snapshotTokens();
+      await vi.advanceTimersByTimeAsync(5_000);
+      const response = await pending;
+
+      expect(response.ok).toBe(true);
+      expect(drawnImages()).toEqual([]);
+      expect(images[0].src).toBe("");
+    });
+  });
+
   it("draws nothing over the rendered background when no layer is requested", async () => {
     const response = await routerFor().route(
       createRequest("scene.snapshot", { sceneId: "scene-1", layers: [] })
