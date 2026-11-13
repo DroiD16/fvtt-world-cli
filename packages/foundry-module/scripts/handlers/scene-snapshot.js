@@ -13,6 +13,22 @@ import { drawSnapshotOverlays, resolveSnapshotLayers } from "../lib/snapshot-ove
 
 const DEFAULT_SNAPSHOT_SIZE = 1024;
 
+/**
+ * @param {{ x: number, y: number }} rect
+ * @param {number} contentWidth
+ * @param {number} contentHeight
+ * @param {number} width
+ * @param {number} height
+ */
+function fitTransform(rect, contentWidth, contentHeight, width, height) {
+  const scale = contentWidth / contentHeight > width / height ? height / contentHeight : width / contentWidth;
+  return {
+    scale,
+    offsetX: (width - contentWidth * scale) / 2 - rect.x * scale,
+    offsetY: (height - contentHeight * scale) / 2 - rect.y * scale
+  };
+}
+
 export function createSceneSnapshotHandlers() {
   return {
     async "scene.snapshot"(params) {
@@ -32,7 +48,8 @@ export function createSceneSnapshotHandlers() {
       const background = await decodeDataUrlImage(rendered.thumb);
 
       // Foundry v13 fits the thumbnail to the bounds of what it drew, which it reports as the
-      // result size; v14 always fits it to the scene rectangle and reports the output size.
+      // result size; v14 always fits it to the scene rectangle and reports the output size. The
+      // snapshot always covers the whole scene, so a v13 thumbnail is placed at its own fit.
       const { reportedWidth, reportedHeight } = rendered;
       const fitsDrawnBounds =
         getFoundryGeneration() === 13 &&
@@ -40,18 +57,22 @@ export function createSceneSnapshotHandlers() {
         reportedHeight !== null &&
         reportedWidth > 0 &&
         reportedHeight > 0;
-      const contentWidth = fitsDrawnBounds ? reportedWidth : rect.width;
-      const contentHeight = fitsDrawnBounds ? reportedHeight : rect.height;
-      const scale =
-        contentWidth / contentHeight > width / height ? height / contentHeight : width / contentWidth;
-      const offsetX = (width - contentWidth * scale) / 2 - rect.x * scale;
-      const offsetY = (height - contentHeight * scale) / 2 - rect.y * scale;
-      const transform = { scale, offsetX, offsetY };
+      const transform = fitTransform(rect, rect.width, rect.height, width, height);
+      const drawn = fitsDrawnBounds
+        ? fitTransform(rect, reportedWidth, reportedHeight, width, height)
+        : transform;
+      const ratio = transform.scale / drawn.scale;
 
       const { element, context } = createImageCanvas(width, height);
       context.fillStyle = String((level ? level.background?.color : scene.backgroundColor)?.css ?? "#000000");
       context.fillRect(0, 0, width, height);
-      context.drawImage(background, 0, 0, width, height);
+      context.drawImage(
+        background,
+        transform.offsetX - drawn.offsetX * ratio,
+        transform.offsetY - drawn.offsetY * ratio,
+        width * ratio,
+        height * ratio
+      );
       background.close();
 
       await drawSnapshotOverlays(context, scene, {
@@ -71,7 +92,12 @@ export function createSceneSnapshotHandlers() {
         levelId: level?.id ?? null,
         layers,
         image,
-        view: { x: -offsetX / scale, y: -offsetY / scale, width: width / scale, height: height / scale },
+        view: {
+          x: -transform.offsetX / transform.scale,
+          y: -transform.offsetY / transform.scale,
+          width: width / transform.scale,
+          height: height / transform.scale
+        },
         transform
       };
     }

@@ -151,15 +151,27 @@ describe("scene.snapshot", () => {
     expect(scene.update).not.toHaveBeenCalled();
   });
 
-  it("follows the bounds Foundry v13 reports when it drew less than the whole scene", async () => {
+  it("places a v13 render of less than the whole scene inside a frame of the whole scene", async () => {
     scene.createThumbnail = vi.fn(async () => ({ thumb: base64DataUrl(300), width: 2000, height: 3000 }));
 
     const response = await routerFor().route(createRequest("scene.snapshot", { sceneId: "scene-1" }));
 
-    const { scale, offsetX, offsetY } = response.result.transform;
-    expect(scale).toBeCloseTo(1024 / 2000);
-    expect(offsetX).toBeCloseTo(-500 * scale);
-    expect(offsetY).toBeCloseTo((768 - 3000 * scale) / 2 - 300 * scale);
+    const { transform, view } = response.result;
+    expect(transform.scale).toBeCloseTo(0.256);
+    expect(transform.offsetX).toBeCloseTo(-500 * 0.256);
+    expect(transform.offsetY).toBeCloseTo(-300 * 0.256);
+    expect(view).toEqual({
+      x: expect.closeTo(500),
+      y: expect.closeTo(300),
+      width: expect.closeTo(4000),
+      height: expect.closeTo(3000)
+    });
+
+    const [, left, top, drawnWidth, drawnHeight] = pipeline.canvases[0].calls.find(
+      (call) => call.name === "drawImage"
+    ).args;
+    expect([left, top, drawnWidth, drawnHeight]).toEqual([0, 192, 512, 384].map((n) => expect.closeTo(n)));
+    expect(pipeline.canvases[0].calls[0]).toEqual({ name: "fillRect", args: [0, 0, 1024, 768] });
   });
 
   it("fits a portrait scene's long side to the requested size", async () => {
