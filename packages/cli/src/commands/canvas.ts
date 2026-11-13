@@ -9,6 +9,7 @@ import {
   imageRequestParams,
   saveResultImage
 } from "../image-output.js";
+import { booleanField, numberField, stringField } from "../params.js";
 import { parseNumber } from "../parse.js";
 
 interface CanvasPanOptions {
@@ -90,10 +91,10 @@ export function registerCanvas({ program, dependencies }: RegistrationContext) {
       await executeRemoteCommand({
         commandName: "canvas.pan",
         params: {
-          ...(options.x === undefined ? {} : { x: options.x }),
-          ...(options.y === undefined ? {} : { y: options.y }),
-          ...(options.scale === undefined ? {} : { scale: options.scale }),
-          ...(options.fit ? { fit: true } : {})
+          ...numberField("x", options.x),
+          ...numberField("y", options.y),
+          ...numberField("scale", options.scale),
+          ...booleanField("fit", options.fit)
         },
         command: this,
         dependencies
@@ -110,7 +111,7 @@ export function registerCanvas({ program, dependencies }: RegistrationContext) {
         commandName: "canvas.view-scene",
         params: {
           sceneId: options.sceneId,
-          ...(options.levelId === undefined ? {} : { levelId: options.levelId })
+          ...stringField("levelId", options.levelId)
         },
         command: this,
         dependencies

@@ -2,6 +2,7 @@ import { SCENE_SNAPSHOT_DEFAULT_SIZE, SCENE_SNAPSHOT_LAYERS } from "@fvtt-world-
 import { type Command, Option } from "commander";
 
 import {
+  booleanField,
   createEffectClonePatch,
   createEffectCreateParams,
   createEffectUpdatePatch,
@@ -414,10 +415,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
         commandName: "scene.snapshot",
         params: {
           sceneId: options.sceneId,
-          ...(options.levelId === undefined ? {} : { levelId: options.levelId }),
+          ...stringField("levelId", options.levelId),
           ...imageRequestParams(options),
           ...(options.layers === false ? { layers: [] } : options.layers ? { layers: options.layers } : {}),
-          ...(options.tokenImages ? { tokenImages: true } : {})
+          ...booleanField("tokenImages", options.tokenImages)
         },
         command: this,
         dependencies,

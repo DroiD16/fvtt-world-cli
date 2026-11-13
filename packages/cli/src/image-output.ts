@@ -10,6 +10,7 @@ import {
 } from "@fvtt-world-cli/protocol";
 import { type Command, CommanderError, Option } from "commander";
 
+import { numberField, stringField } from "./params.js";
 import { parsePositiveInt } from "./parse.js";
 
 const SAFE_ID = /^[A-Za-z0-9]{1,32}$/;
@@ -51,10 +52,7 @@ export function imageRequestParams(options: ImageOutputOptions): Record<string, 
     );
   }
   const format = options.format ?? implied;
-  return {
-    ...(options.size === undefined ? {} : { size: options.size }),
-    ...(format === undefined ? {} : { format })
-  };
+  return { ...numberField("size", options.size), ...stringField("format", format) };
 }
 
 function defaultImagePath(kind: string, result: any, extension: string) {

@@ -1416,7 +1416,7 @@ export interface TokenPlacementOptions {
 export function tokenPlacementParams(options: TokenPlacementOptions) {
   if (!options.center && !options.snap) return {};
   return {
-    placement: { ...(options.center ? { center: true } : {}), ...(options.snap ? { snap: true } : {}) }
+    placement: { ...booleanField("center", options.center), ...booleanField("snap", options.snap) }
   };
 }
 
