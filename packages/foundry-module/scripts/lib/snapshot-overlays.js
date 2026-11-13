@@ -222,6 +222,7 @@ function drawDrawings(frame) {
         if (index === 0) context.moveTo(px, py);
         else context.lineTo(px, py);
       }
+      if (Number(drawing.fillType) > 0) context.closePath();
     } else {
       context.rect((-width * scale) / 2, (-height * scale) / 2, width * scale, height * scale);
     }

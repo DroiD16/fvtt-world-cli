@@ -339,6 +339,28 @@ describe("scene.snapshot", () => {
   });
 
   it.each([
+    [0, false],
+    [1, true]
+  ])("closes a polygon drawing's outline only when it is filled (fillType %i)", async (fillType, closed) => {
+    const drawing = Array.from(scene.drawings)[0];
+    Object.assign(drawing, {
+      x: 0,
+      y: 0,
+      rotation: 0,
+      fillType,
+      shape: { type: "p", width: 100, height: 100, points: [0, 0, 100, 0, 100, 100] }
+    });
+
+    await routerFor().route(createRequest("scene.snapshot", { sceneId: "scene-1", layers: ["drawings"] }));
+
+    const calls = pipeline.canvases[0].calls.map((call) => call.name);
+    const start = calls.indexOf("moveTo");
+    const outline = calls.slice(start, calls.indexOf("stroke", start));
+    expect(outline.filter((name) => name === "lineTo")).toHaveLength(2);
+    expect(outline.includes("closePath")).toBe(closed);
+  });
+
+  it.each([
     ["round", "arc"],
     ["flat", "lineTo"]
   ])("draws a %s cone as the core cone template setting selects", async (coneType, edge) => {
