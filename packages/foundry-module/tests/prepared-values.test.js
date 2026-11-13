@@ -184,6 +184,19 @@ describe("serializePreparedValue", () => {
     });
   });
 
+  it("marks a nested document whose identity getters throw instead of dropping the value", () => {
+    const broken = new Document();
+    Object.defineProperty(broken, "uuid", {
+      get() {
+        throw new Error("no parent");
+      }
+    });
+    expect(serializePreparedValue({ broken, kept: 1 }).value).toEqual({
+      broken: { $unserializable: "getter-threw" },
+      kept: 1
+    });
+  });
+
   it("counts the holes of a sparse array as nodes", () => {
     expect(serializePreparedValue({ sparse: new Array(1e9) })).toEqual({
       value: null,

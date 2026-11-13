@@ -197,8 +197,9 @@ including fields Foundry defines as accessors, and every plain property the syst
 preparation. It does not call getters a class defines outside its data model, so a value a system
 exposes only through such a getter is absent. Nested documents appear as `{ documentName, id, uuid }`,
 keyed collections as objects keyed by id, sets as arrays, and a value with no JSON form as
-`{"$unserializable": "<reason>"}`. A declared field whose accessor throws becomes
-`{"$unserializable": "getter-threw"}`, and the rest of the value is still returned. A value over
+`{"$unserializable": "<reason>"}`. A declared field whose accessor throws, or a nested document
+whose name, id or uuid cannot be read, becomes `{"$unserializable": "getter-threw"}`, and the rest
+of the value is still returned. A value over
 512 KiB, 50,000 nodes or 32 levels, or one the bridge cannot walk at all, gives
 `prepared.system: null` and `prepared.omitted` with `reason` (`too-large` or `unreadable`) and, for
 `too-large`, the `limit` (`bytes`, `nodes` or `depth`) and its `max`. The read itself still

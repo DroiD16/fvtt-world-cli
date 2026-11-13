@@ -120,11 +120,17 @@ export function serializePreparedValue(value) {
 
     const object = /** @type {any} */ (node);
     if (DocumentClass !== null && object instanceof DocumentClass) {
-      return leaf({
-        documentName: object.documentName ?? null,
-        id: object.id ?? null,
-        uuid: object.uuid ?? null
-      });
+      let stub;
+      try {
+        stub = {
+          documentName: object.documentName ?? null,
+          id: object.id ?? null,
+          uuid: object.uuid ?? null
+        };
+      } catch {
+        stub = { [UNSERIALIZABLE_MARKER_KEY]: "getter-threw" };
+      }
+      return leaf(stub);
     }
     if (ancestors.has(object)) return leaf({ [UNSERIALIZABLE_MARKER_KEY]: "circular-reference" });
 
