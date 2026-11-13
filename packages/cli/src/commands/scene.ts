@@ -132,6 +132,16 @@ interface SceneTokenTargetOptions {
   tokenId: string;
 }
 
+interface SceneTokenCreateOptions extends TokenFieldOptions, TokenPlacementOptions {
+  sceneId: string;
+  dataJson?: string;
+}
+
+interface SceneTokenItemGetOptions extends SceneTokenTargetOptions {
+  itemId: string;
+  include?: string[];
+}
+
 interface SceneTokenGetOptions extends SceneTokenTargetOptions {
   include?: string[];
 }
@@ -482,9 +492,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     )
   )
     .option("--data-json <json>", "Full/extra token data as a JSON object (merged last)")
-    .action(async function createSceneToken(
-      options: TokenFieldOptions & TokenPlacementOptions & { sceneId: string; dataJson?: string }
-    ) {
+    .action(async function createSceneToken(options: SceneTokenCreateOptions) {
       await executeRemoteCommand({
         commandName: "scene.token.create",
         params: createSceneTokenCreateParams(options),
@@ -607,12 +615,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       .requiredOption("--scene-id <sceneId>", "Scene id")
       .requiredOption("--token-id <tokenId>", "Token id")
       .requiredOption("--item-id <itemId>", "Item id")
-  ).action(async function getSceneTokenItem(options: {
-    sceneId: string;
-    tokenId: string;
-    itemId: string;
-    include?: string[];
-  }) {
+  ).action(async function getSceneTokenItem(options: SceneTokenItemGetOptions) {
     await executeRemoteCommand({
       commandName: "scene.token.item.get",
       params: {

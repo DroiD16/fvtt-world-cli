@@ -26,6 +26,16 @@ import {
 } from "./shared.js";
 import { write } from "../deps.js";
 
+interface ItemGetOptions {
+  itemId: string;
+  include?: string[];
+}
+
+interface ItemGetManyOptions {
+  ids: string[];
+  include?: string[];
+}
+
 interface ItemCloneOptions {
   itemId: string;
   name?: string;
@@ -71,7 +81,7 @@ export function registerItem({ program, dependencies }: RegistrationContext) {
     });
   });
   addItemGetIncludeOption(item.command("get").requiredOption("--item-id <itemId>", "Item id")).action(
-    async function getItem(options: { itemId: string; include?: string[] }) {
+    async function getItem(options: ItemGetOptions) {
       await executeRemoteCommand({
         commandName: "item.get",
         params: {
@@ -87,7 +97,7 @@ export function registerItem({ program, dependencies }: RegistrationContext) {
     item
       .command("get-many")
       .requiredOption("--ids <list>", "Comma-separated item ids (atomic: all must exist)", parseIdList)
-  ).action(async function getManyItems(options: { ids: string[]; include?: string[] }) {
+  ).action(async function getManyItems(options: ItemGetManyOptions) {
     await executeRemoteCommand({
       commandName: "item.get-many",
       params: {

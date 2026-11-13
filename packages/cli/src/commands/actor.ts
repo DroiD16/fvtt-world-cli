@@ -36,6 +36,12 @@ import {
 } from "./shared.js";
 import { write } from "../deps.js";
 
+interface ActorItemGetOptions {
+  actorId: string;
+  itemId: string;
+  include?: string[];
+}
+
 interface ActorItemCloneOptions {
   actorId: string;
   itemId: string;
@@ -299,7 +305,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
       .command("get")
       .requiredOption("--actor-id <actorId>", "Actor id")
       .requiredOption("--item-id <itemId>", "Item id")
-  ).action(async function getActorItem(options: { actorId: string; itemId: string; include?: string[] }) {
+  ).action(async function getActorItem(options: ActorItemGetOptions) {
     await executeRemoteCommand({
       commandName: "actor.item.get",
       params: {
