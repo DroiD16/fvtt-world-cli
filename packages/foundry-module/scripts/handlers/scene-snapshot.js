@@ -1,3 +1,4 @@
+import { SCENE_SNAPSHOT_LAYERS } from "../generated/protocol.js";
 import {
   assertThumbnailSupported,
   createImageCanvas,
@@ -6,10 +7,10 @@ import {
   fitLongSide,
   renderSceneThumbnail
 } from "../lib/canvas.js";
-import { getFoundryGeneration } from "../lib/foundry-capabilities.js";
+import { getFoundryGeneration, hasSceneLevels } from "../lib/foundry-capabilities.js";
 import { getSceneById } from "../lib/game-collections.js";
-import { resolveSceneLevel } from "../lib/scene-embedded.js";
-import { drawSnapshotOverlays, resolveSnapshotLayers } from "../lib/snapshot-overlays.js";
+import { assertSceneTemplatesSupported, resolveSceneLevel } from "../lib/scene-embedded.js";
+import { drawSnapshotOverlays } from "../lib/snapshot-overlays.js";
 
 const DEFAULT_SNAPSHOT_SIZE = 1024;
 
@@ -34,7 +35,12 @@ export function createSceneSnapshotHandlers() {
     async "scene.snapshot"(params) {
       const scene = getSceneById(params.sceneId);
       const level = resolveSceneLevel(scene, params.levelId, "scene.snapshot");
-      const layers = resolveSnapshotLayers(scene, params.layers);
+      if (params.layers?.includes("templates")) assertSceneTemplatesSupported(scene);
+      const layers = SCENE_SNAPSHOT_LAYERS.filter((layer) =>
+        params.layers === undefined
+          ? layer !== "templates" || !hasSceneLevels()
+          : params.layers.includes(layer)
+      );
       assertThumbnailSupported(scene, "scene.snapshot");
 
       const rect = scene.dimensions.sceneRect;

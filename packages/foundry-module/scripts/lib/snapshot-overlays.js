@@ -1,7 +1,3 @@
-import { SCENE_SNAPSHOT_LAYERS } from "../generated/protocol.js";
-import { hasSceneLevels } from "./foundry-capabilities.js";
-import { assertSceneTemplatesSupported } from "./scene-embedded.js";
-
 const SENSE_NONE = 0;
 const SENSE_LIMITED = 10;
 const SENSE_PROXIMITY = 30;
@@ -48,21 +44,6 @@ const TOKEN_IMAGE_TIMEOUT_MS = 5_000;
  *   distancePixels: number
  * }} OverlayFrame
  */
-
-/**
- * @param {any} scene
- * @param {string[] | undefined} requested
- * @returns {string[]}
- */
-export function resolveSnapshotLayers(scene, requested) {
-  if (requested === undefined) {
-    return SCENE_SNAPSHOT_LAYERS.filter((layer) => layer !== "templates" || !hasSceneLevels());
-  }
-  if (requested.includes("templates")) {
-    assertSceneTemplatesSupported(scene);
-  }
-  return SCENE_SNAPSHOT_LAYERS.filter((layer) => requested.includes(layer));
-}
 
 /**
  * @param {unknown} value

@@ -257,23 +257,22 @@ export function prepareSceneEmbeddedUpdateData(type, patch, existingDocument = n
   return sanitizeEmbeddedData(canonicalizeFilePathFields(patch, type), { preserveNestedBehaviorIds: true });
 }
 
-export async function createSceneEmbedded(scene, type, data, { dryRun = false } = {}) {
-  if (typeof scene.createEmbeddedDocuments !== "function") {
-    throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Scene embedded document API is not available");
-  }
-
-  const prepared = prepareSceneEmbeddedCreateData(type, data);
-  return dryRun ? prepared : createPreparedSceneEmbedded(scene, type, prepared);
+export async function createSceneEmbedded(scene, type, data, options) {
+  return createPreparedSceneEmbedded(scene, type, prepareSceneEmbeddedCreateData(type, data), options);
 }
 
 /**
  * @param {any} scene
  * @param {string} type
  * @param {Record<string, any>} prepared
+ * @param {{ dryRun?: boolean }} [options]
  */
-export async function createPreparedSceneEmbedded(scene, type, prepared) {
+export async function createPreparedSceneEmbedded(scene, type, prepared, { dryRun = false } = {}) {
   if (typeof scene.createEmbeddedDocuments !== "function") {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Scene embedded document API is not available");
+  }
+  if (dryRun) {
+    return prepared;
   }
 
   const results = await scene.createEmbeddedDocuments(type, [prepared], {
