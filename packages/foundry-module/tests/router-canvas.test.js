@@ -317,11 +317,12 @@ describe("scene.snapshot", () => {
     expect(strokes).toHaveLength(2 + 1 + 2 + 2);
   });
 
-  it("marks a wall whose sound restriction differs from its sight restriction", async () => {
-    const senses = { move: 0, sight: 0, light: 0, sound: 0 };
-    Object.assign(scene.walls.get("wall-plain"), senses, { sound: 20 });
-    Object.assign(scene.walls.get("wall-door"), senses, { door: 0 });
-    Object.assign(scene.walls.get("wall-secret"), senses, { door: 0, sight: 20, light: 20 });
+  it("marks sound where the wall color does not already tell it", async () => {
+    const blocking = { move: 20, sight: 20, light: 20, sound: 20 };
+    Object.assign(scene.walls.get("wall-plain"), blocking, { sound: 0 });
+    Object.assign(scene.walls.get("wall-door"), blocking, { door: 0 });
+    Object.assign(scene.walls.get("wall-secret"), blocking, { door: 1, ds: 0 });
+    scene.walls.set({ id: "wall-ethereal", c: [0, 200, 100, 200], move: 0, sight: 0, light: 0, sound: 0 });
 
     const response = await routerFor().route(
       createRequest("scene.snapshot", { sceneId: "scene-1", layers: ["walls"] })
@@ -333,8 +334,9 @@ describe("scene.snapshot", () => {
       .map((call, index) => ({ ...call, next: calls[index + 1]?.name }))
       .filter((call) => call.name === "arc");
     expect(marks.map((mark) => [mark.args[0], mark.args[1], mark.next])).toEqual([
-      [expect.closeTo(25 * scale + offsetX), expect.closeTo(offsetY), "fill"],
-      [expect.closeTo(100 * scale + offsetX), expect.closeTo(25 * scale + offsetY), "stroke"]
+      [expect.closeTo(25 * scale + offsetX), expect.closeTo(offsetY), "stroke"],
+      [expect.closeTo(100 * scale + offsetX), expect.closeTo(25 * scale + offsetY), "fill"],
+      [expect.closeTo(25 * scale + offsetX), expect.closeTo(200 * scale + offsetY), "stroke"]
     ]);
   });
 

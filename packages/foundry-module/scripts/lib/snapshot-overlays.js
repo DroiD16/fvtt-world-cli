@@ -350,7 +350,8 @@ function drawWalls(frame) {
       context.stroke();
     }
 
-    if (wall.sound !== wall.sight) {
+    const colorShowsSight = door === DOOR_NONE && Number(wall.move) !== SENSE_NONE;
+    if (!colorShowsSight || wall.sound !== wall.sight) {
       context.setLineDash([]);
       context.beginPath();
       context.arc(ax + (bx - ax) / 4, ay + (by - ay) / 4, 3 * unit, 0, Math.PI * 2);
