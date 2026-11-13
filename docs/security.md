@@ -22,7 +22,10 @@ client's view, and `canvas view-scene` switches the scene it shows. Players' vie
 are, but a GM working in that browser sees the view move under them. Switching scenes is a normal
 Foundry scene switch for the GM client: the canvas teardown can save the GM's fog exploration for
 the scene being left, and the GM client announces its new scene to the other connected clients.
-That is why both commands require approval by default.
+The switch also fires the `canvasTearDown` and `canvasReady` hooks of installed modules and the
+viewed and unviewed events of region behaviors, so GM-authored script or macro behaviors
+subscribed to those events run in the GM client. That is why both commands require approval by
+default.
 
 ## Authentication
 

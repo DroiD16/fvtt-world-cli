@@ -109,11 +109,14 @@ Rendered light, darkness and vision exist only on the GM client's screen, becaus
 them for the visible area. `canvas capture` saves that screen, so it shows only what the GM client
 currently views. `canvas view-scene` and `canvas pan` move that view to another scene or place.
 Players' views stay put, but a GM working in that browser sees the view move, and a scene switch
-does what any Foundry scene switch does: it can save the GM's fog exploration and tells the other
-clients which scene the GM is on. By default both commands wait for GM approval. `canvas pan` keeps
-the center point within the canvas and the zoom within Foundry's limits, so `--fit` can leave a
-large scene larger than the screen. The `pan` result's `previous` position and the `view-scene`
-result's `previousSceneId` put the view back.
+does what any Foundry scene switch does. It can save the GM's fog exploration, tells the other
+clients which scene the GM is on, fires the `canvasTearDown` and `canvasReady` hooks modules listen
+to, and fires the viewed and unviewed events of region behaviors, so GM-authored script or macro
+behaviors subscribed to those events run. By default both commands wait for GM approval.
+`canvas pan` keeps the zoom within Foundry's limits and the center point within the canvas plus a
+margin of 40% of the screen. Foundry's default minimum zoom always lets `--fit` show the whole scene;
+only a world or module that sets its own minimum zoom can prevent that. The `pan` result's
+`previous` position and the `view-scene` result's `previousSceneId` put the view back.
 
 Both image commands save the image to a local file, the `--out` path or a new file in the system
 temp directory, and report its path as `image.path` instead of image data. `transform` converts a

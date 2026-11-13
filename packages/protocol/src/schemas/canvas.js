@@ -25,6 +25,7 @@ export const canvasCommands = {
   }),
   "canvas.pan": cmd({
     type: "object",
+    description: "Either fit, or a position of x, y and scale; fit cannot be combined with x, y or scale.",
     required: [],
     properties: { ...panPositionProperties, ...panFitProperty },
     additionalProperties: false,

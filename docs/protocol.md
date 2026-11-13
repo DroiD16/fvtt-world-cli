@@ -211,10 +211,11 @@ image covers. A snapshot also reports the `layers` it drew and, on v14, the `lev
 A capture reports the GM view's `position` (`x`, `y` at the screen center, and `scale`). The CLI
 writes the image to a file and replaces `dataUrl` with `path`; `exec --stdin` passes the response
 through unchanged, data URL included. `canvas.pan` returns `previous` and the `position` Foundry
-applied after constraining the center point to the canvas and the zoom to its limits; the minimum
-zoom can keep `fit` from showing a large scene whole. A `fit` combined with `x`, `y` or `scale` fails
-schema validation. `canvas.view-scene` returns `previousSceneId`, `previousLevelId`
-and `changed`. None of the four is a write, so none takes `dryRun`.
+applied after constraining the zoom to its limits and the center point to the canvas plus a margin
+of 40% of the screen. Foundry's default minimum zoom always admits the `fit` zoom; a configured
+`CONFIG.Canvas.minZoom` can raise it. A `fit` combined with `x`, `y` or `scale` fails schema
+validation before the approval gate. `canvas.view-scene` returns `previousSceneId`,
+`previousLevelId` and `changed`. None of the four is a write, so none takes `dryRun`.
 
 `scene.thumbnail.generate` reports `outputWidth` and `outputHeight` from the rendered image. They
 can exceed the requested size when Foundry renders at the GM client's pixel ratio. A dry run

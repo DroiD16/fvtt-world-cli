@@ -95,12 +95,12 @@ To see a scene, run `scene snapshot --scene-id <id> --format png --out <file>` a
 draws walls, lights, sounds, tokens, regions, drawings, notes and the grid over the map from document
 data, writes nothing, and is the check after placing or moving anything: compare positions on the
 image rather than reasoning from coordinates (`transform`: pixel = coordinate × scale + offset).
-Its lights are dim/bright radius rings, not lighting. To judge what is lit, dark, or visible, use
-`canvas capture`, which saves the GM client's screen as Foundry renders it. It covers only the
-current view: `canvas view-scene` and `canvas pan` move that view on the screen of a GM who may be
-working in it, so restore it afterwards from the results' `previousSceneId` and `previous`. Use
-`scene thumbnail generate` only to set a scene's thumbnail: each call rewrites `thumb` and leaves an
-image file in the world.
+Its lights are dim/bright radius rings, or cones for directional lights, not lighting. To judge what
+is lit, dark, or visible, use `canvas capture`, which saves the GM client's screen as Foundry
+renders it. It covers only the current view: `canvas view-scene` and `canvas pan` move that view on
+the screen of a GM who may be working in it, so restore it afterwards from the results'
+`previousSceneId` and `previous`. Use `scene thumbnail generate` only to set a scene's thumbnail:
+each call rewrites `thumb` and leaves an image file in the world.
 Before deleting or relinking a document, run `world references --uuid <uuid>` and tell the user
 which stored references will point at nothing.
 `setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).

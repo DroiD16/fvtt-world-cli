@@ -57,13 +57,13 @@ export function registerCanvas({ program, dependencies }: RegistrationContext) {
     .addOption(
       new Option(
         "--x <x>",
-        "Canvas x at the center of the screen; Foundry keeps it within the canvas"
+        "Canvas x at the center of the screen; Foundry keeps it within the canvas plus a margin of 40% of the screen"
       ).argParser(parseNumber)
     )
     .addOption(
       new Option(
         "--y <y>",
-        "Canvas y at the center of the screen; Foundry keeps it within the canvas"
+        "Canvas y at the center of the screen; Foundry keeps it within the canvas plus a margin of 40% of the screen"
       ).argParser(parseNumber)
     )
     .addOption(
@@ -71,9 +71,11 @@ export function registerCanvas({ program, dependencies }: RegistrationContext) {
         parseNumber
       )
     )
-    .option(
-      "--fit",
-      "Center the scene and zoom to fit it on the screen, as far as Foundry's minimum zoom allows (instead of --x/--y/--scale)"
+    .addOption(
+      new Option(
+        "--fit",
+        "Center the scene and zoom so all of it fits on the screen (instead of --x/--y/--scale)"
+      ).conflicts(["x", "y", "scale"])
     )
     .action(async function panCanvas(options: { x?: number; y?: number; scale?: number; fit?: boolean }) {
       await executeRemoteCommand({

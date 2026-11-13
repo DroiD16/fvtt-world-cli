@@ -2427,6 +2427,19 @@ describe("fvtt-world-cli commands", () => {
     expect(result.stdout).toContain("stored path: n/a (dry run)");
   });
 
+  it("refuses canvas pan --fit together with a position before sending anything", async () => {
+    for (const flag of [
+      ["--x", "1"],
+      ["--y", "1"],
+      ["--scale", "2"]
+    ]) {
+      const result = await runCommand(["canvas", "pan", "--fit", ...flag], failIfCalledSendCommand());
+
+      expect(result.error).toBeInstanceOf(CommanderError);
+      expect((result.error as CommanderError).code).toBe("commander.conflictingOption");
+    }
+  });
+
   describe("rendered images", () => {
     const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
     const imageResponse = (kind: "snapshot" | "capture") =>

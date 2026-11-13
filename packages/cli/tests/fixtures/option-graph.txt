@@ -3549,10 +3549,10 @@ command canvas capture
 command canvas pan
   aliases=[]
   summary=Scroll and zoom the GM client's view of its current scene
-  opt --x <x> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Canvas x at the center of the screen; Foundry keeps it within the canvas
-  opt --y <y> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Canvas y at the center of the screen; Foundry keeps it within the canvas
+  opt --x <x> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Canvas x at the center of the screen; Foundry keeps it within the canvas plus a margin of 40% of the screen
+  opt --y <y> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Canvas y at the center of the screen; Foundry keeps it within the canvas plus a margin of 40% of the screen
   opt --scale <scale> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Zoom scale; Foundry clamps it to the scene's zoom limits
-  opt --fit | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Center the scene and zoom to fit it on the screen, as far as Foundry's minimum zoom allows (instead of --x/--y/--scale)
+  opt --fit | parser=- | conflicts=["x","y","scale"] | choices=- | required=false | hidden=false | default=- | help=Center the scene and zoom so all of it fits on the screen (instead of --x/--y/--scale)
 
 command canvas view-scene
   aliases=[]
