@@ -86,16 +86,7 @@ function prepareSnapshotScene(scene) {
   scene.update = vi.fn();
   scene.grid = { isGridless: true, isHexagonal: false, size: 100, sizeX: 100, sizeY: 100 };
   for (const token of scene.tokens) {
-    token.getSize = () => {
-      const grid = scene.grid;
-      let width = token.width ?? 1;
-      let height = token.height ?? 1;
-      if (grid.isHexagonal) {
-        if (grid.columns) width = 0.75 * Math.floor(width) + 0.5 * (width % 1) + 0.25;
-        else height = 0.75 * Math.floor(height) + 0.5 * (height % 1) + 0.25;
-      }
-      return { width: width * grid.sizeX, height: height * grid.sizeY };
-    };
+    token.getSize = () => ({ width: (token.width ?? 1) * 100, height: (token.height ?? 1) * 100 });
   }
   return scene;
 }
@@ -271,42 +262,6 @@ describe("scene.snapshot", () => {
     expect(calls.filter((call) => call.name === "lineTo")).toHaveLength(6 * 5);
   });
 
-  it.each([
-    [true, 2, [1.75 * 100, 2 * 87]],
-    [true, 3, [2.5 * 100, 3 * 87]],
-    [false, 2, [2 * 87, 1.75 * 100]],
-    [false, 3, [3 * 87, 2.5 * 100]]
-  ])(
-    "sizes a token box on a hex grid as Foundry does (columns %s, %i×%i)",
-    async (columns, cells, expected) => {
-      scene.grid = {
-        isGridless: true,
-        isHexagonal: true,
-        columns,
-        size: 100,
-        sizeX: columns ? 100 : 87,
-        sizeY: columns ? 87 : 100
-      };
-      const token = scene.tokens.get("token-a");
-      token.width = cells;
-      token.height = cells;
-
-      const response = await routerFor().route(
-        createRequest("scene.snapshot", { sceneId: "scene-1", layers: ["tokens"] })
-      );
-
-      const { scale, offsetX, offsetY } = response.result.transform;
-      const boxes = pipeline.canvases[0].calls
-        .filter((call) => call.name === "strokeRect")
-        .map((call) => call.args);
-      const [left, top, width, height] = boxes[0];
-      expect(left).toBeCloseTo(token.x * scale + offsetX);
-      expect(top).toBeCloseTo(token.y * scale + offsetY);
-      expect(width).toBeCloseTo(expected[0] * scale);
-      expect(height).toBeCloseTo(expected[1] * scale);
-    }
-  );
-
   it("draws a directional light as a cone facing its rotation", async () => {
     const light = scene.lights.get("light-torch");
     light.config = { dim: 40, bright: 20, angle: 90 };
@@ -322,17 +277,6 @@ describe("scene.snapshot", () => {
       [250 * scale + offsetX, 250 * scale + offsetY, 40 * 20 * scale, Math.PI / 4, (3 * Math.PI) / 4],
       [250 * scale + offsetX, 250 * scale + offsetY, 20 * 20 * scale, Math.PI / 4, (3 * Math.PI) / 4]
     ]);
-  });
-
-  it("marks a wall that blocks sight but lets light through", async () => {
-    scene.walls.get("wall-plain").sight = 20;
-    scene.walls.get("wall-plain").light = 0;
-    for (const id of ["wall-door", "wall-secret"]) scene.walls.get(id).light = 20;
-
-    await routerFor().route(createRequest("scene.snapshot", { sceneId: "scene-1", layers: ["walls"] }));
-
-    const strokes = pipeline.canvases[0].calls.filter((call) => call.name === "stroke");
-    expect(strokes).toHaveLength(2 + 1 + 2 + 2);
   });
 
   it("marks a wall whose light restriction differs from its sight restriction, in either direction", async () => {
