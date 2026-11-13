@@ -211,7 +211,10 @@ succeeds. Actor results also carry
 and `width`, `height` and `sizeBytes`, all read from the encoded image. `transform`
 (`scale`, `offsetX`, `offsetY`) maps a document coordinate to an image pixel as
 `coordinate * scale + offset`, and `view` (`x`, `y`, `width`, `height`) is the canvas rectangle the
-image covers. A snapshot also reports the `layers` it drew and, on v14, the `levelId` it rendered.
+image covers. A snapshot also reports the `layers` it drew, on v14 the `levelId` it rendered, and
+`partialRender`. `partialRender` is `true` when Foundry v13 rendered less than the whole scene, which
+happens for a scene without a background image: tiles can then be cropped or missing from the
+picture, while the grid and overlays still cover the whole scene. It is always `false` on v14.
 A capture reports the GM view's `position` (`x`, `y` at the screen center, and `scale`). The CLI
 writes the image to a file and replaces `dataUrl` with `path`; `exec --stdin` passes the response
 through unchanged, data URL included. `canvas.pan` returns `previous` and the `position` Foundry

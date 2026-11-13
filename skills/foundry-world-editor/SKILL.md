@@ -95,6 +95,8 @@ To see a scene, run `scene snapshot --scene-id <id> --out <file>.png` and open t
 draws walls, lights, sounds, tokens, regions, drawings, notes and the grid over the map from document
 data, writes nothing, and is the check after placing or moving anything: compare positions on the
 image rather than reasoning from coordinates (`transform`: pixel = coordinate × scale + offset).
+When the result has `partialRender: true`, tiles can be cropped or missing from the picture; read
+tile positions from `scene tile list` instead of the image.
 Its lights are dim/bright radius rings, or cones for directional lights, not lighting. To judge what
 is lit, dark, or visible, use `canvas capture`, which saves the GM client's screen as Foundry
 renders it. It covers only the current view: `canvas view-scene` and `canvas pan` move that view on

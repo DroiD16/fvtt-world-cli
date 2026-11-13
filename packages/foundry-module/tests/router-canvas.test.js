@@ -152,6 +152,7 @@ describe("scene.snapshot", () => {
     expect(image).toMatchObject({ mimeType: "image/webp", width: 1024, height: 768, sizeBytes: 3000 });
     expect(image.dataUrl.startsWith("data:image/webp;base64,")).toBe(true);
     expect(response.result.levelId).toBeNull();
+    expect(response.result.partialRender).toBe(false);
     expect(scene.update).not.toHaveBeenCalled();
     expect(pipeline.bitmaps.map((bitmap) => bitmap.close.mock.calls.length)).toEqual([1]);
   });
@@ -171,6 +172,7 @@ describe("scene.snapshot", () => {
     const response = await routerFor().route(createRequest("scene.snapshot", { sceneId: "scene-1" }));
 
     const { transform, view } = response.result;
+    expect(response.result.partialRender).toBe(true);
     expect(transform.scale).toBeCloseTo(0.256);
     expect(transform.offsetX).toBeCloseTo(-500 * 0.256);
     expect(transform.offsetY).toBeCloseTo(-300 * 0.256);

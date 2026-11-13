@@ -107,6 +107,9 @@ export function createSceneSnapshotHandlers() {
             sceneId: scene.id,
             size: Math.max(width, height)
           }),
+          partialRender:
+            fitsDrawnBounds &&
+            (Math.round(reportedWidth) < rect.width || Math.round(reportedHeight) < rect.height),
           view: {
             x: -transform.offsetX / transform.scale,
             y: -transform.offsetY / transform.scale,

@@ -2596,6 +2596,26 @@ describe("fvtt-world-cli commands", () => {
       expect((result.error as CommanderError).code).toBe("fvtt-world-cli.imageFormatConflict");
     });
 
+    it("tells when Foundry rendered only part of the scene", async () => {
+      const directory = mkdtempSync(join(tmpdir(), "fvtt-world-cli-image-test-"));
+      try {
+        const partial = vi.fn(async (...args: unknown[]) => {
+          const response = await (imageResponse("snapshot") as any)(...args);
+          return { ...response, result: { ...response.result, partialRender: true } };
+        }) as unknown as SendCommandMock;
+
+        const result = await runCommand(
+          ["scene", "snapshot", "--scene-id", "scene1", "--out", join(directory, "scene.png")],
+          partial
+        );
+
+        expect(result.error).toBeNull();
+        expect(result.stdout).toContain("partial render:");
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
+
     it("reports an image it could not write as a local file error", async () => {
       const result = await runCommand(
         [

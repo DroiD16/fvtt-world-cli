@@ -434,7 +434,10 @@ export const RENDERERS = registerRenderers([
     [
       `Rendered scene ${result.sceneId}${result.levelId ? ` level ${result.levelId}` : ""}`,
       ...renderImageLines(result),
-      `layers: ${(result.layers ?? []).join(", ") || "none"}`
+      `layers: ${(result.layers ?? []).join(", ") || "none"}`,
+      ...(result.partialRender
+        ? ["partial render: Foundry drew only part of the scene's tiles (v13, no background image)"]
+        : [])
     ].join("\n")
   ),
   detailRenderer("scene.fog.reset", (result) =>
