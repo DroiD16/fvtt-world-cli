@@ -4142,9 +4142,9 @@ async function runSceneImageCoverage(summary, { actorId, stamp, isV14, gmControl
     );
     expectErr(
       summary,
-      "canvas.pan(fit with a position refused)",
+      "canvas.pan(fit with a position refused by the CLI)",
       runFoundryctl(["canvas", "pan", "--fit", "--scale", "2"]),
-      ERROR_CODES.INVALID_PARAMS
+      "INVALID_ARGUMENT"
     );
     const panned = expectOk(
       summary,
