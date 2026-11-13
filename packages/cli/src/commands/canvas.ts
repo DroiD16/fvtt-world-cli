@@ -12,9 +12,10 @@ export function registerCanvas({ program, dependencies }: RegistrationContext) {
     [
       "",
       "These commands act on the view of the GM client that holds the bridge: the scene it shows, where",
-      "it is scrolled to and how far it is zoomed. They change no world data, and players' views are",
-      "unaffected. A position is the canvas point at the center of the screen plus the zoom scale, in",
-      "the same coordinates as document x and y.",
+      "it is scrolled to and how far it is zoomed. Players' views stay where they are. They write no",
+      "document themselves; a scene switch runs Foundry's own teardown and redraw, which can save the",
+      "GM's fog exploration and tells other clients which scene the GM is on. A position is the canvas",
+      "point at the center of the screen plus the zoom scale, in the same coordinates as document x and y.",
       "",
       "Result keys (--json): .result.sceneId, .result.levelId (v14), .result.position {x, y, scale},",
       ".result.view {x, y, width, height} (the canvas rectangle on screen); capture adds .result.image",
@@ -53,14 +54,27 @@ export function registerCanvas({ program, dependencies }: RegistrationContext) {
   canvas
     .command("pan")
     .description("Scroll and zoom the GM client's view of its current scene")
-    .addOption(new Option("--x <x>", "Canvas x at the center of the screen").argParser(parseNumber))
-    .addOption(new Option("--y <y>", "Canvas y at the center of the screen").argParser(parseNumber))
+    .addOption(
+      new Option(
+        "--x <x>",
+        "Canvas x at the center of the screen; Foundry keeps it within the canvas"
+      ).argParser(parseNumber)
+    )
+    .addOption(
+      new Option(
+        "--y <y>",
+        "Canvas y at the center of the screen; Foundry keeps it within the canvas"
+      ).argParser(parseNumber)
+    )
     .addOption(
       new Option("--scale <scale>", "Zoom scale; Foundry clamps it to the scene's zoom limits").argParser(
         parseNumber
       )
     )
-    .option("--fit", "Center the scene and zoom so all of it fits the screen (instead of --x/--y/--scale)")
+    .option(
+      "--fit",
+      "Center the scene and zoom to fit it on the screen, as far as Foundry's minimum zoom allows (instead of --x/--y/--scale)"
+    )
     .action(async function panCanvas(options: { x?: number; y?: number; scale?: number; fit?: boolean }) {
       await executeRemoteCommand({
         commandName: "canvas.pan",

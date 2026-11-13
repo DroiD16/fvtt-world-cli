@@ -101,14 +101,19 @@ fvtt-world-cli canvas capture --format png --out view.png --json
 `scene snapshot` has Foundry render the scene's background and visible tiles, then draws walls,
 lights, sounds, tokens, regions, drawings, notes, measured templates (v13) and the grid over them
 from document data. It changes nothing in the world and writes nothing to Foundry's data. Its light
-overlay is a pair of rings at the dim and bright radius, not rendered light.
+overlay is a pair of rings at the dim and bright radius, or cones for directional lights, not
+rendered light. While it renders, Foundry shows its loading notice for the scene's images in the GM
+client; on v13 the notice appears on every snapshot.
 
 Rendered light, darkness and vision exist only on the GM client's screen, because Foundry computes
-them for the visible area. `canvas capture` saves that screen. To capture another place, switch the
-GM client to the scene with `canvas view-scene` and move the view with `canvas pan` first. Both
-change only the GM client's view, which a GM working in that browser will notice, so by default
-they wait for GM approval. The `pan` result's `previous` position and the `view-scene` result's
-`previousSceneId` put the view back.
+them for the visible area. `canvas capture` saves that screen, so it shows only what the GM client
+currently views. `canvas view-scene` and `canvas pan` move that view to another scene or place.
+Players' views stay put, but a GM working in that browser sees the view move, and a scene switch
+does what any Foundry scene switch does: it can save the GM's fog exploration and tells the other
+clients which scene the GM is on. By default both commands wait for GM approval. `canvas pan` keeps
+the center point within the canvas and the zoom within Foundry's limits, so `--fit` can leave a
+large scene larger than the screen. The `pan` result's `previous` position and the `view-scene`
+result's `previousSceneId` put the view back.
 
 Both image commands save the image to a local file, the `--out` path or a new file in the system
 temp directory, and report its path as `image.path` instead of image data. `transform` converts a

@@ -18,9 +18,11 @@ tokens, disabled lights and secret doors, and a capture shows the GM's screen wi
 lighting and vision.
 
 The `canvas` commands also act on the GM's own screen. `canvas pan` scrolls and zooms the GM
-client's view, and `canvas view-scene` switches the scene it shows. Neither changes world data or
-what players see, but a GM working in that browser sees the view move under them. That is why both
-require approval by default.
+client's view, and `canvas view-scene` switches the scene it shows. Players' views stay where they
+are, but a GM working in that browser sees the view move under them. Switching scenes is a normal
+Foundry scene switch for the GM client: the canvas teardown can save the GM's fog exploration for
+the scene being left, and the GM client announces its new scene to the other connected clients.
+That is why both commands require approval by default.
 
 ## Authentication
 
