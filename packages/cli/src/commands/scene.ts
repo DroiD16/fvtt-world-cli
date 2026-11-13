@@ -1,3 +1,4 @@
+import { SCENE_SNAPSHOT_LAYERS } from "@fvtt-world-cli/protocol";
 import { type Command, Option } from "commander";
 
 import {
@@ -61,12 +62,16 @@ import {
   type TokenPlacementOptions
 } from "../params.js";
 import { executeRemoteCommand } from "../exec.js";
-import { saveResultImage } from "../image-output.js";
+import {
+  type ImageOutputOptions,
+  addImageOutputOptions,
+  imageRequestParams,
+  saveResultImage
+} from "../image-output.js";
 import {
   parseCsvList,
   parseIdList,
   parseNumber,
-  parsePositiveInt,
   parseTokenIncludeFields,
   parseTokenDeltaIncludeFields
 } from "../parse.js";
@@ -113,6 +118,13 @@ interface SceneLevelCreateOptions extends SceneLevelScopeOptions {
 
 interface SceneLevelPatchOptions extends SceneLevelTargetOptions {
   patchJson?: string;
+}
+
+interface SceneSnapshotOptions extends ImageOutputOptions {
+  sceneId: string;
+  levelId?: string;
+  layers?: string[] | false;
+  tokenImages?: boolean;
 }
 
 interface SceneTokenTargetOptions {
@@ -332,31 +344,26 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       });
     });
 
-  scene
-    .command("snapshot")
-    .description(
-      "Render a scene to an image with its walls, lights, sounds, tokens, regions, drawings, notes and grid drawn over it, without changing anything"
-    )
-    .requiredOption("--scene-id <sceneId>", "Scene id")
-    .option("--level-id <levelId>", "Level to render (Foundry v14; default: the scene's initial level)")
-    .addOption(
-      new Option("--size <px>", "Long side of the image in px (16–2048, default 1024)").argParser(
-        parsePositiveInt
+  addImageOutputOptions(
+    scene
+      .command("snapshot")
+      .description(
+        "Render a scene to an image with its walls, lights, sounds, tokens, regions, drawings, notes and grid drawn over it, without changing anything"
       )
-    )
-    .addOption(new Option("--format <format>", "Image format (default webp)").choices(["webp", "png"]))
+      .requiredOption("--scene-id <sceneId>", "Scene id")
+      .option("--level-id <levelId>", "Level to render (Foundry v14; default: the scene's initial level)"),
+    "1024"
+  )
     .addOption(
       new Option(
         "--layers <list>",
-        "Comma-separated overlays to draw: grid, regions, drawings, templates (v13), walls, lights, sounds, notes, tokens (default: all)"
+        `Comma-separated overlays to draw: ${SCENE_SNAPSHOT_LAYERS.map((layer) =>
+          layer === "templates" ? `${layer} (v13)` : layer
+        ).join(", ")} (default: all)`
       ).argParser((value: string) => parseCsvList(value, "--layers"))
     )
     .option("--no-layers", "Draw no overlays: only the background and tiles Foundry renders")
     .option("--token-images", "Draw each token's image inside its box")
-    .option(
-      "--out <file>",
-      "Write the image to this file (default: <command>-<sceneId>[-<levelId>].<format> in a private fvtt-world-cli directory under the system temp directory, replaced by the next image of the same scene)"
-    )
     .addHelpText(
       "after",
       [
@@ -387,22 +394,13 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
         ".result.levelId (v14)."
       ].join("\n")
     )
-    .action(async function snapshotScene(options: {
-      sceneId: string;
-      levelId?: string;
-      size?: number;
-      format?: string;
-      layers?: string[] | false;
-      tokenImages?: boolean;
-      out?: string;
-    }) {
+    .action(async function snapshotScene(options: SceneSnapshotOptions) {
       await executeRemoteCommand({
         commandName: "scene.snapshot",
         params: {
           sceneId: options.sceneId,
           ...(options.levelId === undefined ? {} : { levelId: options.levelId }),
-          ...(options.size === undefined ? {} : { size: options.size }),
-          ...(options.format === undefined ? {} : { format: options.format }),
+          ...imageRequestParams(options),
           ...(options.layers === false ? { layers: [] } : options.layers ? { layers: options.layers } : {}),
           ...(options.tokenImages ? { tokenImages: true } : {})
         },

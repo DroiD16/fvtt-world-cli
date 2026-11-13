@@ -1,9 +1,27 @@
+import { RENDERED_IMAGE_MAX_DIMENSION } from "@fvtt-world-cli/protocol";
 import { Option } from "commander";
 
 import type { RegistrationContext } from "./shared.js";
 import { executeRemoteCommand } from "../exec.js";
-import { saveResultImage } from "../image-output.js";
-import { parseNumber, parsePositiveInt } from "../parse.js";
+import {
+  type ImageOutputOptions,
+  addImageOutputOptions,
+  imageRequestParams,
+  saveResultImage
+} from "../image-output.js";
+import { parseNumber } from "../parse.js";
+
+interface CanvasPanOptions {
+  x?: number;
+  y?: number;
+  scale?: number;
+  fit?: boolean;
+}
+
+interface CanvasViewSceneOptions {
+  sceneId: string;
+  levelId?: string;
+}
 
 export function registerCanvas({ program, dependencies }: RegistrationContext) {
   const canvas = program.command("canvas").description("GM client canvas view commands");
@@ -25,34 +43,22 @@ export function registerCanvas({ program, dependencies }: RegistrationContext) {
     ].join("\n")
   );
 
-  canvas
-    .command("capture")
-    .description(
-      "Capture the GM client's current view as an image, with lighting, darkness and vision as the GM sees them"
-    )
-    .addOption(
-      new Option(
-        "--size <px>",
-        "Long side of the image in px (16–2048, default: the GM screen's, at most 2048)"
-      ).argParser(parsePositiveInt)
-    )
-    .addOption(new Option("--format <format>", "Image format (default webp)").choices(["webp", "png"]))
-    .option(
-      "--out <file>",
-      "Write the image to this file (default: <command>-<sceneId>[-<levelId>].<format> in a private fvtt-world-cli directory under the system temp directory, replaced by the next image of the same scene)"
-    )
-    .action(async function captureCanvas(options: { size?: number; format?: string; out?: string }) {
-      await executeRemoteCommand({
-        commandName: "canvas.capture",
-        params: {
-          ...(options.size === undefined ? {} : { size: options.size }),
-          ...(options.format === undefined ? {} : { format: options.format })
-        },
-        command: this,
-        dependencies,
-        prepareResult: saveResultImage("capture", options.out)
-      });
+  addImageOutputOptions(
+    canvas
+      .command("capture")
+      .description(
+        "Capture the GM client's current view as an image, with lighting, darkness and vision as the GM sees them"
+      ),
+    `the GM screen's, at most ${RENDERED_IMAGE_MAX_DIMENSION}`
+  ).action(async function captureCanvas(options: ImageOutputOptions) {
+    await executeRemoteCommand({
+      commandName: "canvas.capture",
+      params: imageRequestParams(options),
+      command: this,
+      dependencies,
+      prepareResult: saveResultImage("capture", options.out)
     });
+  });
 
   canvas
     .command("pan")
@@ -80,7 +86,7 @@ export function registerCanvas({ program, dependencies }: RegistrationContext) {
         "Center the scene and zoom so all of it fits on the screen (instead of --x/--y/--scale)"
       ).conflicts(["x", "y", "scale"])
     )
-    .action(async function panCanvas(options: { x?: number; y?: number; scale?: number; fit?: boolean }) {
+    .action(async function panCanvas(options: CanvasPanOptions) {
       await executeRemoteCommand({
         commandName: "canvas.pan",
         params: {
@@ -99,7 +105,7 @@ export function registerCanvas({ program, dependencies }: RegistrationContext) {
     .description("Switch the scene the GM client views, without activating it for players")
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .option("--level-id <levelId>", "Level to view (Foundry v14)")
-    .action(async function viewScene(options: { sceneId: string; levelId?: string }) {
+    .action(async function viewScene(options: CanvasViewSceneOptions) {
       await executeRemoteCommand({
         commandName: "canvas.view-scene",
         params: {

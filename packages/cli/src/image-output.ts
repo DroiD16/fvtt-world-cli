@@ -3,10 +3,44 @@ import { lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { RENDERED_IMAGE_FORMATS } from "@fvtt-world-cli/protocol";
-import { CommanderError } from "commander";
+import {
+  RENDERED_IMAGE_FORMATS,
+  RENDERED_IMAGE_MAX_DIMENSION,
+  RENDERED_IMAGE_MIN_DIMENSION
+} from "@fvtt-world-cli/protocol";
+import { type Command, CommanderError, Option } from "commander";
+
+import { parsePositiveInt } from "./parse.js";
 
 const SAFE_ID = /^[A-Za-z0-9]{1,32}$/;
+
+export interface ImageOutputOptions {
+  size?: number;
+  format?: string;
+  out?: string;
+}
+
+export function addImageOutputOptions(command: Command, sizeDefault: string): Command {
+  return command
+    .addOption(
+      new Option(
+        "--size <px>",
+        `Long side of the image in px (${RENDERED_IMAGE_MIN_DIMENSION}–${RENDERED_IMAGE_MAX_DIMENSION}, default: ${sizeDefault})`
+      ).argParser(parsePositiveInt)
+    )
+    .addOption(new Option("--format <format>", "Image format (default webp)").choices(RENDERED_IMAGE_FORMATS))
+    .option(
+      "--out <file>",
+      "Write the image to this file (default: <command>-<sceneId>[-<levelId>].<format> in a private fvtt-world-cli directory under the system temp directory, replaced by the next image of the same scene)"
+    );
+}
+
+export function imageRequestParams(options: ImageOutputOptions): Record<string, unknown> {
+  return {
+    ...(options.size === undefined ? {} : { size: options.size }),
+    ...(options.format === undefined ? {} : { format: options.format })
+  };
+}
 
 function defaultImagePath(kind: string, result: any, extension: string) {
   const uid = process.getuid?.();

@@ -349,12 +349,12 @@ command scene snapshot
   summary=Render a scene to an image with its walls, lights, sounds, tokens, regions, drawings, notes and grid drawn over it, without changing anything
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
   opt --level-id <levelId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Level to render (Foundry v14; default: the scene's initial level)
-  opt --size <px> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Long side of the image in px (16–2048, default 1024)
+  opt --size <px> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Long side of the image in px (16–2048, default: 1024)
   opt --format <format> | parser=<anonymous> | conflicts=[] | choices=["webp","png"] | required=false | hidden=false | default=- | help=Image format (default webp)
+  opt --out <file> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Write the image to this file (default: <command>-<sceneId>[-<levelId>].<format> in a private fvtt-world-cli directory under the system temp directory, replaced by the next image of the same scene)
   opt --layers <list> | parser=<anonymous> | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated overlays to draw: grid, regions, drawings, templates (v13), walls, lights, sounds, notes, tokens (default: all)
   opt --no-layers | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Draw no overlays: only the background and tiles Foundry renders
   opt --token-images | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Draw each token's image inside its box
-  opt --out <file> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Write the image to this file (default: <command>-<sceneId>[-<levelId>].<format> in a private fvtt-world-cli directory under the system temp directory, replaced by the next image of the same scene)
 
 command scene fog
   aliases=[]
