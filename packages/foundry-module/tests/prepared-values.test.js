@@ -172,6 +172,18 @@ describe("serializePreparedValue", () => {
     });
   });
 
+  it("stops at the byte limit before serializing a string too large to serialize", () => {
+    const control = "\u0001".repeat(90_000_000);
+    expect(serializePreparedValue({ control })).toEqual({
+      value: null,
+      omitted: { reason: "too-large", limit: "bytes", max: PREPARED_VALUE_MAX_BYTES }
+    });
+    expect(serializePreparedValue({ [control]: 1 })).toEqual({
+      value: null,
+      omitted: { reason: "too-large", limit: "bytes", max: PREPARED_VALUE_MAX_BYTES }
+    });
+  });
+
   it("counts the holes of a sparse array as nodes", () => {
     expect(serializePreparedValue({ sparse: new Array(1e9) })).toEqual({
       value: null,

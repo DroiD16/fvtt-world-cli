@@ -7,6 +7,7 @@ import {
   UNSERIALIZABLE_MARKER_KEY,
   getColorClass,
   isDataModelInstance,
+  jsonStringByteLength,
   readScalarObject,
   unbox,
   utf8ByteLength
@@ -78,7 +79,11 @@ export function serializePreparedValue(value) {
    * @returns {T}
    */
   const leaf = (emitted) => {
-    charge(utf8ByteLength(JSON.stringify(emitted) ?? "null"));
+    charge(
+      typeof emitted === "string"
+        ? jsonStringByteLength(emitted, PREPARED_VALUE_MAX_BYTES - bytes)
+        : utf8ByteLength(JSON.stringify(emitted) ?? "null")
+    );
     return emitted;
   };
   /**
@@ -87,8 +92,13 @@ export function serializePreparedValue(value) {
    * @param {() => unknown} read
    */
   const entry = (target, key, read) => {
-    charge(utf8ByteLength(JSON.stringify(key)) + 2);
-    defineEntry(target, key, read());
+    charge(jsonStringByteLength(key, PREPARED_VALUE_MAX_BYTES - bytes) + 2);
+    Object.defineProperty(target, key, {
+      value: read(),
+      writable: true,
+      enumerable: true,
+      configurable: true
+    });
   };
 
   /**
@@ -196,13 +206,4 @@ export function serializePreparedValue(value) {
     }
     return { value: null, omitted: { reason: "unreadable" } };
   }
-}
-
-/**
- * @param {Record<string, unknown>} target
- * @param {string} key
- * @param {unknown} value
- */
-function defineEntry(target, key, value) {
-  Object.defineProperty(target, key, { value, writable: true, enumerable: true, configurable: true });
 }

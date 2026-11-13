@@ -86,11 +86,12 @@ export function utf8ByteLength(text) {
 
 /**
  * @param {string} text
+ * @param {number} [limit]
  * @returns {number}
  */
-export function jsonStringByteLength(text) {
+export function jsonStringByteLength(text, limit = Infinity) {
   let bytes = 2;
-  for (let index = 0; index < text.length; index += 1) {
+  for (let index = 0; index < text.length && bytes <= limit; index += 1) {
     const code = text.charCodeAt(index);
     if (code === 0x22 || code === 0x5c) {
       bytes += 2;
