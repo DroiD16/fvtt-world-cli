@@ -2,6 +2,50 @@
 
 All notable user-visible changes to fvtt-world-cli will be recorded in this file.
 
+## [1.4.0] - 2026-11-13
+
+### New
+
+- Agents can look at a scene. `scene snapshot` returns an image of any scene with its walls, doors,
+  lights, sounds, tokens, regions, drawings, templates, notes and grid drawn over the map. It
+  changes nothing in the world, and the CLI saves the image to a file.
+- `canvas capture` saves what the GM currently sees, with lighting and vision. `canvas pan` and
+  `canvas view-scene` move the GM's view or switch the GM to another scene without activating it
+  for players. These two need GM approval by default.
+- Tokens can be placed by their center and snapped to the grid, the way a dropped token lands.
+- Token create, update and clone results can show what the token overrides from its actor, also in
+  dry runs.
+- Item reads with `--include prepared` show each activity's attack bonus, damage and save DC.
+
+### Improvements
+
+- Actor reads with `--include prepared` return the values the game system computes, such as
+  proficiency bonus, armor class, skill totals and XP. Before, many of them came back as `null`.
+- Tokens created in one batch get numbers the way Foundry gives them, (1), (2), (3), instead of all
+  getting (1). New tokens sit above the tokens already on the scene.
+- Data copied out of Foundry can be written back when it has empty fields that Foundry allows, such
+  as a drawing without a texture or an actor without an image.
+- Dry runs of `create-many` show the name each new document would get.
+- `scene thumbnail generate` reports the real size of the image it wrote.
+
+### Changes that affect scripts
+
+- A token created from an actor is now linked or unlinked as the actor's prototype token says. On a
+  linked token, item and effect writes change the world actor. `--unlinked` gives the old result.
+- `scene token create-many` creates tokens one at a time. A batch that fails part way keeps the
+  tokens it already created and reports the rest as `notAttempted`.
+- `prepared.system` has a new shape. JSON fields arrive parsed, references to other documents
+  arrive as `{documentName, id, uuid}`, and a value over the size limit comes back as `null` with
+  an `omitted` reason.
+
+### Known limitations
+
+- On Foundry 13, batch numbering is right only when the target scene is the one the GM is viewing.
+- On Foundry 13, a snapshot of a scene without a background image can miss tiles. The result then
+  carries `partialRender: true`.
+- The global `--dry-run` flag does not stop `canvas pan` and `canvas view-scene`. They move the
+  view.
+
 ## [1.3.0] - 2026-11-12
 
 ### New
