@@ -338,6 +338,47 @@ describe("scene.snapshot", () => {
     ]);
   });
 
+  it.each([
+    ["round", "arc"],
+    ["flat", "lineTo"]
+  ])("draws a %s cone as the core cone template setting selects", async (coneType, edge) => {
+    const permissive = createPermissiveSettings();
+    globalThis.game.settings.get = vi.fn((namespace, key) =>
+      namespace === "core" && key === "coneTemplateType" ? coneType : permissive.get(namespace, key)
+    );
+    const cone = scene.templates.get("template-cone");
+    cone.direction = 0;
+    cone.angle = 90;
+
+    const response = await routerFor().route(
+      createRequest("scene.snapshot", { sceneId: "scene-1", layers: ["templates"] })
+    );
+
+    const { scale, offsetX, offsetY } = response.result.transform;
+    const calls = pipeline.canvases[0].calls;
+    const start = calls.findIndex(
+      (call) =>
+        call.name === "moveTo" &&
+        Math.abs(call.args[0] - (800 * scale + offsetX)) < 1e-6 &&
+        Math.abs(call.args[1] - (300 * scale + offsetY)) < 1e-6
+    );
+    expect(calls[start + 1].name).toBe(edge);
+    const length = 15 * 20 * scale;
+    if (coneType === "flat") {
+      const corner = length / Math.cos(Math.PI / 4);
+      expect(calls[start + 1].args).toEqual([
+        expect.closeTo(800 * scale + offsetX + Math.cos(-Math.PI / 4) * corner),
+        expect.closeTo(300 * scale + offsetY + Math.sin(-Math.PI / 4) * corner)
+      ]);
+      expect(calls[start + 2].args).toEqual([
+        expect.closeTo(800 * scale + offsetX + length),
+        expect.closeTo(300 * scale + offsetY + length)
+      ]);
+    } else {
+      expect(calls[start + 1].args[2]).toBeCloseTo(length);
+    }
+  });
+
   it("draws nothing over the rendered background when no layer is requested", async () => {
     const response = await routerFor().route(
       createRequest("scene.snapshot", { sceneId: "scene-1", layers: [] })

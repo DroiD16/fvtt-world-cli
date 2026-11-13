@@ -261,6 +261,7 @@ function drawDrawings(frame) {
 /** @param {OverlayFrame} frame */
 function drawTemplates(frame) {
   const { context, scene, x, y, scale, unit, distancePixels } = frame;
+  const flatCones = globalThis.game.settings.get("core", "coneTemplateType") === "flat";
   for (const template of Array.from(scene.templates ?? [])) {
     const originX = x(template.x);
     const originY = y(template.y);
@@ -274,6 +275,19 @@ function drawTemplates(frame) {
     context.beginPath();
     if (template.t === "circle") {
       context.arc(originX, originY, length, 0, Math.PI * 2);
+    } else if (template.t === "cone" && flatCones) {
+      const half = radians(Math.min(Number(template.angle) || 0, 179)) / 2;
+      const reach = length / Math.cos(half);
+      context.moveTo(originX, originY);
+      context.lineTo(
+        originX + Math.cos(direction - half) * reach,
+        originY + Math.sin(direction - half) * reach
+      );
+      context.lineTo(
+        originX + Math.cos(direction + half) * reach,
+        originY + Math.sin(direction + half) * reach
+      );
+      context.closePath();
     } else if (template.t === "cone") {
       const half = radians(template.angle ?? 0) / 2;
       context.moveTo(originX, originY);
