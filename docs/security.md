@@ -17,15 +17,13 @@ players. `scene snapshot` and `canvas capture` extend that to images: a snapshot
 tokens, disabled lights and secret doors, and a capture shows the GM's screen with the GM's
 lighting and vision.
 
-The `canvas` commands also act on the GM's own screen. `canvas pan` scrolls and zooms the GM
-client's view, and `canvas view-scene` switches the scene it shows. Players' views stay where they
-are, but a GM working in that browser sees the view move under them. Switching scenes is a normal
-Foundry scene switch for the GM client: the canvas teardown can save the GM's fog exploration for
-the scene being left, and the GM client announces its new scene to the other connected clients.
-The switch also fires the `canvasTearDown` and `canvasReady` hooks of installed modules and the
-viewed and unviewed events of region behaviors, so GM-authored script or macro behaviors
-subscribed to those events run in the GM client. That is why both commands require approval by
-default.
+The `canvas` commands act on the GM client's screen: `canvas pan` scrolls and zooms it, and
+`canvas view-scene` switches the scene it shows, while players' views stay put. A scene switch is
+an ordinary Foundry scene switch in the GM client. It can save the GM's fog exploration for the
+scene being left and announces the GM's new scene to the other clients. It also fires the
+`canvasTearDown` and `canvasReady` hooks of installed modules and the viewed and unviewed events of
+region behaviors, so GM-authored script or macro behaviors subscribed to those events run on a CLI
+request.
 
 ## Authentication
 
@@ -182,16 +180,16 @@ and display the remote image; they are outside the managed-file boundary.
 ## Local image files
 
 `scene snapshot` and `canvas capture` are the only world commands that save their result to a file
-on the machine running the CLI. With `--out`, the CLI writes the image to that path with the permissions of the user who
-runs it. Without `--out`, it writes into one directory under the system temp directory:
-`fvtt-world-cli-<uid>` on Linux and macOS, and `fvtt-world-cli` on Windows, where the temp directory
-already belongs to one user. On Linux and macOS the CLI creates the directory with mode 700 and
+on the machine running the CLI. With `--out`, the CLI writes the image to that path with the
+permissions of the user who runs it. Without `--out`, it writes into one directory under the system
+temp directory: `fvtt-world-cli-<uid>` on Linux and macOS, and `fvtt-world-cli` on Windows, where
+the temp directory already belongs to one user. On Linux and macOS the CLI creates the directory with mode 700 and
 refuses to write into it when it is a symlink, belongs to another user, or is open to other users.
 
 The file name is the command name plus the scene id and, on v14, the level id. An id that is not 1
 to 32 letters and digits is left out of the name, so a value returned by the bridge cannot move the
-write out of that directory. The CLI writes the image under a random name and renames it over the
-previous image of the same command, scene and level, so the directory keeps one file per view.
+write out of that directory. A new image replaces the previous image of the same command, scene
+and level, so the directory keeps one file per view.
 
 ## Availability and resource limits
 

@@ -92,35 +92,18 @@ run does not list them, so read the scene's placeables before deleting a level.
 ### Look at a scene
 
 ```bash
-fvtt-world-cli scene snapshot --scene-id <sceneId> --format png --out scene.png --json
+fvtt-world-cli scene snapshot --scene-id <sceneId> --out scene.png --json
 fvtt-world-cli canvas view-scene --scene-id <sceneId> --json
 fvtt-world-cli canvas pan --fit --json
-fvtt-world-cli canvas capture --format png --out view.png --json
+fvtt-world-cli canvas capture --out view.png --json
 ```
 
-`scene snapshot` has Foundry render the scene's background and visible tiles, then draws walls,
-lights, sounds, tokens, regions, drawings, notes, measured templates (v13) and the grid over them
-from document data. It changes nothing in the world and writes nothing to Foundry's data. Its light
-overlay is a pair of rings at the dim and bright radius, or cones for directional lights, not
-rendered light. While it renders, Foundry shows its loading notice for the scene's images in the GM
-client; on v13 the notice appears on every snapshot.
-
-Rendered light, darkness and vision exist only on the GM client's screen, because Foundry computes
-them for the visible area. `canvas capture` saves that screen, so it shows only what the GM client
-currently views. `canvas view-scene` and `canvas pan` move that view to another scene or place.
-Players' views stay put, but a GM working in that browser sees the view move, and a scene switch
-does what any Foundry scene switch does. It can save the GM's fog exploration, tells the other
-clients which scene the GM is on, fires the `canvasTearDown` and `canvasReady` hooks modules listen
-to, and fires the viewed and unviewed events of region behaviors, so GM-authored script or macro
-behaviors subscribed to those events run. By default both commands wait for GM approval.
-Foundry keeps a `canvas pan` position and zoom within its own limits. The `pan` result's `previous`
-position and the `view-scene` result's `previousSceneId` put the view back.
-
-Both image commands save the image to a local file and report its path as `image.path` instead of
-image data. Without `--out`, the file goes to a private temporary directory. A `.png` or `.webp`
-extension on `--out` sets the format when `--format` is absent, and the CLI refuses a `--format`
-that contradicts it. `transform` converts a document coordinate to an image pixel
-(pixel = coordinate × scale + offset), and `view` is the canvas rectangle the image covers.
+`scene snapshot` draws the scene's walls, lights, sounds, tokens, regions, drawings, notes and grid
+over the background and tiles Foundry renders. It works from document data and changes nothing.
+Foundry computes light, darkness and vision only for what the GM client shows, so `canvas capture`
+saves that screen instead, and `canvas view-scene` and `canvas pan` move it first. A scene switch
+has the side effects listed under [Trust boundary](security.md#trust-boundary). Both image commands
+save the image to a local file and report its path.
 
 ### Send a batch of commands
 
@@ -193,11 +176,6 @@ data. Check the command's help for available projections and filters.
 Actor results carry `itemCount` in place of the owned items; `actor get` and `actor get-many`
 return the items with `--include items`. `system info --include modules` lists installed modules.
 
-Stored `system` data holds what was authored. Values the game system computes, such as an armor
-class, a skill total or an attack bonus, appear only with `--include prepared` on actor, token and
-item reads. For an item's values, `actor item get` and `scene token item get` read the item as its
-owner prepared it; `actor get --include items,prepared` does not add them per item.
-
 ### Updates and merge semantics
 
 Use JSON flags such as `--data-json` and `--patch-json` for structured values. Updates are patches:
@@ -209,10 +187,6 @@ Use JSON flags such as `--data-json` and `--patch-json` for structured values. U
 - Foundry's operator keys work at any permitted nested level: `{"-=key": null}` deletes the key,
   and `{"==key": value}` replaces the key's whole value instead of merging into it.
 - Embedded collections follow their family's Foundry semantics.
-
-Fields that Foundry's document schema declares nullable accept `null`, such as an item's `img`, a
-drawing's `texture`, an ambient sound's `path` or a token's `actorId`, so data copied out of Foundry,
-for example from an Adventure, can be written back as it is.
 
 Read arrays before editing and preserve unchanged values. For a wall's `c` field, send the complete
 `[x1, y1, x2, y2]`, not `c.0`. Array writes that Foundry would discard return `INVALID_PARAMS`
@@ -247,20 +221,8 @@ cached state survives. Reuse it only for the same request; a corrected or remain
 new operation and needs a fresh key. Follow the [delivery rules](protocol.md#delivery-states-and-retries)
 when a connection fails, since some failures also lose the cached state.
 
-Token `x` and `y` are the top-left corner. `scene token create` and `create-many` take `--center`
-to read them as the token's center and `--snap` to align the token to the scene grid, the two
-adjustments Foundry makes when a token is dropped on the canvas.
-
-A token created from an actor is linked or unlinked as the actor's prototype token says, unless
-`--linked` or `--unlinked` (`actorLink` in the data) is given. Item and effect writes on a linked
-token change the world actor.
-
 Bulk writes are not transactions. Inspect `complete` and every entry in `outcomes` before deciding
-what to retry. The other `create-many` commands send all elements to Foundry in one create call.
-`scene token create-many` sends one create per token, in order, so Foundry numbers the tokens as it
-does when they are placed by hand. It stops after the first token that fails to prepare, whose create
-call throws, or that Foundry does not store. `failure` names that token's index when there was an
-error, and the tokens after it report `notAttempted`.
+what to retry.
 
 ### Actions
 
