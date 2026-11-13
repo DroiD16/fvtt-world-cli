@@ -26,7 +26,9 @@ function createRecordingContext(element) {
       get(target, property) {
         if (property in target) return target[property];
         return (...args) => {
-          calls.push({ name: String(property), args });
+          const call = { name: String(property), args };
+          Object.defineProperty(call, "strokeStyle", { value: /** @type {any} */ (target).strokeStyle });
+          calls.push(call);
         };
       },
       set(target, property, value) {
@@ -331,6 +333,21 @@ describe("scene.snapshot", () => {
 
     const strokes = pipeline.canvases[0].calls.filter((call) => call.name === "stroke");
     expect(strokes).toHaveLength(2 + 1 + 2 + 2);
+  });
+
+  it("marks a wall whose light restriction differs from its sight restriction, in either direction", async () => {
+    const senses = { move: 20, sight: 0, light: 0, sound: 0 };
+    Object.assign(scene.walls.get("wall-plain"), senses, { sight: 20 });
+    Object.assign(scene.walls.get("wall-door"), senses, { door: 0, light: 20 });
+    Object.assign(scene.walls.get("wall-secret"), senses, { door: 0 });
+
+    await routerFor().route(createRequest("scene.snapshot", { sceneId: "scene-1", layers: ["walls"] }));
+
+    const lightMarks = pipeline.canvases[0].calls
+      .filter((call) => call.name === "stroke")
+      .map((call) => /** @type {any} */ (call).strokeStyle)
+      .filter((style) => style === "#ffe14a" || style === "#ff5fa2");
+    expect(lightMarks).toEqual(["#ffe14a", "#ff5fa2"]);
   });
 
   it("marks sound where the wall color does not already tell it", async () => {

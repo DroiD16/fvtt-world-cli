@@ -29,6 +29,7 @@ const DISABLED_COLOR = "#8a8a8a";
 const SOUND_COLOR = "#3fd1c4";
 const REGION_COLOR = "#ff7f50";
 const LIGHT_PASSES_COLOR = "#ffe14a";
+const LIGHT_BLOCKED_COLOR = "#ff5fa2";
 const TOKEN_IMAGE_TIMEOUT_MS = 5_000;
 
 /**
@@ -343,10 +344,11 @@ function drawWalls(frame) {
     context.lineWidth = 2 * unit;
     context.strokeStyle = color;
     context.stroke();
-    if (sight !== SENSE_NONE && Number(wall.light) === SENSE_NONE) {
+    const light = Number(wall.light);
+    if ((sight === SENSE_NONE) !== (light === SENSE_NONE)) {
       context.setLineDash([2 * unit, 2 * unit]);
       context.lineWidth = unit;
-      context.strokeStyle = LIGHT_PASSES_COLOR;
+      context.strokeStyle = light === SENSE_NONE ? LIGHT_PASSES_COLOR : LIGHT_BLOCKED_COLOR;
       context.stroke();
     }
 
