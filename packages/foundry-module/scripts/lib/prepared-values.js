@@ -27,19 +27,6 @@ class PreparedLimitReached extends Error {
   }
 }
 
-/**
- * @param {any} node
- * @param {any} field
- * @returns {Record<string, any> | null}
- */
-function schemaFieldsOf(node, field) {
-  if (isDataModelInstance(node)) {
-    const schema = node.schema ?? node.constructor?.schema;
-    return schema?.fields && typeof schema.fields === "object" ? schema.fields : null;
-  }
-  return field?.fields && typeof field.fields === "object" ? field.fields : null;
-}
-
 /** @param {any} field */
 function elementFieldOf(field) {
   return field?.element && typeof field.element === "object" ? field.element : null;
@@ -172,7 +159,9 @@ export function serializePreparedValue(value) {
         return items;
       }
 
-      const fields = schemaFieldsOf(object, field);
+      const schema = isDataModelInstance(object) ? (object.schema ?? object.constructor?.schema) : field;
+      /** @type {Record<string, any> | null} */
+      const fields = schema?.fields && typeof schema.fields === "object" ? schema.fields : null;
       const element = fields ? null : elementFieldOf(field);
       /** @type {Record<string, unknown>} */
       const result = {};

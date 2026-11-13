@@ -400,7 +400,12 @@ export async function buildTokenDataFromActor(actorId, overrides, scene) {
 export async function resolveSceneTokenCreateData(data, scene) {
   assertPlaceableLevelFieldsSupported("Token", data);
   const { actorId, ...fields } = data ?? {};
-  const overrides = fields.sort === undefined ? { ...fields, sort: nextTokenSort(scene) } : fields;
+  let overrides = fields;
+  if (fields.sort === undefined) {
+    let max = -Infinity;
+    for (const token of scene?.tokens ?? []) max = Math.max(max, token.sort ?? 0);
+    overrides = { ...fields, sort: Math.max(max + 1, 0) };
+  }
   return actorId ? buildTokenDataFromActor(actorId, overrides, scene) : overrides;
 }
 
@@ -423,11 +428,4 @@ export function placeTokenData(scene, data, placement) {
     position = { ...position, x: snapped.x, y: snapped.y };
   }
   return { ...data, x: Math.round(position.x), y: Math.round(position.y) };
-}
-
-/** @param {any} scene */
-function nextTokenSort(scene) {
-  let max = -Infinity;
-  for (const token of scene?.tokens ?? []) max = Math.max(max, token.sort ?? 0);
-  return Math.max(max + 1, 0);
 }
