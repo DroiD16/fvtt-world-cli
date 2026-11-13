@@ -317,6 +317,27 @@ describe("scene.snapshot", () => {
     expect(strokes).toHaveLength(2 + 1 + 2 + 2);
   });
 
+  it("marks a wall whose sound restriction differs from its sight restriction", async () => {
+    const senses = { move: 0, sight: 0, light: 0, sound: 0 };
+    Object.assign(scene.walls.get("wall-plain"), senses, { sound: 20 });
+    Object.assign(scene.walls.get("wall-door"), senses, { door: 0 });
+    Object.assign(scene.walls.get("wall-secret"), senses, { door: 0, sight: 20, light: 20 });
+
+    const response = await routerFor().route(
+      createRequest("scene.snapshot", { sceneId: "scene-1", layers: ["walls"] })
+    );
+
+    const { scale, offsetX, offsetY } = response.result.transform;
+    const calls = pipeline.canvases[0].calls;
+    const marks = calls
+      .map((call, index) => ({ ...call, next: calls[index + 1]?.name }))
+      .filter((call) => call.name === "arc");
+    expect(marks.map((mark) => [mark.args[0], mark.args[1], mark.next])).toEqual([
+      [expect.closeTo(25 * scale + offsetX), expect.closeTo(offsetY), "fill"],
+      [expect.closeTo(100 * scale + offsetX), expect.closeTo(25 * scale + offsetY), "stroke"]
+    ]);
+  });
+
   it("draws nothing over the rendered background when no layer is requested", async () => {
     const response = await routerFor().route(
       createRequest("scene.snapshot", { sceneId: "scene-1", layers: [] })

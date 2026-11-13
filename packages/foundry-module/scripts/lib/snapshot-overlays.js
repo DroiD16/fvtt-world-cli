@@ -354,6 +354,20 @@ function drawWalls(frame) {
       context.stroke();
     }
 
+    if (wall.sound !== wall.sight) {
+      context.setLineDash([]);
+      context.beginPath();
+      context.arc(ax + (bx - ax) / 4, ay + (by - ay) / 4, 3 * unit, 0, Math.PI * 2);
+      context.lineWidth = 1.5 * unit;
+      context.strokeStyle = SOUND_COLOR;
+      if (Number(wall.sound) === SENSE_NONE) {
+        context.stroke();
+      } else {
+        context.fillStyle = SOUND_COLOR;
+        context.fill();
+      }
+    }
+
     const midX = (ax + bx) / 2;
     const midY = (ay + by) / 2;
     const length = Math.hypot(bx - ax, by - ay) || 1;
