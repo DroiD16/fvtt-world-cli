@@ -5,6 +5,7 @@ import { extname, join, resolve } from "node:path";
 
 import {
   RENDERED_IMAGE_FORMATS,
+  RENDERED_IMAGE_MAX_BYTES,
   RENDERED_IMAGE_MAX_DIMENSION,
   RENDERED_IMAGE_MIN_DIMENSION
 } from "@fvtt-world-cli/protocol";
@@ -26,7 +27,7 @@ export function addImageOutputOptions(command: Command, sizeDefault: string): Co
     .addOption(
       new Option(
         "--size <px>",
-        `Long side of the image in px (${RENDERED_IMAGE_MIN_DIMENSION}–${RENDERED_IMAGE_MAX_DIMENSION}, default: ${sizeDefault})`
+        `Long side of the image in px (${RENDERED_IMAGE_MIN_DIMENSION}–${RENDERED_IMAGE_MAX_DIMENSION}, default: ${sizeDefault}); an encoded image over ${RENDERED_IMAGE_MAX_BYTES / (1024 * 1024)} MiB is refused`
       ).argParser(parsePositiveInt)
     )
     .addOption(
