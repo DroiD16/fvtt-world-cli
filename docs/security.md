@@ -181,8 +181,8 @@ and display the remote image; they are outside the managed-file boundary.
 
 ## Local image files
 
-`scene snapshot` and `canvas capture` are the only commands that write files on the machine running
-the CLI. With `--out`, the CLI writes the image to that path with the permissions of the user who
+`scene snapshot` and `canvas capture` are the only world commands that save their result to a file
+on the machine running the CLI. With `--out`, the CLI writes the image to that path with the permissions of the user who
 runs it. Without `--out`, it writes into one directory under the system temp directory:
 `fvtt-world-cli-<uid>` on Linux and macOS, and `fvtt-world-cli` on Windows, where the temp directory
 already belongs to one user. On Linux and macOS the CLI creates the directory with mode 700 and
