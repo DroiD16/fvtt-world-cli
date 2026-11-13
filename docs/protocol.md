@@ -215,7 +215,10 @@ applied after constraining the zoom to its limits and the center point to the ca
 of 40% of the screen. Foundry's default minimum zoom always admits the `fit` zoom; a configured
 `CONFIG.Canvas.minZoom` can raise it. A `fit` combined with `x`, `y` or `scale` fails schema
 validation before the approval gate. `canvas.view-scene` returns `previousSceneId`,
-`previousLevelId` and `changed`. None of the four is a write, so none takes `dryRun`.
+`previousLevelId` and `changed` once the GM client's canvas has finished drawing the scene. When
+Foundry selected the scene but its canvas is not ready, as after a failed draw, the command fails
+with `BRIDGE_NOT_READY` and `details.ready: false`, also when the scene was already selected. None
+of the four is a write, so none takes `dryRun`.
 
 `scene.thumbnail.generate` reports `outputWidth` and `outputHeight` from the rendered image. They
 can exceed the requested size when Foundry renders at the GM client's pixel ratio. A dry run

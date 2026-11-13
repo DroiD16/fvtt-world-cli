@@ -126,11 +126,24 @@ export function createCanvasHandlers() {
 
       const sceneId = board?.scene?.id ?? null;
       const levelId = board?.level?.id ?? null;
+      const details = {
+        sceneId: scene.id,
+        levelId: level?.id ?? null,
+        viewedSceneId: sceneId,
+        viewedLevelId: levelId
+      };
       if (sceneId !== scene.id || (level !== null && levelId !== level.id)) {
         throw createBridgeError(
           ERROR_CODES.BRIDGE_NOT_READY,
           `Foundry did not switch the GM client's view to scene ${scene.id}${level ? ` level ${level.id}` : ""}: it is viewing ${sceneId ?? "no scene"}. Foundry skips a switch while the canvas is still loading resources and shows a warning in the GM client instead; wait for the canvas to finish and re-run canvas.view-scene`,
-          { sceneId: scene.id, levelId: level?.id ?? null, viewedSceneId: sceneId, viewedLevelId: levelId }
+          details
+        );
+      }
+      if (board.ready !== true) {
+        throw createBridgeError(
+          ERROR_CODES.BRIDGE_NOT_READY,
+          `The GM client has scene ${scene.id} selected, but its canvas is not ready: Foundry did not finish drawing the scene, and the GM's screen can be blank. The GM client's console shows the drawing error. View another scene and then this one again, or reload the GM client, then re-run canvas.view-scene`,
+          { ...details, ready: false }
         );
       }
 

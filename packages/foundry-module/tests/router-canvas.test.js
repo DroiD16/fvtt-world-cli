@@ -594,6 +594,37 @@ describe("canvas.view-scene", () => {
     expect(response.error.details).toMatchObject({ sceneId: "scene-1", viewedSceneId: "scene-other" });
   });
 
+  it("reports a switch whose canvas did not finish drawing", async () => {
+    const { board } = installGmCanvas({ sceneId: "scene-other" });
+    const scene = globalThis.game.scenes.get("scene-1");
+    scene.view = vi.fn(async () => {
+      board.scene = { id: "scene-1" };
+      board.ready = false;
+    });
+
+    const response = await routerFor().route(createRequest("canvas.view-scene", { sceneId: "scene-1" }));
+
+    expect(response.error.code).toBe("BRIDGE_NOT_READY");
+    expect(response.error.details).toMatchObject({
+      sceneId: "scene-1",
+      viewedSceneId: "scene-1",
+      ready: false
+    });
+  });
+
+  it("reports an already selected scene whose canvas is not ready", async () => {
+    const { board } = installGmCanvas();
+    board.ready = false;
+    const scene = globalThis.game.scenes.get("scene-1");
+    scene.view = vi.fn();
+
+    const response = await routerFor().route(createRequest("canvas.view-scene", { sceneId: "scene-1" }));
+
+    expect(scene.view).not.toHaveBeenCalled();
+    expect(response.error.code).toBe("BRIDGE_NOT_READY");
+    expect(response.error.details).toMatchObject({ viewedSceneId: "scene-1", ready: false });
+  });
+
   it("refuses a level on v13 before switching", async () => {
     setGeneration(13);
     installGmCanvas({ sceneId: "scene-other" });
