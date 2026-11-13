@@ -4080,6 +4080,49 @@ async function runSceneImageCoverage(summary, { actorId, stamp, isV14, gmControl
       ERROR_CODES.UNSUPPORTED_OPERATION
     );
 
+    expectOk(
+      summary,
+      "scene.tile.create(image scratch, smaller than the scene)",
+      runFoundryctl([
+        "scene",
+        "tile",
+        "create",
+        "--scene-id",
+        sceneId,
+        "--data-json",
+        JSON.stringify({
+          x: snapshot?.view?.x ?? 0,
+          y: snapshot?.view?.y ?? 0,
+          width: 400,
+          height: 400,
+          texture: { src: "ui/backgrounds/setup.webp" }
+        })
+      ])
+    );
+    const tiled = expectOk(
+      summary,
+      "scene.snapshot(tile on a scene without a background image)",
+      runFoundryctl([
+        "scene",
+        "snapshot",
+        "--scene-id",
+        sceneId,
+        "--no-layers",
+        "--size",
+        "300",
+        "--out",
+        join(imageDir, "tiled.png")
+      ])
+    );
+    markAndPush(
+      summary,
+      isV14
+        ? "scene.snapshot(v14: partialRender false with and without a tile)"
+        : "scene.snapshot(v13: partialRender false without tiles, true once Foundry renders only a tile)",
+      snapshot?.partialRender === false && tiled?.partialRender === !isV14,
+      { withoutTile: snapshot?.partialRender ?? null, withTile: tiled?.partialRender ?? null }
+    );
+
     const before = runFoundryctl([
       "canvas",
       "capture",
