@@ -15656,19 +15656,8 @@ function objectKeyPaths(value) {
 }
 
 const PREPARED_SCHEMA_PATHS_SCRIPT = (actorId, itemId) => `
-  const paths = (value) => {
-    const out = [];
-    const visit = (node, prefix) => {
-      if (!node || typeof node !== "object") return;
-      for (const [key, entry] of Object.entries(node)) {
-        const path = prefix ? prefix + "." + key : key;
-        out.push(path);
-        visit(entry, path);
-      }
-    };
-    visit(JSON.parse(JSON.stringify(value)), "");
-    return out;
-  };
+  ${objectKeyPaths}
+  const paths = (value) => objectKeyPaths(JSON.parse(JSON.stringify(value)));
   const actor = game.actors.get(${JSON.stringify(actorId)});
   const item = ${JSON.stringify(itemId)} ? actor.items.get(${JSON.stringify(itemId)}) : null;
   return {
