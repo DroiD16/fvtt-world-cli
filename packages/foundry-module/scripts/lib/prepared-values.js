@@ -77,9 +77,10 @@ export function serializePreparedValue(value) {
    * @param {Record<string, unknown>} target
    * @param {string} key
    * @param {() => unknown} read
+   * @param {boolean} separated
    */
-  const entry = (target, key, read) => {
-    charge(jsonStringByteLength(key, PREPARED_VALUE_MAX_BYTES - bytes) + 2);
+  const entry = (target, key, read, separated) => {
+    charge(jsonStringByteLength(key, PREPARED_VALUE_MAX_BYTES - bytes) + (separated ? 2 : 1));
     Object.defineProperty(target, key, {
       value: read(),
       writable: true,
@@ -133,8 +134,9 @@ export function serializePreparedValue(value) {
         if (iterator.ok) {
           /** @type {Record<string, unknown>} */
           const result = {};
+          let count = 0;
           for (const [key, value] of iterator.value) {
-            entry(result, String(key), () => walk(value, null, depth + 1));
+            entry(result, String(key), () => walk(value, null, depth + 1), count++ > 0);
           }
           return result;
         }
@@ -142,8 +144,8 @@ export function serializePreparedValue(value) {
       if (object instanceof Set) {
         const iterator = unbox(Set.prototype.values, object);
         if (iterator.ok) {
-          return Array.from(iterator.value, (value) => {
-            charge(1);
+          return Array.from(iterator.value, (value, index) => {
+            if (index > 0) charge(1);
             return walk(value, null, depth + 1);
           });
         }
@@ -153,7 +155,7 @@ export function serializePreparedValue(value) {
         const items = [];
         for (let index = 0; index < object.length; index += 1) {
           const own = ownDataValue(object, String(index));
-          charge(1);
+          if (index > 0) charge(1);
           items.push(walk(own.present ? own.value : null, element, depth + 1));
         }
         return items;
@@ -165,23 +167,24 @@ export function serializePreparedValue(value) {
       const element = fields ? null : elementFieldOf(field);
       /** @type {Record<string, unknown>} */
       const result = {};
+      let count = 0;
       if (fields) {
         for (const key of Object.keys(fields)) {
           let value;
           try {
             value = object[key];
           } catch {
-            entry(result, key, () => leaf({ [UNSERIALIZABLE_MARKER_KEY]: "getter-threw" }));
+            entry(result, key, () => leaf({ [UNSERIALIZABLE_MARKER_KEY]: "getter-threw" }), count++ > 0);
             continue;
           }
-          if (value !== undefined) entry(result, key, () => walk(value, fields[key], depth + 1));
+          if (value !== undefined) entry(result, key, () => walk(value, fields[key], depth + 1), count++ > 0);
         }
       }
       for (const key of Object.keys(object)) {
         if (fields && Object.hasOwn(fields, key)) continue;
         const own = ownDataValue(object, key);
         if (own.present && own.value !== undefined) {
-          entry(result, key, () => walk(own.value, element, depth + 1));
+          entry(result, key, () => walk(own.value, element, depth + 1), count++ > 0);
         }
       }
       return result;

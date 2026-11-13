@@ -205,6 +205,20 @@ describe("serializePreparedValue", () => {
     expect(serializePreparedValue([1, , 3]).value).toEqual([1, null, 3]);
   });
 
+  it("applies the byte limit to the exact JSON size of the value", () => {
+    const sized = (/** @type {number} */ total) => ({
+      list: [1, "x".repeat(total - '{"list":[1,""],"set":[2,3]}'.length)],
+      set: new Set([2, 3])
+    });
+    const atLimit = serializePreparedValue(sized(PREPARED_VALUE_MAX_BYTES));
+    expect(atLimit.omitted).toBeUndefined();
+    expect(JSON.stringify(atLimit.value)).toHaveLength(PREPARED_VALUE_MAX_BYTES);
+    expect(serializePreparedValue(sized(PREPARED_VALUE_MAX_BYTES + 1))).toEqual({
+      value: null,
+      omitted: { reason: "too-large", limit: "bytes", max: PREPARED_VALUE_MAX_BYTES }
+    });
+  });
+
   it("keeps a value below the limits intact", () => {
     const value = { name: "Ünïcode ✓", list: [1, null, true, 'a"b'], nested: { map: new Map([[1, "x"]]) } };
     const result = serializePreparedValue(value);
