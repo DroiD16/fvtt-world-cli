@@ -1,10 +1,11 @@
 import { getSceneById } from "../lib/game-collections.js";
 import {
   cloneSceneEmbedded,
-  createSceneEmbedded,
+  createPreparedSceneEmbedded,
   deleteSceneEmbedded,
   getSceneEmbeddedById,
-  previewSceneEmbeddedCreate,
+  prepareSceneEmbeddedCreateData,
+  previewPreparedSceneEmbeddedCreate,
   previewSceneEmbeddedUpdate,
   updateSceneEmbedded
 } from "../lib/scene-embedded.js";
@@ -60,13 +61,15 @@ export function createScenePlaceableHandlers({
 
     async create(params) {
       const scene = resolveScene(params.sceneId);
-      const document = await createSceneEmbedded(scene, type, params.data, { dryRun: isDryRun(params) });
-      const result = { sceneId: params.sceneId, [resultKey]: serialize(document, params) };
+      const prepared = prepareCreate
+        ? await prepareCreate(params.data, scene, params)
+        : prepareSceneEmbeddedCreateData(type, params.data);
+      const document = await createPreparedSceneEmbedded(scene, type, prepared, { dryRun: isDryRun(params) });
       if (isDryRun(params)) {
-        const preview = previewSceneEmbeddedCreate(scene, type, params.data);
-        return dryRunResponse({ ...result, [resultKey]: serialize(preview, params) });
+        const preview = previewPreparedSceneEmbeddedCreate(scene, type, document);
+        return dryRunResponse({ sceneId: params.sceneId, [resultKey]: serialize(preview, params) });
       }
-      return result;
+      return { sceneId: params.sceneId, [resultKey]: serialize(document, params) };
     },
 
     async update(params) {
