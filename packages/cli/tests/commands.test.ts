@@ -2561,6 +2561,7 @@ describe("fvtt-world-cli commands", () => {
 
         expect(result.error).toBeInstanceOf(CommanderError);
         expect((result.error as CommanderError).code).toBe("fvtt-world-cli.localFileWriteError");
+        expect((result.error as CommanderError).message).toContain("rendered but not written");
         expect(readdirSync(imageDirectory())).toEqual([]);
       });
     });

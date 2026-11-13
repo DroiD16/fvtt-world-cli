@@ -70,7 +70,7 @@ function defaultImagePath(kind: string, result: any, extension: string) {
     throw new CommanderError(
       1,
       "fvtt-world-cli.localFileWriteError",
-      `${directory} is not a directory that only this user can access (owned by this user, mode 700); remove it, or pass --out`
+      `The ${kind} image was rendered but not written: ${directory} is not a directory that only this user can access (owned by this user, mode 700); remove it, or pass --out`
     );
   }
   const ids = [result?.sceneId, result?.levelId].filter((id) => typeof id === "string" && SAFE_ID.test(id));
@@ -103,6 +103,7 @@ export function saveResultImage(kind: string, outPath: string | undefined) {
         writeFileSync(path, bytes);
       }
     } catch (error) {
+      if (error instanceof CommanderError) throw error;
       throw new CommanderError(
         1,
         "fvtt-world-cli.localFileWriteError",
