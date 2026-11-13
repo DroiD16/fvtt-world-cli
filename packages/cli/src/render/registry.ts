@@ -206,6 +206,10 @@ function renderRect(rect: any) {
   return `x ${Math.round(rect?.x ?? NaN)}, y ${Math.round(rect?.y ?? NaN)}, ${Math.round(rect?.width ?? NaN)}x${Math.round(rect?.height ?? NaN)}`;
 }
 
+function sceneLabel(result: any) {
+  return `scene ${result.sceneId}${result.levelId ? ` level ${result.levelId}` : ""}`;
+}
+
 function renderImageLines(result: any) {
   const image = result.image ?? {};
   const transform = result.transform ?? {};
@@ -255,7 +259,7 @@ export const RENDERERS = registerRenderers([
   ),
   detailRenderer("canvas.capture", (result) =>
     [
-      `Captured the GM view of scene ${result.sceneId}${result.levelId ? ` level ${result.levelId}` : ""}`,
+      `Captured the GM view of ${sceneLabel(result)}`,
       ...renderImageLines(result),
       `zoom: ${result.position?.scale}`
     ].join("\n")
@@ -270,8 +274,8 @@ export const RENDERERS = registerRenderers([
   detailRenderer("canvas.view-scene", (result) =>
     [
       result.changed
-        ? `The GM client now views scene ${result.sceneId}${result.levelId ? ` level ${result.levelId}` : ""}`
-        : `The GM client already viewed scene ${result.sceneId}${result.levelId ? ` level ${result.levelId}` : ""}`,
+        ? `The GM client now views ${sceneLabel(result)}`
+        : `The GM client already viewed ${sceneLabel(result)}`,
       `previous: ${result.previousSceneId ?? "no scene"}${result.previousLevelId ? ` level ${result.previousLevelId}` : ""}`
     ].join("\n")
   ),
@@ -432,7 +436,7 @@ export const RENDERERS = registerRenderers([
   }),
   detailRenderer("scene.snapshot", (result) =>
     [
-      `Rendered scene ${result.sceneId}${result.levelId ? ` level ${result.levelId}` : ""}`,
+      `Rendered ${sceneLabel(result)}`,
       ...renderImageLines(result),
       `layers: ${(result.layers ?? []).join(", ") || "none"}`,
       ...(result.partialRender
