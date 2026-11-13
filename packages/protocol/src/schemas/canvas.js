@@ -5,6 +5,14 @@ import {
 } from "../constants.js";
 import { cmd } from "./shared.js";
 
+const panPositionProperties = {
+  x: { type: "number" },
+  y: { type: "number" },
+  scale: { type: "number" }
+};
+
+const panFitProperty = { fit: { type: "boolean", const: true } };
+
 export const canvasCommands = {
   "canvas.capture": cmd({
     type: "object",
@@ -18,14 +26,13 @@ export const canvasCommands = {
   "canvas.pan": cmd({
     type: "object",
     required: [],
-    properties: {
-      x: { type: "number" },
-      y: { type: "number" },
-      scale: { type: "number" },
-      fit: { type: "boolean", const: true }
-    },
+    properties: { ...panPositionProperties, ...panFitProperty },
     additionalProperties: false,
-    minProperties: 1
+    minProperties: 1,
+    oneOf: [
+      { type: "object", required: ["fit"], properties: panFitProperty, additionalProperties: false },
+      { type: "object", required: [], properties: panPositionProperties, additionalProperties: false }
+    ]
   }),
   "canvas.view-scene": cmd({
     type: "object",

@@ -115,6 +115,7 @@ export function createSceneThumbnailHandlers() {
         sourceWidth: reportsSource ? reportedWidth : null,
         sourceHeight: reportsSource ? reportedHeight : null
       };
+      decoded.close();
 
       const notPersisted = (/** @type {string} */ observation, /** @type {any} */ extra = {}) =>
         createBridgeError(

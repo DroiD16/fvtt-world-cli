@@ -52,7 +52,7 @@ export function createSceneSnapshotHandlers() {
       context.fillStyle = String((level ? level.background?.color : scene.backgroundColor)?.css ?? "#000000");
       context.fillRect(0, 0, width, height);
       context.drawImage(background, 0, 0, width, height);
-      background.close?.();
+      background.close();
 
       await drawSnapshotOverlays(context, scene, {
         layers,
@@ -61,7 +61,7 @@ export function createSceneSnapshotHandlers() {
         tokenImages: params.tokenImages === true
       });
 
-      const image = await encodeRenderedImage(element, params.format ?? "webp", {
+      const image = encodeRenderedImage(element, params.format ?? "webp", {
         sceneId: scene.id,
         size: Math.max(width, height)
       });

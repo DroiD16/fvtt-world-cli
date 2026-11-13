@@ -176,9 +176,9 @@ export function createImageCanvas(width, height) {
  * @param {HTMLCanvasElement} element
  * @param {string} format
  * @param {Record<string, unknown>} details
- * @returns {Promise<{ dataUrl: string, mimeType: string, width: number, height: number, sizeBytes: number }>}
+ * @returns {{ dataUrl: string, mimeType: string, width: number, height: number, sizeBytes: number }}
  */
-export async function encodeRenderedImage(element, format, details) {
+export function encodeRenderedImage(element, format, details) {
   const dataUrl = element.toDataURL(`image/${format}`, RENDERED_IMAGE_QUALITY);
   const sizeBytes = decodedDataUrlBytes(dataUrl);
   if (sizeBytes > RENDERED_IMAGE_MAX_BYTES) {
@@ -188,12 +188,11 @@ export async function encodeRenderedImage(element, format, details) {
       { ...details, limit: "image-bytes", sizeBytes, limitBytes: RENDERED_IMAGE_MAX_BYTES }
     );
   }
-  const decoded = await decodeDataUrlImage(dataUrl);
   return {
     dataUrl,
     mimeType: dataUrl.slice("data:".length, dataUrl.indexOf(";")),
-    width: decoded.width,
-    height: decoded.height,
+    width: element.width,
+    height: element.height,
     sizeBytes
   };
 }

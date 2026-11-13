@@ -62,7 +62,7 @@ function installImagePipeline() {
   };
   globals.createImageBitmap = vi.fn(async () => {
     const element = canvases[canvases.length - 1];
-    return element ? { width: element.width, height: element.height, close() {} } : { width: 2, height: 2 };
+    return { width: element?.width ?? 2, height: element?.height ?? 2, close() {} };
   });
   return { canvases, encoded };
 }
@@ -78,6 +78,19 @@ function prepareSnapshotScene(scene) {
     requested: { width, height }
   }));
   scene.update = vi.fn();
+  scene.grid = { isGridless: true, isHexagonal: false, size: 100, sizeX: 100, sizeY: 100 };
+  for (const token of scene.tokens) {
+    token.getSize = () => {
+      const grid = scene.grid;
+      let width = token.width ?? 1;
+      let height = token.height ?? 1;
+      if (grid.isHexagonal) {
+        if (grid.columns) width = 0.75 * Math.floor(width) + 0.5 * (width % 1) + 0.25;
+        else height = 0.75 * Math.floor(height) + 0.5 * (height % 1) + 0.25;
+      }
+      return { width: width * grid.sizeX, height: height * grid.sizeY };
+    };
+  }
   return scene;
 }
 
@@ -226,6 +239,59 @@ describe("scene.snapshot", () => {
     expect(getVertices).toHaveBeenCalledTimes(6);
     expect(calls.filter((call) => call.name === "closePath")).toHaveLength(6);
     expect(calls.filter((call) => call.name === "lineTo")).toHaveLength(6 * 5);
+  });
+
+  it.each([
+    [true, 2, [1.75 * 100, 2 * 87]],
+    [true, 3, [2.5 * 100, 3 * 87]],
+    [false, 2, [2 * 87, 1.75 * 100]],
+    [false, 3, [3 * 87, 2.5 * 100]]
+  ])(
+    "sizes a token box on a hex grid as Foundry does (columns %s, %i×%i)",
+    async (columns, cells, expected) => {
+      scene.grid = {
+        isGridless: true,
+        isHexagonal: true,
+        columns,
+        size: 100,
+        sizeX: columns ? 100 : 87,
+        sizeY: columns ? 87 : 100
+      };
+      const token = scene.tokens.get("token-a");
+      token.width = cells;
+      token.height = cells;
+
+      const response = await routerFor().route(
+        createRequest("scene.snapshot", { sceneId: "scene-1", layers: ["tokens"] })
+      );
+
+      const { scale, offsetX, offsetY } = response.result.transform;
+      const boxes = pipeline.canvases[0].calls
+        .filter((call) => call.name === "strokeRect")
+        .map((call) => call.args);
+      const [left, top, width, height] = boxes[0];
+      expect(left).toBeCloseTo(token.x * scale + offsetX);
+      expect(top).toBeCloseTo(token.y * scale + offsetY);
+      expect(width).toBeCloseTo(expected[0] * scale);
+      expect(height).toBeCloseTo(expected[1] * scale);
+    }
+  );
+
+  it("draws a directional light as a cone facing its rotation", async () => {
+    const light = scene.lights.get("light-torch");
+    light.config = { dim: 40, bright: 20, angle: 90 };
+    light.rotation = 0;
+
+    const response = await routerFor().route(
+      createRequest("scene.snapshot", { sceneId: "scene-1", layers: ["lights"] })
+    );
+
+    const { scale, offsetX, offsetY } = response.result.transform;
+    const cones = pipeline.canvases[0].calls.filter((call) => call.name === "arc" && call.args[3] !== 0);
+    expect(cones.map((call) => call.args)).toEqual([
+      [250 * scale + offsetX, 250 * scale + offsetY, 40 * 20 * scale, Math.PI / 4, (3 * Math.PI) / 4],
+      [250 * scale + offsetX, 250 * scale + offsetY, 20 * 20 * scale, Math.PI / 4, (3 * Math.PI) / 4]
+    ]);
   });
 
   it("marks a wall that blocks sight but lets light through", async () => {
@@ -446,11 +512,17 @@ describe("canvas.pan", () => {
     expect(board.pan).toHaveBeenCalledWith({ x: 2500, y: 1800, scale: 0.3 });
   });
 
-  it("refuses fit together with a position and leaves the view alone", async () => {
+  it("refuses fit together with a position before the policy gate and leaves the view alone", async () => {
     const { board } = installGmCanvas();
+    const permissive = createPermissiveSettings();
+    globalThis.game.settings.get = vi.fn((namespace, key) =>
+      key === "commandPolicy" ? { version: 1, overrides: {} } : permissive.get(namespace, key)
+    );
+    const held = await routerFor().route(createRequest("canvas.pan", { fit: true }));
 
     const response = await routerFor().route(createRequest("canvas.pan", { fit: true, scale: 2 }));
 
+    expect(held.error.code).toMatch(/^APPROVAL_/);
     expect(response.error.code).toBe("INVALID_PARAMS");
     expect(board.pan).not.toHaveBeenCalled();
   });

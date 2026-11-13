@@ -36,17 +36,17 @@ function viewingCanvas(command) {
 /** @param {any} board */
 function readView(board) {
   const [screenWidth, screenHeight] = board.screenDimensions;
-  const topLeft = board.canvasCoordinatesFromClient({ x: 0, y: 0 });
-  const bottomRight = board.canvasCoordinatesFromClient({ x: screenWidth, y: screenHeight });
+  const { x, y } = board.stage.pivot;
+  const scale = board.stage.scale.x;
   return {
     sceneId: board.scene.id,
     levelId: board.level?.id ?? null,
-    position: { x: board.stage.pivot.x, y: board.stage.pivot.y, scale: board.stage.scale.x },
+    position: { x, y, scale },
     view: {
-      x: topLeft.x,
-      y: topLeft.y,
-      width: bottomRight.x - topLeft.x,
-      height: bottomRight.y - topLeft.y
+      x: x - screenWidth / scale / 2,
+      y: y - screenHeight / scale / 2,
+      width: screenWidth / scale,
+      height: screenHeight / scale
     },
     screen: { width: screenWidth, height: screenHeight }
   };
@@ -72,7 +72,7 @@ export function createCanvasHandlers() {
       const { element, context } = createImageCanvas(width, height);
       context.drawImage(frame, 0, 0, width, height);
 
-      const image = await encodeRenderedImage(element, params.format ?? "webp", {
+      const image = encodeRenderedImage(element, params.format ?? "webp", {
         sceneId,
         size: Math.max(width, height)
       });
@@ -90,13 +90,6 @@ export function createCanvasHandlers() {
 
     async "canvas.pan"(params) {
       const board = viewingCanvas("canvas.pan");
-      if (params.fit === true && ["x", "y", "scale"].some((key) => params[key] !== undefined)) {
-        throw createBridgeError(
-          ERROR_CODES.INVALID_PARAMS,
-          "canvas.pan takes either fit or a position (x, y, scale), not both: fit computes the whole position from the scene's size. Nothing was changed",
-          { fit: true, x: params.x ?? null, y: params.y ?? null, scale: params.scale ?? null }
-        );
-      }
       const previous = readView(board).position;
 
       if (params.fit === true) {

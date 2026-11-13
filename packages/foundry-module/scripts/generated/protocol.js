@@ -1083,6 +1083,12 @@ var approvalCommands = {
 };
 
 // packages/protocol/src/schemas/canvas.js
+var panPositionProperties = {
+  x: { type: "number" },
+  y: { type: "number" },
+  scale: { type: "number" }
+};
+var panFitProperty = { fit: { type: "boolean", const: true } };
 var canvasCommands = {
   "canvas.capture": cmd({
     type: "object",
@@ -1096,14 +1102,13 @@ var canvasCommands = {
   "canvas.pan": cmd({
     type: "object",
     required: [],
-    properties: {
-      x: { type: "number" },
-      y: { type: "number" },
-      scale: { type: "number" },
-      fit: { type: "boolean", const: true }
-    },
+    properties: { ...panPositionProperties, ...panFitProperty },
     additionalProperties: false,
-    minProperties: 1
+    minProperties: 1,
+    oneOf: [
+      { type: "object", required: ["fit"], properties: panFitProperty, additionalProperties: false },
+      { type: "object", required: [], properties: panPositionProperties, additionalProperties: false }
+    ]
   }),
   "canvas.view-scene": cmd({
     type: "object",

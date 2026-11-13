@@ -8041,6 +8041,8 @@ describe("protocol contract", () => {
       expectValid("canvas.pan", { fit: true });
       expectRejected("canvas.pan", {}, "at least 1");
       expectRejected("canvas.pan", { fit: false }, "fit");
+      expectRejected("canvas.pan", { fit: true, scale: 2 }, "exactly one");
+      expectRejected("canvas.pan", { fit: true, x: 10, y: 10 }, "exactly one");
 
       expectValid("canvas.view-scene", { sceneId: "scene-1" });
       expectValid("canvas.view-scene", { sceneId: "scene-1", levelId: "level-1" });

@@ -33,6 +33,7 @@ const DISABLED_COLOR = "#8a8a8a";
 const SOUND_COLOR = "#3fd1c4";
 const REGION_COLOR = "#ff7f50";
 const LIGHT_PASSES_COLOR = "#ffe14a";
+const TOKEN_IMAGE_TIMEOUT_MS = 5_000;
 
 /**
  * @typedef {{ scale: number, offsetX: number, offsetY: number }} SnapshotTransform
@@ -396,6 +397,8 @@ function drawLights(frame) {
     context.save();
     context.strokeStyle = color;
     context.lineWidth = 1.5 * unit;
+    const angle = Number(config.angle ?? 360);
+    const facing = radians(Number(light.rotation ?? 0) + 90);
     for (const [radius, dash] of /** @type {[number, number[]][]} */ ([
       [Number(config.dim) || 0, [6 * unit, 4 * unit]],
       [Number(config.bright) || 0, []]
@@ -403,7 +406,19 @@ function drawLights(frame) {
       if (radius <= 0) continue;
       context.setLineDash(dash);
       context.beginPath();
-      context.arc(cx, cy, radius * distancePixels * scale, 0, Math.PI * 2);
+      if (angle >= 360) {
+        context.arc(cx, cy, radius * distancePixels * scale, 0, Math.PI * 2);
+      } else {
+        context.moveTo(cx, cy);
+        context.arc(
+          cx,
+          cy,
+          radius * distancePixels * scale,
+          facing - radians(angle) / 2,
+          facing + radians(angle) / 2
+        );
+        context.closePath();
+      }
       context.stroke();
     }
     drawMarker(frame, cx, cy, 5 * unit, color);
@@ -460,8 +475,6 @@ function drawNotes(frame) {
 async function drawTokens(frame, tokenImages) {
   const { context, scene, level, x, y, scale, unit } = frame;
   const tokens = documentsOnLevel(scene.tokens, level);
-  const cellWidth = Number(scene.grid?.sizeX ?? scene.grid?.size) || 0;
-  const cellHeight = Number(scene.grid?.sizeY ?? scene.grid?.size) || 0;
   /** @type {Map<string, HTMLImageElement>} */
   const images = new Map();
   if (tokenImages) {
@@ -470,13 +483,24 @@ async function drawTokens(frame, tokenImages) {
     );
     await Promise.all(
       [...sources].map(async (source) => {
+        const image = new Image();
+        image.crossOrigin = "anonymous";
+        image.src = source;
+        /** @type {ReturnType<typeof setTimeout> | undefined} */
+        let timer;
         try {
-          const image = new Image();
-          image.crossOrigin = "anonymous";
-          image.src = source;
-          await image.decode();
+          await Promise.race([
+            image.decode(),
+            new Promise((_, reject) => {
+              timer = setTimeout(reject, TOKEN_IMAGE_TIMEOUT_MS);
+            })
+          ]);
           images.set(source, image);
-        } catch {}
+        } catch {
+          image.src = "";
+        } finally {
+          clearTimeout(timer);
+        }
       })
     );
   }
@@ -484,8 +508,9 @@ async function drawTokens(frame, tokenImages) {
   for (const token of tokens) {
     const left = x(token.x);
     const top = y(token.y);
-    const width = (Number(token.width) || 1) * cellWidth * scale;
-    const height = (Number(token.height) || 1) * cellHeight * scale;
+    const size = token.getSize();
+    const width = size.width * scale;
+    const height = size.height * scale;
     const image = images.get(token.texture?.src);
     const hidden = token.hidden === true;
 
