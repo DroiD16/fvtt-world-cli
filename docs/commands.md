@@ -39,6 +39,7 @@ Use these families to narrow your search, then check their help for supported op
 | Manage assets | `file` |
 | Control playback and gameplay | Actions within `playlist`, `table`, `cards`, `combat`, `scene`, and `game` |
 | Show content to players | `scene pull-users`, `journal show`, `image show` |
+| Look at a scene or the GM's screen | `scene snapshot`, `canvas capture`, `canvas pan`, `canvas view-scene` |
 | Inspect the connection | `system info`, `system ping` |
 
 ## Common workflows
@@ -87,6 +88,22 @@ Deleting a level also deletes its tokens and every placeable that exists only on
 run does not list them, so read the scene's placeables before deleting a level.
 
 [Compatibility](compatibility.md) lists the scene map fields each Foundry version accepts.
+
+### Look at a scene
+
+```bash
+fvtt-world-cli scene snapshot --scene-id <sceneId> --out scene.png --json
+fvtt-world-cli canvas view-scene --scene-id <sceneId> --json
+fvtt-world-cli canvas pan --fit --json
+fvtt-world-cli canvas capture --out view.png --json
+```
+
+`scene snapshot` draws the scene's walls, lights, sounds, tokens, regions, drawings, notes and grid
+over the background and tiles Foundry renders. It works from document data and changes nothing.
+Foundry computes light, darkness and vision only for what the GM client shows, so `canvas capture`
+saves that screen instead, and `canvas view-scene` and `canvas pan` move it first. A scene switch
+has the side effects listed under [Trust boundary](security.md#trust-boundary). Both image commands
+save the image to a local file and report its path.
 
 ### Send a batch of commands
 

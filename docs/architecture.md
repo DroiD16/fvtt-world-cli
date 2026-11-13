@@ -52,6 +52,9 @@ action handlers call a fixed, reviewed Foundry method. Related operations reuse 
 guards, serialization, and bulk helpers so a preview or bulk write cannot bypass a single
 command's restrictions.
 
+The `canvas` commands act on the GM client's own view rather than on world data. The bridge runs
+inside that client, and its screen is the only place where Foundry has computed lighting and vision.
+
 ## Mutation model
 
 A dry run performs the same preparation and guards as a real command, then stops before

@@ -1769,6 +1769,16 @@ describe("fvtt-world-cli commands", () => {
       { sceneId: "scene-1", data: { actorId: "actor-1", actorLink: true } }
     ],
     [
+      ["scene", "token", "create", "--scene-id", "scene-1", "--x", "50", "--center", "--snap"],
+      "scene.token.create",
+      { sceneId: "scene-1", data: { x: 50 }, placement: { center: true, snap: true } }
+    ],
+    [
+      ["scene", "token", "create-many", "--scene-id", "scene-1", "--snap", "--data-json", '[{"x":10}]'],
+      "scene.token.create-many",
+      { sceneId: "scene-1", data: [{ x: 10 }], placement: { snap: true } }
+    ],
+    [
       [
         "scene",
         "token",
@@ -1798,6 +1808,23 @@ describe("fvtt-world-cli commands", () => {
       ],
       "scene.token.update",
       { sceneId: "scene-1", tokenId: "token-a", patch: { x: 5, hidden: true } }
+    ],
+    [
+      [
+        "scene",
+        "token",
+        "update",
+        "--scene-id",
+        "scene-1",
+        "--token-id",
+        "token-a",
+        "--x",
+        "5",
+        "--include",
+        "delta"
+      ],
+      "scene.token.update",
+      { sceneId: "scene-1", tokenId: "token-a", patch: { x: 5 }, include: ["delta"] }
     ],
     [
       ["scene", "token", "clone", "--scene-id", "scene-1", "--token-id", "token-a", "--x", "9"],
@@ -3461,6 +3488,56 @@ describe("fvtt-world-cli commands", () => {
       ],
       "image.show",
       { src: "https://example.invalid/map.webp", title: "The Vault", userIds: ["user-1", "user-2"] }
+    ],
+    [["scene", "snapshot", "--scene-id", "scene-1"], "scene.snapshot", { sceneId: "scene-1" }],
+    [
+      [
+        "scene",
+        "snapshot",
+        "--scene-id",
+        "scene-1",
+        "--level-id",
+        "level-1",
+        "--size",
+        "2048",
+        "--format",
+        "png",
+        "--layers",
+        "walls,lights",
+        "--token-images"
+      ],
+      "scene.snapshot",
+      {
+        sceneId: "scene-1",
+        levelId: "level-1",
+        size: 2048,
+        format: "png",
+        layers: ["walls", "lights"],
+        tokenImages: true
+      }
+    ],
+    [
+      ["scene", "snapshot", "--scene-id", "scene-1", "--no-layers"],
+      "scene.snapshot",
+      { sceneId: "scene-1", layers: [] }
+    ],
+    [["canvas", "capture"], "canvas.capture", {}],
+    [
+      ["canvas", "capture", "--size", "800", "--format", "png"],
+      "canvas.capture",
+      { size: 800, format: "png" }
+    ],
+    [
+      ["canvas", "pan", "--x", "100", "--y", "-50.5", "--scale", "0.75"],
+      "canvas.pan",
+      { x: 100, y: -50.5, scale: 0.75 }
+    ],
+    [["canvas", "pan", "--fit"], "canvas.pan", { fit: true }],
+    [["canvas", "view-scene", "--scene-id", "scene-1"], "canvas.view-scene", { sceneId: "scene-1" }],
+    [
+      ["canvas", "view-scene", "--scene-id", "scene-1", "--level-id", "level-1"],
+      "canvas.view-scene",
+      { sceneId: "scene-1", levelId: "level-1" }
     ],
     [["chat", "flush"], "chat.flush", {}],
     [["game", "pause", "--paused", "true"], "game.pause", { paused: true }],

@@ -3,7 +3,7 @@ import { freeformObjectSchema, nullableStringSchema } from "./shared.js";
 const effectWriteProperties = {
   name: { type: "string", minLength: 1 },
   type: { type: "string", minLength: 1 },
-  img: { type: "string", minLength: 1 },
+  img: { type: ["string", "null"], minLength: 1 },
   origin: nullableStringSchema,
   disabled: { type: "boolean" },
   transfer: { type: "boolean" },

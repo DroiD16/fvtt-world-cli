@@ -42,6 +42,7 @@ const UNRESOLVED_ID_PARAMETERS = [
 // set nor the resolver's node map would reach the GM with no target summary at all.
 const DOCUMENT_FREE_FAMILIES = [
   "approval",
+  "canvas",
   "compendium",
   "file",
   "game",
@@ -51,6 +52,10 @@ const DOCUMENT_FREE_FAMILIES = [
   "system",
   "world"
 ];
+
+// Commands of a document-free family that still name a document the GM must see before allowing
+// them: switching the GM's view names the scene it switches to.
+const DOCUMENT_ADDRESSING_COMMANDS = ["canvas.view-scene"];
 
 // Writes that change world state no document addresses: the settings store, the whole chat log and
 // the paused flag. Their approval summary rests on the descriptor and the parameters, not a target.
@@ -86,7 +91,9 @@ describe("approval target strategies", () => {
       }
 
       const namesDocuments = strategy.chain.length > 0 || strategy.collection !== null;
-      return namesDocuments === documentFree.has(command.split(".")[0]);
+      const documentFreeCommand =
+        documentFree.has(command.split(".")[0]) && !DOCUMENT_ADDRESSING_COMMANDS.includes(command);
+      return namesDocuments === documentFreeCommand;
     });
 
     expect(misplaced).toEqual([]);
@@ -369,6 +376,33 @@ describe("approval target resolution", () => {
     ]);
     expect(summary.targets[0].parents).toEqual([
       { type: "Scene", id: "scene-1", name: "Dungeon Level 1", state: "resolved" }
+    ]);
+  });
+
+  it("names the scene and level a view switch addresses", () => {
+    const summary = resolveApprovalTargets("canvas.view-scene", {
+      sceneId: "scene-1",
+      levelId: "level-ground"
+    });
+
+    expect(summary.kind).toBe("world-document");
+    expect(summary.targets).toEqual([
+      {
+        role: "sceneId",
+        type: "Scene",
+        id: "scene-1",
+        name: "Dungeon Level 1",
+        state: "resolved",
+        parents: []
+      },
+      {
+        role: "levelId",
+        type: "Level",
+        id: "level-ground",
+        name: "Ground Floor",
+        state: "resolved",
+        parents: [{ type: "Scene", id: "scene-1", name: "Dungeon Level 1", state: "resolved" }]
+      }
     ]);
   });
 

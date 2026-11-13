@@ -54,7 +54,42 @@ describe("command router", () => {
     });
   });
 
-  it("creates a token from an actor, defaulting to unlinked", async () => {
+  it.each([false, true])(
+    "refuses scene.token.create when the scene create API is missing (dryRun %s)",
+    async (dryRun) => {
+      const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+      delete globalThis.game.scenes.get("scene-1").createEmbeddedDocuments;
+
+      const response = await router.route(
+        createRequest("scene.token.create", { sceneId: "scene-1", data: { name: "Guard" }, dryRun })
+      );
+
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe("BRIDGE_NOT_READY");
+    }
+  );
+
+  it("creates a token from an actor, linked as the actor's prototype token says unless actorLink is given", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const actor = globalThis.game.actors.get("actor-1");
+    actor.prototypeToken = { ...(actor.prototypeToken ?? {}), actorLink: true };
+
+    const linked = await router.route(
+      createRequest("scene.token.create", { sceneId: "scene-1", data: { actorId: "actor-1" } })
+    );
+    expect(linked.result.token.actorLink).toBe(true);
+    expect(actor.getTokenDocument.mock.calls.at(-1)[0]).not.toHaveProperty("actorLink");
+
+    const unlinked = await router.route(
+      createRequest("scene.token.create", {
+        sceneId: "scene-1",
+        data: { actorId: "actor-1", actorLink: false }
+      })
+    );
+    expect(unlinked.result.token.actorLink).toBe(false);
+  });
+
+  it("creates an unlinked token from an actor whose prototype token is unlinked", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
     const response = await router.route(
@@ -84,6 +119,54 @@ describe("command router", () => {
 
     expect(response.ok).toBe(true);
     expect(response.result.token.actorLink).toBe(true);
+  });
+
+  it("places a token by its center and on the grid only when placement asks for it", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const scene = globalThis.game.scenes.get("scene-1");
+    class GridToken {
+      constructor(data) {
+        this._source = { x: 0, y: 0, elevation: 0, width: 1, height: 1, shape: 0, ...data };
+      }
+      getCenterPoint({ x, y, width, height }) {
+        return { x: x + (width * 100) / 2, y: y + (height * 100) / 2, elevation: 0 };
+      }
+      getSnappedPosition({ x, y }) {
+        return { x: Math.round(x / 100) * 100, y: Math.round(y / 100) * 100, elevation: 0 };
+      }
+      toObject() {
+        return { ...this._source, _id: null };
+      }
+    }
+    scene.tokens.documentClass = GridToken;
+    const place = async (placement) => {
+      const response = await router.route(
+        createRequest("scene.token.create", {
+          sceneId: "scene-1",
+          data: { name: "Ogre", x: 250, y: 260, width: 2, height: 1, elevation: 7 },
+          ...(placement ? { placement } : {}),
+          dryRun: true
+        })
+      );
+      expect(response.ok).toBe(true);
+      const { x, y, elevation } = response.result.token;
+      return { x, y, elevation };
+    };
+
+    expect(await place(undefined)).toEqual({ x: 250, y: 260, elevation: 7 });
+    expect(await place({ center: true })).toEqual({ x: 150, y: 210, elevation: 7 });
+    expect(await place({ snap: true })).toEqual({ x: 300, y: 300, elevation: 7 });
+    expect(await place({ center: true, snap: true })).toEqual({ x: 200, y: 200, elevation: 7 });
+
+    const batch = await router.route(
+      createRequest("scene.token.create-many", {
+        sceneId: "scene-1",
+        data: [{ name: "Ogre", x: 250, y: 260, width: 2, height: 1 }],
+        placement: { center: true }
+      })
+    );
+    expect(batch.ok).toBe(true);
+    expect(scene.tokens.get(batch.result.outcomes[0].id)).toMatchObject({ x: 150, y: 210 });
   });
 
   it("creates a raw token without an actor", async () => {
@@ -4575,6 +4658,41 @@ describe("token actor deltas", () => {
     expect(linked.result.token.delta).toBeNull();
     const plain = await router().route(
       createRequest("scene.token.get", { sceneId: "scene-1", tokenId: "token-a" })
+    );
+    expect(Object.hasOwn(plain.result.token, "delta")).toBe(false);
+  });
+
+  it("token writes return the delta with include delta, and an update dry run shows the patched delta", async () => {
+    const scene = globalThis.game.scenes.get("scene-1");
+    const before = JSON.stringify(scene.tokens.get("token-a").toObject());
+    const dry = await router().route(
+      createRequest("scene.token.update", {
+        sceneId: "scene-1",
+        tokenId: "token-a",
+        patch: { delta: { name: "Valeros the Bold" } },
+        include: ["delta"],
+        dryRun: true
+      })
+    );
+    expect(dry.ok).toBe(true);
+    expect(dry.result.dryRun).toBe(true);
+    expect(dry.result.token.delta).toMatchObject({ name: "Valeros the Bold" });
+    expect(JSON.stringify(scene.tokens.get("token-a").toObject())).toBe(before);
+
+    const created = await router().route(
+      createRequest("scene.token.create", {
+        sceneId: "scene-1",
+        data: { name: "Marker", actorLink: false, delta: { name: "Marked" } },
+        include: ["delta"]
+      })
+    );
+    expect(created.result.token.delta).toMatchObject({ name: "Marked" });
+    const cloned = await router().route(
+      createRequest("scene.token.clone", { sceneId: "scene-1", tokenId: "token-a", include: ["delta"] })
+    );
+    expect(Object.hasOwn(cloned.result.token, "delta")).toBe(true);
+    const plain = await router().route(
+      createRequest("scene.token.update", { sceneId: "scene-1", tokenId: "token-a", patch: { x: 3 } })
     );
     expect(Object.hasOwn(plain.result.token, "delta")).toBe(false);
   });

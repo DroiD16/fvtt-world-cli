@@ -88,6 +88,10 @@ export const includeProperty = {
   include: { type: "array", items: { type: "string", enum: ["flags", "effects"] } }
 };
 
+export const itemGetIncludeProperty = {
+  include: { type: "array", items: { type: "string", enum: ["flags", "effects", "prepared"] } }
+};
+
 export const actorIncludeProperty = {
   include: {
     type: "array",
@@ -108,7 +112,7 @@ export const tokenIncludeProperty = {
   include: { type: "array", items: { type: "string", enum: ["prepared", "delta"] } }
 };
 
-export const tokenListIncludeProperty = {
+export const tokenDeltaIncludeProperty = {
   include: { type: "array", items: { type: "string", enum: ["delta"] } }
 };
 

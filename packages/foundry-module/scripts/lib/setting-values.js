@@ -86,11 +86,12 @@ export function utf8ByteLength(text) {
 
 /**
  * @param {string} text
+ * @param {number} [limit]
  * @returns {number}
  */
-export function jsonStringByteLength(text) {
+export function jsonStringByteLength(text, limit = Infinity) {
   let bytes = 2;
-  for (let index = 0; index < text.length; index += 1) {
+  for (let index = 0; index < text.length && bytes <= limit; index += 1) {
     const code = text.charCodeAt(index);
     if (code === 0x22 || code === 0x5c) {
       bytes += 2;
@@ -123,12 +124,12 @@ function getDataModelClass() {
   return typeof DataModel === "function" ? DataModel : null;
 }
 
-function isDataModelInstance(value) {
+export function isDataModelInstance(value) {
   const DataModel = getDataModelClass();
   return DataModel !== null && value instanceof DataModel;
 }
 
-function getColorClass() {
+export function getColorClass() {
   const scope = /** @type {any} */ (globalThis);
   const Color = scope.foundry?.utils?.Color ?? scope.Color;
 
@@ -154,7 +155,7 @@ function colorToCss(numeric) {
  * @param {object} node
  * @returns {{ ok: boolean, value: any }}
  */
-function unbox(intrinsic, node) {
+export function unbox(intrinsic, node) {
   try {
     return { ok: true, value: intrinsic.call(node) };
   } catch {
@@ -180,7 +181,43 @@ function dataModelToObject(value) {
   }
 }
 
-const UNSERIALIZABLE_MARKER_KEY = "$unserializable";
+export const UNSERIALIZABLE_MARKER_KEY = "$unserializable";
+
+/**
+ * @param {object} node
+ * @param {Function | null} ColorClass
+ * @returns {{ ok: boolean, value?: unknown, boxed?: boolean }}
+ */
+export function readScalarObject(node, ColorClass) {
+  if (node instanceof Date) {
+    const time = unbox(Date.prototype.getTime, node);
+    if (time.ok) {
+      return { ok: true, value: Number.isFinite(time.value) ? Date.prototype.toISOString.call(node) : null };
+    }
+  }
+
+  if (ColorClass !== null && node instanceof ColorClass) {
+    const numeric = unbox(Number.prototype.valueOf, node);
+    if (numeric.ok) {
+      return { ok: true, value: colorToCss(numeric.value) };
+    }
+  }
+
+  if (node instanceof Number || node instanceof String || node instanceof Boolean) {
+    const intrinsic =
+      node instanceof Number
+        ? Number.prototype.valueOf
+        : node instanceof String
+          ? String.prototype.valueOf
+          : Boolean.prototype.valueOf;
+    const unboxed = unbox(intrinsic, node);
+    if (unboxed.ok) {
+      return { ok: true, value: unboxed.value, boxed: true };
+    }
+  }
+
+  return { ok: false };
+}
 
 /**
  * @param {unknown} value
@@ -300,40 +337,17 @@ export function serializeValueWithOmissions(value, limits = {}) {
 
     ancestors.add(/** @type {object} */ (node));
     try {
-      if (node instanceof Date) {
-        const time = unbox(Date.prototype.getTime, /** @type {object} */ (node));
-        if (time.ok) {
-          if (!Number.isFinite(time.value)) {
-            chargeBytes(4, path);
-            return null;
-          }
-
-          const iso = Date.prototype.toISOString.call(node);
-          chargeBytes(jsonStringByteLength(iso), path);
-          return iso;
-        }
+      const scalar = readScalarObject(/** @type {object} */ (node), ColorClass);
+      if (scalar.ok && scalar.boxed) {
+        return walk(scalar.value, path, depth, wrapperHops + 1);
       }
-
-      if (ColorClass !== null && node instanceof ColorClass) {
-        const numeric = unbox(Number.prototype.valueOf, /** @type {object} */ (node));
-        if (numeric.ok) {
-          const css = colorToCss(numeric.value);
-          chargeBytes(jsonStringByteLength(css), path);
-          return css;
+      if (scalar.ok) {
+        if (scalar.value === null) {
+          chargeBytes(4, path);
+          return null;
         }
-      }
-
-      if (node instanceof Number || node instanceof String || node instanceof Boolean) {
-        const intrinsic =
-          node instanceof Number
-            ? Number.prototype.valueOf
-            : node instanceof String
-              ? String.prototype.valueOf
-              : Boolean.prototype.valueOf;
-        const unboxed = unbox(intrinsic, /** @type {object} */ (node));
-        if (unboxed.ok) {
-          return walk(unboxed.value, path, depth, wrapperHops + 1);
-        }
+        chargeBytes(jsonStringByteLength(/** @type {string} */ (scalar.value)), path);
+        return scalar.value;
       }
 
       if (node instanceof Map) {

@@ -185,6 +185,16 @@ version; [Foundry compatibility](compatibility.md) lists them.
 World document reads carry `compendiumSource` and `duplicateSource`, hoisted from Foundry's
 `_stats` and `null` when absent.
 
+`include: ["prepared"]` adds `prepared.system`, the live `system` data after the game system
+computed its derived values. Prepared values are derived: writing them back stores them as source.
+Nested documents appear as `{ documentName, id, uuid }`, keyed collections as objects keyed by id
+and sets as arrays. A field with no JSON form, or whose accessor throws, becomes
+`{"$unserializable": "<reason>"}` and the rest of the value is still returned. A value a system
+exposes only through a class getter outside its data model is absent. A value over the bridge's
+size, node or depth limit, or one it cannot read at all, gives `prepared.system: null` and
+`prepared.omitted` with a `reason` (`too-large` or `unreadable`) and, for `too-large`, the `limit`
+and its `max`; the read itself still succeeds.
+
 Broadcast actions report `dispatched` and target users rather than a confirmed player-side result.
 The active/inactive split is included where knowable.
 
@@ -279,6 +289,9 @@ before execution are reported: random selection, rendering, hooks, and other exe
 observations may be absent or explicitly unconfirmed. A successful preview reserves nothing; the
 world can change between preview and commit.
 
+A `create-many` preview carries `id: null` and, in families whose outcomes carry a name, the name
+of each element's preview.
+
 ## Idempotency
 
 An idempotency key identifies one logical request. Reusing it with another command or payload
@@ -310,6 +323,14 @@ Its input ids and line indexes belong to CLI output, not the wire contract.
 
 Bulk writes accept bounded arrays and prevalidate their elements. Persistence is not transactional;
 results report `complete` and per-element `outcomes`, all of which the caller must inspect.
+
+`scene.token.create-many` is the one sequential bulk write. It validates every element first and
+writes nothing if one fails, then creates the tokens one at a time, so each is prepared against a
+scene that already holds the tokens before it. It stops at the first element that fails. That
+element reports `created` if its create call threw but the token was stored, `unknown` if the call
+threw and no token was found, and `dropped` if its preparation failed or Foundry stored nothing
+without an error; `failure` names its index. The elements after it report `notAttempted` and were
+never sent. When no token was created, the request fails instead, with `details.index`.
 
 `get-many` fails the request if any requested id cannot be read. `setting.get-many` is the exception;
 it reports an unregistered key as `SETTING_NOT_FOUND` on that row without failing the whole request.

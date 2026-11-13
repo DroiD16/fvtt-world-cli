@@ -107,7 +107,8 @@ export const BATCH_WRITE_STATUSES = Object.freeze([
   "unchanged",
   "alreadyDeleted",
   "dropped",
-  "unknown"
+  "unknown",
+  "notAttempted"
 ]);
 
 export const BATCH_WRITE_SUCCESS_STATUSES = Object.freeze([
@@ -133,6 +134,27 @@ export const SCENE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 
 export const SCENE_THUMBNAIL_RESPONSE_MAX_BYTES = 1024 * 1024;
 
+export const RENDERED_IMAGE_MIN_DIMENSION = 16;
+export const RENDERED_IMAGE_MAX_DIMENSION = 2048;
+
+export const RENDERED_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+export const SCENE_SNAPSHOT_DEFAULT_SIZE = 1024;
+
+export const RENDERED_IMAGE_FORMATS = Object.freeze(["webp", "png"]);
+
+export const SCENE_SNAPSHOT_LAYERS = Object.freeze([
+  "grid",
+  "regions",
+  "drawings",
+  "templates",
+  "walls",
+  "lights",
+  "sounds",
+  "notes",
+  "tokens"
+]);
+
 export const FOG_RESET_CONFIRM_TIMEOUT_MS = 5_000;
 export const FOG_RESET_CONFIRM_POLL_INTERVAL_MS = 250;
 
@@ -143,6 +165,10 @@ export const SETTING_VALUE_MAX_NODES = 20_000;
 export const SETTING_VALUE_MAX_BYTES = 256 * 1024;
 
 export const SERIALIZE_OMISSIONS_MAX = 100;
+
+export const PREPARED_VALUE_MAX_DEPTH = 32;
+export const PREPARED_VALUE_MAX_NODES = 50_000;
+export const PREPARED_VALUE_MAX_BYTES = 512 * 1024;
 
 export const MACRO_EXECUTE_TIMEOUT_DEFAULT_MS = 30_000;
 export const MACRO_EXECUTE_TIMEOUT_MAX_MS = 300_000;

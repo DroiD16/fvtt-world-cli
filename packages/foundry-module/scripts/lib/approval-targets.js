@@ -273,7 +273,9 @@ function buildStrategy(command) {
   const required = Array.isArray(schema.required) ? schema.required : [];
   const declares = (/** @type {string} */ property) => Object.hasOwn(properties, property);
 
-  const segments = command.split(".");
+  // canvas.view-scene changes only the GM's view, but the scene it names is the target the GM must
+  // see in the approval window.
+  const segments = (command === "canvas.view-scene" ? "scene.view" : command).split(".");
   const verb = segments[segments.length - 1];
 
   /** @type {ApprovalTargetLink[]} */

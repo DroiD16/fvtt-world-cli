@@ -88,7 +88,8 @@ var BATCH_WRITE_STATUSES = Object.freeze([
   "unchanged",
   "alreadyDeleted",
   "dropped",
-  "unknown"
+  "unknown",
+  "notAttempted"
 ]);
 var BATCH_WRITE_SUCCESS_STATUSES = Object.freeze([
   "created",
@@ -105,6 +106,22 @@ var SCENE_THUMBNAIL_MIN_DIMENSION = 16;
 var SCENE_THUMBNAIL_MAX_DIMENSION = 1024;
 var SCENE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 var SCENE_THUMBNAIL_RESPONSE_MAX_BYTES = 1024 * 1024;
+var RENDERED_IMAGE_MIN_DIMENSION = 16;
+var RENDERED_IMAGE_MAX_DIMENSION = 2048;
+var RENDERED_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+var SCENE_SNAPSHOT_DEFAULT_SIZE = 1024;
+var RENDERED_IMAGE_FORMATS = Object.freeze(["webp", "png"]);
+var SCENE_SNAPSHOT_LAYERS = Object.freeze([
+  "grid",
+  "regions",
+  "drawings",
+  "templates",
+  "walls",
+  "lights",
+  "sounds",
+  "notes",
+  "tokens"
+]);
 var FOG_RESET_CONFIRM_TIMEOUT_MS = 5e3;
 var FOG_RESET_CONFIRM_POLL_INTERVAL_MS = 250;
 var TABLE_DRAW_MAX_COUNT = 100;
@@ -112,6 +129,9 @@ var SETTING_VALUE_MAX_DEPTH = 32;
 var SETTING_VALUE_MAX_NODES = 2e4;
 var SETTING_VALUE_MAX_BYTES = 256 * 1024;
 var SERIALIZE_OMISSIONS_MAX = 100;
+var PREPARED_VALUE_MAX_DEPTH = 32;
+var PREPARED_VALUE_MAX_NODES = 5e4;
+var PREPARED_VALUE_MAX_BYTES = 512 * 1024;
 var MACRO_EXECUTE_TIMEOUT_DEFAULT_MS = 3e4;
 var MACRO_EXECUTE_TIMEOUT_MAX_MS = 3e5;
 var SEARCH_MODES = Object.freeze(["name", "full"]);
@@ -323,6 +343,9 @@ var dryRunProperty = {
 var includeProperty = {
   include: { type: "array", items: { type: "string", enum: ["flags", "effects"] } }
 };
+var itemGetIncludeProperty = {
+  include: { type: "array", items: { type: "string", enum: ["flags", "effects", "prepared"] } }
+};
 var actorIncludeProperty = {
   include: {
     type: "array",
@@ -340,7 +363,7 @@ var batchIdsProperty = {
 var tokenIncludeProperty = {
   include: { type: "array", items: { type: "string", enum: ["prepared", "delta"] } }
 };
-var tokenListIncludeProperty = {
+var tokenDeltaIncludeProperty = {
   include: { type: "array", items: { type: "string", enum: ["delta"] } }
 };
 var compendiumIncludeProperty = {
@@ -476,7 +499,7 @@ function compendiumImportSchema(patchSchema) {
 var effectWriteProperties = {
   name: { type: "string", minLength: 1 },
   type: { type: "string", minLength: 1 },
-  img: { type: "string", minLength: 1 },
+  img: { type: ["string", "null"], minLength: 1 },
   origin: nullableStringSchema,
   disabled: { type: "boolean" },
   transfer: { type: "boolean" },
@@ -510,7 +533,7 @@ var itemDataSchema = {
   properties: {
     name: { type: "string", minLength: 1 },
     type: { type: "string", minLength: 1 },
-    img: { type: "string", minLength: 1 },
+    img: { type: ["string", "null"], minLength: 1 },
     folder: nullableStringSchema,
     sort: { type: "number" },
     system: freeformObjectSchema,
@@ -660,7 +683,7 @@ var actorDataSchema = {
   properties: {
     name: { type: "string", minLength: 1 },
     type: { type: "string", minLength: 1 },
-    img: { type: "string", minLength: 1 },
+    img: { type: ["string", "null"], minLength: 1 },
     folder: nullableStringSchema,
     sort: { type: "number" },
     system: freeformObjectSchema,
@@ -792,7 +815,7 @@ var actorCommands = {
     properties: {
       actorId: { type: "string", minLength: 1 },
       itemId: { type: "string", minLength: 1 },
-      ...includeProperty
+      ...itemGetIncludeProperty
     },
     additionalProperties: false
   }),
@@ -1058,6 +1081,46 @@ var approvalCommands = {
   [APPROVAL_AWAIT_COMMAND]: cmd(approvalAwaitSchema, { discovery: false }),
   [APPROVAL_CANCEL_COMMAND]: cmd(approvalCancelSchema, { discovery: false }),
   [POLICY_SNAPSHOT_COMMAND]: cmd(emptyObjectSchema, { discovery: false })
+};
+
+// packages/protocol/src/schemas/canvas.js
+var panPositionProperties = {
+  x: { type: "number" },
+  y: { type: "number" },
+  scale: { type: "number" }
+};
+var panFitProperty = { fit: { type: "boolean", const: true } };
+var canvasCommands = {
+  "canvas.capture": cmd({
+    type: "object",
+    required: [],
+    properties: {
+      size: { type: "integer", minimum: RENDERED_IMAGE_MIN_DIMENSION, maximum: RENDERED_IMAGE_MAX_DIMENSION },
+      format: { type: "string", enum: RENDERED_IMAGE_FORMATS }
+    },
+    additionalProperties: false
+  }),
+  "canvas.pan": cmd({
+    type: "object",
+    description: "Either fit, or a position of x, y and scale; fit cannot be combined with x, y or scale.",
+    required: [],
+    properties: { ...panPositionProperties, ...panFitProperty },
+    additionalProperties: false,
+    minProperties: 1,
+    oneOf: [
+      { type: "object", required: ["fit"], properties: panFitProperty, additionalProperties: false },
+      { type: "object", required: [], properties: panPositionProperties, additionalProperties: false }
+    ]
+  }),
+  "canvas.view-scene": cmd({
+    type: "object",
+    required: ["sceneId"],
+    properties: {
+      sceneId: { type: "string", minLength: 1 },
+      levelId: { type: "string", minLength: 1 }
+    },
+    additionalProperties: false
+  })
 };
 
 // packages/protocol/src/schemas/cards.js
@@ -1403,7 +1466,7 @@ var chatMessageCreateSchema = {
     style: { type: "number", enum: [0, 1, 2, 3] },
     // CHAT_MESSAGE_STYLES (verified v13)
     flavor: { type: "string" },
-    sound: { type: "string", minLength: 1 },
+    sound: { type: ["string", "null"], minLength: 1 },
     flags: freeformObjectSchema
   },
   additionalProperties: false
@@ -2071,14 +2134,14 @@ var itemCommands = {
     required: ["itemId"],
     properties: {
       itemId: { type: "string", minLength: 1 },
-      ...includeProperty
+      ...itemGetIncludeProperty
     },
     additionalProperties: false
   }),
   "item.get-many": cmd({
     type: "object",
     required: ["ids"],
-    properties: { ...batchIdsProperty, ...includeProperty },
+    properties: { ...batchIdsProperty, ...itemGetIncludeProperty },
     additionalProperties: false
   }),
   "item.create": cmd(
@@ -2291,7 +2354,7 @@ var journalPageCreateSchema = {
     title: journalPageTitleSchema,
     image: journalPageImageSchema,
     video: journalPageVideoSchema,
-    src: { type: "string", minLength: 1 },
+    src: { type: ["string", "null"], minLength: 1 },
     category: nullableStringSchema,
     system: freeformObjectSchema,
     flags: freeformObjectSchema
@@ -2594,7 +2657,7 @@ var macroDataSchema = {
     name: { type: "string", minLength: 1 },
     type: macroTypeSchema,
     command: { type: "string" },
-    img: { type: "string", minLength: 1 },
+    img: { type: ["string", "null"], minLength: 1 },
     folder: nullableStringSchema,
     scope: macroScopeSchema,
     flags: freeformObjectSchema
@@ -2715,14 +2778,14 @@ var playlistSoundCreateSchema = {
   properties: {
     name: { type: "string", minLength: 1 },
     description: { type: "string" },
-    path: { type: "string", minLength: 1 },
+    path: { type: ["string", "null"], minLength: 1 },
     channel: { type: ["string", "null"], enum: ["music", "environment", "interface", null] },
     playing: { type: "boolean" },
-    pausedTime: { type: "number" },
+    pausedTime: { type: ["number", "null"] },
     repeat: { type: "boolean" },
     volume: { type: "number" },
     // linear 0–1; scaling verified live
-    fade: { type: "number" },
+    fade: { type: ["number", "null"] },
     sort: { type: "number" },
     flags: freeformObjectSchema
   },
@@ -2747,12 +2810,12 @@ var playlistDataSchema = {
     mode: { type: "number", enum: [-1, 0, 1, 2] },
     // PLAYLIST_MODES (verified v13)
     playing: { type: "boolean" },
-    fade: { type: "number" },
+    fade: { type: ["number", "null"] },
     channel: { type: "string", enum: ["music", "environment", "interface"] },
     // AUDIO_CHANNELS keys (verified v13)
     sorting: { type: "string", enum: ["a", "m"] },
     // PLAYLIST_SORT_MODES (verified v13)
-    seed: { type: "number" },
+    seed: { type: ["number", "null"] },
     folder: nullableStringSchema,
     sort: { type: "number" },
     flags: freeformObjectSchema,
@@ -2968,7 +3031,7 @@ var playlistCommands = {
 
 // packages/protocol/src/schemas/scene-embedded.js
 var tokenWriteProperties = {
-  actorId: { type: "string", minLength: 1 },
+  actorId: { type: ["string", "null"], minLength: 1 },
   actorLink: { type: "boolean" },
   name: { type: "string", minLength: 1 },
   x: { type: "number" },
@@ -2992,6 +3055,14 @@ var tokenCreateSchema = {
   properties: tokenWriteProperties,
   additionalProperties: true,
   minProperties: 1
+};
+var tokenPlacementProperty = {
+  placement: {
+    type: "object",
+    required: [],
+    properties: { center: { type: "boolean" }, snap: { type: "boolean" } },
+    additionalProperties: false
+  }
 };
 var tokenPatchSchema = {
   type: "object",
@@ -3031,7 +3102,7 @@ var tilePatchSchema = {
   minProperties: 1
 };
 var soundWriteProperties = {
-  path: { type: "string", minLength: 1 },
+  path: { type: ["string", "null"], minLength: 1 },
   x: { type: "number" },
   y: { type: "number" },
   radius: { type: "number" },
@@ -3131,7 +3202,7 @@ var drawingWriteProperties = {
   strokeWidth: { type: "number" },
   strokeColor: { type: "string" },
   strokeAlpha: { type: "number" },
-  texture: { type: "string" },
+  texture: nullableStringSchema,
   text: { type: "string" },
   fontFamily: { type: "string" },
   fontSize: { type: "number" },
@@ -3193,7 +3264,7 @@ var templateWriteProperties = {
   width: { type: "number" },
   borderColor: { type: "string" },
   fillColor: { type: "string" },
-  texture: { type: "string" },
+  texture: nullableStringSchema,
   hidden: { type: "boolean" },
   flags: freeformObjectSchema
 };
@@ -3347,7 +3418,7 @@ var sceneEmbeddedCommands = {
       sceneId: { type: "string", minLength: 1 },
       ...nameFilterProperty,
       ...paginationProperties,
-      ...tokenListIncludeProperty
+      ...tokenDeltaIncludeProperty
     },
     additionalProperties: false
   }),
@@ -3368,6 +3439,8 @@ var sceneEmbeddedCommands = {
       properties: {
         sceneId: { type: "string", minLength: 1 },
         data: tokenCreateSchema,
+        ...tokenPlacementProperty,
+        ...tokenDeltaIncludeProperty,
         ...dryRunProperty,
         ...idempotencyKeyProperty
       },
@@ -3383,6 +3456,7 @@ var sceneEmbeddedCommands = {
         sceneId: { type: "string", minLength: 1 },
         tokenId: { type: "string", minLength: 1 },
         patch: tokenPatchSchema,
+        ...tokenDeltaIncludeProperty,
         ...dryRunProperty
       },
       additionalProperties: false
@@ -3410,6 +3484,7 @@ var sceneEmbeddedCommands = {
         sceneId: { type: "string", minLength: 1 },
         tokenId: { type: "string", minLength: 1 },
         patch: tokenPatchSchema,
+        ...tokenDeltaIncludeProperty,
         ...dryRunProperty,
         ...idempotencyKeyProperty
       },
@@ -3433,7 +3508,8 @@ var sceneEmbeddedCommands = {
   ...batchWriteCommands("scene.token", {
     scopeProperties: sceneScopeProperties,
     createSchema: tokenCreateSchema,
-    patchSchema: tokenPatchSchema
+    patchSchema: tokenPatchSchema,
+    extraProperties: { "create-many": tokenPlacementProperty }
   }),
   "scene.token.item.list": cmd({
     type: "object",
@@ -3452,7 +3528,8 @@ var sceneEmbeddedCommands = {
     properties: {
       sceneId: { type: "string", minLength: 1 },
       tokenId: { type: "string", minLength: 1 },
-      itemId: { type: "string", minLength: 1 }
+      itemId: { type: "string", minLength: 1 },
+      ...itemGetIncludeProperty
     },
     additionalProperties: false
   }),
@@ -4561,7 +4638,7 @@ var sceneBackgroundSchema = {
   type: "object",
   required: [],
   properties: {
-    src: { type: "string", minLength: 1 },
+    src: { type: ["string", "null"], minLength: 1 },
     offsetX: { type: "number" },
     offsetY: { type: "number" },
     scaleX: { type: "number" },
@@ -4601,16 +4678,16 @@ var sceneCreateSchema = {
     active: { type: "boolean" },
     navigation: { type: "boolean" },
     navOrder: { type: "number" },
-    width: { type: "number" },
-    height: { type: "number" },
+    width: { type: ["number", "null"] },
+    height: { type: ["number", "null"] },
     grid: sceneGridSchema,
     background: sceneBackgroundSchema,
     backgroundColor: { type: "string", minLength: 1 },
     tokenVision: { type: "boolean" },
     weather: nullableStringSchema,
     padding: { type: "number" },
-    shiftX: { type: "number" },
-    shiftY: { type: "number" },
+    shiftX: { type: ["number", "null"] },
+    shiftY: { type: ["number", "null"] },
     navName: nullableStringSchema,
     thumb: nullableStringSchema,
     sort: { type: "number" },
@@ -4719,6 +4796,19 @@ var sceneCommands = {
     },
     { mutation: true }
   ),
+  "scene.snapshot": cmd({
+    type: "object",
+    required: ["sceneId"],
+    properties: {
+      sceneId: { type: "string", minLength: 1 },
+      levelId: { type: "string", minLength: 1 },
+      size: { type: "integer", minimum: RENDERED_IMAGE_MIN_DIMENSION, maximum: RENDERED_IMAGE_MAX_DIMENSION },
+      format: { type: "string", enum: RENDERED_IMAGE_FORMATS },
+      layers: { type: "array", items: { type: "string", enum: SCENE_SNAPSHOT_LAYERS } },
+      tokenImages: { type: "boolean" }
+    },
+    additionalProperties: false
+  }),
   "scene.fog.reset": cmd(
     {
       type: "object",
@@ -5107,6 +5197,7 @@ var COMMAND_DEFINITIONS = deepFreeze(
     folderCommands,
     gameCommands,
     imageCommands,
+    canvasCommands,
     userCommands,
     settingCommands,
     actorCompendiumImportCommands,
@@ -5483,6 +5574,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "scene.clone": "allow",
   "scene.import-from-compendium": "allow",
   "scene.thumbnail.generate": "allow",
+  "scene.snapshot": "allow",
   "scene.fog.reset": "approve",
   "scene.activate": "allow",
   "scene.pull-users": "allow",
@@ -5807,6 +5899,9 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "folder.delete": "approve",
   "game.pause": "allow",
   "image.show": "allow",
+  "canvas.capture": "allow",
+  "canvas.pan": "approve",
+  "canvas.view-scene": "approve",
   "user.list": "allow",
   "user.get": "allow",
   "user.create": "approve",
@@ -5836,7 +5931,12 @@ var DESTRUCTIVE_COMMANDS = Object.freeze([
   "scene.fog.reset",
   "scene.token.restore-delta"
 ]);
-var APPROVE_EXTRA_COMMANDS = Object.freeze(["system.reload", "user.create"]);
+var APPROVE_EXTRA_COMMANDS = Object.freeze([
+  "system.reload",
+  "user.create",
+  "canvas.pan",
+  "canvas.view-scene"
+]);
 var DENIED_BY_DEFAULT_COMMANDS = Object.freeze([
   "macro.execute",
   "setting.set",
@@ -6409,6 +6509,9 @@ export {
   POLICY_DISCOVERY_TIMEOUT_MS,
   POLICY_EXEMPT_COMMANDS,
   POLICY_SNAPSHOT_COMMAND,
+  PREPARED_VALUE_MAX_BYTES,
+  PREPARED_VALUE_MAX_DEPTH,
+  PREPARED_VALUE_MAX_NODES,
   PROTOCOL_COMPONENTS,
   PROTOCOL_HANDSHAKES,
   PROTOCOL_VERSION,
@@ -6418,7 +6521,13 @@ export {
   REFERENCES_MAX_MATCHES,
   REFERENCE_DEFAULT_SCOPES,
   REFERENCE_SCOPES,
+  RENDERED_IMAGE_FORMATS,
+  RENDERED_IMAGE_MAX_BYTES,
+  RENDERED_IMAGE_MAX_DIMENSION,
+  RENDERED_IMAGE_MIN_DIMENSION,
   REQUEST_SCHEMA,
+  SCENE_SNAPSHOT_DEFAULT_SIZE,
+  SCENE_SNAPSHOT_LAYERS,
   SCENE_THUMBNAIL_MAX_BYTES,
   SCENE_THUMBNAIL_MAX_DIMENSION,
   SCENE_THUMBNAIL_MIN_DIMENSION,

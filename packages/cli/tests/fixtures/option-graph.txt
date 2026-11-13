@@ -344,6 +344,18 @@ command scene thumbnail generate
   opt --height <height> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Thumbnail height in px (16–1024, default 100)
   opt --include-thumb | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Include the generated base64 data URL in the response (read it with --json; the SCENE stores the extracted asset path, reported as .thumbnail.storedPath)
 
+command scene snapshot
+  aliases=[]
+  summary=Render a scene to an image with its walls, lights, sounds, tokens, regions, drawings, notes and grid drawn over it, without changing anything
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --level-id <levelId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Level to render (Foundry v14; default: the scene's initial level)
+  opt --size <px> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Long side of the image in px (16–2048, default: 1024); an encoded image over 8 MiB is refused
+  opt --format <format> | parser=<anonymous> | conflicts=[] | choices=["webp","png"] | required=false | hidden=false | default=- | help=Image format (default: the --out file's .png or .webp extension, otherwise webp)
+  opt --out <file> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Write the image to this file (default: <command>-<sceneId>[-<levelId>].<format> in a private fvtt-world-cli directory under the system temp directory, replaced by the next image of the same scene)
+  opt --layers <list> | parser=<anonymous> | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated overlays to draw: grid, regions, drawings, templates (v13), walls, lights, sounds, notes, tokens (default: all)
+  opt --no-layers | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Draw no overlays: only the background and tiles Foundry renders
+  opt --token-images | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Draw each token's image inside its box
+
 command scene fog
   aliases=[]
   summary=Scene fog of war commands
@@ -364,14 +376,14 @@ command scene token list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
-  opt --include <fields> | parser=parseTokenListIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: delta — a derived per-token summary of the token-level overrides, null when there are none)
+  opt --include <fields> | parser=parseTokenDeltaIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: delta — a derived per-token summary of the token-level overrides, null when there are none)
 
 command scene token get
   aliases=[]
   summary=
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
   opt --token-id <tokenId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Token id
-  opt --include <fields> | parser=parseTokenIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: prepared, delta — the stored ActorDelta source, null for a linked token or when none is stored)
+  opt --include <fields> | parser=parseTokenIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: prepared — the token's vision, light and its actor's system data with the derived values the system computed; delta — the stored ActorDelta source, null for a linked token or when none is stored)
 
 command scene token create
   aliases=[]
@@ -386,8 +398,11 @@ command scene token create
   opt --rotation <rotation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token rotation
   opt --elevation <elevation> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token elevation
   opt --disposition <disposition> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token disposition
-  opt --linked | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Link the token to the world actor
-  opt --unlinked | parser=- | conflicts=["linked"] | choices=- | required=false | hidden=false | default=- | help=Keep the token unlinked (per-token actor delta)
+  opt --linked | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Link the token to the world actor (default with --actor-id: as the actor's prototype token says; without it, unlinked)
+  opt --unlinked | parser=- | conflicts=["linked"] | choices=- | required=false | hidden=false | default=- | help=Create the token unlinked, with a per-token actor delta (default with --actor-id: as the actor's prototype token says; without it, unlinked)
+  opt --include <fields> | parser=parseTokenDeltaIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields in the result token (allowed: delta — the stored ActorDelta source, null for a linked token or when none is stored)
+  opt --center | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Read x and y as the token's center instead of its top-left corner, as Foundry does for a dropped token
+  opt --snap | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Snap the position to the scene grid, as Foundry does for a dropped token
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Full/extra token data as a JSON object (merged last)
 
 command scene token update
@@ -404,6 +419,7 @@ command scene token update
   opt --disposition <disposition> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token disposition
   opt --linked | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Link the token to the world actor
   opt --unlinked | parser=- | conflicts=["linked"] | choices=- | required=false | hidden=false | default=- | help=Unlink the token (per-token actor delta)
+  opt --include <fields> | parser=parseTokenDeltaIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields in the result token (allowed: delta — the stored ActorDelta source, null for a linked token or when none is stored)
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Full/extra token patch as a JSON object (merged last)
 
 command scene token clone
@@ -421,6 +437,7 @@ command scene token clone
   opt --disposition <disposition> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token disposition
   opt --linked | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Link the clone to the world actor
   opt --unlinked | parser=- | conflicts=["linked"] | choices=- | required=false | hidden=false | default=- | help=Unlink the clone (per-token actor delta)
+  opt --include <fields> | parser=parseTokenDeltaIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields in the result token (allowed: delta — the stored ActorDelta source, null for a linked token or when none is stored)
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Override fields for the clone as a JSON object (merged last)
 
 command scene token delete
@@ -437,9 +454,11 @@ command scene token restore-delta
 
 command scene token create-many
   aliases=[]
-  summary=Create many tokens in ONE call (per-element outcomes; nothing is written if any element is invalid)
+  summary=Create many tokens, one Foundry create per token in order (per-element outcomes; nothing is written if any element is invalid; the batch stops after the first token that fails to prepare, whose create call throws, or that Foundry does not store)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --center | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Read x and y as the token's center instead of its top-left corner, as Foundry does for a dropped token
+  opt --snap | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Snap the position to the scene grid, as Foundry does for a dropped token
   opt --data-json <json> | parser=<anonymous> | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Token data as a JSON ARRAY of objects (each may carry actorId, e.g. [{"actorId":"…","x":0,"y":0}])
 
 command scene token update-many
@@ -475,6 +494,7 @@ command scene token item get
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
   opt --token-id <tokenId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Token id
   opt --item-id <itemId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Item id
+  opt --include <fields> | parser=parseItemGetIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (prepared adds the item's system data after the system computed its derived values, such as attack bonuses, damage labels and save DCs; flags/effects are always present, so those two have no effect)
 
 command scene token item create
   aliases=[]
@@ -1513,13 +1533,13 @@ command item get
   aliases=[]
   summary=
   opt --item-id <itemId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Item id
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present on this command, so this option currently has no effect
+  opt --include <fields> | parser=parseItemGetIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (prepared adds the item's system data after the system computed its derived values, such as attack bonuses, damage labels and save DCs; flags/effects are always present, so those two have no effect)
 
 command item get-many
   aliases=[]
   summary=
   opt --ids <list> | parser=parseIdList | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Comma-separated item ids (atomic: all must exist)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present on this command, so this option currently has no effect
+  opt --include <fields> | parser=parseItemGetIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (prepared adds the item's system data after the system computed its derived values, such as attack bonuses, damage labels and save DCs; flags/effects are always present, so those two have no effect)
 
 command item create
   aliases=[]
@@ -2908,13 +2928,13 @@ command actor get
   aliases=[]
   summary=
   opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Actor id
-  opt --include <fields> | parser=parseActorIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds derived data; flags/effects are always present, so those two have no effect)
+  opt --include <fields> | parser=parseActorIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds the actor's system data after the system computed its derived values, such as totals, modifiers and DCs — for an item's derived values use actor item get --include prepared; flags/effects are always present, so those two have no effect)
 
 command actor get-many
   aliases=[]
   summary=
   opt --ids <list> | parser=parseIdList | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Comma-separated actor ids (atomic: all must exist)
-  opt --include <fields> | parser=parseActorIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds derived data; flags/effects are always present, so those two have no effect)
+  opt --include <fields> | parser=parseActorIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (items adds the owned items, which items.flags and items.effects also imply; prepared adds the actor's system data after the system computed its derived values, such as totals, modifiers and DCs — for an item's derived values use actor item get --include prepared; flags/effects are always present, so those two have no effect)
 
 command actor create
   aliases=[]
@@ -3040,7 +3060,7 @@ command actor item get
   summary=
   opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Actor id
   opt --item-id <itemId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Item id
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present on this command, so this option currently has no effect
+  opt --include <fields> | parser=parseItemGetIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields (prepared adds the item's system data after the system computed its derived values, such as attack bonuses, damage labels and save DCs; flags/effects are always present, so those two have no effect)
 
 command actor item clone
   aliases=[]
@@ -3514,3 +3534,28 @@ command image show
   opt --src <src> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Managed data-relative image path or http(s) URL
   opt --title <title> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Window title (default: derived by Foundry from the source)
   opt --user-ids <list> | parser=<anonymous> | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated user ids to show it to (default: every user); offline users are reported as skipped
+
+command canvas
+  aliases=[]
+  summary=GM client canvas view commands
+
+command canvas capture
+  aliases=[]
+  summary=Capture the GM client's current view as an image, with lighting, darkness and vision as the GM sees them
+  opt --size <px> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Long side of the image in px (16–2048, default: the GM screen's, at most 2048); an encoded image over 8 MiB is refused
+  opt --format <format> | parser=<anonymous> | conflicts=[] | choices=["webp","png"] | required=false | hidden=false | default=- | help=Image format (default: the --out file's .png or .webp extension, otherwise webp)
+  opt --out <file> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Write the image to this file (default: <command>-<sceneId>[-<levelId>].<format> in a private fvtt-world-cli directory under the system temp directory, replaced by the next image of the same scene)
+
+command canvas pan
+  aliases=[]
+  summary=Scroll and zoom the GM client's view of its current scene
+  opt --x <x> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Canvas x at the center of the screen; Foundry keeps it within the canvas plus a margin of 40% of the screen
+  opt --y <y> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Canvas y at the center of the screen; Foundry keeps it within the canvas plus a margin of 40% of the screen
+  opt --scale <scale> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Zoom scale; Foundry clamps it to the scene's zoom limits
+  opt --fit | parser=- | conflicts=["x","y","scale"] | choices=- | required=false | hidden=false | default=- | help=Center the scene and zoom so all of it fits on the screen (instead of --x/--y/--scale)
+
+command canvas view-scene
+  aliases=[]
+  summary=Switch the scene the GM client views, without activating it for players
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --level-id <levelId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Level to view (Foundry v14)

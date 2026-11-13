@@ -1,6 +1,8 @@
+import { SCENE_SNAPSHOT_DEFAULT_SIZE, SCENE_SNAPSHOT_LAYERS } from "@fvtt-world-cli/protocol";
 import { type Command, Option } from "commander";
 
 import {
+  booleanField,
   createEffectClonePatch,
   createEffectCreateParams,
   createEffectUpdatePatch,
@@ -56,26 +58,36 @@ import {
   type SoundFieldOptions,
   stringField,
   type TileFieldOptions,
-  type TokenFieldOptions
+  tokenPlacementParams,
+  type TokenFieldOptions,
+  type TokenPlacementOptions
 } from "../params.js";
 import { executeRemoteCommand } from "../exec.js";
+import {
+  type ImageOutputOptions,
+  addImageOutputOptions,
+  imageRequestParams,
+  saveResultImage
+} from "../image-output.js";
 import {
   parseCsvList,
   parseIdList,
   parseNumber,
   parseTokenIncludeFields,
-  parseTokenListIncludeFields
+  parseTokenDeltaIncludeFields
 } from "../parse.js";
 import {
   addEffectFieldOptions,
   addEmbeddedItemFieldOptions,
   addExecutableBehaviorFieldOptions,
   addRegionBehaviorFieldOptions,
+  addItemGetIncludeOption,
   addReservedIncludeOption,
   addSceneFieldOptions,
   addSceneSoundFieldOptions,
   addTileFieldOptions,
-  addTokenFieldOptions
+  addTokenFieldOptions,
+  addTokenPlacementOptions
 } from "./field-options.js";
 import {
   type RegistrationContext,
@@ -109,9 +121,26 @@ interface SceneLevelPatchOptions extends SceneLevelTargetOptions {
   patchJson?: string;
 }
 
+interface SceneSnapshotOptions extends ImageOutputOptions {
+  sceneId: string;
+  levelId?: string;
+  layers?: string[] | false;
+  tokenImages?: boolean;
+}
+
 interface SceneTokenTargetOptions {
   sceneId: string;
   tokenId: string;
+}
+
+interface SceneTokenCreateOptions extends TokenFieldOptions, TokenPlacementOptions {
+  sceneId: string;
+  dataJson?: string;
+}
+
+interface SceneTokenItemGetOptions extends SceneTokenTargetOptions {
+  itemId: string;
+  include?: string[];
 }
 
 interface SceneTokenGetOptions extends SceneTokenTargetOptions {
@@ -301,6 +330,12 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       "--include-thumb",
       "Include the generated base64 data URL in the response (read it with --json; the SCENE stores the extracted asset path, reported as .thumbnail.storedPath)"
     )
+    .addHelpText(
+      "after",
+      "\n.thumbnail.outputWidth and .outputHeight are read from the rendered image itself. They can exceed" +
+        "\n--width and --height: Foundry renders at the GM client's pixel ratio when its core setting for" +
+        "\npixel-ratio resolution scaling is on. A dry run reports them as null."
+    )
     .action(async function generateSceneThumbnail(options: {
       sceneId: string;
       width?: number;
@@ -317,6 +352,77 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
         },
         command: this,
         dependencies
+      });
+    });
+
+  addImageOutputOptions(
+    scene
+      .command("snapshot")
+      .description(
+        "Render a scene to an image with its walls, lights, sounds, tokens, regions, drawings, notes and grid drawn over it, without changing anything"
+      )
+      .requiredOption("--scene-id <sceneId>", "Scene id")
+      .option("--level-id <levelId>", "Level to render (Foundry v14; default: the scene's initial level)"),
+    String(SCENE_SNAPSHOT_DEFAULT_SIZE)
+  )
+    .addOption(
+      new Option(
+        "--layers <list>",
+        `Comma-separated overlays to draw: ${SCENE_SNAPSHOT_LAYERS.map((layer) =>
+          layer === "templates" ? `${layer} (v13)` : layer
+        ).join(", ")} (default: all)`
+      ).argParser((value: string) => parseCsvList(value, "--layers"))
+    )
+    .option("--no-layers", "Draw no overlays: only the background and tiles Foundry renders")
+    .option("--token-images", "Draw each token's image inside its box")
+    .addHelpText(
+      "after",
+      [
+        "",
+        "The background and visible tiles are rendered by Foundry; the overlays are drawn from document",
+        "data, not from Foundry's lighting or vision (canvas capture shows those). Nothing is written to",
+        "the world or to Foundry's data. On v13, for a scene without a background image, Foundry fits its",
+        "render to the tiles it drew, so tiles can come out cropped or missing; the result then reports",
+        "partialRender: true, and the grid and overlays still cover the whole scene.",
+        "",
+        "Walls: white blocks movement and sight, grey dashed does not block movement, cyan blocks movement",
+        "but not sight, yellow-green limits sight, orange blocks sight by proximity or distance. A thin",
+        "yellow dotted center line marks a wall that blocks sight but lets light through, a pink one a wall",
+        "that lets sight through but restricts light. A teal dot a quarter of the way along a wall marks a",
+        "sound restriction that differs from its sight restriction: filled when the wall restricts sound,",
+        "hollow when sound passes. Doors and walls that do not block movement, whose color does not show",
+        "sight, always carry the dot. Doors carry a square: blue closed, purple secret, green dashed open,",
+        "red locked. A one-way wall carries a tick on the side its `dir` names.",
+        "",
+        "Lights: dashed ring at the dim radius, solid ring at the bright radius, drawn as cones for a",
+        "directional light, in the light's color (purple for darkness, grey with a cross when hidden).",
+        "Sounds: teal dotted ring at the radius.",
+        "Tokens: box sized as Foundry sizes the token and colored by disposition (green friendly, yellow",
+        "neutral, red hostile, purple secret), dashed and marked (hidden) when hidden. Token images that",
+        "do not load within a few seconds leave the plain box. Templates (v13): the shape in the template's",
+        "fill and border colors, with flat or round cones as the core cone template setting selects. With",
+        "the core grid-based templates setting on, Foundry fits templates to grid cells; the snapshot still",
+        "draws the plain shape.",
+        "",
+        "Result keys (--json): .result.image {path, mimeType, width, height, sizeBytes},",
+        ".result.transform {scale, offsetX, offsetY} (image pixel = coordinate * scale + offset),",
+        ".result.view {x, y, width, height} (the canvas rectangle the image covers), .result.layers,",
+        ".result.levelId (v14), .result.partialRender (true when Foundry v13 drew only part of the tiles)."
+      ].join("\n")
+    )
+    .action(async function snapshotScene(options: SceneSnapshotOptions) {
+      await executeRemoteCommand({
+        commandName: "scene.snapshot",
+        params: {
+          sceneId: options.sceneId,
+          ...stringField("levelId", options.levelId),
+          ...imageRequestParams(options),
+          ...(options.layers === false ? { layers: [] } : options.layers ? { layers: options.layers } : {}),
+          ...booleanField("tokenImages", options.tokenImages)
+        },
+        command: this,
+        dependencies,
+        prepareResult: saveResultImage("snapshot", options.out)
       });
     });
 
@@ -340,7 +446,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     .option(
       "--include <fields>",
       "Comma-separated extra fields to include (allowed: delta — a derived per-token summary of the token-level overrides, null when there are none)",
-      parseTokenListIncludeFields
+      parseTokenDeltaIncludeFields
     )
     .addHelpText(
       "after",
@@ -365,7 +471,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     .requiredOption("--token-id <tokenId>", "Token id")
     .option(
       "--include <fields>",
-      "Comma-separated extra fields to include (allowed: prepared, delta — the stored ActorDelta source, null for a linked token or when none is stored)",
+      "Comma-separated extra fields to include (allowed: prepared — the token's vision, light and its actor's system data with the derived values the system computed; delta — the stored ActorDelta source, null for a linked token or when none is stored)",
       parseTokenIncludeFields
     )
     .action(async function getSceneToken(options: SceneTokenGetOptions) {
@@ -380,16 +486,16 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
         dependencies
       });
     });
-  addTokenFieldOptions(
-    addIdempotencyKeyOption(sceneToken.command("create"))
-      .requiredOption("--scene-id <sceneId>", "Scene id")
-      .option("--actor-id <actorId>", "Create the token from this actor's prototype token"),
-    "create"
+  addTokenPlacementOptions(
+    addTokenFieldOptions(
+      addIdempotencyKeyOption(sceneToken.command("create"))
+        .requiredOption("--scene-id <sceneId>", "Scene id")
+        .option("--actor-id <actorId>", "Create the token from this actor's prototype token"),
+      "create"
+    )
   )
     .option("--data-json <json>", "Full/extra token data as a JSON object (merged last)")
-    .action(async function createSceneToken(
-      options: TokenFieldOptions & { sceneId: string; dataJson?: string }
-    ) {
+    .action(async function createSceneToken(options: SceneTokenCreateOptions) {
       await executeRemoteCommand({
         commandName: "scene.token.create",
         params: createSceneTokenCreateParams(options),
@@ -469,7 +575,13 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     prefix: "scene.token",
     noun: "token",
     dataHelp:
-      'Token data as a JSON ARRAY of objects (each may carry actorId, e.g. [{"actorId":"…","x":0,"y":0}])'
+      'Token data as a JSON ARRAY of objects (each may carry actorId, e.g. [{"actorId":"…","x":0,"y":0}])',
+    createExtras: {
+      description:
+        "Create many tokens, one Foundry create per token in order (per-element outcomes; nothing is written if any element is invalid; the batch stops after the first token that fails to prepare, whose create call throws, or that Foundry does not store)",
+      addOptions: addTokenPlacementOptions,
+      params: tokenPlacementParams
+    }
   });
 
   const sceneTokenItem = sceneToken
@@ -500,19 +612,25 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       });
     }
   );
-  sceneTokenItem
-    .command("get")
-    .requiredOption("--scene-id <sceneId>", "Scene id")
-    .requiredOption("--token-id <tokenId>", "Token id")
-    .requiredOption("--item-id <itemId>", "Item id")
-    .action(async function getSceneTokenItem(options: { sceneId: string; tokenId: string; itemId: string }) {
-      await executeRemoteCommand({
-        commandName: "scene.token.item.get",
-        params: { sceneId: options.sceneId, tokenId: options.tokenId, itemId: options.itemId },
-        command: this,
-        dependencies
-      });
+  addItemGetIncludeOption(
+    sceneTokenItem
+      .command("get")
+      .requiredOption("--scene-id <sceneId>", "Scene id")
+      .requiredOption("--token-id <tokenId>", "Token id")
+      .requiredOption("--item-id <itemId>", "Item id")
+  ).action(async function getSceneTokenItem(options: SceneTokenItemGetOptions) {
+    await executeRemoteCommand({
+      commandName: "scene.token.item.get",
+      params: {
+        sceneId: options.sceneId,
+        tokenId: options.tokenId,
+        itemId: options.itemId,
+        ...(options.include ? { include: options.include } : {})
+      },
+      command: this,
+      dependencies
     });
+  });
   addReservedIncludeOption(
     addEmbeddedItemFieldOptions(
       addIdempotencyKeyOption(sceneTokenItem.command("create"))

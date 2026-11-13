@@ -1,10 +1,8 @@
 import { ERROR_CODES } from "../generated/protocol.js";
-import { getSceneById } from "../lib/game-collections.js";
 import {
-  createSceneEmbedded,
   getSceneEmbeddedById,
+  placeTokenData,
   prepareSceneEmbeddedCreateData,
-  previewSceneEmbeddedCreate,
   resolveSceneTokenCreateData
 } from "../lib/scene-embedded.js";
 import { dryRunResponse, isDryRun } from "../lib/dry-run.js";
@@ -24,24 +22,41 @@ import { createScenePlaceableHandlers } from "./scene-placeables.js";
 const TOKEN = "Token";
 
 export function createSceneTokenHandlers() {
-  return {
-    ...createScenePlaceableHandlers({
-      type: TOKEN,
-      prefix: "scene.token",
-      idField: "tokenId",
-      resultKey: "token",
-      pluralKey: "tokens",
-      notFoundCode: ERROR_CODES.TOKEN_NOT_FOUND,
-      serialize: (document) => serializeToken(document),
-      serializeSummary: (document, params) => serializeTokenSummary(document, { include: params?.include }),
-      listFilter: (tokens, params) => filterByName(tokens, params.name),
+  const placeables = createScenePlaceableHandlers({
+    type: TOKEN,
+    prefix: "scene.token",
+    idField: "tokenId",
+    resultKey: "token",
+    pluralKey: "tokens",
+    notFoundCode: ERROR_CODES.TOKEN_NOT_FOUND,
+    serialize: (document, params) => serializeToken(document, { include: params?.include }),
+    serializeSummary: (document, params) => serializeTokenSummary(document, { include: params?.include }),
+    listFilter: (tokens, params) => filterByName(tokens, params.name),
 
-      prepareCreate: async (data, scene) =>
+    sequentialCreate: true,
+    prepareCreate: async (data, scene, params) =>
+      placeTokenData(
+        scene,
         prepareSceneEmbeddedCreateData(TOKEN, await resolveSceneTokenCreateData(data, scene)),
+        params.placement
+      ),
 
-      summarize: (document) => ({ name: tokenName(document) }),
-      omitVerbs: ["get", "create"]
-    }),
+    summarize: (document) => ({ name: tokenName(document) }),
+    omitVerbs: ["get"]
+  });
+
+  return {
+    ...placeables,
+
+    async "scene.token.create-many"(params) {
+      const result = await placeables["scene.token.create-many"](params);
+      if (!isDryRun(params) || !params.data.some((data) => data?.actorId)) return result;
+      return {
+        ...result,
+        warning:
+          "Each element was prepared against the scene as it is now. The write prepares each token again after the tokens before it are placed, so appended numbers advance and random adjectives and images are drawn again; the created names can differ from these."
+      };
+    },
 
     async "scene.token.get"(params) {
       const { document } = getSceneEmbeddedById(
@@ -106,20 +121,6 @@ export function createSceneTokenHandlers() {
       }
 
       return { sceneId: params.sceneId, tokenId, changed: true, discarded };
-    },
-
-    async "scene.token.create"(params) {
-      const scene = getSceneById(params.sceneId);
-
-      const tokenData = await resolveSceneTokenCreateData(params.data, scene);
-
-      const token = await createSceneEmbedded(scene, TOKEN, tokenData, { dryRun: isDryRun(params) });
-      const result = { sceneId: params.sceneId, token: serializeToken(token) };
-      if (isDryRun(params)) {
-        const preview = previewSceneEmbeddedCreate(scene, TOKEN, tokenData);
-        return dryRunResponse({ ...result, token: serializeToken(preview) });
-      }
-      return result;
     }
   };
 }

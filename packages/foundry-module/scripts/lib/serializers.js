@@ -1,4 +1,5 @@
 import { hasSceneLevels } from "./foundry-capabilities.js";
+import { serializePreparedValue } from "./prepared-values.js";
 export { paginate, filterByName, filterByPath } from "./pagination.js";
 
 export function cloneValue(value) {
@@ -15,9 +16,14 @@ function safeDerived(modelOrDoc) {
   }
 }
 
+function preparedSystem(system) {
+  const { value, omitted } = serializePreparedValue(system);
+  return { system: value, ...(omitted ? { omitted } : {}) };
+}
+
 function buildPreparedActor(actor) {
   return {
-    system: safeDerived(actor.system),
+    ...preparedSystem(actor.system),
     prototypeToken: safeDerived(actor.prototypeToken),
     detectionModes: safeDerived(actor.detectionModes)
   };
@@ -29,7 +35,7 @@ function buildPreparedToken(token) {
     detectionModes: d.detectionModes ?? null,
     sight: d.sight ?? null,
     light: d.light ?? null,
-    system: safeDerived(token.actor?.system)
+    ...preparedSystem(token.actor?.system)
   };
 }
 
@@ -977,6 +983,7 @@ function sceneEmbeddedCounts(scene, data) {
  */
 export function serializeItem(item, { include, ownership = false, nested = false } = {}) {
   const data = documentData(item);
+  const withPrepared = Array.isArray(include) && include.includes("prepared");
 
   const withFlags = nested ? Array.isArray(include) && include.includes("flags") : true;
   const withEffects = nested ? Array.isArray(include) && include.includes("effects") : true;
@@ -996,6 +1003,7 @@ export function serializeItem(item, { include, ownership = false, nested = false
     ...(nested ? { effectCount: effects.length } : {}),
 
     ...(nested ? {} : provenanceFields(data)),
+    ...(withPrepared ? { prepared: preparedSystem(item.system) } : {}),
     ...(ownership ? { ownership: serializeOwnership(item, data) } : {})
   };
 }

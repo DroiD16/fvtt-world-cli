@@ -1795,16 +1795,21 @@ describe("batch-write engine: the per-element SUMMARY seam", () => {
     ]);
   });
 
-  it("summarizes a CREATE dry run with `null`, exactly as it reports `id: null`", async () => {
+  it("summarizes a CREATE dry run from each element's preview document, with `id: null`", async () => {
     const summarize = vi.fn((document) => ({ name: document ? document.name : null }));
-    const result = await executeBatchCreate(createArgs(createStore(), { dryRun: true, summarize }));
+    const result = await executeBatchCreate(
+      createArgs(createStore(), {
+        dryRun: true,
+        summarize,
+        preview: (payload) => ({ name: `${payload.name} (1)` })
+      })
+    );
     expect(result.outcomes).toEqual([
-      { index: 0, id: null, status: "created", name: null },
-      { index: 1, id: null, status: "created", name: null }
+      { index: 0, id: null, status: "created", name: "Alpha (1)" },
+      { index: 1, id: null, status: "created", name: "Beta (1)" }
     ]);
 
     expect(summarize).toHaveBeenCalledTimes(2);
-    expect(summarize.mock.calls.map((call) => call[0])).toEqual([null, null]);
   });
 
   it("omits the summary keys ENTIRELY for a family that passes no seam", async () => {

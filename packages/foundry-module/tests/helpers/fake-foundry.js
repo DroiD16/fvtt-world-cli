@@ -541,6 +541,9 @@ export function createCollection(
     get(id) {
       return byId.get(id) ?? null;
     },
+    has(id) {
+      return byId.has(id);
+    },
     set(document) {
       byId.set(document.id, document);
       return document;
@@ -2837,7 +2840,7 @@ export function createActorDocument(id, data) {
     const tokenData = {
       name: actor.name,
       actorId: id,
-      actorLink: false,
+      actorLink: actor.prototypeToken?.actorLink ?? false,
       texture: { src: "prototype.webp" },
       width: 1,
       height: 1,

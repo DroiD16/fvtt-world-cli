@@ -62,6 +62,8 @@ const DOCUMENT_API = [
   "updateEmbeddedDocuments",
   "deleteEmbeddedDocuments",
   "getTokenDocument", // synthetic token actor / ActorDelta access for delta-isolation
+  "getCenterPoint", // token --center: the pivot Foundry's drop handler subtracts from the drop point
+  "getSnappedPosition", // token --snap: the grid snap Foundry's drop handler applies
   "getDocument", // compendium entry load
   "documentName", // compendium document type discriminator
 

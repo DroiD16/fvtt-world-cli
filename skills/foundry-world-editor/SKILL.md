@@ -81,10 +81,18 @@ level ids in a preview are provisional.
 Deleting a level also deletes its tokens and every placeable only on that level, and the dry run
 does not list them: read the scene's placeables (token `level`, others' `levels`) and tell the user
 what the delete removes before running it.
+A token created from an actor takes `actorLink` from the actor's prototype token; on a linked
+token, token item and effect writes change the world actor.
 An unlinked token keeps its own overrides, which edits to its world actor never reach. Before
 editing an actor that has placed tokens, read its tokens' overrides
 (`scene token get --include delta,prepared`) and tell the user which tokens the edit will not
 change.
+After placing or moving placeables, check the result with `scene snapshot --out <file>.png` and
+open the image: it draws the scene's documents over the map and writes nothing.
+`scene thumbnail generate` only sets a scene's thumbnail; each call rewrites `thumb` and leaves an
+image file in the world. To judge lighting or vision, use `canvas capture`, which saves the GM
+client's current view. `canvas view-scene` and `canvas pan` move the screen of a GM who may be
+working in it; restore the view afterwards from `previousSceneId` and `previous`.
 Before deleting or relinking a document, run `world references --uuid <uuid>` and tell the user
 which stored references will point at nothing.
 `setting.set` cannot touch this module's own namespace (`SETTING_PROTECTED` is final; never retry).
@@ -151,6 +159,9 @@ for each one. `id` is the public identifier; a `_id` mirror may accompany it. Va
 through `include` flags may be derived or version-dependent. Write them back only when the
 update schema explicitly accepts them. Actor reads return `itemCount` in place of owned items; add
 `--include items` when the task needs them, or use `actor item list` and `actor item get`.
+Stored `system` holds authored inputs only. Computed game values (armor class, skill totals,
+attack bonus, save DC) are in `.prepared.system` with `--include prepared`: `actor get` for the
+actor, `actor item get` or `scene token item get` for an item.
 
 ## Retry classification
 
@@ -191,8 +202,8 @@ Classify a failure before reacting:
 Bulk commands (`create-many`, `update-many`, `delete-many`) share single-command validation but
 are not transactions: check the top-level `complete` flag and inspect every entry in `outcomes`.
 Persisted statuses such as `created`, `updated`, and `deleted` mean something different from
-`unchanged`, `alreadyDeleted`, `dropped`, and `unknown`; the authoritative status set lives in the
-protocol constants, not here. Action commands
+`unchanged`, `alreadyDeleted`, `dropped`, `unknown`, and `notAttempted` (never sent); the
+authoritative status set lives in the protocol constants, not here. Action commands
 (playback, draws, deals, combat transitions, thumbnails, fog) call fixed typed Foundry methods and
 can trigger hooks, chat output, and system automation; read the schema, dry-run first, and
 interpret confirmation fields literally rather than assuming an ordinary update happened.
@@ -211,7 +222,8 @@ Large worlds overflow agent context fast. Use server-side filters and small page
 responses with targeted `jq` expressions, fetch bounded id sets with `get-many`, and send
 independent batches through `exec --stdin` (one NDJSON response per request, each judged on its
 own). Request derived fields only when needed, and never dump a whole world, search index, or
-binary file into context.
+binary file into context. Run image commands as single CLI calls, which save the image to a file:
+inside `exec --stdin` their responses carry it as an inline base64 data URL of up to 8 MiB.
 
 ## Deeper reference
 

@@ -20,6 +20,7 @@ import { parseIdList, parseIncludeFields, parseNumber } from "../parse.js";
 import {
   addActorFieldOptions,
   addActorIncludeOption,
+  addItemGetIncludeOption,
   addEffectFieldOptions,
   addEmbeddedItemFieldOptions,
   addReservedIncludeOption
@@ -34,6 +35,12 @@ import {
   paginationParams
 } from "./shared.js";
 import { write } from "../deps.js";
+
+interface ActorItemGetOptions {
+  actorId: string;
+  itemId: string;
+  include?: string[];
+}
 
 interface ActorItemCloneOptions {
   actorId: string;
@@ -293,13 +300,12 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
       dependencies
     });
   });
-  addReservedIncludeOption(
+  addItemGetIncludeOption(
     actorItem
       .command("get")
       .requiredOption("--actor-id <actorId>", "Actor id")
-      .requiredOption("--item-id <itemId>", "Item id"),
-    "on this command"
-  ).action(async function getActorItem(options: { actorId: string; itemId: string; include?: string[] }) {
+      .requiredOption("--item-id <itemId>", "Item id")
+  ).action(async function getActorItem(options: ActorItemGetOptions) {
     await executeRemoteCommand({
       commandName: "actor.item.get",
       params: {

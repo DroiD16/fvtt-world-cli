@@ -19,6 +19,11 @@ export interface RegistrationContext {
   dependencies: CliDependencies;
 }
 
+interface BatchCreateManyOptions {
+  dataJson: Array<Record<string, unknown>>;
+  [scopeOrExtraFlag: string]: unknown;
+}
+
 export function addIdempotencyKeyOption(command: Command): Command {
   return command.option(
     "--idempotency-key <key>",
@@ -215,7 +220,8 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
       dataHelp,
       scope = "scene",
       verbs = ["create-many", "update-many", "delete-many"],
-      withForce = false
+      withForce = false,
+      createExtras
     }: {
       prefix: string;
       noun: string;
@@ -223,6 +229,11 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
       scope?: keyof typeof BATCH_SCOPES;
       verbs?: Array<"create-many" | "update-many" | "delete-many">;
       withForce?: boolean;
+      createExtras?: {
+        description: string;
+        addOptions: (command: Command) => Command;
+        params: (options: Record<string, any>) => Record<string, unknown>;
+      };
     }
   ) {
     const scopeSpec = BATCH_SCOPES[scope];
@@ -238,22 +249,25 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
     if (verbs.includes("delete-many")) registerBatchDeleteMany();
 
     function registerBatchCreateMany() {
-      scopeOption(addIdempotencyKeyOption(group.command("create-many")))
+      const command = scopeOption(addIdempotencyKeyOption(group.command("create-many")));
+      (createExtras ? createExtras.addOptions(command) : command)
         .description(
-          `Create many ${noun}s in ONE call (per-element outcomes; nothing is written if any element is invalid)`
+          createExtras?.description ??
+            `Create many ${noun}s in ONE call (per-element outcomes; nothing is written if any element is invalid)`
         )
         .requiredOption(
           "--data-json <json>",
           dataHelp ?? `${noun[0].toUpperCase()}${noun.slice(1)} data as a JSON ARRAY of objects`,
           (value) => parseJsonObjectArray(value, "--data-json")
         )
-        .action(async function createMany(
-          this: Command,
-          options: Record<string, any> & { dataJson: Array<Record<string, unknown>> }
-        ) {
+        .action(async function createMany(this: Command, options: BatchCreateManyOptions) {
           await executeRemoteCommand({
             commandName: `${prefix}.create-many`,
-            params: { ...scopeParams(options), data: options.dataJson },
+            params: {
+              ...scopeParams(options),
+              data: options.dataJson,
+              ...(createExtras ? createExtras.params(options) : {})
+            },
             command: this,
             dependencies
           });
