@@ -67,7 +67,9 @@ function defaultImagePath(kind: string, result: any, extension: string) {
   }
   const stats = lstatSync(directory);
   if (!stats.isDirectory() || (uid !== undefined && (stats.uid !== uid || (stats.mode & 0o077) !== 0))) {
-    throw new Error(
+    throw new CommanderError(
+      1,
+      "fvtt-world-cli.localFileWriteError",
       `${directory} is not a directory that only this user can access (owned by this user, mode 700); remove it, or pass --out`
     );
   }
