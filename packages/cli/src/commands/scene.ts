@@ -1,4 +1,4 @@
-import { SCENE_SNAPSHOT_LAYERS } from "@fvtt-world-cli/protocol";
+import { SCENE_SNAPSHOT_DEFAULT_SIZE, SCENE_SNAPSHOT_LAYERS } from "@fvtt-world-cli/protocol";
 import { type Command, Option } from "commander";
 
 import {
@@ -352,7 +352,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       )
       .requiredOption("--scene-id <sceneId>", "Scene id")
       .option("--level-id <levelId>", "Level to render (Foundry v14; default: the scene's initial level)"),
-    "1024"
+    String(SCENE_SNAPSHOT_DEFAULT_SIZE)
   )
     .addOption(
       new Option(

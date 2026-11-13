@@ -1,4 +1,4 @@
-import { SCENE_SNAPSHOT_LAYERS } from "../generated/protocol.js";
+import { ERROR_CODES, SCENE_SNAPSHOT_DEFAULT_SIZE, SCENE_SNAPSHOT_LAYERS } from "../generated/protocol.js";
 import {
   assertThumbnailSupported,
   createImageCanvas,
@@ -9,10 +9,9 @@ import {
 } from "../lib/canvas.js";
 import { getFoundryGeneration, hasSceneLevels } from "../lib/foundry-capabilities.js";
 import { getSceneById } from "../lib/game-collections.js";
-import { assertSceneTemplatesSupported, resolveSceneLevel } from "../lib/scene-embedded.js";
+import { createBridgeError } from "../lib/errors.js";
+import { resolveSceneLevel } from "../lib/scene-embedded.js";
 import { drawSnapshotOverlays } from "../lib/snapshot-overlays.js";
-
-const DEFAULT_SNAPSHOT_SIZE = 1024;
 
 /**
  * @param {{ x: number, y: number }} rect
@@ -35,16 +34,27 @@ export function createSceneSnapshotHandlers() {
     async "scene.snapshot"(params) {
       const scene = getSceneById(params.sceneId);
       const level = resolveSceneLevel(scene, params.levelId, "scene.snapshot");
-      if (params.layers?.includes("templates")) assertSceneTemplatesSupported(scene);
+      const templatesSupported = !hasSceneLevels();
+      if (!templatesSupported && params.layers?.includes("templates")) {
+        throw createBridgeError(
+          ERROR_CODES.UNSUPPORTED_OPERATION,
+          "scene.snapshot has no templates layer in this Foundry version: measured templates were removed from scenes in v14. Request the other layers, or omit layers to draw all of them",
+          { layer: "templates" }
+        );
+      }
       const layers = SCENE_SNAPSHOT_LAYERS.filter((layer) =>
         params.layers === undefined
-          ? layer !== "templates" || !hasSceneLevels()
+          ? layer !== "templates" || templatesSupported
           : params.layers.includes(layer)
       );
       assertThumbnailSupported(scene, "scene.snapshot");
 
       const rect = scene.dimensions.sceneRect;
-      const { width, height } = fitLongSide(params.size ?? DEFAULT_SNAPSHOT_SIZE, rect.width, rect.height);
+      const { width, height } = fitLongSide(
+        params.size ?? SCENE_SNAPSHOT_DEFAULT_SIZE,
+        rect.width,
+        rect.height
+      );
       const rendered = await renderSceneThumbnail(scene, {
         width,
         height,

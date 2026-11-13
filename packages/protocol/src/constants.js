@@ -139,6 +139,8 @@ export const RENDERED_IMAGE_MAX_DIMENSION = 2048;
 
 export const RENDERED_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 
+export const SCENE_SNAPSHOT_DEFAULT_SIZE = 1024;
+
 export const RENDERED_IMAGE_FORMATS = Object.freeze(["webp", "png"]);
 
 export const SCENE_SNAPSHOT_LAYERS = Object.freeze([
