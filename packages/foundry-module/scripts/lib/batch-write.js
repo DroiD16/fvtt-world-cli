@@ -228,6 +228,12 @@ export async function executeBatchCreate({
   summarize
 }) {
   assertBatchWithinLimit(items, { command, field: "data" });
+  const outcome = (index, id, status, document = null) => ({
+    index,
+    id,
+    status,
+    ...(summarize ? summarize(document) : {})
+  });
 
   const prepared = [];
   const previews = [];
@@ -244,18 +250,15 @@ export async function executeBatchCreate({
 
   if (dryRun) {
     return buildBatchResult({
-      outcomes: previews.map((previewDocument, index) => ({
-        index,
-        id: null,
-        status: BATCH_STATUS.CREATED,
-        ...(summarize ? summarize(previewDocument) : {})
-      })),
+      outcomes: previews.map((previewDocument, index) =>
+        outcome(index, null, BATCH_STATUS.CREATED, previewDocument)
+      ),
       dryRun: true
     });
   }
 
   if (sequential) {
-    return createSequentially({ command, items, prepare, isIdTaken, create, readBack, summarize });
+    return createSequentially({ command, items, prepare, isIdTaken, create, readBack, outcome });
   }
 
   const minted = new Set();
@@ -283,16 +286,9 @@ export async function executeBatchCreate({
 
   const outcomes = ids.map((id, index) => {
     const stored = readBack(id);
-    if (stored || returned.has(id)) {
-      return { index, id, status: BATCH_STATUS.CREATED, ...(summarize ? summarize(stored ?? null) : {}) };
-    }
-
-    return {
-      index,
-      id,
-      status: failure ? BATCH_STATUS.UNKNOWN : BATCH_STATUS.DROPPED,
-      ...(summarize ? summarize(null) : {})
-    };
+    return stored || returned.has(id)
+      ? outcome(index, id, BATCH_STATUS.CREATED, stored ?? null)
+      : outcome(index, id, failure ? BATCH_STATUS.UNKNOWN : BATCH_STATUS.DROPPED);
   });
 
   if (failure) {
@@ -302,16 +298,10 @@ export async function executeBatchCreate({
   return buildBatchResult({ outcomes });
 }
 
-/** @param {{ command: string, items: any[], prepare: (data: any, index: number) => any | Promise<any>, isIdTaken: (id: string) => boolean, create: (payloads: any[]) => Promise<any[]>, readBack: (id: string) => any, summarize?: (document: any) => Record<string, unknown> }} args */
-async function createSequentially({ command, items, prepare, isIdTaken, create, readBack, summarize }) {
+/** @param {{ command: string, items: any[], prepare: (data: any, index: number) => any | Promise<any>, isIdTaken: (id: string) => boolean, create: (payloads: any[]) => Promise<any[]>, readBack: (id: string) => any, outcome: (index: number, id: string | null, status: string, document?: any) => any }} args */
+async function createSequentially({ command, items, prepare, isIdTaken, create, readBack, outcome }) {
   /** @type {Array<{index:number,id:string|null,status:string}>} */
   const outcomes = [];
-  const outcome = (index, id, status, document = null) => ({
-    index,
-    id,
-    status,
-    ...(summarize ? summarize(document) : {})
-  });
   let failure = null;
   let stopped = false;
   for (let index = 0; index < items.length; index += 1) {
