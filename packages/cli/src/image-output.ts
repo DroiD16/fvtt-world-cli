@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 
 import {
   RENDERED_IMAGE_FORMATS,
@@ -28,7 +28,12 @@ export function addImageOutputOptions(command: Command, sizeDefault: string): Co
         `Long side of the image in px (${RENDERED_IMAGE_MIN_DIMENSION}–${RENDERED_IMAGE_MAX_DIMENSION}, default: ${sizeDefault})`
       ).argParser(parsePositiveInt)
     )
-    .addOption(new Option("--format <format>", "Image format (default webp)").choices(RENDERED_IMAGE_FORMATS))
+    .addOption(
+      new Option(
+        "--format <format>",
+        "Image format (default: the --out file's .png or .webp extension, otherwise webp)"
+      ).choices(RENDERED_IMAGE_FORMATS)
+    )
     .option(
       "--out <file>",
       "Write the image to this file (default: <command>-<sceneId>[-<levelId>].<format> in a private fvtt-world-cli directory under the system temp directory, replaced by the next image of the same scene)"
@@ -36,9 +41,19 @@ export function addImageOutputOptions(command: Command, sizeDefault: string): Co
 }
 
 export function imageRequestParams(options: ImageOutputOptions): Record<string, unknown> {
+  const extension = options.out === undefined ? "" : extname(options.out).slice(1).toLowerCase();
+  const implied = RENDERED_IMAGE_FORMATS.includes(extension) ? extension : undefined;
+  if (options.format !== undefined && implied !== undefined && options.format !== implied) {
+    throw new CommanderError(
+      1,
+      "fvtt-world-cli.imageFormatConflict",
+      `--format ${options.format} contradicts the .${implied} extension of --out ${options.out}; drop --format or change the extension`
+    );
+  }
+  const format = options.format ?? implied;
   return {
     ...(options.size === undefined ? {} : { size: options.size }),
-    ...(options.format === undefined ? {} : { format: options.format })
+    ...(format === undefined ? {} : { format })
   };
 }
 

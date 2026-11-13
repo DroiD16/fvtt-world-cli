@@ -2565,6 +2565,37 @@ describe("fvtt-world-cli commands", () => {
       });
     });
 
+    it.each([
+      ["view.png", undefined, "png"],
+      ["view.WEBP", undefined, "webp"],
+      ["view.jpg", undefined, undefined],
+      ["view.png", "png", "png"]
+    ])("takes the format from the --out extension (%s, --format %s)", async (file, format, expected) => {
+      const directory = mkdtempSync(join(tmpdir(), "fvtt-world-cli-image-test-"));
+      try {
+        const sendCommand = imageResponse("capture");
+        const result = await runCommand(
+          ["canvas", "capture", "--out", join(directory, file), ...(format ? ["--format", format] : [])],
+          sendCommand
+        );
+
+        expect(result.error).toBeNull();
+        expect((sendCommand as any).mock.calls[0][0].params.format).toBe(expected);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
+
+    it("refuses a --format that contradicts the --out extension before sending anything", async () => {
+      const result = await runCommand(
+        ["scene", "snapshot", "--scene-id", "scene-1", "--format", "png", "--out", "scene.webp"],
+        failIfCalledSendCommand()
+      );
+
+      expect(result.error).toBeInstanceOf(CommanderError);
+      expect((result.error as CommanderError).code).toBe("fvtt-world-cli.imageFormatConflict");
+    });
+
     it("reports an image it could not write as a local file error", async () => {
       const result = await runCommand(
         [

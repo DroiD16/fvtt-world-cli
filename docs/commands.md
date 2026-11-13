@@ -120,7 +120,9 @@ only a world or module that sets its own minimum zoom can prevent that. The `pan
 
 Both image commands save the image to a local file and report its path as `image.path` instead of
 image data. Without `--out`, the file goes into a private `fvtt-world-cli` directory under the
-system temp directory, and the next image of the same scene replaces it. `transform` converts a
+system temp directory, and the next image of the same scene replaces it. A `.png` or `.webp`
+extension on `--out` sets the format when `--format` is absent, and the CLI refuses a `--format`
+that contradicts it. `transform` converts a
 document coordinate to an image pixel (pixel = coordinate × scale + offset), and `view` is the
 canvas rectangle the image covers.
 
