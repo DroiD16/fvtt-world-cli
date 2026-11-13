@@ -113,18 +113,14 @@ does what any Foundry scene switch does. It can save the GM's fog exploration, t
 clients which scene the GM is on, fires the `canvasTearDown` and `canvasReady` hooks modules listen
 to, and fires the viewed and unviewed events of region behaviors, so GM-authored script or macro
 behaviors subscribed to those events run. By default both commands wait for GM approval.
-`canvas pan` keeps the zoom within Foundry's limits and the center point within the canvas plus a
-margin of 40% of the screen. Foundry's default minimum zoom always lets `--fit` show the whole scene;
-only a world or module that sets its own minimum zoom can prevent that. The `pan` result's
-`previous` position and the `view-scene` result's `previousSceneId` put the view back.
+Foundry keeps a `canvas pan` position and zoom within its own limits. The `pan` result's `previous`
+position and the `view-scene` result's `previousSceneId` put the view back.
 
 Both image commands save the image to a local file and report its path as `image.path` instead of
-image data. Without `--out`, the file goes into a private `fvtt-world-cli` directory under the
-system temp directory, and the next image of the same scene replaces it. A `.png` or `.webp`
+image data. Without `--out`, the file goes to a private temporary directory. A `.png` or `.webp`
 extension on `--out` sets the format when `--format` is absent, and the CLI refuses a `--format`
-that contradicts it. `transform` converts a
-document coordinate to an image pixel (pixel = coordinate × scale + offset), and `view` is the
-canvas rectangle the image covers.
+that contradicts it. `transform` converts a document coordinate to an image pixel
+(pixel = coordinate × scale + offset), and `view` is the canvas rectangle the image covers.
 
 ### Send a batch of commands
 
