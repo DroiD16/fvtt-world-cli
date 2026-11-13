@@ -91,7 +91,7 @@ An unlinked token keeps its own overrides, which edits to its world actor never 
 would store. Before editing an actor that has placed tokens, read its tokens' overrides
 (`scene token get --include delta,prepared`) and tell the user which tokens the edit will not
 change.
-To see a scene, run `scene snapshot --scene-id <id> --format png --out <file>` and open the image. It
+To see a scene, run `scene snapshot --scene-id <id> --out <file>.png` and open the image. It
 draws walls, lights, sounds, tokens, regions, drawings, notes and the grid over the map from document
 data, writes nothing, and is the check after placing or moving anything: compare positions on the
 image rather than reasoning from coordinates (`transform`: pixel = coordinate × scale + offset).
@@ -99,7 +99,9 @@ Its lights are dim/bright radius rings, or cones for directional lights, not lig
 is lit, dark, or visible, use `canvas capture`, which saves the GM client's screen as Foundry
 renders it. It covers only the current view: `canvas view-scene` and `canvas pan` move that view on
 the screen of a GM who may be working in it, so restore it afterwards from the results'
-`previousSceneId` and `previous`. Use `scene thumbnail generate` only to set a scene's thumbnail:
+`previousSceneId` and `previous`. Run both image commands as single CLI calls: through
+`exec --stdin` their responses carry the whole image inline as a base64 data URL of up to 8 MiB.
+Use `scene thumbnail generate` only to set a scene's thumbnail:
 each call rewrites `thumb` and leaves an image file in the world.
 Before deleting or relinking a document, run `world references --uuid <uuid>` and tell the user
 which stored references will point at nothing.
