@@ -19,6 +19,11 @@ export interface RegistrationContext {
   dependencies: CliDependencies;
 }
 
+interface BatchCreateManyOptions {
+  dataJson: Array<Record<string, unknown>>;
+  [scopeOrExtraFlag: string]: unknown;
+}
+
 export function addIdempotencyKeyOption(command: Command): Command {
   return command.option(
     "--idempotency-key <key>",
@@ -255,10 +260,7 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
           dataHelp ?? `${noun[0].toUpperCase()}${noun.slice(1)} data as a JSON ARRAY of objects`,
           (value) => parseJsonObjectArray(value, "--data-json")
         )
-        .action(async function createMany(
-          this: Command,
-          options: Record<string, any> & { dataJson: Array<Record<string, unknown>> }
-        ) {
+        .action(async function createMany(this: Command, options: BatchCreateManyOptions) {
           await executeRemoteCommand({
             commandName: `${prefix}.create-many`,
             params: {
