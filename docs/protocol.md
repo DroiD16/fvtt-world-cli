@@ -273,6 +273,10 @@ or use a dedicated embedded create command. Dry runs can still preview these pat
 After partial or indeterminate errors, read stored state and submit only remaining changes as a
 new operation with a fresh idempotency key if using one.
 
+`*.status.set` reports `previous` and `changed`; a status that misses the requested state after
+Foundry's toggle is an indeterminate `INTERNAL_ERROR` whose `details.effects` lists the effects
+still carrying it.
+
 ### Patch shape checks
 
 Single updates, bulk updates, and dry runs reject invalid or discarded array values, top-level
