@@ -29,6 +29,7 @@ import {
   snapshotCardSorts,
   updateCard
 } from "../lib/cards-docs.js";
+import { filterByFolder } from "../lib/folders.js";
 import { getCardsCollection } from "../lib/game-collections.js";
 import {
   applyConfirmedUpdate,
@@ -937,7 +938,10 @@ function summarizeRecallProgress(plan, confirmation, rowsBefore, returnRowsBefor
 export function createCardsHandlers() {
   return {
     async "cards.list"(params) {
-      const stacks = filterByName(Array.from(getCardsCollection()), params.name);
+      const stacks = filterByName(
+        filterByFolder(Array.from(getCardsCollection()), params.folder, "Cards"),
+        params.name
+      );
       const { page, total, hasMore } = paginate(stacks, params);
       return {
         cards: page.map((stack) => serializeCardsSummary(stack)),

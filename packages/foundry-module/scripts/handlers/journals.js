@@ -1,4 +1,5 @@
 import { BATCH_GET_MAX_IDS, ERROR_CODES } from "../generated/protocol.js";
+import { filterByFolder } from "../lib/folders.js";
 import { getJournalById, getJournalsCollection } from "../lib/game-collections.js";
 import {
   JOURNAL_CATEGORY_DANGLING_PAGE_ID_CAP,
@@ -248,7 +249,10 @@ export function createJournalHandlers() {
     }),
 
     async "journal.list"(params) {
-      const journals = filterByName(Array.from(getJournalsCollection()), params.name);
+      const journals = filterByName(
+        filterByFolder(Array.from(getJournalsCollection()), params.folder, "JournalEntry"),
+        params.name
+      );
       const { page, total, hasMore } = paginate(journals, params);
       return {
         journals: page.map((journal) => serializeJournalSummary(journal)),

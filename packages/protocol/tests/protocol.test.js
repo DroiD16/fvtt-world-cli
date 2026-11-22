@@ -6191,6 +6191,37 @@ describe("protocol contract", () => {
     });
   });
 
+  describe("world list filters", () => {
+    const FOLDER_FILTERED_LISTS = [
+      "actor.list",
+      "item.list",
+      "journal.list",
+      "macro.list",
+      "playlist.list",
+      "scene.list",
+      "table.list",
+      "cards.list"
+    ];
+
+    it("accepts a folder id on every world list whose documents live in folders", () => {
+      const declaring = COMMAND_NAMES.filter(
+        (command) => COMMAND_DEFINITIONS[command].paramsSchema.properties?.folder && command.endsWith(".list")
+      );
+      expect(declaring.sort()).toEqual([...FOLDER_FILTERED_LISTS].sort());
+      for (const command of FOLDER_FILTERED_LISTS) {
+        expectValid(command, { folder: "fold-1", name: "x", limit: 1, offset: 0 });
+        expectRejected(command, { folder: "" }, "$.params.folder must be at least 1 characters long");
+      }
+      expectRejected("user.list", { folder: "fold-1" }, "$.params.folder is not allowed");
+    });
+
+    it("accepts an actor type only on actor.list", () => {
+      expectValid("actor.list", { type: "npc", folder: "fold-1" });
+      expectRejected("actor.list", { type: "" }, "$.params.type must be at least 1 characters long");
+      expectRejected("item.list", { type: "loot" }, "$.params.type is not allowed");
+    });
+  });
+
   describe("dryRun mutation param", () => {
     it("declares dryRun on every mutation command and accepts dryRun:true alongside valid params", () => {
       for (const command of WRITE_COMMANDS) {

@@ -91,12 +91,15 @@ import {
 } from "./field-options.js";
 import {
   type RegistrationContext,
+  type WorldListOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
   addNameFilterOption,
   addPaginationOptions,
   nameFilterParams,
-  paginationParams
+  paginationParams,
+  worldListParams
 } from "./shared.js";
 import { write } from "../deps.js";
 
@@ -188,14 +191,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     commandName: "scene.ownership.set",
     noun: "scene"
   });
-  addNameFilterOption(addPaginationOptions(scene.command("list"))).action(async function listScenes(options: {
-    name?: string;
-    limit?: number;
-    offset?: number;
-  }) {
+  addWorldListOptions(scene.command("list")).action(async function listScenes(options: WorldListOptions) {
     await executeRemoteCommand({
       commandName: "scene.list",
-      params: { ...nameFilterParams(options), ...paginationParams(options) },
+      params: worldListParams(options),
       command: this,
       dependencies
     });

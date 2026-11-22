@@ -17,12 +17,15 @@ import {
 } from "./field-options.js";
 import {
   type RegistrationContext,
+  type WorldListOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
   addNameFilterOption,
   addPaginationOptions,
   nameFilterParams,
-  paginationParams
+  paginationParams,
+  worldListParams
 } from "./shared.js";
 import { write } from "../deps.js";
 
@@ -68,14 +71,10 @@ export function registerItem({ program, dependencies }: RegistrationContext) {
     commandName: "item.ownership.set",
     noun: "item"
   });
-  addNameFilterOption(addPaginationOptions(item.command("list"))).action(async function listItems(options: {
-    name?: string;
-    limit?: number;
-    offset?: number;
-  }) {
+  addWorldListOptions(item.command("list")).action(async function listItems(options: WorldListOptions) {
     await executeRemoteCommand({
       commandName: "item.list",
-      params: { ...nameFilterParams(options), ...paginationParams(options) },
+      params: worldListParams(options),
       command: this,
       dependencies
     });

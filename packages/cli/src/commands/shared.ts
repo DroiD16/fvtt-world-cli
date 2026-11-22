@@ -61,6 +61,28 @@ export function nameFilterParams(options: { name?: string }): Record<string, str
   return options.name !== undefined ? { name: options.name } : {};
 }
 
+export interface WorldListOptions {
+  name?: string;
+  folder?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function addWorldListOptions(command: Command): Command {
+  return addNameFilterOption(addPaginationOptions(command)).option(
+    "--folder <folderId>",
+    "Only entries directly in this folder, not in its subfolders (applied server-side before pagination)"
+  );
+}
+
+export function worldListParams(options: WorldListOptions): Record<string, string | number> {
+  return {
+    ...nameFilterParams(options),
+    ...(options.folder !== undefined ? { folder: options.folder } : {}),
+    ...paginationParams(options)
+  };
+}
+
 type ImportPatchFlag = "name" | "img" | "sort";
 
 export const IMPORT_PATCH_FLAGS = {

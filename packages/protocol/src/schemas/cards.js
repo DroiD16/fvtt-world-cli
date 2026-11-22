@@ -6,10 +6,10 @@ import {
   compendiumImportSchema,
   deepFreeze,
   dryRunProperty,
+  folderFilteredListSchema,
   freeformObjectSchema,
   idempotencyKeyProperty,
   nameFilterProperty,
-  nameFilteredListSchema,
   paginationProperties,
   patchFrom
 } from "./shared.js";
@@ -122,7 +122,7 @@ const cardsIdSchema = {
 };
 
 export const cardsCommands = {
-  "cards.list": cmd(nameFilteredListSchema),
+  "cards.list": cmd(folderFilteredListSchema),
   "cards.get": cmd(cardsIdSchema),
   "cards.get-many": cmd({
     type: "object",

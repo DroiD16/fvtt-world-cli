@@ -2530,6 +2530,111 @@ function runV14PlaceableLevelCoverage(summary, { sceneId, ground, roof, actorId,
   );
 }
 
+function runListFilterCoverage(summary, { stamp, created, actorId }) {
+  const actorType = expectOk(
+    summary,
+    "actor.get(fixture type for list filters)",
+    runFoundryctl(["actor", "get", "--actor-id", actorId])
+  )?.actor?.type;
+  const createFolder = (label, name, type, parentId = null) => {
+    const id =
+      expectOk(
+        summary,
+        label,
+        runFoundryctl([
+          "folder",
+          "create",
+          "--name",
+          name,
+          "--type",
+          type,
+          ...(parentId ? ["--folder", parentId] : [])
+        ])
+      )?.folder?.id ?? null;
+    if (id) created.folders.push(id);
+    return id;
+  };
+  const parentId = createFolder("folder.create(list filter parent)", `Smoke Filter ${stamp}`, "Actor");
+  const childId = parentId
+    ? createFolder("folder.create(list filter child)", `Smoke Filter Child ${stamp}`, "Actor", parentId)
+    : null;
+  const itemFolderId = createFolder(
+    "folder.create(list filter Item folder)",
+    `Smoke Filter Items ${stamp}`,
+    "Item"
+  );
+  if (!parentId || !childId || !itemFolderId || typeof actorType !== "string") return;
+
+  const createActor = (name, folderId) => {
+    const id =
+      expectOk(
+        summary,
+        "actor.create(list filter fixture)",
+        runFoundryctl(["actor", "create", "--name", name, "--type", actorType, "--folder", folderId])
+      )?.actor?.id ?? null;
+    if (id) created.actors.push(id);
+    return id;
+  };
+  const directId = createActor(`Smoke Filter Direct ${stamp}`, parentId);
+  const nestedId = createActor(`Smoke Filter Nested ${stamp}`, childId);
+
+  const direct = expectOk(
+    summary,
+    "actor.list(--folder lists direct contents only)",
+    runFoundryctl(["actor", "list", "--folder", parentId, "--limit", "10"])
+  );
+  markAndPush(
+    summary,
+    "actor.list(--folder excludes subfolder contents)",
+    Boolean(directId && nestedId) &&
+      direct?.total === 1 &&
+      direct?.actors?.length === 1 &&
+      direct.actors[0]?.id === directId,
+    { directId, nestedId, total: direct?.total, ids: direct?.actors?.map((row) => row?.id) }
+  );
+  const typed = expectOk(
+    summary,
+    "actor.list(--folder + --type)",
+    runFoundryctl(["actor", "list", "--folder", childId, "--type", actorType])
+  );
+  const otherType = expectOk(
+    summary,
+    "actor.list(--type with no match)",
+    runFoundryctl(["actor", "list", "--folder", childId, "--type", `smoke-no-such-type-${stamp}`])
+  );
+  markAndPush(
+    summary,
+    "actor.list(--type filters by exact type)",
+    typed?.total === 1 && typed?.actors?.[0]?.id === nestedId && otherType?.total === 0,
+    { typed: typed?.actors?.map((row) => row?.id), otherTotal: otherType?.total }
+  );
+  expectErr(
+    summary,
+    "actor.list(--folder of another document type → INVALID_PARAMS)",
+    runFoundryctl(["actor", "list", "--folder", itemFolderId]),
+    "INVALID_PARAMS"
+  );
+  expectErr(
+    summary,
+    "actor.list(--folder unknown → FOLDER_NOT_FOUND)",
+    runFoundryctl(["actor", "list", "--folder", createMissingId("folder", stamp)]),
+    "FOLDER_NOT_FOUND"
+  );
+  const items = expectOk(
+    summary,
+    "item.list(--folder empty Item folder)",
+    runFoundryctl(["item", "list", "--folder", itemFolderId])
+  );
+  markAndPush(
+    summary,
+    "item.list(--folder empty → total 0)",
+    items?.total === 0 && items?.hasMore === false,
+    {
+      total: items?.total
+    }
+  );
+}
+
 function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created, actorId }) {
   const folder = expectOk(
     summary,
@@ -4332,6 +4437,7 @@ function runExtendedCoverage(
 
   try {
     runSceneLevelCoverage(summary, { stamp, worldId, isV14, created, actorId });
+    runListFilterCoverage(summary, { stamp, created, actorId });
 
     const sceneCreate = expectOk(
       summary,

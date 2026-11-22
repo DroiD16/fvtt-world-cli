@@ -1,5 +1,6 @@
 import { BATCH_GET_MAX_IDS, ERROR_CODES, MACRO_EXECUTE_TIMEOUT_DEFAULT_MS } from "../generated/protocol.js";
 import { deriveChatCaptureStatus, startAuthoredChatCapture } from "../lib/chat-capture.js";
+import { filterByFolder } from "../lib/folders.js";
 import { getActorById, getMacroById, getMacrosCollection } from "../lib/game-collections.js";
 import { getSceneEmbeddedById } from "../lib/scene-embedded.js";
 import { omissionFields, serializeValueWithOmissions } from "../lib/setting-values.js";
@@ -272,7 +273,10 @@ function macroRunFailure(error, macroId) {
 export function createMacroHandlers() {
   return {
     async "macro.list"(params) {
-      const macros = filterByName(Array.from(getMacrosCollection()), params.name);
+      const macros = filterByName(
+        filterByFolder(Array.from(getMacrosCollection()), params.folder, "Macro"),
+        params.name
+      );
       const { page, total, hasMore } = paginate(macros, params);
       return {
         macros: page.map((macro) => serializeMacroSummary(macro)),

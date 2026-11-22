@@ -27,14 +27,21 @@ import {
 } from "./field-options.js";
 import {
   type RegistrationContext,
+  type WorldListOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
   addNameFilterOption,
   addPaginationOptions,
   nameFilterParams,
-  paginationParams
+  paginationParams,
+  worldListParams
 } from "./shared.js";
 import { write } from "../deps.js";
+
+interface ActorListOptions extends WorldListOptions {
+  type?: string;
+}
 
 interface ActorItemGetOptions {
   actorId: string;
@@ -73,18 +80,19 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     commandName: "actor.ownership.set",
     noun: "actor"
   });
-  addNameFilterOption(addPaginationOptions(actor.command("list"))).action(async function listActors(options: {
-    name?: string;
-    limit?: number;
-    offset?: number;
-  }) {
-    await executeRemoteCommand({
-      commandName: "actor.list",
-      params: { ...nameFilterParams(options), ...paginationParams(options) },
-      command: this,
-      dependencies
+  addWorldListOptions(actor.command("list"))
+    .option("--type <type>", "Only actors of this exact type (e.g. character, npc)")
+    .action(async function listActors(options: ActorListOptions) {
+      await executeRemoteCommand({
+        commandName: "actor.list",
+        params: {
+          ...worldListParams(options),
+          ...(options.type !== undefined ? { type: options.type } : {})
+        },
+        command: this,
+        dependencies
+      });
     });
-  });
   addActorIncludeOption(actor.command("get").requiredOption("--actor-id <actorId>", "Actor id")).action(
     async function getActor(options: { actorId: string; include?: string[] }) {
       await executeRemoteCommand({

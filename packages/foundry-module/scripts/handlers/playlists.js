@@ -1,3 +1,4 @@
+import { filterByFolder } from "../lib/folders.js";
 import { getPlaylistsCollection } from "../lib/game-collections.js";
 import {
   assertPlaybackMethod,
@@ -53,7 +54,10 @@ function compareSounds(a, b) {
 export function createPlaylistHandlers() {
   return {
     async "playlist.list"(params) {
-      const playlists = filterByName(Array.from(getPlaylistsCollection()), params.name);
+      const playlists = filterByName(
+        filterByFolder(Array.from(getPlaylistsCollection()), params.folder, "Playlist"),
+        params.name
+      );
       const { page, total, hasMore } = paginate(playlists, params);
       return {
         playlists: page.map((playlist) => serializePlaylistSummary(playlist)),

@@ -11,12 +11,12 @@ import {
   compendiumImportSchema,
   dryRunProperty,
   emptyScopeProperties,
+  folderFilteredListSchema,
   freeformObjectSchema,
   idempotencyKeyProperty,
   includeProperty,
   itemGetIncludeProperty,
   nameFilterProperty,
-  nameFilteredListSchema,
   nullableStringSchema,
   paginationProperties,
   patchFrom
@@ -41,7 +41,10 @@ const actorDataSchema = {
 const actorPatchSchema = patchFrom(actorDataSchema, { omit: ["type"] });
 
 export const actorCommands = {
-  "actor.list": cmd(nameFilteredListSchema),
+  "actor.list": cmd({
+    ...folderFilteredListSchema,
+    properties: { ...folderFilteredListSchema.properties, type: { type: "string", minLength: 1 } }
+  }),
   "actor.get": cmd({
     type: "object",
     required: ["actorId"],

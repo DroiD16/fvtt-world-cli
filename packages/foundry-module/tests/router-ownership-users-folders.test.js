@@ -515,6 +515,48 @@ describe("folder management", () => {
     vi.restoreAllMocks();
   });
 
+  it("lists only a folder's direct contents, filtered before pagination", async () => {
+    const response = await router.route(createRequest("actor.list", { folder: "fb", limit: 5 }));
+    expect(response.ok).toBe(true);
+    expect(response.result.actors.map((actor) => actor.id)).toEqual(["act-in-b"]);
+    expect(response.result).toMatchObject({ total: 1, hasMore: false });
+
+    const paged = await router.route(createRequest("actor.list", { folder: "fa", limit: 1, offset: 0 }));
+    expect(paged.result.actors.map((actor) => actor.id)).toEqual(["act-token"]);
+    expect(paged.result.total).toBe(1);
+
+    const scenesInFolder = await router.route(createRequest("scene.list", { folder: "fs" }));
+    expect(scenesInFolder.result.scenes.map((scene) => scene.id)).toEqual(["sc-active"]);
+
+    const decks = await router.route(createRequest("cards.list", { folder: "fcards-empty" }));
+    expect(decks.result).toMatchObject({ cards: [], total: 0 });
+  });
+
+  it("combines the actor type filter with the folder and name filters", async () => {
+    actors.set(createDocument("act-pc", { name: "Goblin Hero", type: "character", folder: "fb" }));
+
+    const byType = await router.route(createRequest("actor.list", { type: "character" }));
+    expect(byType.result.actors.map((actor) => actor.id)).toEqual(["act-pc"]);
+
+    const combined = await router.route(
+      createRequest("actor.list", { folder: "fb", type: "npc", name: "gob" })
+    );
+    expect(combined.result.actors.map((actor) => actor.id)).toEqual(["act-in-b"]);
+  });
+
+  it("refuses an unknown folder and a folder of another document type", async () => {
+    const missing = await router.route(createRequest("actor.list", { folder: "nope" }));
+    expect(missing.ok).toBe(false);
+    expect(missing.error.code).toBe(ERROR_CODES.FOLDER_NOT_FOUND);
+    expect(missing.error.details).toEqual({ folderId: "nope" });
+
+    const wrongType = await router.route(createRequest("actor.list", { folder: "fi" }));
+    expect(wrongType.ok).toBe(false);
+    expect(wrongType.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(wrongType.error.details).toEqual({ folder: "fi", folderType: "Item", documentName: "Actor" });
+    expect(wrongType.error.message).toContain("folder.list --type Actor");
+  });
+
   it("folder.get returns the full projection with children counts", async () => {
     const response = await router.route(createRequest("folder.get", { folderId: "fb" }));
     expect(response.ok).toBe(true);

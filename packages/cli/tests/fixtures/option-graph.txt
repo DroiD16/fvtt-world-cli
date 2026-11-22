@@ -199,6 +199,7 @@ command scene list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command scene get
   aliases=[]
@@ -1528,6 +1529,7 @@ command item list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command item get
   aliases=[]
@@ -1712,6 +1714,7 @@ command journal list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command journal get
   aliases=[]
@@ -1894,6 +1897,7 @@ command macro list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command macro get
   aliases=[]
@@ -1999,6 +2003,7 @@ command playlist list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command playlist get
   aliases=[]
@@ -2207,6 +2212,7 @@ command table list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command table get
   aliases=[]
@@ -2399,6 +2405,7 @@ command cards list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command cards get
   aliases=[]
@@ -2923,6 +2930,8 @@ command actor list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
+  opt --type <type> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only actors of this exact type (e.g. character, npc)
 
 command actor get
   aliases=[]

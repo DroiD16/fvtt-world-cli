@@ -1,5 +1,6 @@
 import { BATCH_GET_MAX_IDS, ERROR_CODES } from "../generated/protocol.js";
 import { findActorTokenReferences } from "../lib/actor-references.js";
+import { filterByFolder } from "../lib/folders.js";
 import { getActorById, getActorsCollection } from "../lib/game-collections.js";
 import {
   cloneDocument,
@@ -52,7 +53,12 @@ export function createActorHandlers() {
     }),
 
     async "actor.list"(params) {
-      const actors = filterByName(Array.from(getActorsCollection()), params.name);
+      const actors = filterByName(
+        filterByFolder(Array.from(getActorsCollection()), params.folder, "Actor").filter(
+          (actor) => params.type == null || actor.type === params.type
+        ),
+        params.name
+      );
       const { page, total, hasMore } = paginate(actors, params);
       return {
         actors: page.map((actor) => serializeActorSummary(actor)),

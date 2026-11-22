@@ -12,6 +12,7 @@ describe("fvtt-world-cli commands", () => {
     [["system", "info"], "system.info", {}],
     [["system", "info", "--include", "modules"], "system.info", { include: ["modules"] }],
     [["scene", "list"], "scene.list", {}],
+    [["scene", "list", "--folder", "fold-1", "--limit", "5"], "scene.list", { folder: "fold-1", limit: 5 }],
     [["scene", "get", "--scene-id", "scene-1"], "scene.get", { sceneId: "scene-1" }],
     [
       [
@@ -63,6 +64,7 @@ describe("fvtt-world-cli commands", () => {
       { from: "worlds/world-1/assets/a.txt", to: "worlds/world-1/assets/b.txt" }
     ],
     [["item", "list"], "item.list", {}],
+    [["item", "list", "--folder", "fold-1"], "item.list", { folder: "fold-1" }],
     [["item", "get", "--item-id", "item-1"], "item.get", { itemId: "item-1" }],
     [
       [
@@ -114,6 +116,11 @@ describe("fvtt-world-cli commands", () => {
       }
     ],
     [["journal", "list"], "journal.list", {}],
+    [
+      ["journal", "list", "--folder", "fold-1", "--name", "lore"],
+      "journal.list",
+      { name: "lore", folder: "fold-1" }
+    ],
     [["journal", "get", "--journal-id", "journal-1"], "journal.get", { journalId: "journal-1" }],
     [
       [
@@ -295,6 +302,7 @@ describe("fvtt-world-cli commands", () => {
     ],
 
     [["macro", "list"], "macro.list", {}],
+    [["macro", "list", "--folder", "fold-1"], "macro.list", { folder: "fold-1" }],
     [["macro", "list", "--name", "heal"], "macro.list", { name: "heal" }],
     [["macro", "get", "--macro-id", "macro-1"], "macro.get", { macroId: "macro-1" }],
     [
@@ -332,8 +340,10 @@ describe("fvtt-world-cli commands", () => {
     [["macro", "get-many", "--ids", "macro-1, macro-2 ,"], "macro.get-many", { ids: ["macro-1", "macro-2"] }],
     [["macro", "delete", "--macro-id", "macro-1"], "macro.delete", { macroId: "macro-1" }],
     [["playlist", "get-many", "--ids", "pl-1,pl-2"], "playlist.get-many", { ids: ["pl-1", "pl-2"] }],
+    [["playlist", "list", "--folder", "fold-1"], "playlist.list", { folder: "fold-1" }],
 
     [["table", "list", "--name", "loot"], "table.list", { name: "loot" }],
+    [["table", "list", "--folder", "fold-1"], "table.list", { folder: "fold-1" }],
     [["table", "get", "--table-id", "tbl-1"], "table.get", { tableId: "tbl-1" }],
     [["table", "get-many", "--ids", "tbl-1, tbl-2 ,"], "table.get-many", { ids: ["tbl-1", "tbl-2"] }],
     [
@@ -373,6 +383,7 @@ describe("fvtt-world-cli commands", () => {
     ],
 
     [["cards", "list", "--name", "deck"], "cards.list", { name: "deck" }],
+    [["cards", "list", "--folder", "fold-1"], "cards.list", { folder: "fold-1" }],
     [["cards", "get", "--cards-id", "crd-1"], "cards.get", { cardsId: "crd-1" }],
     [["cards", "get-many", "--ids", "crd-1, crd-2 ,"], "cards.get-many", { ids: ["crd-1", "crd-2"] }],
     [
@@ -1206,6 +1217,11 @@ describe("fvtt-world-cli commands", () => {
     ],
     [["table", "reset", "--table-id", "tbl-1"], "table.reset", { tableId: "tbl-1" }],
     [["actor", "list"], "actor.list", {}],
+    [
+      ["actor", "list", "--folder", "fold-1", "--type", "npc", "--offset", "2"],
+      "actor.list",
+      { folder: "fold-1", offset: 2, type: "npc" }
+    ],
     [["actor", "get", "--actor-id", "actor-1"], "actor.get", { actorId: "actor-1" }],
 
     [["actor", "get-many", "--ids", "actor-1, actor-2 ,"], "actor.get-many", { ids: ["actor-1", "actor-2"] }],

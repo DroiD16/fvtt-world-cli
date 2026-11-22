@@ -337,6 +337,15 @@ var nameFilteredListSchema = {
   properties: { ...nameFilterProperty, ...paginationProperties },
   additionalProperties: false
 };
+var folderFilterProperty = {
+  folder: { type: "string", minLength: 1 }
+};
+var folderFilteredListSchema = {
+  type: "object",
+  required: [],
+  properties: { ...nameFilterProperty, ...folderFilterProperty, ...paginationProperties },
+  additionalProperties: false
+};
 var dryRunProperty = {
   dryRun: { type: "boolean" }
 };
@@ -694,7 +703,10 @@ var actorDataSchema = {
 };
 var actorPatchSchema = patchFrom(actorDataSchema, { omit: ["type"] });
 var actorCommands = {
-  "actor.list": cmd(nameFilteredListSchema),
+  "actor.list": cmd({
+    ...folderFilteredListSchema,
+    properties: { ...folderFilteredListSchema.properties, type: { type: "string", minLength: 1 } }
+  }),
   "actor.get": cmd({
     type: "object",
     required: ["actorId"],
@@ -1218,7 +1230,7 @@ var cardsIdSchema = {
   additionalProperties: false
 };
 var cardsCommands = {
-  "cards.list": cmd(nameFilteredListSchema),
+  "cards.list": cmd(folderFilteredListSchema),
   "cards.get": cmd(cardsIdSchema),
   "cards.get-many": cmd({
     type: "object",
@@ -2128,7 +2140,7 @@ var imageCommands = {
 
 // packages/protocol/src/schemas/item.js
 var itemCommands = {
-  "item.list": cmd(nameFilteredListSchema),
+  "item.list": cmd(folderFilteredListSchema),
   "item.get": cmd({
     type: "object",
     required: ["itemId"],
@@ -2456,7 +2468,7 @@ var journalClonePatchSchema = {
   minProperties: 1
 };
 var journalCommands = {
-  "journal.list": cmd(nameFilteredListSchema),
+  "journal.list": cmd(folderFilteredListSchema),
   "journal.get": cmd(journalIdSchema),
   "journal.get-many": cmd({
     type: "object",
@@ -2690,7 +2702,7 @@ var macroIdSchema = {
   additionalProperties: false
 };
 var macroCommands = {
-  "macro.list": cmd(nameFilteredListSchema),
+  "macro.list": cmd(folderFilteredListSchema),
   "macro.get": cmd(macroIdSchema),
   "macro.get-many": cmd({
     type: "object",
@@ -2831,7 +2843,7 @@ var playlistIdSchema = {
   additionalProperties: false
 };
 var playlistCommands = {
-  "playlist.list": cmd(nameFilteredListSchema),
+  "playlist.list": cmd(folderFilteredListSchema),
   "playlist.get": cmd(playlistIdSchema),
   "playlist.get-many": cmd({
     type: "object",
@@ -4711,7 +4723,7 @@ var scenePatchSchema = patchFrom(sceneCreateSchema, {
   prepend: { initialLevel: nullableStringSchema }
 });
 var sceneCommands = {
-  "scene.list": cmd(nameFilteredListSchema),
+  "scene.list": cmd(folderFilteredListSchema),
   "scene.get": cmd(sceneIdSchema),
   "scene.get-many": cmd({
     type: "object",
@@ -5030,7 +5042,7 @@ var tableDrawSchema = {
 };
 var TABLE_MUTATION_OUTCOMES = deepFreeze(["committed", "unknown", "not-executed"]);
 var tableCommands = {
-  "table.list": cmd(nameFilteredListSchema),
+  "table.list": cmd(folderFilteredListSchema),
   "table.get": cmd(tableIdSchema),
   "table.get-many": cmd({
     type: "object",
