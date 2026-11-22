@@ -684,6 +684,10 @@ describe("command router", () => {
     });
     expect(statResponse.result.entry.kind).toBe(listedEntry.kind);
     expect(statResponse.result.entry.path).toBe(listedEntry.path);
+    expect(listedEntry).not.toHaveProperty("size");
+    expect(statResponse.result.entry).not.toHaveProperty("size");
+    expect(uploadResponse.result.file.size).toBe(Buffer.byteLength(expectedText));
+    expect(readTextResponse.result.file.size).toBe(Buffer.byteLength(expectedText));
     expect(readTextResponse.result.content).toBe(expectedText);
     expect(readTextResponse.result.file.kind).toBe("file");
     expect(readBase64Response.result.content).toBe(expectedBase64);

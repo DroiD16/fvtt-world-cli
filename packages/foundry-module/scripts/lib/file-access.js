@@ -246,17 +246,15 @@ function getMediaCategory(path, kind, mimeType = null) {
 /**
  * @param {string} path
  * @param {"file" | "directory"} kind
- * @param {number | null} [size]
  * @param {string | null} [mimeType]
  */
-function createEntry(path, kind, size = null, mimeType = null) {
+function createEntry(path, kind, mimeType = null) {
   const name = getName(path);
   return {
     path,
     name,
     extension: kind === "file" ? getExtension(name) : "",
     kind,
-    size: Number.isFinite(size) ? size : null,
     mediaCategory: getMediaCategory(path, kind, mimeType)
   };
 }
@@ -352,14 +350,7 @@ function normalizeBrowseEntries(result, directoryPath) {
   for (const file of files) {
     const path = resolveListedPath(file, directoryPath);
     if (path) {
-      entries.push(
-        createEntry(
-          path,
-          "file",
-          typeof file?.size === "number" ? file.size : null,
-          typeof file?.mimeType === "string" ? file.mimeType : null
-        )
-      );
+      entries.push(createEntry(path, "file", typeof file?.mimeType === "string" ? file.mimeType : null));
     }
   }
 
@@ -911,7 +902,10 @@ export async function readDataFile(
   ensureReadSize(bytes.byteLength, normalizedPath, readLimitBytes);
 
   return {
-    file: createEntry(normalizedPath, "file", bytes.byteLength, response.headers.get("content-type")),
+    file: {
+      ...createEntry(normalizedPath, "file", response.headers.get("content-type")),
+      size: bytes.byteLength
+    },
     encoding,
     content: encoding === "text" ? new TextDecoder().decode(bytes) : toBase64(bytes)
   };
@@ -963,7 +957,10 @@ export async function uploadDataFile(
   const canonicalPath = canonicalizeDataPath(literalPath);
   if (dryRun) {
     return {
-      file: createEntry(canonicalPath, "file", bytes.byteLength, inferMimeType(canonicalPath, mimeType)),
+      file: {
+        ...createEntry(canonicalPath, "file", inferMimeType(canonicalPath, mimeType)),
+        size: bytes.byteLength
+      },
       dryRun: true
     };
   }
@@ -1002,7 +999,7 @@ export async function uploadDataFile(
 
   const storedPath = normalizeFilePath(response.path);
   return {
-    file: createEntry(storedPath, "file", bytes.byteLength, inferMimeType(storedPath, mimeType))
+    file: { ...createEntry(storedPath, "file", inferMimeType(storedPath, mimeType)), size: bytes.byteLength }
   };
 }
 
@@ -1148,7 +1145,7 @@ export async function moveDataFile(from, to, { dryRun = false } = {}) {
 
   if (dryRun) {
     return {
-      file: createEntry(canonicalTo, "file", sourceEntry.size, inferMimeType(canonicalTo, null)),
+      file: createEntry(canonicalTo, "file", inferMimeType(canonicalTo, null)),
       from: canonicalFrom,
       dryRun: true
     };

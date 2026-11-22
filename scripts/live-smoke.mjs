@@ -16669,15 +16669,14 @@ async function main() {
       file: uploadedFile
     });
 
-    const sizeMatches = (actual) => actual == null || actual === expectedBuffer.length;
-
     const fileListRun = runFoundryctl(["file", "list", "--path", testDir]);
     const listedEntry =
       fileListRun.response?.result?.entries?.find((entry) => entry.path === remotePath) || null;
     const fileListOk = Boolean(
       fileListRun.response?.ok &&
       listedEntry?.kind === "file" &&
-      sizeMatches(listedEntry?.size) &&
+      listedEntry !== null &&
+      !Object.hasOwn(listedEntry, "size") &&
       listedEntry?.extension === "txt"
     );
     markAndPush(summary, "file.list(test)", fileListOk, {
@@ -16690,12 +16689,11 @@ async function main() {
     const statOk = Boolean(
       statRun.response?.ok &&
       statEntry?.kind === "file" &&
-      sizeMatches(statEntry?.size) &&
+      !Object.hasOwn(statEntry, "size") &&
       statEntry?.path === remotePath
     );
     markAndPush(summary, "file.stat", statOk, {
       ...summarizeCommand(statRun),
-      expectedSize: expectedBuffer.length,
       entry: statEntry
     });
 

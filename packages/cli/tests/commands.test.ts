@@ -2930,14 +2930,12 @@ describe("fvtt-world-cli commands", () => {
             {
               path: "worlds/world-1/assets",
               kind: "directory",
-              mediaCategory: "directory",
-              size: null
+              mediaCategory: "directory"
             },
             {
               path: "worlds/world-1/assets/map.webp",
               kind: "file",
-              mediaCategory: "image",
-              size: 2048
+              mediaCategory: "image"
             }
           ]
         }
@@ -2946,8 +2944,8 @@ describe("fvtt-world-cli commands", () => {
 
     expect(result.error).toBeNull();
     expect(result.stdout).toContain("Directory: worlds/world-1");
-    expect(result.stdout).toContain("dir\tworlds/world-1/assets\tdirectory\t-");
-    expect(result.stdout).toContain("file\tworlds/world-1/assets/map.webp\timage\t2048");
+    expect(result.stdout).toContain("dir\tworlds/world-1/assets\tdirectory\n");
+    expect(result.stdout).toContain("file\tworlds/world-1/assets/map.webp\timage\n");
   });
 
   it("threads file list --recursive/--max-depth/--max-entries into params", async () => {
@@ -3000,14 +2998,12 @@ describe("fvtt-world-cli commands", () => {
               path: "worlds/world-1/maps",
               kind: "directory",
               mediaCategory: "directory",
-              size: null,
               depth: 1
             },
             {
               path: "worlds/world-1/maps/dungeon.webp",
               kind: "file",
               mediaCategory: "image",
-              size: 4,
               depth: 2
             }
           ]
@@ -3017,8 +3013,8 @@ describe("fvtt-world-cli commands", () => {
 
     expect(result.error).toBeNull();
     expect(result.stdout).toContain("Directory: worlds/world-1 (recursive)");
-    expect(result.stdout).toContain("dir\td1\tworlds/world-1/maps\tdirectory\t-");
-    expect(result.stdout).toContain("file\td2\tworlds/world-1/maps/dungeon.webp\timage\t4");
+    expect(result.stdout).toContain("dir\td1\tworlds/world-1/maps\tdirectory\n");
+    expect(result.stdout).toContain("file\td2\tworlds/world-1/maps/dungeon.webp\timage\n");
     expect(result.stdout).toContain("skipped\tworlds/world-1/secret\tPermission denied");
     expect(result.stdout).toContain("SKIP LIST TRUNCATED");
     expect(result.stdout).toContain("TRUNCATED at worlds/world-1/maps");

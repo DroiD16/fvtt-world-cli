@@ -1450,11 +1450,10 @@ export const RENDERERS = registerRenderers([
 
     return `deleted: ${renderDataPath(result.file?.path)}`;
   }),
-  detailRenderer("file.move", (result) =>
-    [
-      `${result.dryRun ? "would move" : "moved"}: ${renderDataPath(result.from)} -> ${renderDataPath(result.file?.path)}`,
-      `size: ${renderFileSize(result.file?.size)}`
-    ].join("\n")
+  detailRenderer(
+    "file.move",
+    (result) =>
+      `${result.dryRun ? "would move" : "moved"}: ${renderDataPath(result.from)} -> ${renderDataPath(result.file?.path)}`
   )
 ]);
 
