@@ -10,14 +10,22 @@ import { createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
 const UNROUTED_GET_COMMANDS = ["setting.get"];
 
 // Mirrors foundry.utils.parseUuid for absolute UUIDs: a world UUID names its collection, a compendium
-// UUID its pack, and the remaining parts come in type/id pairs.
+// UUID its pack (with Foundry's legacy form that omits the document type, and its redirects of a
+// moved pack), and the remaining parts come in type/id pairs.
+const COMPENDIUM_REDIRECTS = { "Compendium.moved-module.spells": ["Compendium", "world", "test-items"] };
+
 function fakeParseUuid(uuid) {
-  const parts = uuid.split(".");
+  let parts = uuid.split(".");
   const game = /** @type {any} */ (globalThis).game;
   let collection;
   let primary;
   if (parts[0] === "Compendium") {
+    const redirect = COMPENDIUM_REDIRECTS[parts.slice(0, 3).join(".")];
+    if (redirect) parts = [...redirect, ...parts.slice(3)];
     collection = game.packs.get(`${parts[1]}.${parts[2]}`);
+    const packType = collection?.documentName;
+    if (packType && parts[3] !== packType && parts.length % 2 === 0) parts.splice(3, 0, packType);
+    uuid = parts.join(".");
     primary = parts.slice(3, 5);
     parts.splice(0, 5);
   } else {
@@ -104,6 +112,25 @@ describe("document.resolve", () => {
       documentName: "Actor",
       command: COMPENDIUM_ENTRY_COMMAND,
       params: { pack: "world.test-monsters", entryId: "entry-1" }
+    });
+  });
+
+  it("follows Foundry's legacy compendium form and its redirects of a moved pack", async () => {
+    globalThis.game.packs.get("world.test-items").index = new Map([["spell-1", { _id: "spell-1" }]]);
+
+    const legacy = await resolve("Compendium.world.test-monsters.entry-1");
+    const redirected = await resolve("Compendium.moved-module.spells.Item.spell-1");
+
+    expect(legacy.result).toMatchObject({
+      uuid: "Compendium.world.test-monsters.Actor.entry-1",
+      params: { pack: "world.test-monsters", entryId: "entry-1" }
+    });
+    expect(redirected.ok, JSON.stringify(redirected.error ?? {})).toBe(true);
+    expect(redirected.result).toEqual({
+      uuid: "Compendium.world.test-items.Item.spell-1",
+      documentName: "Item",
+      command: COMPENDIUM_ENTRY_COMMAND,
+      params: { pack: "world.test-items", entryId: "spell-1" }
     });
   });
 

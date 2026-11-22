@@ -176,15 +176,15 @@ export function resolveDocumentUuid(uuid) {
     throw unsupported(uuid, "a relative UUID needs the document it is relative to; pass the full UUID");
   }
 
-  const pack = uuid.startsWith("Compendium.")
-    ? getCompendiumPack(uuid.split(".").slice(1, 3).join("."))
-    : null;
   let parsed = null;
   try {
     parsed = /** @type {any} */ (globalThis).foundry?.utils?.parseUuid?.(uuid) ?? null;
   } catch {
     parsed = null;
   }
+  const pack = uuid.startsWith("Compendium.")
+    ? (parsed?.collection ?? getCompendiumPack(uuid.split(".").slice(1, 3).join(".")))
+    : null;
   if (!parsed?.id || !parsed.documentType) {
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
