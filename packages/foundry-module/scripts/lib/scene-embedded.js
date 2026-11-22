@@ -9,7 +9,7 @@ import {
 } from "./write-confirmation.js";
 
 import { hasSceneLevels } from "./foundry-capabilities.js";
-import { getActorById, getGame, getSceneById } from "./game-collections.js";
+import { getActorById, getSceneById } from "./game-collections.js";
 import { payloadKeyField, sanitizeEmbeddedData } from "./sanitize.js";
 import {
   assertRegionBehaviorsAllowed,
