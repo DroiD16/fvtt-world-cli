@@ -1863,7 +1863,11 @@ export function resolveSettingIdentity(options: SettingIdentityOptions) {
   return { namespace: options.namespace, key: options.key };
 }
 
-export function createSettingSetParams(options: SettingIdentityOptions & { valueJson: unknown }) {
+export interface SettingSetOptions extends SettingIdentityOptions {
+  valueJson: unknown;
+}
+
+export function createSettingSetParams(options: SettingSetOptions) {
   return { ...resolveSettingIdentity(options), value: options.valueJson };
 }
 

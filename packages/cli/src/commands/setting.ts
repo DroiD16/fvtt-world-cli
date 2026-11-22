@@ -3,6 +3,7 @@ import { Command, Option } from "commander";
 
 import {
   type SettingIdentityOptions,
+  type SettingSetOptions,
   createSettingSetParams,
   resolveSettingIdentity,
   resolveSettingItems
@@ -106,7 +107,7 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
       "after",
       '\nprevious and value report omissions like setting get, in previousOmissions and valueOmissions. {"$unserializable": ...} markers in --value-json are stored as data.'
     )
-    .action(async function setSetting(options: SettingIdentityOptions & { valueJson: unknown }) {
+    .action(async function setSetting(options: SettingSetOptions) {
       await executeRemoteCommand({
         commandName: "setting.set",
         params: createSettingSetParams(options),
