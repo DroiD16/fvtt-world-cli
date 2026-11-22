@@ -1843,8 +1843,28 @@ function buildUserFields(options: UserFieldOptions) {
   };
 }
 
-export function createSettingSetParams(options: { namespace: string; key: string; valueJson: unknown }) {
-  return { namespace: options.namespace, key: options.key, value: options.valueJson };
+export interface SettingIdentityOptions {
+  namespace?: string;
+  key?: string;
+  id?: { namespace: string; key: string };
+}
+
+export function resolveSettingIdentity(options: SettingIdentityOptions) {
+  if (options.id !== undefined) {
+    return options.id;
+  }
+  if (options.namespace === undefined || options.key === undefined) {
+    throw new CommanderError(
+      1,
+      "fvtt-world-cli.settingIdentity",
+      "Name the setting with --id <namespace>.<key>, or with both --namespace and --key."
+    );
+  }
+  return { namespace: options.namespace, key: options.key };
+}
+
+export function createSettingSetParams(options: SettingIdentityOptions & { valueJson: unknown }) {
+  return { ...resolveSettingIdentity(options), value: options.valueJson };
 }
 
 export async function resolveSettingItems(

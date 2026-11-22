@@ -3367,8 +3367,9 @@ command setting list
 command setting get
   aliases=[]
   summary=
-  opt --namespace <namespace> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Setting namespace (e.g. "core" or a module id)
-  opt --key <key> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Setting key within the namespace
+  opt --namespace <namespace> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Setting namespace (e.g. "core" or a module id)
+  opt --key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Setting key within the namespace
+  opt --id <namespace.key> | parser=parseSettingId | conflicts=["namespace","key"] | choices=- | required=false | hidden=false | default=- | help=The setting as one id, as setting list prints it (e.g. core.chatBubbles); split at the first dot
 
 command setting get-many
   aliases=[]
@@ -3378,8 +3379,9 @@ command setting get-many
 command setting set
   aliases=[]
   summary=Write one registered setting
-  opt --namespace <namespace> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Setting namespace (e.g. "core" or a module id)
-  opt --key <key> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Setting key within the namespace
+  opt --namespace <namespace> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Setting namespace (e.g. "core" or a module id)
+  opt --key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Setting key within the namespace
+  opt --id <namespace.key> | parser=parseSettingId | conflicts=["namespace","key"] | choices=- | required=false | hidden=false | default=- | help=The setting as one id, as setting list prints it (e.g. core.chatBubbles); split at the first dot
   opt --value-json <json> | parser=<anonymous> | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=New value as a JSON literal — true, 42, "text", [..] or {..}; a quoted string stays distinct from a boolean or a number
 
 command setting set-many

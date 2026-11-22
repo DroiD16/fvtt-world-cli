@@ -222,6 +222,16 @@ export function parseUserPermissions(value: string) {
   return object;
 }
 
+export function parseSettingId(value: string) {
+  const separator = value.indexOf(".");
+  if (separator <= 0 || separator === value.length - 1) {
+    throw new InvalidArgumentError(
+      `Expected a setting id <namespace>.<key>, such as core.chatBubbles, received ${value}`
+    );
+  }
+  return { namespace: value.slice(0, separator), key: value.slice(separator + 1) };
+}
+
 export function parseSettingItems(value: string, label: string) {
   const items = parseJsonObjectArray(value, label);
   if (items.length === 0) {

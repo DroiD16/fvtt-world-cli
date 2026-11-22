@@ -2177,6 +2177,21 @@ describe("fvtt-world-cli commands", () => {
     expect(sendCommand).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [["setting", "get", "--id", "core"], "<namespace>.<key>"],
+    [["setting", "get", "--id", ".chatBubbles"], "<namespace>.<key>"],
+    [["setting", "get", "--id", "core."], "<namespace>.<key>"],
+    [["setting", "get", "--id", "core.chatBubbles", "--key", "chatBubbles"], "cannot be used with"],
+    [["setting", "get", "--namespace", "core"], "--id <namespace>.<key>"],
+    [["setting", "set", "--key", "chatBubbles", "--value-json", "true"], "--id <namespace>.<key>"]
+  ])("rejects the setting identity %j locally (no daemon round-trip)", async (argv, token) => {
+    const sendCommand = failIfCalledSendCommand();
+    const result = await runCommand(argv, sendCommand);
+    expect(result.error).toBeInstanceOf(CommanderError);
+    expect(`${result.stderr}${(result.error as CommanderError).message}`).toContain(token);
+    expect(sendCommand).not.toHaveBeenCalled();
+  });
+
   it("reads the macro body from --command-stdin", async () => {
     const body = "// piped body\nui.notifications.info('hi');\n";
     const stdin = Readable.from([body]) as Readable & { isTTY?: boolean };

@@ -3267,6 +3267,21 @@ describe("fvtt-world-cli commands", () => {
       "setting.get",
       { namespace: "my-module", key: "apiKey" }
     ],
+    [
+      ["setting", "get", "--id", "core.chatBubbles"],
+      "setting.get",
+      { namespace: "core", key: "chatBubbles" }
+    ],
+    [
+      ["setting", "get", "--id", "my-module.client.theme"],
+      "setting.get",
+      { namespace: "my-module", key: "client.theme" }
+    ],
+    [
+      ["setting", "set", "--id", "core.chatBubbles", "--value-json", "true"],
+      "setting.set",
+      { namespace: "core", key: "chatBubbles", value: true }
+    ],
 
     [
       ["setting", "get-many", "--ids", "core.chatBubbles, my-module.apiKey"],

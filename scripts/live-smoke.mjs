@@ -1936,19 +1936,15 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
     const settingGetRun = runFoundryctl(["setting", "get", "--namespace", "core", "--key", "chatBubbles"]);
     const previousBubbles = settingGetRun.response?.result?.setting?.value;
     const bubblesReadable = typeof previousBubbles === "boolean";
-    const writeBubbles = (value) =>
-      runFoundryctl([
-        "setting",
-        "set",
-        "--namespace",
-        "core",
-        "--key",
-        "chatBubbles",
-        "--value-json",
-        JSON.stringify(value)
-      ]);
-    const settingSetRun = bubblesReadable ? writeBubbles(!previousBubbles) : null;
-    const settingRestoreRun = settingSetRun?.response?.ok === true ? writeBubbles(previousBubbles) : null;
+    const writeBubbles = (value, identity) =>
+      runFoundryctl(["setting", "set", ...identity, "--value-json", JSON.stringify(value)]);
+    const settingSetRun = bubblesReadable
+      ? writeBubbles(!previousBubbles, ["--namespace", "core", "--key", "chatBubbles"])
+      : null;
+    const settingRestoreRun =
+      settingSetRun?.response?.ok === true
+        ? writeBubbles(previousBubbles, ["--id", "core.chatBubbles"])
+        : null;
     markAndPush(
       summary,
       "dangerous.setting.set(roundtrip)",
@@ -5023,6 +5019,18 @@ function runExtendedCoverage(
           type: coreTime?.setting?.type ?? null,
           value: coreTime?.setting?.value ?? null
         }
+      );
+
+      const coreTimeById = expectOk(
+        summary,
+        "setting.get(--id core.time)",
+        runFoundryctl(["setting", "get", "--id", "core.time"])
+      );
+      markAndPush(
+        summary,
+        "setting.get(--id reads the same setting as --namespace/--key)",
+        coreTimeById?.setting?.id === "core.time" && coreTimeById.setting.namespace === "core",
+        { id: coreTimeById?.setting?.id ?? null, namespace: coreTimeById?.setting?.namespace ?? null }
       );
 
       expectErr(
