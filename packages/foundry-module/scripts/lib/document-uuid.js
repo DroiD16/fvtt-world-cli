@@ -17,6 +17,7 @@ export const UUID_ROUTES = Object.freeze({
   "Item.ActiveEffect": { command: "item.effect.get", idFields: ["itemId", "effectId"] },
   Scene: { command: "scene.get", idFields: ["sceneId"] },
   "Scene.Token": { command: "scene.token.get", idFields: ["sceneId", "tokenId"] },
+  "Scene.Token.Actor": { command: "scene.token.get", idFields: ["sceneId", "tokenId", null] },
   "Scene.Token.Actor.Item": {
     command: "scene.token.item.get",
     idFields: ["sceneId", "tokenId", null, "itemId"]

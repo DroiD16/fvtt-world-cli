@@ -104,6 +104,18 @@ describe("document.resolve", () => {
     });
   });
 
+  it("maps a token's synthetic actor to scene.token.get, checking the actor id", async () => {
+    const response = await resolve("Scene.scene-1.Token.token-a.Actor.actor-1");
+    const wrongActor = await resolve("Scene.scene-1.Token.token-a.Actor.other");
+
+    expect(response.result).toMatchObject({
+      documentName: "Actor",
+      command: "scene.token.get",
+      params: { sceneId: "scene-1", tokenId: "token-a" }
+    });
+    expect(wrongActor.error.code).toBe(ERROR_CODES.ACTOR_NOT_FOUND);
+  });
+
   it("maps a compendium entry, after Foundry's own parsing, to compendium.get", async () => {
     const response = await resolve("Compendium.world.test-monsters.Actor.entry-1");
 
@@ -180,7 +192,6 @@ describe("document.resolve", () => {
       "Setting.abc",
       ".Item.actor-item-1",
       "Compendium.world.test-monsters.Actor.entry-1.Item.x",
-      "Scene.scene-1.Token.token-a.Actor.actor-1",
       "FogExploration.abc"
     ]) {
       const response = await resolve(uuid);

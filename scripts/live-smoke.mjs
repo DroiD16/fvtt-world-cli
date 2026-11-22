@@ -2841,6 +2841,18 @@ function runStatusEffectCoverage(summary, { stamp, created, actorId }) {
       syntheticGet.response?.result?.effect?.id === tokenEffectId,
     { resolve: summarizeCommand(syntheticResolve), get: summarizeCommand(syntheticGet) }
   );
+  const syntheticActor = runFoundryctl([
+    "document",
+    "get",
+    "--uuid",
+    `Scene.${sceneId}.Token.${tokenId}.Actor.${scratchActorId}`
+  ]);
+  markAndPush(
+    summary,
+    "document get(synthetic token actor → scene.token.get)",
+    syntheticActor.response?.ok === true && syntheticActor.response.result?.token?.id === tokenId,
+    summarizeCommand(syntheticActor)
+  );
 }
 
 function runDocumentUuidCoverage(summary, { stamp, actorId }) {

@@ -40,7 +40,7 @@ export function registerDocument({ program, dependencies }: RegistrationContext)
     )
     .addHelpText(
       "after",
-      "\nThe result, its key and its errors are those of the resolved command (document resolve --uuid shows which). A UUID of a document embedded in a compendium entry, a relative UUID, a setting, or a document type with no get command returns UNSUPPORTED_OPERATION."
+      "\nThe result, its key and its errors are those of the resolved command (document resolve --uuid shows which). A token's synthetic actor (Scene.<id>.Token.<id>.Actor.<id>) reads as its token. A UUID of a document embedded in a compendium entry, a relative UUID, a setting, or a document type with no get command returns UNSUPPORTED_OPERATION."
     )
     .action(async function getDocument(this: Command, options: DocumentGetOptions) {
       const resolution = await sendRemoteCommand({
