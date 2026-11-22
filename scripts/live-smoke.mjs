@@ -17146,6 +17146,51 @@ async function main() {
       bytesMatch: Boolean(remoteBuffer?.equals(expectedBuffer))
     });
 
+    const binaryLocalPath = join(tempDir, "binary.png");
+    const binaryBuffer = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe, 0x00, 0x80
+    ]);
+    writeFileSync(binaryLocalPath, binaryBuffer);
+    const binaryRemotePath = `${testDir}/binary-${stamp}.png`;
+    const binaryUploadRun = runFoundryctl([
+      "file",
+      "upload",
+      "--path",
+      binaryRemotePath,
+      "--from-file",
+      binaryLocalPath,
+      "--mime-type",
+      "image/png"
+    ]);
+    if (binaryUploadRun.response?.ok) {
+      const binaryTextRun = runFoundryctl(["file", "read", "--path", binaryRemotePath, "--encoding", "text"]);
+      markAndPush(
+        summary,
+        "file.read(text of bytes that are not UTF-8 → INVALID_PARAMS)",
+        binaryTextRun.response?.ok === false &&
+          binaryTextRun.response.error?.code === "INVALID_PARAMS" &&
+          binaryTextRun.response.error?.details?.encoding === "text",
+        summarizeCommand(binaryTextRun)
+      );
+      const binaryBase64Run = runFoundryctl([
+        "file",
+        "read",
+        "--path",
+        binaryRemotePath,
+        "--encoding",
+        "base64"
+      ]);
+      const binaryBase64 = binaryBase64Run.response?.result?.content ?? null;
+      markAndPush(
+        summary,
+        "file.read(base64 of bytes that are not UTF-8)",
+        Boolean(binaryBase64 && Buffer.from(binaryBase64, "base64").equals(binaryBuffer)),
+        summarizeCommand(binaryBase64Run)
+      );
+    } else {
+      markAndPush(summary, "file.upload(bytes that are not UTF-8)", false, summarizeCommand(binaryUploadRun));
+    }
+
     const diskPath = relativePathToDiskPath(options.foundryDataDir, remotePath);
     summary.artifacts.diskPath = diskPath;
     if (existsSync(diskPath)) {

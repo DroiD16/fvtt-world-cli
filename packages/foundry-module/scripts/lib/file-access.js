@@ -938,8 +938,24 @@ export async function readDataFile(
       size: bytes.byteLength
     },
     encoding,
-    content: encoding === "text" ? new TextDecoder().decode(bytes) : toBase64(bytes)
+    content: encoding === "text" ? decodeUtf8Text(bytes, normalizedPath) : toBase64(bytes)
   };
+}
+
+/**
+ * @param {Uint8Array} bytes
+ * @param {string} path
+ */
+function decodeUtf8Text(bytes, path) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      `${path} is not UTF-8 text, so a text read would replace its bytes; read it with encoding base64`,
+      { path, encoding: "text" }
+    );
+  }
 }
 
 export async function mkdirDataPath(path, { dryRun = false } = {}) {
