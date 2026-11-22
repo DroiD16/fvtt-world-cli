@@ -2237,22 +2237,6 @@ describe("fvtt-world-cli commands", () => {
       expect(JSON.parse(result.stdout).result.item.name).toBe("Spear");
     });
 
-    it("refuses an --include the resolved command does not take, before reading it", async () => {
-      const sendCommand = documentSend({
-        ok: true,
-        result: { uuid: "Macro.m1", documentName: "Macro", command: "macro.get", params: { macroId: "m1" } }
-      });
-
-      const result = await runCommand(
-        ["document", "get", "--uuid", "Macro.m1", "--include", "flags"],
-        sendCommand
-      );
-
-      expect(result.error).toBeInstanceOf(CommanderError);
-      expect((result.error as CommanderError).message).toContain("macro.get");
-      expect(calls(sendCommand).map((call) => call.command)).toEqual(["document.resolve"]);
-    });
-
     it("reports a UUID that does not resolve as the resolve error, without a second call", async () => {
       const sendCommand = documentSend({
         ok: false,

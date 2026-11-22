@@ -1,5 +1,4 @@
-import { COMMAND_DEFINITIONS } from "@fvtt-world-cli/protocol";
-import { Command, CommanderError } from "commander";
+import { Command } from "commander";
 
 import { executeRemoteCommand, printRemoteResponse, sendRemoteCommand } from "../exec.js";
 import { parseCsvList } from "../parse.js";
@@ -8,26 +7,6 @@ import type { RegistrationContext } from "./shared.js";
 interface DocumentGetOptions {
   uuid: string;
   include?: string[];
-}
-
-function includeFor(commandName: string, include: string[] | undefined) {
-  if (include === undefined) {
-    return {};
-  }
-  const allowed: string[] =
-    (COMMAND_DEFINITIONS as Record<string, any>)[commandName]?.paramsSchema?.properties?.include?.items
-      ?.enum ?? [];
-  const unsupported = include.filter((field) => !allowed.includes(field));
-  if (unsupported.length > 0) {
-    throw new CommanderError(
-      1,
-      "fvtt-world-cli.documentInclude",
-      allowed.length === 0
-        ? `The UUID resolves to ${commandName}, which takes no --include.`
-        : `The UUID resolves to ${commandName}, whose --include allows ${allowed.join(", ")}; received ${unsupported.join(", ")}.`
-    );
-  }
-  return { include };
 }
 
 export function registerDocument({ program, dependencies }: RegistrationContext) {
@@ -85,7 +64,7 @@ export function registerDocument({ program, dependencies }: RegistrationContext)
       };
       await executeRemoteCommand({
         commandName: command,
-        params: { ...params, ...includeFor(command, options.include) },
+        params: { ...params, ...(options.include ? { include: options.include } : {}) },
         command: this,
         dependencies
       });
