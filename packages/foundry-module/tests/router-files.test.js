@@ -161,6 +161,15 @@ describe("command router", () => {
     );
     const vanished = await router.route(createRequest("file.size", { path: "worlds/world-1/readme.txt" }));
     expect(vanished.error.code).toBe("FILE_NOT_FOUND");
+
+    globalThis.__routerTestState.fetchOverrides.set(
+      "worlds/world-1/readme.txt",
+      createFetchResponse({ ok: false, status: 403, bytes: new Uint8Array() })
+    );
+    const refused = await router.route(createRequest("file.size", { path: "worlds/world-1/readme.txt" }));
+    expect(refused.error.code).toBe("INTERNAL_ERROR");
+    expect(refused.error.details).toMatchObject({ path: "worlds/world-1/readme.txt", status: 403 });
+    expect(refused.error.message).not.toContain("Content-Length");
   });
 
   it("reads a file whose name contains '#' (per-segment fetch encoding)", async () => {

@@ -854,6 +854,41 @@ function encodeDataPathForFetch(path) {
   return path.split("/").map(encodeDataPathSegment).join("/");
 }
 
+/**
+ * @param {string} entryPath
+ * @param {string} normalizedPath
+ * @param {RequestInit} [init]
+ */
+async function fetchDataFile(entryPath, normalizedPath, init) {
+  if (typeof globalThis.fetch !== "function") {
+    throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Fetch API is not available", {
+      path: normalizedPath
+    });
+  }
+
+  const response = await globalThis.fetch(encodeDataPathForFetch(entryPath), init);
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw createBridgeError(
+        ERROR_CODES.FILE_NOT_FOUND,
+        `Path ${normalizedPath} was not found; use file.list to discover valid paths`,
+        {
+          path: normalizedPath,
+          message: `HTTP 404 while fetching ${normalizedPath}`
+        }
+      );
+    }
+
+    throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, `Failed to read ${normalizedPath}`, {
+      path: normalizedPath,
+      status: response.status,
+      message: `HTTP ${response.status} while fetching ${normalizedPath}`
+    });
+  }
+
+  return response;
+}
+
 export async function sizeDataFile(path) {
   const normalizedPath = normalizeFilePath(path);
   const entry = await statDataPath(normalizedPath);
@@ -861,25 +896,8 @@ export async function sizeDataFile(path) {
     throw createInvalidParamsError("$.params.path must reference a file");
   }
 
-  if (typeof globalThis.fetch !== "function") {
-    throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Fetch API is not available", {
-      path: normalizedPath
-    });
-  }
-
-  const response = await globalThis.fetch(encodeDataPathForFetch(entry.path), {
-    method: "HEAD",
-    cache: "no-store"
-  });
-  if (response.status === 404) {
-    throw createBridgeError(
-      ERROR_CODES.FILE_NOT_FOUND,
-      `Path ${normalizedPath} was not found; use file.list to discover valid paths`,
-      { path: normalizedPath, message: `HTTP 404 for HEAD ${normalizedPath}` }
-    );
-  }
-
-  const declared = response.ok ? response.headers.get("content-length") : null;
+  const response = await fetchDataFile(entry.path, normalizedPath, { method: "HEAD", cache: "no-store" });
+  const declared = response.headers.get("content-length");
   if (typeof declared !== "string" || !/^\d+$/.test(declared.trim())) {
     throw createBridgeError(
       ERROR_CODES.INTERNAL_ERROR,
@@ -903,31 +921,7 @@ export async function readDataFile(
     throw createInvalidParamsError("$.params.path must reference a file");
   }
 
-  if (typeof globalThis.fetch !== "function") {
-    throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Fetch API is not available", {
-      path: normalizedPath
-    });
-  }
-
-  const response = await globalThis.fetch(encodeDataPathForFetch(entry.path));
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw createBridgeError(
-        ERROR_CODES.FILE_NOT_FOUND,
-        `Path ${normalizedPath} was not found; use file.list to discover valid paths`,
-        {
-          path: normalizedPath,
-          message: `HTTP 404 while fetching ${normalizedPath}`
-        }
-      );
-    }
-
-    throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, `Failed to read ${normalizedPath}`, {
-      path: normalizedPath,
-      status: response.status,
-      message: `HTTP ${response.status} while fetching ${normalizedPath}`
-    });
-  }
+  const response = await fetchDataFile(entry.path, normalizedPath);
 
   const declaredSize = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredSize)) {
