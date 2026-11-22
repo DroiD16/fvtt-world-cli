@@ -278,6 +278,22 @@ describe("user + ownership axis", () => {
     );
   });
 
+  it("removes the stale entry of a deleted user, while a level for an unknown user stays refused", async () => {
+    actor.ownership = { default: 0, "player-1": 2, "deleted-user": 3 };
+
+    const removed = await router.route(
+      createRequest("actor.ownership.set", { actorId: "actor-own", users: { "deleted-user": null } })
+    );
+    const level = await router.route(
+      createRequest("actor.ownership.set", { actorId: "actor-own", users: { "deleted-user": 1 } })
+    );
+
+    expect(removed.ok, JSON.stringify(removed.error ?? {})).toBe(true);
+    expect(removed.result.actor.ownership).toEqual({ default: 0, "player-1": 2 });
+    expect(level.ok).toBe(false);
+    expect(level.error.details.invalidUserIds).toEqual(["deleted-user"]);
+  });
+
   it("reports a removal that did not land instead of confirming it", async () => {
     actor.update = vi.fn(async () => actor);
 

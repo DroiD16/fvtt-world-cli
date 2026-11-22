@@ -8,7 +8,7 @@ export function assertKnownOwnershipUsers(users) {
     return;
   }
   const collection = getUsersCollection();
-  const invalid = Object.keys(users).filter((id) => !collection.get?.(id));
+  const invalid = Object.keys(users).filter((id) => users[id] !== null && !collection.get?.(id));
   if (invalid.length === 0) {
     return;
   }
