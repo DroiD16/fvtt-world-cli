@@ -2108,6 +2108,32 @@ describe("worldDocumentName / effectName", () => {
 });
 
 describe("serializeToken", () => {
+  it("returns every stored field and keeps delta for --include delta", () => {
+    const source = {
+      _id: "token-1",
+      name: "Goblin",
+      actorLink: false,
+      displayName: 50,
+      displayBars: 40,
+      alpha: 0.5,
+      lockRotation: true,
+      ring: { enabled: true },
+      detectionModes: [{ id: "basicSight", enabled: true, range: 30 }],
+      movementAction: "walk",
+      _movementHistory: [],
+      delta: { system: { hp: 3 } },
+      flags: {}
+    };
+    const token = { id: "token-1", actorLink: false, toObject: () => structuredClone(source) };
+
+    const plain = serializeToken(token);
+    const withDelta = serializeToken(token, { include: ["delta"] });
+
+    const { delta, ...rest } = source;
+    expect(plain).toEqual({ id: "token-1", ...rest });
+    expect(withDelta.delta).toEqual(delta);
+  });
+
   it("reads nested config (texture/light/sight/bars/flags) from the toObject() source", () => {
     const token = {
       id: "token-1",
@@ -2245,6 +2271,21 @@ describe("serializeTokenSummary", () => {
 });
 
 describe("serializeTile", () => {
+  it("returns every stored field, including alpha, occlusion, restrictions and video", () => {
+    const source = {
+      _id: "tile-1",
+      alpha: 0.7,
+      occlusion: { mode: 1, alpha: 0 },
+      restrictions: { light: true, weather: false },
+      video: { loop: true, autoplay: true, volume: 0 },
+      flags: {}
+    };
+    expect(serializeTile({ id: "tile-1", toObject: () => structuredClone(source) })).toEqual({
+      id: "tile-1",
+      ...source
+    });
+  });
+
   it("reads texture/flags from the toObject() source", () => {
     const tile = {
       id: "tile-1",
@@ -2585,12 +2626,12 @@ describe("serializeDrawing", () => {
     assertStructuredCloneable(result);
   });
 
-  it("reads author from a live User-document accessor when present", () => {
+  it("reads author from the stored source, not the live User-document accessor", () => {
     const drawing = {
       id: "drawing-1",
-      author: { id: "user-9" },
+      author: { id: "user-live" },
       toObject() {
-        return { _id: "drawing-1", x: 0, y: 0 };
+        return { _id: "drawing-1", author: "user-9", x: 0, y: 0 };
       }
     };
     expect(serializeDrawing(drawing).author).toBe("user-9");
@@ -2775,12 +2816,12 @@ describe("serializeMeasuredTemplate", () => {
     assertStructuredCloneable(result);
   });
 
-  it("reads author from a live User-document accessor when present", () => {
+  it("reads author from the stored source, not the live User-document accessor", () => {
     const template = {
       id: "template-1",
-      author: { id: "user-9" },
+      author: { id: "user-live" },
       toObject() {
-        return { _id: "template-1", t: "circle", x: 0, y: 0 };
+        return { _id: "template-1", author: "user-9", t: "circle", x: 0, y: 0 };
       }
     };
     expect(serializeMeasuredTemplate(template).author).toBe("user-9");
@@ -2861,9 +2902,7 @@ describe("serializeRegion", () => {
           _id: null,
           name: "",
           type: "damage",
-          disabled: false,
-          system: { damage: "2d6" },
-          flags: {}
+          system: { damage: "2d6" }
         }
       ],
       flags: { mymod: { z: 1 } }
@@ -2894,14 +2933,12 @@ describe("serializeRegion", () => {
         _id: "b-1",
         name: "Trap",
         type: "executeMacro",
-        disabled: false,
-        system: { uuid: "Macro.abc" },
-        flags: {}
+        system: { uuid: "Macro.abc" }
       }
     ]);
   });
 
-  it("defensively emits empty shapes/behaviors when both source and collections are absent", () => {
+  it("defensively emits empty behaviors when both source and collection are absent", () => {
     const region = {
       id: "region-1",
       toObject() {
@@ -2910,9 +2947,7 @@ describe("serializeRegion", () => {
     };
 
     const result = serializeRegion(region);
-    expect(result.shapes).toEqual([]);
     expect(result.behaviors).toEqual([]);
-    expect(result.elevation).toBeNull();
     assertStructuredCloneable(result);
   });
 });
@@ -2988,7 +3023,7 @@ describe("serializeRegionBehavior", () => {
     }
   };
 
-  it("projects the measured field set from stored source and never echoes _stats", () => {
+  it("returns the stored source with provenance hoisted out of _stats", () => {
     const result = serializeRegionBehavior({
       id: "b-2",
       toObject() {
@@ -2999,7 +3034,7 @@ describe("serializeRegionBehavior", () => {
           disabled: false,
           system: { darknessLevel: 0.5 },
           flags: { mymod: { z: 1 } },
-          _stats: { coreVersion: "13.351" }
+          _stats: { coreVersion: "13.351", duplicateSource: "Scene.s.Region.r.RegionBehavior.b-1" }
         };
       }
     });
@@ -3011,7 +3046,9 @@ describe("serializeRegionBehavior", () => {
       type: "adjustDarknessLevel",
       disabled: false,
       system: { darknessLevel: 0.5 },
-      flags: { mymod: { z: 1 } }
+      flags: { mymod: { z: 1 } },
+      compendiumSource: null,
+      duplicateSource: "Scene.s.Region.r.RegionBehavior.b-1"
     });
 
     expect(result).not.toHaveProperty("ownership");
@@ -3022,24 +3059,6 @@ describe("serializeRegionBehavior", () => {
   it("reports the STORED name, not the localized type label a blank name derives", () => {
     expect(serializeRegionBehavior(backfilledBehavior).name).toBe("");
     expect(serializeRegionBehaviorSummary(backfilledBehavior).name).toBe("");
-  });
-
-  it("defaults an absent disabled/system/flags rather than emitting undefined", () => {
-    const result = serializeRegionBehavior({
-      id: "b-3",
-      toObject() {
-        return { _id: "b-3", type: "pauseGame" };
-      }
-    });
-    expect(result).toEqual({
-      id: "b-3",
-      _id: "b-3",
-      name: "",
-      type: "pauseGame",
-      disabled: false,
-      system: {},
-      flags: {}
-    });
   });
 
   it("summary projection carries identity + name/type/disabled and NOT system/flags", () => {

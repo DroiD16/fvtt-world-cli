@@ -180,7 +180,7 @@ describe("command router", () => {
     );
 
     expect(response.ok).toBe(true);
-    expect(response.result.token.actorId).toBe(null);
+    expect(response.result.token.actorId ?? null).toBe(null);
     expect(response.result.token.name).toBe("Trap Marker");
   });
 
@@ -1471,6 +1471,7 @@ describe("command router", () => {
       expect(response.ok).toBe(true);
       const overrides = /** @type {any} */ (cloneSpy.mock.calls[0][0]);
       expect(overrides).not.toHaveProperty("author");
+      expect(response.result.note.author).toBe(sourceAuthor);
       expect(sourceAuthor).not.toBe("gm-current");
       cloneSpy.mockRestore();
     } finally {
@@ -2003,15 +2004,13 @@ describe("command router", () => {
       { type: "rectangle", x: 0, y: 0, width: 500, height: 500 }
     ]);
 
-    expect(getResponse.result.region.behaviors).toEqual([
+    expect(getResponse.result.region.behaviors).toMatchObject([
       {
         id: "region-lava-behavior-1",
         _id: "region-lava-behavior-1",
         name: "",
         type: "damage",
-        disabled: false,
-        system: { damage: "2d6" },
-        flags: {}
+        system: { damage: "2d6" }
       }
     ]);
 
@@ -2389,8 +2388,8 @@ describe("command router", () => {
       })
     );
     expect(patched.ok).toBe(true);
-    expect(patched.result.region.behaviors).toEqual([
-      { id: null, _id: null, name: "Fresh", type: "pauseGame", disabled: false, system: {}, flags: {} }
+    expect(patched.result.region.behaviors).toMatchObject([
+      { id: null, _id: null, name: "Fresh", type: "pauseGame" }
     ]);
   });
 
@@ -2450,7 +2449,6 @@ describe("command router", () => {
     expect(createResponse.result.behavior).toMatchObject({
       name: "Shout",
       type: "displayScrollingText",
-      disabled: false,
       system: { text: "Boo" }
     });
     const createdId = createResponse.result.behavior.id;
