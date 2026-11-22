@@ -191,7 +191,8 @@ command scene ownership set
   summary=Set scene ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=scene id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command scene list
   aliases=[]
@@ -1521,7 +1522,8 @@ command item ownership set
   summary=Set item ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --item-id <itemId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=item id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command item list
   aliases=[]
@@ -1706,7 +1708,8 @@ command journal ownership set
   opt --journal-id <journalId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=journal id
   opt --page-id <pageId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Target a single journal page (page ownership overrides the entry; level -1 = inherit)
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command journal list
   aliases=[]
@@ -1889,7 +1892,8 @@ command macro ownership set
   summary=Set macro ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --macro-id <macroId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=macro id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command macro list
   aliases=[]
@@ -1995,7 +1999,8 @@ command playlist ownership set
   summary=Set playlist ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --playlist-id <playlistId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=playlist id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command playlist list
   aliases=[]
@@ -2204,7 +2209,8 @@ command table ownership set
   summary=Set table ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --table-id <tableId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=table id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command table list
   aliases=[]
@@ -2397,7 +2403,8 @@ command cards ownership set
   summary=Set cards ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --cards-id <cardsId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=cards id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command cards list
   aliases=[]
@@ -2922,7 +2929,8 @@ command actor ownership set
   summary=Set actor ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=actor id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command actor list
   aliases=[]

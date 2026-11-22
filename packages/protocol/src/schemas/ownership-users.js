@@ -17,7 +17,7 @@ function ownershipUsersSchema(levelSchema) {
     type: "object",
     required: [],
     properties: {},
-    additionalProperties: levelSchema,
+    additionalProperties: { type: [levelSchema.type, "null"], enum: [...levelSchema.enum, null] },
     minProperties: 1
   };
 }

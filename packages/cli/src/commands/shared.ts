@@ -10,6 +10,7 @@ import {
   parseNonNegativeInt,
   parseNumber,
   parseOwnershipLevel,
+  parseOwnershipUserEntry,
   parseOwnershipUsers,
   parsePositiveInt
 } from "../parse.js";
@@ -138,10 +139,19 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
           "Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)"
         ).argParser(parseOwnershipLevel)
       )
-      .option(
-        "--users-json <json>",
-        'Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)',
-        parseOwnershipUsers
+      .addOption(
+        new Option(
+          "--user <userId=level>",
+          "One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)"
+        ).argParser(parseOwnershipUserEntry)
+      )
+      .addOption(
+        new Option(
+          "--users-json <json>",
+          'Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user\'s entry'
+        )
+          .argParser(parseOwnershipUsers)
+          .conflicts("user")
       )
       .action(async function ownershipSet(this: Command, options: Record<string, unknown>) {
         const params: Record<string, unknown> = { [idKey]: options[idKey] };
@@ -151,8 +161,9 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
         if (options.default !== undefined) {
           params.default = options.default;
         }
-        if (options.usersJson !== undefined) {
-          params.users = options.usersJson;
+        const users = options.user ?? options.usersJson;
+        if (users !== undefined) {
+          params.users = users;
         }
         await executeRemoteCommand({ commandName, params, command: this, dependencies });
       });

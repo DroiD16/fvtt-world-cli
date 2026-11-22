@@ -3603,6 +3603,43 @@ describe("fvtt-world-cli commands", () => {
       ["journal", "ownership", "set", "--journal-id", "j-1", "--page-id", "p-1", "--default", "-1"],
       "journal.ownership.set",
       { journalId: "j-1", pageId: "p-1", default: -1 }
+    ],
+    [
+      [
+        "actor",
+        "ownership",
+        "set",
+        "--actor-id",
+        "actor-1",
+        "--user",
+        "player-1=3",
+        "--user",
+        "player-2=default"
+      ],
+      "actor.ownership.set",
+      { actorId: "actor-1", users: { "player-1": 3, "player-2": null } }
+    ],
+    [
+      [
+        "journal",
+        "ownership",
+        "set",
+        "--journal-id",
+        "j-1",
+        "--page-id",
+        "p-1",
+        "--user",
+        "player-1=-1",
+        "--user",
+        "player-2=default"
+      ],
+      "journal.ownership.set",
+      { journalId: "j-1", pageId: "p-1", users: { "player-1": -1, "player-2": null } }
+    ],
+    [
+      ["item", "ownership", "set", "--item-id", "item-1", "--users-json", '{"player-1":null}'],
+      "item.ownership.set",
+      { itemId: "item-1", users: { "player-1": null } }
     ]
   ])("serializes %j to %s", async (argv, expectedCommand, expectedParams) => {
     const sendCommand = vi.fn(async () => ({

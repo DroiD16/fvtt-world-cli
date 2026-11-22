@@ -25,19 +25,43 @@ export function assertKnownOwnershipUsers(users) {
 
 /**
  * @param {any} target
- * @param {{ defaultLevel?: number, users?: Record<string, number> }} [patch]
+ * @returns {Record<string, number>}
  */
-export function mergeOwnershipPatch(target, { defaultLevel, users } = {}) {
+function readStoredOwnership(target) {
   const source = typeof target?.toObject === "function" ? target.toObject() : null;
-  const current = source?.ownership ?? target?.ownership ?? {};
-  const merged = { ...current };
+  return { ...(source?.ownership ?? target?.ownership ?? {}) };
+}
+
+/**
+ * @param {any} target
+ * @param {{ defaultLevel?: number, users?: Record<string, number | null> }} [patch]
+ * @returns {{ ownership: Record<string, number>, patch: Record<string, any> }}
+ */
+export function planOwnershipWrite(target, { defaultLevel, users } = {}) {
+  const stored = readStoredOwnership(target);
+  const ownership = { ...stored };
   if (defaultLevel !== undefined) {
-    merged.default = defaultLevel;
+    ownership.default = defaultLevel;
   }
-  if (users) {
-    for (const [id, level] of Object.entries(users)) {
-      merged[id] = level;
+  let removesStoredEntry = false;
+  for (const [id, level] of Object.entries(users ?? {})) {
+    if (level === null) {
+      removesStoredEntry ||= Object.hasOwn(stored, id);
+      delete ownership[id];
+    } else {
+      ownership[id] = level;
     }
   }
-  return merged;
+
+  return { ownership, patch: removesStoredEntry ? replaceOwnershipPatch(ownership) : { ownership } };
+}
+
+// A merge update cannot delete a user's entry. Foundry's own ownership dialog replaces the whole
+// map instead, and Foundry 14 rejects a deletion operator inside the ownership field.
+/** @param {Record<string, number>} ownership */
+function replaceOwnershipPatch(ownership) {
+  const ForcedReplacement = /** @type {any} */ (globalThis).foundry?.data?.operators?.ForcedReplacement;
+  return typeof ForcedReplacement?.create === "function"
+    ? { ownership: ForcedReplacement.create(ownership) }
+    : { "==ownership": ownership };
 }

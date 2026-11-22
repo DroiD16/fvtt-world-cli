@@ -237,6 +237,60 @@ describe("user + ownership axis", () => {
     expect(actor.update).toHaveBeenCalledWith({ ownership: expected }, expect.anything());
   });
 
+  it("removes a user's entry by replacing the whole map, and confirms the key is gone", async () => {
+    const response = await router.route(
+      createRequest("actor.ownership.set", {
+        actorId: "actor-own",
+        users: { "player-1": null, "player-2": 1 }
+      })
+    );
+
+    expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
+    expect(actor.update).toHaveBeenCalledWith(
+      { "==ownership": { default: 0, "player-2": 1 } },
+      expect.anything()
+    );
+    expect(response.result.actor.ownership).toEqual({ default: 0, "player-2": 1 });
+  });
+
+  it("previews a removal without writing, and treats removing an absent entry as a no-op merge", async () => {
+    const dryRun = await router.route(
+      createRequest("actor.ownership.set", {
+        actorId: "actor-own",
+        users: { "player-1": null },
+        dryRun: true
+      })
+    );
+    expect(dryRun.ok).toBe(true);
+    expect(dryRun.result.dryRun).toBe(true);
+    expect(dryRun.result.actor.ownership).toEqual({ default: 0 });
+    expect(actor.update).not.toHaveBeenCalled();
+    expect(actor.ownership).toEqual({ default: 0, "player-1": 2 });
+
+    const absent = await router.route(
+      createRequest("actor.ownership.set", { actorId: "actor-own", users: { "player-2": null } })
+    );
+    expect(absent.ok, JSON.stringify(absent.error ?? {})).toBe(true);
+    expect(absent.result.actor.ownership).toEqual({ default: 0, "player-1": 2 });
+    expect(actor.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ "==ownership": expect.anything() }),
+      expect.anything()
+    );
+  });
+
+  it("reports a removal that did not land instead of confirming it", async () => {
+    actor.update = vi.fn(async () => actor);
+
+    const response = await router.route(
+      createRequest("actor.ownership.set", { actorId: "actor-own", users: { "player-1": null } })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.details.fields).toEqual(["ownership"]);
+    expect(actor.ownership).toEqual({ default: 0, "player-1": 2 });
+  });
+
   it("shared ownership.set distinguishes a vetoed falsy update from a legitimate empty diff", async () => {
     worldItem.update = vi.fn(async () => undefined);
 
@@ -355,6 +409,23 @@ describe("user + ownership axis", () => {
     expect(page.ownership).toEqual(expected);
 
     expect(journal.update).not.toHaveBeenCalled();
+  });
+
+  it("journal.ownership.set on a page tells a removed entry apart from INHERIT (-1)", async () => {
+    journalPage.ownership = { default: -1, "player-1": 3, "player-2": 1 };
+
+    const response = await router.route(
+      createRequest("journal.ownership.set", {
+        journalId: "journal-own",
+        pageId: "page-1",
+        users: { "player-1": null, "player-2": -1 }
+      })
+    );
+
+    expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
+    const expected = { default: -1, "player-2": -1 };
+    expect(journalPage.update).toHaveBeenCalledWith({ "==ownership": expected }, expect.anything());
+    expect(response.result.journal.pages.find((p) => p.id === "page-1").ownership).toEqual(expected);
   });
 
   it("journal.ownership.set entry-level rejects INHERIT (-1)", async () => {

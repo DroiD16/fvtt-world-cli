@@ -2160,6 +2160,23 @@ describe("fvtt-world-cli commands", () => {
     expect(sendCommand).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [["--user", "u1=7"], "Expected an ownership level"],
+    [["--user", "u1"], "<userId>=default"],
+    [["--user", "=default"], "<userId>=default"],
+    [["--user", "u1=3", "--user", "u1=default"], "more than once"],
+    [["--user", "u1=3", "--users-json", '{"u2":1}'], "cannot be used with"]
+  ])("rejects --user %j locally (no daemon round-trip)", async (flags, token) => {
+    const sendCommand = failIfCalledSendCommand();
+    const result = await runCommand(
+      ["actor", "ownership", "set", "--actor-id", "actor-1", ...flags],
+      sendCommand
+    );
+    expect(result.error).toBeInstanceOf(CommanderError);
+    expect(result.stderr).toContain(token);
+    expect(sendCommand).not.toHaveBeenCalled();
+  });
+
   it("reads the macro body from --command-stdin", async () => {
     const body = "// piped body\nui.notifications.info('hi');\n";
     const stdin = Readable.from([body]) as Readable & { isTTY?: boolean };

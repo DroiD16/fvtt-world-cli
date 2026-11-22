@@ -3914,7 +3914,7 @@ describe("protocol contract", () => {
       const props = /** @type {any} */ (COMMAND_DEFINITIONS["table.ownership.set"].paramsSchema.properties);
       expect(props.tableId).toEqual({ type: "string", minLength: 1 });
       expect(props.default.enum).toEqual([0, 1, 2, 3]);
-      expect(props.users.additionalProperties.enum).toEqual([0, 1, 2, 3]);
+      expect(props.users.additionalProperties.enum).toEqual([0, 1, 2, 3, null]);
 
       expect(props.pageId).toBeUndefined();
       expect(validate("table.ownership.set", { tableId: "t-1", default: 2 }).ok).toBe(true);
@@ -7711,14 +7711,29 @@ describe("protocol contract", () => {
       for (const command of OWNERSHIP_SET_COMMANDS.filter((c) => c !== "journal.ownership.set")) {
         const props = COMMAND_DEFINITIONS[command].paramsSchema.properties;
         expect(props.default.enum, `${command} default enum`).toEqual([0, 1, 2, 3]);
-        expect(props.users.additionalProperties.enum, `${command} users level enum`).toEqual([0, 1, 2, 3]);
+        expect(props.users.additionalProperties.enum, `${command} users level enum`).toEqual([
+          0,
+          1,
+          2,
+          3,
+          null
+        ]);
+      }
+    });
+
+    it("accepts null as a user's level to remove that user's entry, and no other non-level value", () => {
+      for (const command of OWNERSHIP_SET_COMMANDS) {
+        const idField = ID_FIELD[command];
+        expectValid(command, { [idField]: "x", users: { u1: null } });
+        expectRejected(command, { [idField]: "x", users: { u1: "default" } }, "$.params.users.u1 must be");
+        expectRejected(command, { [idField]: "x", default: null }, "$.params.default must be");
       }
     });
 
     it("pins the journal ownership.set level enum to -1..3 (page INHERIT) + pageId", () => {
       const props = /** @type {any} */ (COMMAND_DEFINITIONS["journal.ownership.set"].paramsSchema.properties);
       expect(props.default.enum).toEqual([-1, 0, 1, 2, 3]);
-      expect(props.users.additionalProperties.enum).toEqual([-1, 0, 1, 2, 3]);
+      expect(props.users.additionalProperties.enum).toEqual([-1, 0, 1, 2, 3, null]);
       expect(props.pageId).toEqual({ type: "string", minLength: 1 });
     });
 

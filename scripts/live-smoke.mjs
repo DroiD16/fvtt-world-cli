@@ -5125,6 +5125,81 @@ function runExtendedCoverage(
       );
 
       if (gmUserId) {
+        const ownershipSet = (...flags) =>
+          runFoundryctl(["item", "ownership", "set", "--item-id", createdItemId, ...flags]);
+        const withEntry = expectOk(
+          summary,
+          "item.ownership.set(--user entry)",
+          ownershipSet("--user", `${gmUserId}=2`)
+        );
+        markAndPush(
+          summary,
+          "item.ownership.set(--user entry stored)",
+          withEntry?.item?.ownership?.[gmUserId] === 2,
+          { ownership: withEntry?.item?.ownership ?? null }
+        );
+        const removeDry = runFoundryctl([
+          "--dry-run",
+          "item",
+          "ownership",
+          "set",
+          "--item-id",
+          createdItemId,
+          "--user",
+          `${gmUserId}=default`
+        ]);
+        const afterRemoveDry = expectOk(
+          summary,
+          "item.get(after removal dry-run)",
+          runFoundryctl(["item", "get", "--item-id", createdItemId])
+        );
+        markAndPush(
+          summary,
+          "item.ownership.set(dry-run shows the removal, stored entry stays)",
+          Boolean(
+            removeDry.response?.ok &&
+            removeDry.response.result?.dryRun === true &&
+            removeDry.response.result?.item?.ownership &&
+            !Object.hasOwn(removeDry.response.result.item.ownership, gmUserId) &&
+            afterRemoveDry?.item?.ownership?.[gmUserId] === 2
+          ),
+          {
+            preview: removeDry.response?.result?.item?.ownership ?? null,
+            stored: afterRemoveDry?.item?.ownership
+          }
+        );
+        const removed = expectOk(
+          summary,
+          "item.ownership.set(--user <id>=default removes the entry)",
+          ownershipSet("--user", `${gmUserId}=default`)
+        );
+        const afterRemove = expectOk(
+          summary,
+          "item.get(after entry removal)",
+          runFoundryctl(["item", "get", "--item-id", createdItemId])
+        );
+        const removedAgain = expectOk(
+          summary,
+          "item.ownership.set(removing an absent entry is a no-op)",
+          ownershipSet("--user", `${gmUserId}=default`)
+        );
+        markAndPush(
+          summary,
+          "item.ownership.set(entry absent after removal, default kept)",
+          Boolean(
+            removed?.item?.ownership &&
+            !Object.hasOwn(removed.item.ownership, gmUserId) &&
+            afterRemove?.item?.ownership &&
+            !Object.hasOwn(afterRemove.item.ownership, gmUserId) &&
+            afterRemove.item.ownership.default === 0 &&
+            removedAgain?.item?.ownership &&
+            !Object.hasOwn(removedAgain.item.ownership, gmUserId)
+          ),
+          { removed: removed?.item?.ownership ?? null, stored: afterRemove?.item?.ownership ?? null }
+        );
+      }
+
+      if (gmUserId) {
         const grant = expectOk(
           summary,
           "item.ownership.set(users merge)",
@@ -5899,6 +5974,36 @@ function runExtendedCoverage(
             ownership: inheritedPage?.ownership ?? null
           }
         );
+        if (gmUserId) {
+          const pageOwnership = (level) =>
+            runFoundryctl([
+              "journal",
+              "ownership",
+              "set",
+              "--journal-id",
+              pageJournalId,
+              "--page-id",
+              imagePageId,
+              "--user",
+              `${gmUserId}=${level}`
+            ]);
+          const pageOf = (result) => result?.journal?.pages?.find((page) => page.id === imagePageId) ?? null;
+          const inheritEntry = pageOf(
+            expectOk(summary, "journal.ownership.set(page user entry -1)", pageOwnership("-1"))
+          );
+          const removedEntry = pageOf(
+            expectOk(summary, "journal.ownership.set(page user entry removed)", pageOwnership("default"))
+          );
+          markAndPush(
+            summary,
+            "journal.ownership.set(page entry removal is distinct from INHERIT -1)",
+            inheritEntry?.ownership?.[gmUserId] === -1 &&
+              removedEntry?.ownership != null &&
+              !Object.hasOwn(removedEntry.ownership, gmUserId) &&
+              removedEntry.ownership.default === -1,
+            { inherit: inheritEntry?.ownership ?? null, removed: removedEntry?.ownership ?? null }
+          );
+        }
       }
 
       if (imagePageId) {
