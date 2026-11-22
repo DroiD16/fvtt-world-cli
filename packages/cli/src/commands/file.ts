@@ -19,7 +19,7 @@ interface FileSizeOptions {
 export function registerFile({ program, dependencies }: RegistrationContext) {
   const file = program.command("file").description("Foundry data source file commands");
   file.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.entries[] (list), .result.entry (stat), .result.size (size), .result.content (read; also .result.file), .result.directory (mkdir), .result.file (upload/delete/move; delete also .result.deleted/.result.exists; move also .result.from)."
   );
   addPaginationOptions(

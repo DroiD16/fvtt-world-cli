@@ -162,8 +162,8 @@ Use `--json` for automation. World commands return `ok: true` with `result`, or 
 an `error` containing a code, message, and optional details. Failures exit non-zero. Branch on
 `error.code`, not the message text. See the [response examples](protocol.md#request-and-response-example).
 
-Results use command-specific keys such as `actor`, `items`, or `outcomes`. Use returned document
-`id` fields to address later commands.
+Results use command-specific keys such as `actor`, `items`, or `outcomes`; each command's help names
+its key. Use returned document `id` fields to address later commands.
 
 ### Reading collections and documents
 

@@ -70,7 +70,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerBatchWriteCommands } = createSharedRegistrars(dependencies);
   const actor = program.command("actor").description("Foundry actor commands");
   actor.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.actor (single/write) / .result.actors[] (list, get-many). Embedded items at .result.item; effects at .result.effect."
   );
 

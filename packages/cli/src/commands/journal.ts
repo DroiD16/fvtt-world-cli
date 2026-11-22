@@ -71,8 +71,8 @@ export function registerJournal({ program, dependencies }: RegistrationContext) 
     createSharedRegistrars(dependencies);
   const journal = program.command("journal").description("Foundry journal commands");
   journal.addHelpText(
-    "after",
-    "\nResult key (--json): .result.journal (single/write; pages at .result.journal.pages[]) / .result.journals[] (list)."
+    "afterAll",
+    "\nResult key (--json): .result.journal (single/write; pages at .result.journal.pages[]) / .result.journals[] (list); `journal page` returns .result.page / .result.pages[] and `journal category` .result.category / .result.categories[], each with .result.journalId."
   );
 
   registerBatchWriteCommands(journal, {

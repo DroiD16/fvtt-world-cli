@@ -55,8 +55,8 @@ export function registerItem({ program, dependencies }: RegistrationContext) {
     createSharedRegistrars(dependencies);
   const item = program.command("item").description("Foundry world item commands");
   item.addHelpText(
-    "after",
-    "\nResult key (--json): .result.item (single/write) / .result.items[] (list, get-many)."
+    "afterAll",
+    "\nResult key (--json): .result.item (single/write) / .result.items[] (list, get-many); effects at .result.effect / .result.effects[]."
   );
 
   registerBatchWriteCommands(item, {

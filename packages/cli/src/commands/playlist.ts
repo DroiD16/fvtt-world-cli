@@ -30,7 +30,7 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
   const { registerOwnershipSet, registerCompendiumImport } = createSharedRegistrars(dependencies);
   const playlist = program.command("playlist").description("Foundry playlist commands");
   playlist.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.playlist / .result.playlists[] (list, get-many); sounds at .result.sound / .result.sounds[] (+ .result.playlistId)."
   );
   registerOwnershipSet(playlist, {

@@ -9,7 +9,7 @@ interface SystemInfoOptions {
 export function registerSystem({ program, dependencies }: RegistrationContext) {
   const system = program.command("system").description("Foundry bridge system commands");
   system.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.pong + .result.bridge (ping); .result.foundry.* / .result.system.* / .result.world.* / .result.module.* / .result.moduleCount / .result.activeModuleCount / .result.modules[] (with --include modules) / .result.bridge.* / .result.limits.* (info)."
   );
   system.command("ping").action(async function ping() {

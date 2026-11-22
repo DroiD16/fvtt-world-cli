@@ -109,18 +109,21 @@ signal, not a failure — reconnect and continue rather than retrying the reload
 Discover → inspect schema → locate → read → smallest patch → dry-run → commit → verify. Never
 guess a command name or parameter.
 
-1. Run `fvtt-world-cli commands --json`. Continue only when `policy.applied` (top level, beside
-   `result`) is `true` and the required command is present. A `false` value means no bridge
+1. Run `fvtt-world-cli commands --json`; each `.result[]` entry is `{command, mutation, approval?}`.
+   Continue only when `policy.applied` (top level, beside `result`) is `true` and the required
+   command is present. A `false` value means no bridge
    answered and the output is the static registry, not the client's permissions. Report an absent
    command instead of seeking another way to produce the same effect. Warn the user before a
    command marked `"approval": true`, and prefer one `*-many` command when it can replace several
    approvals. Dotted protocol names map to spaced CLI subcommands, such as `actor.item.update` to
    `actor item update`.
-2. `fvtt-world-cli schema <command>` shows the exact request parameters, required fields, enums,
-   and whether unknown fields are accepted; `fvtt-world-cli <command path> --help` maps flags.
+2. `fvtt-world-cli schema <command> --json` shows in `.result.paramsSchema` the exact request
+   parameters, required fields, enums, and whether unknown fields are accepted;
+   `fvtt-world-cli <command path> --help` maps flags and names the result key.
 3. Locate targets with the narrowest query: a family `list --name <substring> --limit <n>` when
    the family is known, `world.search` when it is not, `compendium.index` for one pack, and
    `document get --uuid <uuid>` for a UUID such as `Actor.<id>` or `Compendium.<pack>.<Type>.<id>`.
+   `system info --include modules` lists the installed modules with versions and active state.
    Page with `limit`/`offset` until `hasMore` is false. List and search rows are lean discovery
    projections, never the basis of a write.
 4. `get` the complete target before mutating and work from the returned ids.
@@ -161,7 +164,9 @@ Documents live under a type-named key inside `result` that varies between comman
 for each one. `id` is the public identifier; a `_id` mirror may accompany it. Values requested
 through `include` flags may be derived or version-dependent. Write them back only when the
 update schema explicitly accepts them. Actor reads return `itemCount` in place of owned items; add
-`--include items` when the task needs them, or use `actor item list` and `actor item get`.
+`--include items` when the task needs them, or use `actor item list` and `actor item get`. Scene
+reads return `counts` per placeable type in place of the placeables; read them with
+`scene <type> list`.
 Stored `system` holds authored inputs only. Computed game values (armor class, skill totals,
 attack bonus, save DC) are in `.prepared.system` with `--include prepared`: `actor get` for the
 actor, `actor item get` or `scene token item get` for an item.

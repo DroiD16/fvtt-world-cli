@@ -190,8 +190,8 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     createSharedRegistrars(dependencies);
   const scene = program.command("scene").description("Foundry scene commands");
   scene.addHelpText(
-    "after",
-    "\nResult key (--json): .result.scene (single/write) / .result.scenes[] (list). Embedded placeables nest under .result.<type> (e.g. .result.token, .result.wall) plus .result.sceneId. Action verbs: .result.thumbnail (thumbnail generate — the persisted asset path is .result.thumbnail.storedPath, the file stat-able value; .thumbnail.thumb is the generated data URL and only with --include-thumb) and .result.clearedCount + .result.confirmation (fog reset — confirmation is observed / nothing-to-observe / not-dispatched; reset:true alone is not proof of an observed reset), both alongside .result.sceneId."
+    "afterAll",
+    "\nResult key (--json): .result.scene (single/write) / .result.scenes[] (list, get-many); get and get-many carry counts (placeables per type), and scene <type> list reads the placeables. Placeables nest under .result.<type> (e.g. .result.token, .result.wall) with .result.sceneId."
   );
   registerOwnershipSet(scene, {
     idFlag: "--scene-id <sceneId>",
@@ -339,7 +339,8 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     )
     .addHelpText(
       "after",
-      "\n.thumbnail.outputWidth and .outputHeight are read from the rendered image itself. They can exceed" +
+      "\nResult key (--json): .result.thumbnail; the stored asset path is .result.thumbnail.storedPath, and .thumbnail.thumb (the generated data URL) comes only with --include-thumb." +
+        "\n.thumbnail.outputWidth and .outputHeight are read from the rendered image itself. They can exceed" +
         "\n--width and --height: Foundry renders at the GM client's pixel ratio when its core setting for" +
         "\npixel-ratio resolution scaling is on. A dry run reports them as null."
     )
@@ -411,7 +412,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
         "the core grid-based templates setting on, Foundry fits templates to grid cells; the snapshot still",
         "draws the plain shape.",
         "",
-        "Result keys (--json): .result.image {path, mimeType, width, height, sizeBytes},",
+        "Result key (--json): .result.image {path, mimeType, width, height, sizeBytes},",
         ".result.transform {scale, offsetX, offsetY} (image pixel = coordinate * scale + offset),",
         ".result.view {x, y, width, height} (the canvas rectangle the image covers), .result.layers,",
         ".result.levelId (v14), .result.partialRender (true when Foundry v13 drew only part of the tiles)."
@@ -437,6 +438,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
   sceneFog
     .command("reset")
     .requiredOption("--scene-id <sceneId>", "Scene id (must be the scene the GM client is viewing)")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.clearedCount and .result.confirmation (observed, nothing-to-observe or not-dispatched); reset:true alone does not prove an observed reset."
+    )
     .action(async function resetSceneFog(options: { sceneId: string }) {
       await executeRemoteCommand({
         commandName: "scene.fog.reset",

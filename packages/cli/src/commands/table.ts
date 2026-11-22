@@ -35,9 +35,12 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
     "rows at .result.result / .result.results[] (+ .result.tableId; rows also ride inside .result.table.results[] on a table read)";
 
   table.addHelpText(
+    "afterAll",
+    `\nResult key (--json): .result.table / .result.tables[] (list, get-many); ${TABLE_RESULT_KEY_HELP}.`
+  );
+  table.addHelpText(
     "after",
-    `\nResult key (--json): .result.table / .result.tables[] (list, get-many); ${TABLE_RESULT_KEY_HELP}.` +
-      "\nAction verbs differ: `table draw` has NO .result.table — read .result.results[] (the drawn rows," +
+    "\nAction verbs differ: `table draw` has NO .result.table — read .result.results[] (the drawn rows," +
       " each carrying its own owning tableId) plus .result.complete/.mutation/.roll/.availableBefore/" +
       ".availableAfter/.chatMessages (and .failure on a partial commit); `table reset` returns" +
       " .result.table plus .result.tableId/.reset/.changedCount."

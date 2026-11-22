@@ -18,8 +18,12 @@ import {
 export function registerFolder({ program, dependencies }: RegistrationContext) {
   const folder = program.command("folder").description("Foundry folder commands");
   folder.addHelpText(
+    "afterAll",
+    "\nResult key (--json): .result.folder (get/create/update) / .result.folders[] (list). Rows carry both id and _id (Folder is a document)."
+  );
+  folder.addHelpText(
     "after",
-    "\nResult key (--json): .result.folder (get/create/update) / .result.folders[] (list). Rows carry both id and _id (Folder is a document). folder delete returns .result.folders/.result.contents (deleted/reparented counts + capped ids), .result.counts, .result.complete, .result.deleted; on a partial commit (.result.complete === false) the folder row is removed last, so the folder itself may survive (.result.deleted === false), the .result.*.deleted lists hold only ids observed gone, and any planned deletion still present surfaces under .result.remaining (folders/contents)."
+    "\nfolder delete returns .result.folders/.result.contents (deleted/reparented counts + capped ids), .result.counts, .result.complete, .result.deleted; on a partial commit (.result.complete === false) the folder row is removed last, so the folder itself may survive (.result.deleted === false), the .result.*.deleted lists hold only ids observed gone, and any planned deletion still present surfaces under .result.remaining (folders/contents)."
   );
   addNameFilterOption(
     addPaginationOptions(

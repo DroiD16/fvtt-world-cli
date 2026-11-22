@@ -45,7 +45,7 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerCompendiumImport } = createSharedRegistrars(dependencies);
   const macro = program.command("macro").description("Foundry macro commands");
   macro.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.macro (single/write) / .result.macros[] (list, get-many)."
   );
   registerOwnershipSet(macro, {

@@ -32,8 +32,13 @@ import { write } from "../deps.js";
 export function registerCombat({ program, dependencies }: RegistrationContext) {
   const combat = program.command("combat").description("Foundry combat (encounter) commands");
   combat.addHelpText(
+    "afterAll",
+    "\nResult key (--json): .result.combat / .result.combats[] (list); `combat combatant` returns" +
+      " .result.combatant / .result.combatants[] and `combat group` .result.group / .result.groups[]."
+  );
+  combat.addHelpText(
     "after",
-    "\nResult key (--json): .result.combat / .result.combats[] (list); `combat delete` returns" +
+    "\n`combat delete` returns" +
       " .result.id/.result.deleted plus .result.otherActiveCombatIdsBefore/" +
       '.otherActiveCombatIdsAfter (both EXCLUDE the combat being deleted — they answer "what ELSE' +
       ' was/is active") and .activatedCombatIds.' +

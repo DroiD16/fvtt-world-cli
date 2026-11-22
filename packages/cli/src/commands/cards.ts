@@ -32,10 +32,14 @@ export function registerCards({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerCompendiumImport } = createSharedRegistrars(dependencies);
   const cards = program.command("cards").description("Foundry card stack (Cards) commands");
   cards.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.cards (a SINGLE stack on get/create/update/clone) /" +
-      " .result.cards[] (list, get-many). The stack's own card rows are .result.cards.cards[]." +
-      "\n`cards delete` is NOT a plain delete: Foundry's Cards#_preDelete RECALLS the stack first, so" +
+      " .result.cards[] (list, get-many). The stack's own card rows are .result.cards.cards[];" +
+      " `cards card` returns .result.card / .result.cards[] (card rows)."
+  );
+  cards.addHelpText(
+    "after",
+    "\n`cards delete` is NOT a plain delete: Foundry's Cards#_preDelete RECALLS the stack first, so" +
       " it mutates OTHER stacks — a DECK pulls its cards back out of every other stack (deleting them" +
       " there, and since the deck goes too they cease to exist), a HAND/PILE pushes its cards back to" +
       " their origin decks. Read .result.recall for every affected stack and card id; `--dry-run`" +

@@ -14,7 +14,7 @@ import { write } from "../deps.js";
 export function registerChat({ program, dependencies }: RegistrationContext) {
   const chat = program.command("chat").description("Foundry chat message commands");
   chat.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.message (single/write) / .result.messages[] (list)."
   );
 
