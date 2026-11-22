@@ -58,7 +58,7 @@ function identityFields(document, data) {
  */
 function storedFields(data, omitted = []) {
   const stored = cloneValue(data) ?? {};
-  for (const key of ["_id", "_stats", ...omitted]) delete stored[key];
+  for (const key of ["_id", "_stats", "ownership", ...omitted]) delete stored[key];
   return data?._stats === undefined ? stored : { ...stored, ...provenanceFields(data) };
 }
 

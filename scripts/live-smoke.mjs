@@ -4737,7 +4737,9 @@ async function runPlaceableSourceCoverage(summary, { sceneId, regionId, gmContro
          const parent = ${name === "behavior"} ? scene.regions.get(${JSON.stringify(regionId)}) : scene;
          return Object.entries(parent.${collection}.get(${JSON.stringify(id)}).toObject()).filter(([, value]) => value !== undefined).map(([key]) => key);`
       )) ?? [];
-    const expected = sourceKeys.filter((key) => key !== "_stats" && !(name === "token" && key === "delta"));
+    const expected = sourceKeys.filter(
+      (key) => key !== "_stats" && key !== "ownership" && !(name === "token" && key === "delta")
+    );
     const missing = expected.filter((key) => !getKeys.includes(key));
     const provenanceOk =
       !sourceKeys.includes("_stats") ||

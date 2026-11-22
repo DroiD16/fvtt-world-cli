@@ -2938,6 +2938,16 @@ describe("serializeRegion", () => {
     ]);
   });
 
+  it("leaves the stored ownership of a v14 region out of the read", () => {
+    const region = {
+      id: "region-1",
+      toObject() {
+        return { _id: "region-1", name: "Owned", ownership: { default: 0, "user-1": 3 } };
+      }
+    };
+    expect(serializeRegion(region)).not.toHaveProperty("ownership");
+  });
+
   it("defensively emits empty behaviors when both source and collection are absent", () => {
     const region = {
       id: "region-1",
