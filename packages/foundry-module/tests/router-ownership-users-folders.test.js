@@ -294,6 +294,17 @@ describe("user + ownership axis", () => {
     expect(level.error.details.invalidUserIds).toEqual(["deleted-user"]);
   });
 
+  it('refuses to remove the default entry that --user default=default and --users-json {"default":null} send', async () => {
+    const response = await router.route(
+      createRequest("actor.ownership.set", { actorId: "actor-own", users: { default: null } })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(response.error.details.invalidUserIds).toEqual(["default"]);
+    expect(actor.update).not.toHaveBeenCalled();
+  });
+
   it("reports a removal that did not land instead of confirming it", async () => {
     actor.update = vi.fn(async () => actor);
 

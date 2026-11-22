@@ -3680,6 +3680,16 @@ describe("fvtt-world-cli commands", () => {
       ["item", "ownership", "set", "--item-id", "item-1", "--users-json", '{"player-1":null}'],
       "item.ownership.set",
       { itemId: "item-1", users: { "player-1": null } }
+    ],
+    [
+      ["item", "ownership", "set", "--item-id", "item-1", "--user", "default=default"],
+      "item.ownership.set",
+      { itemId: "item-1", users: { default: null } }
+    ],
+    [
+      ["item", "ownership", "set", "--item-id", "item-1", "--users-json", '{"default":null}'],
+      "item.ownership.set",
+      { itemId: "item-1", users: { default: null } }
     ]
   ])("serializes %j to %s", async (argv, expectedCommand, expectedParams) => {
     const sendCommand = vi.fn(async () => ({
