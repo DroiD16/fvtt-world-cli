@@ -87,6 +87,8 @@ An unlinked token keeps its own overrides, which edits to its world actor never 
 editing an actor that has placed tokens, read its tokens' overrides
 (`scene token get --include delta,prepared`) and tell the user which tokens the edit will not
 change.
+Turn a condition such as prone on or off with `actor status set` or `scene token status set`, so
+the token HUD finds and toggles the same status effect.
 After placing or moving placeables, check the result with `scene snapshot --out <file>.png` and
 open the image: it draws the scene's documents over the map and writes nothing.
 `scene thumbnail generate` only sets a scene's thumbnail; each call rewrites `thumb` and leaves an
@@ -117,9 +119,10 @@ guess a command name or parameter.
 2. `fvtt-world-cli schema <command>` shows the exact request parameters, required fields, enums,
    and whether unknown fields are accepted; `fvtt-world-cli <command path> --help` maps flags.
 3. Locate targets with the narrowest query: a family `list --name <substring> --limit <n>` when
-   the family is known, `world.search` when it is not, `compendium.index` for one pack. Page with
-   `limit`/`offset` until `hasMore` is false. List and search rows are lean discovery projections,
-   never the basis of a write.
+   the family is known, `world.search` when it is not, `compendium.index` for one pack, and
+   `document get --uuid <uuid>` for a UUID such as `Actor.<id>` or `Compendium.<pack>.<Type>.<id>`.
+   Page with `limit`/`offset` until `hasMore` is false. List and search rows are lean discovery
+   projections, never the basis of a write.
 4. `get` the complete target before mutating and work from the returned ids.
 5. Build the smallest valid patch. Nested objects merge recursively; plain arrays replace
    wholesale; dotted paths reach permitted leaves; `{"-=key": null}` deletes a permitted key, and

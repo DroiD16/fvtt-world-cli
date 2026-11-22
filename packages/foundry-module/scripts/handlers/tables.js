@@ -1,3 +1,4 @@
+import { filterByFolder } from "../lib/folders.js";
 import { getTablesCollection } from "../lib/game-collections.js";
 import {
   assertTableDrawCommitted,
@@ -131,7 +132,10 @@ function nullPreviewResultIds(table) {
 export function createTableHandlers() {
   return {
     async "table.list"(params) {
-      const tables = filterByName(Array.from(getTablesCollection()), params.name);
+      const tables = filterByName(
+        filterByFolder(Array.from(getTablesCollection()), params.folder, "RollTable"),
+        params.name
+      );
       const { page, total, hasMore } = paginate(tables, params);
       return {
         tables: page.map((table) => serializeTableSummary(table)),

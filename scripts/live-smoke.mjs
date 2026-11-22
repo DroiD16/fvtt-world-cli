@@ -1936,19 +1936,15 @@ async function runDangerousSegment(summary, options, { stamp, coverage }) {
     const settingGetRun = runFoundryctl(["setting", "get", "--namespace", "core", "--key", "chatBubbles"]);
     const previousBubbles = settingGetRun.response?.result?.setting?.value;
     const bubblesReadable = typeof previousBubbles === "boolean";
-    const writeBubbles = (value) =>
-      runFoundryctl([
-        "setting",
-        "set",
-        "--namespace",
-        "core",
-        "--key",
-        "chatBubbles",
-        "--value-json",
-        JSON.stringify(value)
-      ]);
-    const settingSetRun = bubblesReadable ? writeBubbles(!previousBubbles) : null;
-    const settingRestoreRun = settingSetRun?.response?.ok === true ? writeBubbles(previousBubbles) : null;
+    const writeBubbles = (value, identity) =>
+      runFoundryctl(["setting", "set", ...identity, "--value-json", JSON.stringify(value)]);
+    const settingSetRun = bubblesReadable
+      ? writeBubbles(!previousBubbles, ["--namespace", "core", "--key", "chatBubbles"])
+      : null;
+    const settingRestoreRun =
+      settingSetRun?.response?.ok === true
+        ? writeBubbles(previousBubbles, ["--id", "core.chatBubbles"])
+        : null;
     markAndPush(
       summary,
       "dangerous.setting.set(roundtrip)",
@@ -2527,6 +2523,395 @@ function runV14PlaceableLevelCoverage(summary, { sceneId, ground, roof, actorId,
       tokenRow: tokenRow?.level ?? null,
       tile: tileGet?.levels ?? null
     }
+  );
+}
+
+function runListFilterCoverage(summary, { stamp, created, actorId }) {
+  const actorType = expectOk(
+    summary,
+    "actor.get(fixture type for list filters)",
+    runFoundryctl(["actor", "get", "--actor-id", actorId])
+  )?.actor?.type;
+  const createFolder = (label, name, type, parentId = null) => {
+    const id =
+      expectOk(
+        summary,
+        label,
+        runFoundryctl([
+          "folder",
+          "create",
+          "--name",
+          name,
+          "--type",
+          type,
+          ...(parentId ? ["--folder", parentId] : [])
+        ])
+      )?.folder?.id ?? null;
+    if (id) created.folders.push(id);
+    return id;
+  };
+  const parentId = createFolder("folder.create(list filter parent)", `Smoke Filter ${stamp}`, "Actor");
+  const childId = parentId
+    ? createFolder("folder.create(list filter child)", `Smoke Filter Child ${stamp}`, "Actor", parentId)
+    : null;
+  const itemFolderId = createFolder(
+    "folder.create(list filter Item folder)",
+    `Smoke Filter Items ${stamp}`,
+    "Item"
+  );
+  if (!parentId || !childId || !itemFolderId || typeof actorType !== "string") return;
+
+  const createActor = (name, folderId) => {
+    const id =
+      expectOk(
+        summary,
+        "actor.create(list filter fixture)",
+        runFoundryctl(["actor", "create", "--name", name, "--type", actorType, "--folder", folderId])
+      )?.actor?.id ?? null;
+    if (id) created.actors.push(id);
+    return id;
+  };
+  const directId = createActor(`Smoke Filter Direct ${stamp}`, parentId);
+  const nestedId = createActor(`Smoke Filter Nested ${stamp}`, childId);
+
+  const direct = expectOk(
+    summary,
+    "actor.list(--folder lists direct contents only)",
+    runFoundryctl(["actor", "list", "--folder", parentId, "--limit", "10"])
+  );
+  markAndPush(
+    summary,
+    "actor.list(--folder excludes subfolder contents)",
+    Boolean(directId && nestedId) &&
+      direct?.total === 1 &&
+      direct?.actors?.length === 1 &&
+      direct.actors[0]?.id === directId,
+    { directId, nestedId, total: direct?.total, ids: direct?.actors?.map((row) => row?.id) }
+  );
+  const typed = expectOk(
+    summary,
+    "actor.list(--folder + --type)",
+    runFoundryctl(["actor", "list", "--folder", childId, "--type", actorType])
+  );
+  const otherType = expectOk(
+    summary,
+    "actor.list(--type with no match)",
+    runFoundryctl(["actor", "list", "--folder", childId, "--type", `smoke-no-such-type-${stamp}`])
+  );
+  markAndPush(
+    summary,
+    "actor.list(--type filters by exact type)",
+    typed?.total === 1 && typed?.actors?.[0]?.id === nestedId && otherType?.total === 0,
+    { typed: typed?.actors?.map((row) => row?.id), otherTotal: otherType?.total }
+  );
+  expectErr(
+    summary,
+    "actor.list(--folder of another document type → INVALID_PARAMS)",
+    runFoundryctl(["actor", "list", "--folder", itemFolderId]),
+    "INVALID_PARAMS"
+  );
+  expectErr(
+    summary,
+    "actor.list(--folder unknown → FOLDER_NOT_FOUND)",
+    runFoundryctl(["actor", "list", "--folder", createMissingId("folder", stamp)]),
+    "FOLDER_NOT_FOUND"
+  );
+  const items = expectOk(
+    summary,
+    "item.list(--folder empty Item folder)",
+    runFoundryctl(["item", "list", "--folder", itemFolderId])
+  );
+  markAndPush(
+    summary,
+    "item.list(--folder empty → total 0)",
+    items?.total === 0 && items?.hasMore === false,
+    {
+      total: items?.total
+    }
+  );
+}
+
+function runStatusEffectCoverage(summary, { stamp, created, actorId }) {
+  const actorType = expectOk(
+    summary,
+    "actor.get(fixture type for status effects)",
+    runFoundryctl(["actor", "get", "--actor-id", actorId])
+  )?.actor?.type;
+  if (typeof actorType !== "string") return;
+  const scratchActorId =
+    expectOk(
+      summary,
+      "actor.create(status effect scratch, unlinked prototype)",
+      runFoundryctl([
+        "actor",
+        "create",
+        "--name",
+        `Smoke Status ${stamp}`,
+        "--type",
+        actorType,
+        "--data-json",
+        JSON.stringify({ prototypeToken: { actorLink: false } })
+      ])
+    )?.actor?.id ?? null;
+  if (!scratchActorId) return;
+  created.actors.push(scratchActorId);
+
+  const setStatus = (statusId, active, extra = []) =>
+    runFoundryctl([
+      "actor",
+      "status",
+      "set",
+      "--actor-id",
+      scratchActorId,
+      "--status-id",
+      statusId,
+      "--active",
+      String(active),
+      ...extra
+    ]);
+  const unknown = setStatus(`smoke-no-such-status-${stamp}`, true);
+  const validStatusIds = unknown.response?.error?.details?.validStatusIds;
+  markAndPush(
+    summary,
+    "actor.status.set(unknown status → INVALID_PARAMS listing the configured ids)",
+    isExpectedError(unknown, "INVALID_PARAMS") && Array.isArray(validStatusIds) && validStatusIds.length > 0,
+    { ...summarizeCommand(unknown), validStatusIds }
+  );
+  if (!Array.isArray(validStatusIds) || validStatusIds.length === 0) return;
+  const statusId = validStatusIds.includes("prone") ? "prone" : validStatusIds[0];
+
+  const preview = runFoundryctl([
+    "--dry-run",
+    "actor",
+    "status",
+    "set",
+    "--actor-id",
+    scratchActorId,
+    "--status-id",
+    statusId,
+    "--active",
+    "true"
+  ]);
+  const on = expectOk(summary, "actor.status.set(on)", setStatus(statusId, true));
+  const onAgain = expectOk(summary, "actor.status.set(on again)", setStatus(statusId, true));
+  const effectsOn = expectOk(
+    summary,
+    "actor.effect.list(after status on)",
+    runFoundryctl(["actor", "effect", "list", "--actor-id", scratchActorId])
+  );
+  markAndPush(
+    summary,
+    "actor.status.set(preview, write, then a no-op; the status effect exists)",
+    preview.response?.ok === true &&
+      preview.response.result?.dryRun === true &&
+      preview.response.result?.previous === false &&
+      preview.response.result?.changed === true &&
+      on?.previous === false &&
+      on?.changed === true &&
+      onAgain?.previous === true &&
+      onAgain?.changed === false &&
+      (effectsOn?.total ?? 0) >= 1,
+    { statusId, preview: preview.response?.result ?? null, on, onAgain, effects: effectsOn?.total ?? null }
+  );
+  const off = expectOk(summary, "actor.status.set(off)", setStatus(statusId, false));
+  const offAgain = expectOk(summary, "actor.status.set(off again)", setStatus(statusId, false));
+  markAndPush(
+    summary,
+    "actor.status.set(off removes the status, then a no-op)",
+    off?.previous === true &&
+      off?.changed === true &&
+      offAgain?.previous === false &&
+      offAgain?.changed === false,
+    { off, offAgain }
+  );
+
+  const sceneId =
+    expectOk(
+      summary,
+      "scene.create(status effect scratch)",
+      runFoundryctl([
+        "scene",
+        "create",
+        "--name",
+        `Smoke Status Scene ${stamp}`,
+        "--width",
+        "1000",
+        "--height",
+        "800"
+      ])
+    )?.scene?.id ?? null;
+  if (!sceneId) return;
+  created.scenes.push(sceneId);
+  const tokenId =
+    expectOk(
+      summary,
+      "scene.token.create(status effect scratch)",
+      runFoundryctl(["scene", "token", "create", "--scene-id", sceneId, "--actor-id", scratchActorId])
+    )?.token?.id ?? null;
+  if (!tokenId) return;
+  const tokenOn = expectOk(
+    summary,
+    "scene.token.status.set(on, overlay)",
+    runFoundryctl([
+      "scene",
+      "token",
+      "status",
+      "set",
+      "--scene-id",
+      sceneId,
+      "--token-id",
+      tokenId,
+      "--status-id",
+      statusId,
+      "--active",
+      "true",
+      "--overlay"
+    ])
+  );
+  const worldActorAfter = runFoundryctl([
+    "--dry-run",
+    "actor",
+    "status",
+    "set",
+    "--actor-id",
+    scratchActorId,
+    "--status-id",
+    statusId,
+    "--active",
+    "true"
+  ]);
+  const tokenOff = expectOk(
+    summary,
+    "scene.token.status.set(off)",
+    runFoundryctl([
+      "scene",
+      "token",
+      "status",
+      "set",
+      "--scene-id",
+      sceneId,
+      "--token-id",
+      tokenId,
+      "--status-id",
+      statusId,
+      "--active",
+      "false"
+    ])
+  );
+  markAndPush(
+    summary,
+    "scene.token.status.set(unlinked token's own actor, world actor untouched)",
+    tokenOn?.actorLink === false &&
+      tokenOn?.mutatesWorldActor === false &&
+      tokenOn?.changed === true &&
+      worldActorAfter.response?.result?.previous === false &&
+      tokenOff?.previous === true &&
+      tokenOff?.changed === true,
+    { tokenOn, worldActorPrevious: worldActorAfter.response?.result?.previous ?? null, tokenOff }
+  );
+
+  const tokenEffectId =
+    expectOk(
+      summary,
+      "scene.token.effect.create(UUID fixture)",
+      runFoundryctl([
+        "scene",
+        "token",
+        "effect",
+        "create",
+        "--scene-id",
+        sceneId,
+        "--token-id",
+        tokenId,
+        "--name",
+        `Smoke UUID Effect ${stamp}`
+      ])
+    )?.effect?.id ?? null;
+  if (!tokenEffectId) return;
+  const syntheticUuid = `Scene.${sceneId}.Token.${tokenId}.Actor.${scratchActorId}.ActiveEffect.${tokenEffectId}`;
+  const syntheticResolve = runFoundryctl(["document", "resolve", "--uuid", syntheticUuid]);
+  const syntheticGet = runFoundryctl(["document", "get", "--uuid", syntheticUuid]);
+  markAndPush(
+    summary,
+    "document.resolve(synthetic token actor effect → scene.token.effect.get)",
+    syntheticResolve.response?.ok === true &&
+      syntheticResolve.response.result?.uuid === syntheticUuid &&
+      syntheticResolve.response.result?.command === "scene.token.effect.get" &&
+      syntheticResolve.response.result?.params?.effectId === tokenEffectId &&
+      syntheticGet.response?.result?.effect?.id === tokenEffectId,
+    { resolve: summarizeCommand(syntheticResolve), get: summarizeCommand(syntheticGet) }
+  );
+  const syntheticActor = runFoundryctl([
+    "document",
+    "get",
+    "--uuid",
+    `Scene.${sceneId}.Token.${tokenId}.Actor.${scratchActorId}`
+  ]);
+  markAndPush(
+    summary,
+    "document get(synthetic token actor → scene.token.get)",
+    syntheticActor.response?.ok === true && syntheticActor.response.result?.token?.id === tokenId,
+    summarizeCommand(syntheticActor)
+  );
+}
+
+function runDocumentUuidCoverage(summary, { stamp, actorId }) {
+  const resolveRun = runFoundryctl(["document", "resolve", "--uuid", `Actor.${actorId}`]);
+  const getRun = runFoundryctl(["document", "get", "--uuid", `Actor.${actorId}`, "--include", "items"]);
+  markAndPush(
+    summary,
+    "document.resolve + document get(world actor → actor.get)",
+    resolveRun.response?.ok === true &&
+      resolveRun.response.result?.uuid === `Actor.${actorId}` &&
+      resolveRun.response.result?.command === "actor.get" &&
+      resolveRun.response.result?.params?.actorId === actorId &&
+      getRun.response?.ok === true &&
+      getRun.response.result?.actor?.id === actorId &&
+      Array.isArray(getRun.response.result.actor.items),
+    { resolve: summarizeCommand(resolveRun), get: summarizeCommand(getRun) }
+  );
+  expectErr(
+    summary,
+    "document.resolve(missing actor → ACTOR_NOT_FOUND)",
+    runFoundryctl(["document", "resolve", "--uuid", `Actor.${createMissingId("actor", stamp)}`]),
+    "ACTOR_NOT_FOUND"
+  );
+  expectErr(
+    summary,
+    "document.resolve(setting → UNSUPPORTED_OPERATION)",
+    runFoundryctl(["document", "resolve", "--uuid", "Setting.smokeSettingId00"]),
+    "UNSUPPORTED_OPERATION"
+  );
+
+  const packs = runFoundryctl(["compendium", "list", "--limit", "500"]).response?.result?.packs ?? [];
+  for (const pack of packs) {
+    if (!pack?.id || !pack?.type) continue;
+    const entryId = runFoundryctl(["compendium", "index", "--pack", pack.id, "--limit", "1"]).response?.result
+      ?.entries?.[0]?.id;
+    if (!entryId) continue;
+    const canonical = `Compendium.${pack.id}.${pack.type}.${entryId}`;
+    const legacy = runFoundryctl(["document", "resolve", "--uuid", `Compendium.${pack.id}.${entryId}`]);
+    const entry = runFoundryctl(["document", "get", "--uuid", canonical]);
+    markAndPush(
+      summary,
+      "document.resolve(legacy compendium UUID → canonical, compendium.get)",
+      legacy.response?.ok === true &&
+        legacy.response.result?.uuid === canonical &&
+        legacy.response.result?.command === "compendium.get" &&
+        legacy.response.result?.params?.entryId === entryId &&
+        entry.response?.ok === true,
+      { legacy: summarizeCommand(legacy), get: summarizeCommand(entry) }
+    );
+    expectErr(
+      summary,
+      "document.resolve(document inside a compendium entry → UNSUPPORTED_OPERATION)",
+      runFoundryctl(["document", "resolve", "--uuid", `${canonical}.ActiveEffect.${entryId}`]),
+      "UNSUPPORTED_OPERATION"
+    );
+    return;
+  }
+  summary.notes.push(
+    "document.resolve: this world has no compendium entry, so compendium UUIDs were not resolved on this run"
   );
 }
 
@@ -4332,6 +4717,9 @@ function runExtendedCoverage(
 
   try {
     runSceneLevelCoverage(summary, { stamp, worldId, isV14, created, actorId });
+    runListFilterCoverage(summary, { stamp, created, actorId });
+    runStatusEffectCoverage(summary, { stamp, created, actorId });
+    runDocumentUuidCoverage(summary, { stamp, actorId });
 
     const sceneCreate = expectOk(
       summary,
@@ -4919,6 +5307,18 @@ function runExtendedCoverage(
         }
       );
 
+      const coreTimeById = expectOk(
+        summary,
+        "setting.get(--id core.time)",
+        runFoundryctl(["setting", "get", "--id", "core.time"])
+      );
+      markAndPush(
+        summary,
+        "setting.get(--id reads the same setting as --namespace/--key)",
+        coreTimeById?.setting?.id === "core.time" && coreTimeById.setting.namespace === "core",
+        { id: coreTimeById?.setting?.id ?? null, namespace: coreTimeById?.setting?.namespace ?? null }
+      );
+
       expectErr(
         summary,
         "setting.get(unregistered → SETTING_NOT_FOUND)",
@@ -5017,6 +5417,81 @@ function runExtendedCoverage(
           ownership: afterDry?.item?.ownership ?? null
         }
       );
+
+      if (gmUserId) {
+        const ownershipSet = (...flags) =>
+          runFoundryctl(["item", "ownership", "set", "--item-id", createdItemId, ...flags]);
+        const withEntry = expectOk(
+          summary,
+          "item.ownership.set(--user entry)",
+          ownershipSet("--user", `${gmUserId}=2`)
+        );
+        markAndPush(
+          summary,
+          "item.ownership.set(--user entry stored)",
+          withEntry?.item?.ownership?.[gmUserId] === 2,
+          { ownership: withEntry?.item?.ownership ?? null }
+        );
+        const removeDry = runFoundryctl([
+          "--dry-run",
+          "item",
+          "ownership",
+          "set",
+          "--item-id",
+          createdItemId,
+          "--user",
+          `${gmUserId}=default`
+        ]);
+        const afterRemoveDry = expectOk(
+          summary,
+          "item.get(after removal dry-run)",
+          runFoundryctl(["item", "get", "--item-id", createdItemId])
+        );
+        markAndPush(
+          summary,
+          "item.ownership.set(dry-run shows the removal, stored entry stays)",
+          Boolean(
+            removeDry.response?.ok &&
+            removeDry.response.result?.dryRun === true &&
+            removeDry.response.result?.item?.ownership &&
+            !Object.hasOwn(removeDry.response.result.item.ownership, gmUserId) &&
+            afterRemoveDry?.item?.ownership?.[gmUserId] === 2
+          ),
+          {
+            preview: removeDry.response?.result?.item?.ownership ?? null,
+            stored: afterRemoveDry?.item?.ownership
+          }
+        );
+        const removed = expectOk(
+          summary,
+          "item.ownership.set(--user <id>=default removes the entry)",
+          ownershipSet("--user", `${gmUserId}=default`)
+        );
+        const afterRemove = expectOk(
+          summary,
+          "item.get(after entry removal)",
+          runFoundryctl(["item", "get", "--item-id", createdItemId])
+        );
+        const removedAgain = expectOk(
+          summary,
+          "item.ownership.set(removing an absent entry is a no-op)",
+          ownershipSet("--user", `${gmUserId}=default`)
+        );
+        markAndPush(
+          summary,
+          "item.ownership.set(entry absent after removal, default kept)",
+          Boolean(
+            removed?.item?.ownership &&
+            !Object.hasOwn(removed.item.ownership, gmUserId) &&
+            afterRemove?.item?.ownership &&
+            !Object.hasOwn(afterRemove.item.ownership, gmUserId) &&
+            afterRemove.item.ownership.default === 0 &&
+            removedAgain?.item?.ownership &&
+            !Object.hasOwn(removedAgain.item.ownership, gmUserId)
+          ),
+          { removed: removed?.item?.ownership ?? null, stored: afterRemove?.item?.ownership ?? null }
+        );
+      }
 
       if (gmUserId) {
         const grant = expectOk(
@@ -5793,6 +6268,36 @@ function runExtendedCoverage(
             ownership: inheritedPage?.ownership ?? null
           }
         );
+        if (gmUserId) {
+          const pageOwnership = (level) =>
+            runFoundryctl([
+              "journal",
+              "ownership",
+              "set",
+              "--journal-id",
+              pageJournalId,
+              "--page-id",
+              imagePageId,
+              "--user",
+              `${gmUserId}=${level}`
+            ]);
+          const pageOf = (result) => result?.journal?.pages?.find((page) => page.id === imagePageId) ?? null;
+          const inheritEntry = pageOf(
+            expectOk(summary, "journal.ownership.set(page user entry -1)", pageOwnership("-1"))
+          );
+          const removedEntry = pageOf(
+            expectOk(summary, "journal.ownership.set(page user entry removed)", pageOwnership("default"))
+          );
+          markAndPush(
+            summary,
+            "journal.ownership.set(page entry removal is distinct from INHERIT -1)",
+            inheritEntry?.ownership?.[gmUserId] === -1 &&
+              removedEntry?.ownership != null &&
+              !Object.hasOwn(removedEntry.ownership, gmUserId) &&
+              removedEntry.ownership.default === -1,
+            { inherit: inheritEntry?.ownership ?? null, removed: removedEntry?.ownership ?? null }
+          );
+        }
       }
 
       if (imagePageId) {
@@ -16563,15 +17068,14 @@ async function main() {
       file: uploadedFile
     });
 
-    const sizeMatches = (actual) => actual == null || actual === expectedBuffer.length;
-
     const fileListRun = runFoundryctl(["file", "list", "--path", testDir]);
     const listedEntry =
       fileListRun.response?.result?.entries?.find((entry) => entry.path === remotePath) || null;
     const fileListOk = Boolean(
       fileListRun.response?.ok &&
       listedEntry?.kind === "file" &&
-      sizeMatches(listedEntry?.size) &&
+      listedEntry !== null &&
+      !Object.hasOwn(listedEntry, "size") &&
       listedEntry?.extension === "txt"
     );
     markAndPush(summary, "file.list(test)", fileListOk, {
@@ -16584,14 +17088,37 @@ async function main() {
     const statOk = Boolean(
       statRun.response?.ok &&
       statEntry?.kind === "file" &&
-      sizeMatches(statEntry?.size) &&
+      !Object.hasOwn(statEntry, "size") &&
       statEntry?.path === remotePath
     );
     markAndPush(summary, "file.stat", statOk, {
       ...summarizeCommand(statRun),
-      expectedSize: expectedBuffer.length,
       entry: statEntry
     });
+
+    const sizeRun = runFoundryctl(["file", "size", "--path", remotePath]);
+    markAndPush(
+      summary,
+      "file.size(HEAD Content-Length equals the uploaded byte count)",
+      Boolean(
+        sizeRun.response?.ok &&
+        sizeRun.response.result?.path === remotePath &&
+        sizeRun.response.result?.size === expectedBuffer.length
+      ),
+      { ...summarizeCommand(sizeRun), expectedSize: expectedBuffer.length }
+    );
+    expectErr(
+      summary,
+      "file.size(missing file → FILE_NOT_FOUND)",
+      runFoundryctl(["file", "size", "--path", `${testDir}/missing-${stamp}.txt`]),
+      "FILE_NOT_FOUND"
+    );
+    expectErr(
+      summary,
+      "file.size(directory → INVALID_PARAMS)",
+      runFoundryctl(["file", "size", "--path", testDir]),
+      "INVALID_PARAMS"
+    );
 
     const readTextRun = runFoundryctl(["file", "read", "--path", remotePath, "--encoding", "text"]);
     const readTextOk = Boolean(

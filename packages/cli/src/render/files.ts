@@ -7,11 +7,11 @@ export function renderFileSize(size: unknown) {
 }
 
 export function renderFileEntryListLine(entry: any) {
-  return `${entry.kind === "directory" ? "dir" : "file"}\t${renderDataPath(entry.path)}\t${entry.mediaCategory ?? "unknown"}\t${renderFileSize(entry.size)}`;
+  return `${entry.kind === "directory" ? "dir" : "file"}\t${renderDataPath(entry.path)}\t${entry.mediaCategory ?? "unknown"}`;
 }
 
 export function renderRecursiveFileEntryListLine(entry: any) {
-  return `${entry.kind === "directory" ? "dir" : "file"}\td${entry.depth ?? 0}\t${renderDataPath(entry.path)}\t${entry.mediaCategory ?? "unknown"}\t${renderFileSize(entry.size)}`;
+  return `${entry.kind === "directory" ? "dir" : "file"}\td${entry.depth ?? 0}\t${renderDataPath(entry.path)}\t${entry.mediaCategory ?? "unknown"}`;
 }
 
 export function renderFileEntryDetails(entry: any) {
@@ -20,7 +20,6 @@ export function renderFileEntryDetails(entry: any) {
     `name: ${entry.name ?? ""}`,
     `kind: ${entry.kind ?? "unknown"}`,
     `extension: ${entry.extension ?? ""}`,
-    `media category: ${entry.mediaCategory ?? "unknown"}`,
-    `size: ${renderFileSize(entry.size)}`
+    `media category: ${entry.mediaCategory ?? "unknown"}`
   ].join("\n");
 }

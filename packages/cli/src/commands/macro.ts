@@ -17,12 +17,11 @@ import { parseIdList, parsePositiveInt } from "../parse.js";
 import { addMacroFieldOptions } from "./field-options.js";
 import {
   type RegistrationContext,
+  type WorldListOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
-  addNameFilterOption,
-  addPaginationOptions,
-  nameFilterParams,
-  paginationParams
+  worldListParams
 } from "./shared.js";
 import { write } from "../deps.js";
 
@@ -53,14 +52,10 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
     commandName: "macro.ownership.set",
     noun: "macro"
   });
-  addNameFilterOption(addPaginationOptions(macro.command("list"))).action(async function listMacros(options: {
-    name?: string;
-    limit?: number;
-    offset?: number;
-  }) {
+  addWorldListOptions(macro.command("list")).action(async function listMacros(options: WorldListOptions) {
     await executeRemoteCommand({
       commandName: "macro.list",
-      params: { ...nameFilterParams(options), ...paginationParams(options) },
+      params: worldListParams(options),
       command: this,
       dependencies
     });

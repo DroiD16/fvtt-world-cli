@@ -191,7 +191,8 @@ command scene ownership set
   summary=Set scene ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=scene id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command scene list
   aliases=[]
@@ -199,6 +200,7 @@ command scene list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command scene get
   aliases=[]
@@ -639,6 +641,19 @@ command scene token item effect delete
   opt --token-id <tokenId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Token id
   opt --item-id <itemId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Item id
   opt --effect-id <effectId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Effect id
+
+command scene token status
+  aliases=[]
+  summary=Placed-token status effects (conditions) on the token's actor
+
+command scene token status set
+  aliases=[]
+  summary=Turn one configured status effect on or off, as the token HUD does
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --token-id <tokenId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Token id
+  opt --status-id <statusId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Status id from CONFIG.statusEffects (e.g. prone)
+  opt --active <active> | parser=parseBoolean | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Requested state (true|false)
+  opt --overlay | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Show the status as the token's large overlay icon when it is turned on
 
 command scene token effect
   aliases=[]
@@ -1520,7 +1535,8 @@ command item ownership set
   summary=Set item ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --item-id <itemId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=item id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command item list
   aliases=[]
@@ -1528,6 +1544,7 @@ command item list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command item get
   aliases=[]
@@ -1704,7 +1721,8 @@ command journal ownership set
   opt --journal-id <journalId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=journal id
   opt --page-id <pageId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Target a single journal page (page ownership overrides the entry; level -1 = inherit)
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command journal list
   aliases=[]
@@ -1712,6 +1730,7 @@ command journal list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command journal get
   aliases=[]
@@ -1886,7 +1905,8 @@ command macro ownership set
   summary=Set macro ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --macro-id <macroId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=macro id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command macro list
   aliases=[]
@@ -1894,6 +1914,7 @@ command macro list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command macro get
   aliases=[]
@@ -1991,7 +2012,8 @@ command playlist ownership set
   summary=Set playlist ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --playlist-id <playlistId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=playlist id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command playlist list
   aliases=[]
@@ -1999,6 +2021,7 @@ command playlist list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command playlist get
   aliases=[]
@@ -2199,7 +2222,8 @@ command table ownership set
   summary=Set table ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --table-id <tableId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=table id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command table list
   aliases=[]
@@ -2207,6 +2231,7 @@ command table list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command table get
   aliases=[]
@@ -2391,7 +2416,8 @@ command cards ownership set
   summary=Set cards ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --cards-id <cardsId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=cards id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command cards list
   aliases=[]
@@ -2399,6 +2425,7 @@ command cards list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
 
 command cards get
   aliases=[]
@@ -2915,7 +2942,8 @@ command actor ownership set
   summary=Set actor ownership levels (0=none, 1=limited, 2=observer, 3=owner)
   opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=actor id
   opt --default <level> | parser=parseOwnershipLevel | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Default ownership level for all users (0=none, 1=limited, 2=observer, 3=owner)
-  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3} (use `fvtt-world-cli user list` for ids)
+  opt --user <userId=level> | parser=parseOwnershipUserEntry | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=One user's level, or <userId>=default to remove the user's entry so the document's default level applies (repeatable; use `fvtt-world-cli user list` for ids)
+  opt --users-json <json> | parser=parseOwnershipUsers | conflicts=["user"] | choices=- | required=false | hidden=false | default=- | help=Per-user levels as a JSON object, e.g. {"<userId>":3}; null removes that user's entry
 
 command actor list
   aliases=[]
@@ -2923,6 +2951,8 @@ command actor list
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
   opt --name <substring> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Case-insensitive substring filter on the entry name (applied server-side before pagination)
+  opt --folder <folderId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only entries directly in this folder, not in its subfolders (applied server-side before pagination)
+  opt --type <type> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Only actors of this exact type (e.g. character, npc)
 
 command actor get
   aliases=[]
@@ -2995,6 +3025,18 @@ command actor import-from-compendium
   opt --token-img <tokenImg> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Prototype token texture override (the placed token's image)
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort override
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra override fields as a JSON object (merged into updateData)
+
+command actor status
+  aliases=[]
+  summary=Actor status effects (conditions)
+
+command actor status set
+  aliases=[]
+  summary=Turn one configured status effect on or off, as the token HUD does
+  opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Actor id
+  opt --status-id <statusId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Status id from CONFIG.statusEffects (e.g. prone)
+  opt --active <active> | parser=parseBoolean | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Requested state (true|false)
+  opt --overlay | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Show the status as the token's large overlay icon when it is turned on
 
 command actor item
   aliases=[]
@@ -3350,8 +3392,9 @@ command setting list
 command setting get
   aliases=[]
   summary=
-  opt --namespace <namespace> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Setting namespace (e.g. "core" or a module id)
-  opt --key <key> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Setting key within the namespace
+  opt --namespace <namespace> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Setting namespace (e.g. "core" or a module id)
+  opt --key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Setting key within the namespace
+  opt --id <namespace.key> | parser=parseSettingId | conflicts=["namespace","key"] | choices=- | required=false | hidden=false | default=- | help=The setting as one id, as setting list prints it (e.g. core.chatBubbles); split at the first dot
 
 command setting get-many
   aliases=[]
@@ -3361,8 +3404,9 @@ command setting get-many
 command setting set
   aliases=[]
   summary=Write one registered setting
-  opt --namespace <namespace> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Setting namespace (e.g. "core" or a module id)
-  opt --key <key> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Setting key within the namespace
+  opt --namespace <namespace> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Setting namespace (e.g. "core" or a module id)
+  opt --key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Setting key within the namespace
+  opt --id <namespace.key> | parser=parseSettingId | conflicts=["namespace","key"] | choices=- | required=false | hidden=false | default=- | help=The setting as one id, as setting list prints it (e.g. core.chatBubbles); split at the first dot
   opt --value-json <json> | parser=<anonymous> | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=New value as a JSON literal — true, 42, "text", [..] or {..}; a quoted string stays distinct from a boolean or a number
 
 command setting set-many
@@ -3404,6 +3448,21 @@ command compendium get-many
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id
   opt --ids <list> | parser=parseIdList | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Comma-separated entry ids (atomic: all must exist)
   opt --include <fields> | parser=parseCompendiumIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: effects)
+
+command document
+  aliases=[]
+  summary=Read a document by its Foundry UUID
+
+command document resolve
+  aliases=[]
+  summary=Map a UUID to its canonical form and the family get command and parameters that read it
+  opt --uuid <uuid> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Document UUID, such as Actor.<id> or Compendium.<pack>.<Type>.<id>
+
+command document get
+  aliases=[]
+  summary=Read a document by UUID: resolve it, then run the family get command it maps to
+  opt --uuid <uuid> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Document UUID, such as Actor.<id> or Compendium.<pack>.<Type>.<id>
+  opt --include <fields> | parser=<anonymous> | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields, as the resolved get command accepts them
 
 command folder
   aliases=[]
@@ -3476,6 +3535,11 @@ command file stat
   aliases=[]
   summary=
   opt --path <path> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default="" | help=Data-relative file or directory path
+
+command file size
+  aliases=[]
+  summary=Report a file's size in bytes, as the Content-Length the server sends for an HTTP HEAD request
+  opt --path <path> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Data-relative file path
 
 command file read
   aliases=[]

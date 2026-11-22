@@ -8,17 +8,17 @@ import {
   compendiumImportSchema,
   dryRunProperty,
   emptyScopeProperties,
+  folderFilteredListSchema,
   idempotencyKeyProperty,
   includeProperty,
   itemGetIncludeProperty,
   itemScopeProperties,
   nameFilterProperty,
-  nameFilteredListSchema,
   paginationProperties
 } from "./shared.js";
 
 export const itemCommands = {
-  "item.list": cmd(nameFilteredListSchema),
+  "item.list": cmd(folderFilteredListSchema),
   "item.get": cmd({
     type: "object",
     required: ["itemId"],

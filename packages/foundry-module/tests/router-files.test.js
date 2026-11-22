@@ -100,6 +100,78 @@ describe("command router", () => {
     expect(response.result.content).toBe("hello world");
   });
 
+  it("reports a file's size from the Content-Length of a HEAD request", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+
+    const response = await router.route(createRequest("file.size", { path: "worlds/world-1/readme.txt" }));
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toEqual({ path: "worlds/world-1/readme.txt", size: 11 });
+    expect(globalThis.fetch).toHaveBeenCalledWith("worlds/world-1/readme.txt", {
+      method: "HEAD",
+      cache: "no-store"
+    });
+  });
+
+  it("refuses a file size it cannot read from the response instead of guessing", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const overrides = globalThis.__routerTestState.fetchOverrides;
+
+    for (const contentLength of ["", "12abc", "-1"]) {
+      overrides.set(
+        "worlds/world-1/readme.txt",
+        createFetchResponse({ ok: true, status: 200, bytes: new Uint8Array(11), contentLength })
+      );
+      const response = await router.route(createRequest("file.size", { path: "worlds/world-1/readme.txt" }));
+      expect(response.ok).toBe(false);
+      expect(response.error.code).toBe("INTERNAL_ERROR");
+      expect(response.error.details).toMatchObject({
+        path: "worlds/world-1/readme.txt",
+        status: 200,
+        contentLength
+      });
+      expect(response.error.message).toContain("Content-Length");
+    }
+
+    overrides.set("worlds/world-1/readme.txt", {
+      ok: true,
+      status: 200,
+      headers: { get: () => null }
+    });
+    const missing = await router.route(createRequest("file.size", { path: "worlds/world-1/readme.txt" }));
+    expect(missing.error.code).toBe("INTERNAL_ERROR");
+    expect(missing.error.details.contentLength).toBeNull();
+  });
+
+  it("reports a missing file, a directory and a path outside the data source as for file.stat", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+
+    const missing = await router.route(createRequest("file.size", { path: "worlds/world-1/nope.txt" }));
+    expect(missing.error.code).toBe("FILE_NOT_FOUND");
+
+    const directory = await router.route(createRequest("file.size", { path: "worlds/world-1/maps" }));
+    expect(directory.error.code).toBe("INVALID_PARAMS");
+
+    const traversal = await router.route(createRequest("file.size", { path: "worlds/../secret.txt" }));
+    expect(traversal.error.code).toBe("PATH_NOT_ALLOWED");
+
+    globalThis.__routerTestState.fetchOverrides.set(
+      "worlds/world-1/readme.txt",
+      createFetchResponse({ ok: false, status: 404, bytes: new Uint8Array() })
+    );
+    const vanished = await router.route(createRequest("file.size", { path: "worlds/world-1/readme.txt" }));
+    expect(vanished.error.code).toBe("FILE_NOT_FOUND");
+
+    globalThis.__routerTestState.fetchOverrides.set(
+      "worlds/world-1/readme.txt",
+      createFetchResponse({ ok: false, status: 403, bytes: new Uint8Array() })
+    );
+    const refused = await router.route(createRequest("file.size", { path: "worlds/world-1/readme.txt" }));
+    expect(refused.error.code).toBe("INTERNAL_ERROR");
+    expect(refused.error.details).toMatchObject({ path: "worlds/world-1/readme.txt", status: 403 });
+    expect(refused.error.message).not.toContain("Content-Length");
+  });
+
   it("reads a file whose name contains '#' (per-segment fetch encoding)", async () => {
     const router = createCommandRouter({
       bridgeClient: { getStatus: () => ({ status: "connected" }) }
@@ -684,6 +756,10 @@ describe("command router", () => {
     });
     expect(statResponse.result.entry.kind).toBe(listedEntry.kind);
     expect(statResponse.result.entry.path).toBe(listedEntry.path);
+    expect(listedEntry).not.toHaveProperty("size");
+    expect(statResponse.result.entry).not.toHaveProperty("size");
+    expect(uploadResponse.result.file.size).toBe(Buffer.byteLength(expectedText));
+    expect(readTextResponse.result.file.size).toBe(Buffer.byteLength(expectedText));
     expect(readTextResponse.result.content).toBe(expectedText);
     expect(readTextResponse.result.file.kind).toBe("file");
     expect(readBase64Response.result.content).toBe(expectedBase64);

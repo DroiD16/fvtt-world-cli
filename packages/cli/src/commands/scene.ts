@@ -91,14 +91,25 @@ import {
 } from "./field-options.js";
 import {
   type RegistrationContext,
+  type StatusSetOptions,
+  type WorldListOptions,
+  addStatusSetOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
   addNameFilterOption,
   addPaginationOptions,
   nameFilterParams,
-  paginationParams
+  paginationParams,
+  statusSetParams,
+  worldListParams
 } from "./shared.js";
 import { write } from "../deps.js";
+
+interface TokenStatusSetOptions extends StatusSetOptions {
+  sceneId: string;
+  tokenId: string;
+}
 
 interface SceneLevelScopeOptions {
   sceneId: string;
@@ -188,14 +199,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     commandName: "scene.ownership.set",
     noun: "scene"
   });
-  addNameFilterOption(addPaginationOptions(scene.command("list"))).action(async function listScenes(options: {
-    name?: string;
-    limit?: number;
-    offset?: number;
-  }) {
+  addWorldListOptions(scene.command("list")).action(async function listScenes(options: WorldListOptions) {
     await executeRemoteCommand({
       commandName: "scene.list",
-      params: { ...nameFilterParams(options), ...paginationParams(options) },
+      params: worldListParams(options),
       command: this,
       dependencies
     });
@@ -1885,6 +1892,22 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     commandName: "scene.import-from-compendium",
     noun: "scene",
     packExample: "dnd5e.scenes"
+  });
+
+  addStatusSetOptions(
+    sceneToken
+      .command("status")
+      .description("Placed-token status effects (conditions) on the token's actor")
+      .command("set")
+      .requiredOption("--scene-id <sceneId>", "Scene id")
+      .requiredOption("--token-id <tokenId>", "Token id")
+  ).action(async function setTokenStatus(options: TokenStatusSetOptions) {
+    await executeRemoteCommand({
+      commandName: "scene.token.status.set",
+      params: { sceneId: options.sceneId, tokenId: options.tokenId, ...statusSetParams(options) },
+      command: this,
+      dependencies
+    });
   });
 
   const sceneTokenEffect = sceneToken

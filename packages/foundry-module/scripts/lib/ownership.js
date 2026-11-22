@@ -8,7 +8,9 @@ export function assertKnownOwnershipUsers(users) {
     return;
   }
   const collection = getUsersCollection();
-  const invalid = Object.keys(users).filter((id) => !collection.get?.(id));
+  const invalid = Object.keys(users).filter(
+    (id) => (users[id] !== null || id === "default") && !collection.get?.(id)
+  );
   if (invalid.length === 0) {
     return;
   }
@@ -25,19 +27,39 @@ export function assertKnownOwnershipUsers(users) {
 
 /**
  * @param {any} target
- * @param {{ defaultLevel?: number, users?: Record<string, number> }} [patch]
+ * @param {{ defaultLevel?: number, users?: Record<string, number | null> }} [patch]
+ * @returns {{ ownership: Record<string, number>, patch: Record<string, any> }}
  */
-export function mergeOwnershipPatch(target, { defaultLevel, users } = {}) {
+export function planOwnershipWrite(target, { defaultLevel, users } = {}) {
   const source = typeof target?.toObject === "function" ? target.toObject() : null;
-  const current = source?.ownership ?? target?.ownership ?? {};
-  const merged = { ...current };
+  /** @type {Record<string, number>} */
+  const stored = { ...(source?.ownership ?? target?.ownership ?? {}) };
+  const ownership = { ...stored };
   if (defaultLevel !== undefined) {
-    merged.default = defaultLevel;
+    ownership.default = defaultLevel;
   }
-  if (users) {
-    for (const [id, level] of Object.entries(users)) {
-      merged[id] = level;
+  let removesStoredEntry = false;
+  for (const [id, level] of Object.entries(users ?? {})) {
+    if (level === null) {
+      removesStoredEntry ||= Object.hasOwn(stored, id);
+      delete ownership[id];
+    } else {
+      ownership[id] = level;
     }
   }
-  return merged;
+
+  if (!removesStoredEntry) {
+    return { ownership, patch: { ownership } };
+  }
+
+  // A merge update cannot delete a user's entry. Foundry's own ownership dialog replaces the whole
+  // map instead, and Foundry 14 rejects a deletion operator inside the ownership field.
+  const ForcedReplacement = /** @type {any} */ (globalThis).foundry?.data?.operators?.ForcedReplacement;
+  return {
+    ownership,
+    patch:
+      typeof ForcedReplacement?.create === "function"
+        ? { ownership: ForcedReplacement.create(ownership) }
+        : { "==ownership": ownership }
+  };
 }

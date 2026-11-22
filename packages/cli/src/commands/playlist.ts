@@ -15,12 +15,15 @@ import { parseIdList, parseNumber } from "../parse.js";
 import { addPlaylistFieldOptions, addPlaylistSoundFieldOptions } from "./field-options.js";
 import {
   type RegistrationContext,
+  type WorldListOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
   addNameFilterOption,
   addPaginationOptions,
   nameFilterParams,
-  paginationParams
+  paginationParams,
+  worldListParams
 } from "./shared.js";
 
 export function registerPlaylist({ program, dependencies }: RegistrationContext) {
@@ -36,16 +39,16 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
     commandName: "playlist.ownership.set",
     noun: "playlist"
   });
-  addNameFilterOption(addPaginationOptions(playlist.command("list"))).action(
-    async function listPlaylists(options: { name?: string; limit?: number; offset?: number }) {
-      await executeRemoteCommand({
-        commandName: "playlist.list",
-        params: { ...nameFilterParams(options), ...paginationParams(options) },
-        command: this,
-        dependencies
-      });
-    }
-  );
+  addWorldListOptions(playlist.command("list")).action(async function listPlaylists(
+    options: WorldListOptions
+  ) {
+    await executeRemoteCommand({
+      commandName: "playlist.list",
+      params: worldListParams(options),
+      command: this,
+      dependencies
+    });
+  });
   playlist
     .command("get")
     .requiredOption("--playlist-id <playlistId>", "Playlist id")

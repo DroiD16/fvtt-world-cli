@@ -93,6 +93,33 @@ export function getFolderDirectContents(folderId, type) {
   return contents;
 }
 
+/**
+ * @template T
+ * @param {T[]} documents
+ * @param {string | null | undefined} folderId
+ * @param {string} documentName
+ * @returns {T[]}
+ */
+export function filterByFolder(documents, folderId, documentName) {
+  if (folderId == null) {
+    return documents;
+  }
+
+  const folder = getFolderById(folderId);
+  const folderType = folder.type ?? null;
+  if (folderType !== documentName) {
+    throw createBridgeError(
+      ERROR_CODES.INVALID_PARAMS,
+      `Folder ${folderId} holds ${folderType} documents, not ${documentName} documents; use folder.list --type ${documentName} to find this family's folders`,
+      { folder: folderId, folderType, documentName }
+    );
+  }
+
+  return documents.filter(
+    (/** @type {any} */ document) => (document.folder?.id ?? document.folder ?? null) === folderId
+  );
+}
+
 function parentChainWalk(newParentId) {
   if (newParentId == null) {
     return { count: 0, chain: [], cycleAt: null };

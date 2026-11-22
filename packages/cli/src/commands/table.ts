@@ -16,12 +16,15 @@ import { parseIdList, parsePositiveInt, parseResultRange } from "../parse.js";
 import { addTableFieldOptions, addTableResultFieldOptions } from "./field-options.js";
 import {
   type RegistrationContext,
+  type WorldListOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
   addNameFilterOption,
   addPaginationOptions,
   nameFilterParams,
-  paginationParams
+  paginationParams,
+  worldListParams
 } from "./shared.js";
 
 export function registerTable({ program, dependencies }: RegistrationContext) {
@@ -45,14 +48,10 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
     commandName: "table.ownership.set",
     noun: "table"
   });
-  addNameFilterOption(addPaginationOptions(table.command("list"))).action(async function listTables(options: {
-    name?: string;
-    limit?: number;
-    offset?: number;
-  }) {
+  addWorldListOptions(table.command("list")).action(async function listTables(options: WorldListOptions) {
     await executeRemoteCommand({
       commandName: "table.list",
-      params: { ...nameFilterParams(options), ...paginationParams(options) },
+      params: worldListParams(options),
       command: this,
       dependencies
     });

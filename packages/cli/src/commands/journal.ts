@@ -22,12 +22,15 @@ import {
 } from "./field-options.js";
 import {
   type RegistrationContext,
+  type WorldListOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
   addNameFilterOption,
   addPaginationOptions,
   nameFilterParams,
-  paginationParams
+  paginationParams,
+  worldListParams
 } from "./shared.js";
 import { write } from "../deps.js";
 
@@ -85,16 +88,14 @@ export function registerJournal({ program, dependencies }: RegistrationContext) 
     noun: "journal",
     withPageId: true
   });
-  addNameFilterOption(addPaginationOptions(journal.command("list"))).action(
-    async function listJournals(options: { name?: string; limit?: number; offset?: number }) {
-      await executeRemoteCommand({
-        commandName: "journal.list",
-        params: { ...nameFilterParams(options), ...paginationParams(options) },
-        command: this,
-        dependencies
-      });
-    }
-  );
+  addWorldListOptions(journal.command("list")).action(async function listJournals(options: WorldListOptions) {
+    await executeRemoteCommand({
+      commandName: "journal.list",
+      params: worldListParams(options),
+      command: this,
+      dependencies
+    });
+  });
   journal
     .command("get")
     .requiredOption("--journal-id <journalId>", "Journal id")

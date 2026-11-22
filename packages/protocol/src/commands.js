@@ -17,6 +17,7 @@ import { cardsCommands } from "./schemas/cards.js";
 import { chatCommands } from "./schemas/chat.js";
 import { combatCommands } from "./schemas/combat.js";
 import { compendiumCommands } from "./schemas/compendium.js";
+import { documentCommands } from "./schemas/document.js";
 import { fileCommands, worldAuditCommands } from "./schemas/file.js";
 import { folderCommands } from "./schemas/folder.js";
 import { gameCommands } from "./schemas/game.js";
@@ -84,6 +85,7 @@ export const COMMAND_DEFINITIONS = deepFreeze(
     actorCompendiumImportCommands,
     worldAuditCommands,
     worldSearchCommands,
+    documentCommands,
     approvalCommands
   ])
 );

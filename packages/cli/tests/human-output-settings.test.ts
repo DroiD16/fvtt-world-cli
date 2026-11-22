@@ -176,14 +176,15 @@ describe("setting.* CLI surface", () => {
     expect(plainNull.stdout).not.toContain("REDACTED");
   });
 
-  it("requires both --namespace and --key on get", async () => {
+  it("requires --id or both --namespace and --key on get", async () => {
     for (const argv of [
+      ["setting", "get"],
       ["setting", "get", "--namespace", "core"],
       ["setting", "get", "--key", "time"]
     ]) {
       const result = await runCommand(argv, failIfCalledSendCommand());
       expect(result.error).toBeInstanceOf(CommanderError);
-      expect(String((result.error as CommanderError).message)).toMatch(/required option/i);
+      expect(String((result.error as CommanderError).message)).toContain("--id <namespace>.<key>");
     }
   });
 });

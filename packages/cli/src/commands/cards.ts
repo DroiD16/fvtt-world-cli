@@ -16,12 +16,15 @@ import {
 import { addCardFieldOptions, addCardsFieldOptions } from "./field-options.js";
 import {
   type RegistrationContext,
+  type WorldListOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
   addNameFilterOption,
   addPaginationOptions,
   nameFilterParams,
-  paginationParams
+  paginationParams,
+  worldListParams
 } from "./shared.js";
 import { write } from "../deps.js";
 
@@ -63,14 +66,10 @@ export function registerCards({ program, dependencies }: RegistrationContext) {
     commandName: "cards.ownership.set",
     noun: "cards"
   });
-  addNameFilterOption(addPaginationOptions(cards.command("list"))).action(async function listCards(options: {
-    name?: string;
-    limit?: number;
-    offset?: number;
-  }) {
+  addWorldListOptions(cards.command("list")).action(async function listCards(options: WorldListOptions) {
     await executeRemoteCommand({
       commandName: "cards.list",
-      params: { ...nameFilterParams(options), ...paginationParams(options) },
+      params: worldListParams(options),
       command: this,
       dependencies
     });

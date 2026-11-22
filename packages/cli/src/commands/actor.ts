@@ -27,14 +27,28 @@ import {
 } from "./field-options.js";
 import {
   type RegistrationContext,
+  type StatusSetOptions,
+  addStatusSetOptions,
+  type WorldListOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
   addNameFilterOption,
   addPaginationOptions,
   nameFilterParams,
-  paginationParams
+  paginationParams,
+  statusSetParams,
+  worldListParams
 } from "./shared.js";
 import { write } from "../deps.js";
+
+interface ActorListOptions extends WorldListOptions {
+  type?: string;
+}
+
+interface ActorStatusSetOptions extends StatusSetOptions {
+  actorId: string;
+}
 
 interface ActorItemGetOptions {
   actorId: string;
@@ -73,18 +87,19 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     commandName: "actor.ownership.set",
     noun: "actor"
   });
-  addNameFilterOption(addPaginationOptions(actor.command("list"))).action(async function listActors(options: {
-    name?: string;
-    limit?: number;
-    offset?: number;
-  }) {
-    await executeRemoteCommand({
-      commandName: "actor.list",
-      params: { ...nameFilterParams(options), ...paginationParams(options) },
-      command: this,
-      dependencies
+  addWorldListOptions(actor.command("list"))
+    .option("--type <type>", "Only actors of this exact type (e.g. character, npc)")
+    .action(async function listActors(options: ActorListOptions) {
+      await executeRemoteCommand({
+        commandName: "actor.list",
+        params: {
+          ...worldListParams(options),
+          ...(options.type !== undefined ? { type: options.type } : {})
+        },
+        command: this,
+        dependencies
+      });
     });
-  });
   addActorIncludeOption(actor.command("get").requiredOption("--actor-id <actorId>", "Actor id")).action(
     async function getActor(options: { actorId: string; include?: string[] }) {
       await executeRemoteCommand({
@@ -213,6 +228,21 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
         dependencies
       });
     });
+
+  addStatusSetOptions(
+    actor
+      .command("status")
+      .description("Actor status effects (conditions)")
+      .command("set")
+      .requiredOption("--actor-id <actorId>", "Actor id")
+  ).action(async function setActorStatus(options: ActorStatusSetOptions) {
+    await executeRemoteCommand({
+      commandName: "actor.status.set",
+      params: { actorId: options.actorId, ...statusSetParams(options) },
+      command: this,
+      dependencies
+    });
+  });
 
   const actorItem = actor.command("item").description("Foundry actor embedded item commands");
   registerBatchWriteCommands(actorItem, {

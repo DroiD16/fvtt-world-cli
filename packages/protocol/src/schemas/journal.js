@@ -6,10 +6,10 @@ import {
   compendiumImportSchema,
   dryRunProperty,
   emptyScopeProperties,
+  folderFilteredListSchema,
   freeformObjectSchema,
   idempotencyKeyProperty,
   nameFilterProperty,
-  nameFilteredListSchema,
   nullableStringSchema,
   paginationProperties,
   patchFrom,
@@ -205,7 +205,7 @@ const journalClonePatchSchema = {
 };
 
 export const journalCommands = {
-  "journal.list": cmd(nameFilteredListSchema),
+  "journal.list": cmd(folderFilteredListSchema),
   "journal.get": cmd(journalIdSchema),
   "journal.get-many": cmd({
     type: "object",

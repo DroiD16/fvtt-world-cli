@@ -2160,6 +2160,101 @@ describe("fvtt-world-cli commands", () => {
     expect(sendCommand).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [["--user", "u1=7"], "Expected an ownership level"],
+    [["--user", "u1"], "<userId>=default"],
+    [["--user", "=default"], "<userId>=default"],
+    [["--user", "u1=3", "--user", "u1=default"], "more than once"],
+    [["--user", "u1=3", "--users-json", '{"u2":1}'], "cannot be used with"]
+  ])("rejects --user %j locally (no daemon round-trip)", async (flags, token) => {
+    const sendCommand = failIfCalledSendCommand();
+    const result = await runCommand(
+      ["actor", "ownership", "set", "--actor-id", "actor-1", ...flags],
+      sendCommand
+    );
+    expect(result.error).toBeInstanceOf(CommanderError);
+    expect(result.stderr).toContain(token);
+    expect(sendCommand).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [["setting", "get", "--id", "core"], "<namespace>.<key>"],
+    [["setting", "get", "--id", ".chatBubbles"], "<namespace>.<key>"],
+    [["setting", "get", "--id", "core."], "<namespace>.<key>"],
+    [["setting", "get", "--id", "core.chatBubbles", "--key", "chatBubbles"], "cannot be used with"],
+    [["setting", "get", "--namespace", "core"], "--id <namespace>.<key>"],
+    [["setting", "set", "--key", "chatBubbles", "--value-json", "true"], "--id <namespace>.<key>"]
+  ])("rejects the setting identity %j locally (no daemon round-trip)", async (argv, token) => {
+    const sendCommand = failIfCalledSendCommand();
+    const result = await runCommand(argv, sendCommand);
+    expect(result.error).toBeInstanceOf(CommanderError);
+    expect(`${result.stderr}${(result.error as CommanderError).message}`).toContain(token);
+    expect(sendCommand).not.toHaveBeenCalled();
+  });
+
+  describe("document get --uuid", () => {
+    function documentSend(
+      resolution: Record<string, unknown>,
+      target: Record<string, unknown> = { ok: true, result: {} }
+    ) {
+      return vi.fn(async (request: { command: string }) => ({
+        protocolVersion: PROTOCOL_VERSION,
+        type: "command.response",
+        id: "req-1",
+        ...(request.command === "document.resolve" ? resolution : target)
+      })) as unknown as SendCommandMock;
+    }
+    const calls = (sendCommand: SendCommandMock) =>
+      (sendCommand as unknown as { mock: { calls: any[][] } }).mock.calls.map(([request]) => ({
+        command: request.command,
+        params: request.params
+      }));
+
+    it("resolves the UUID, then runs the resolved get command with --include", async () => {
+      const sendCommand = documentSend(
+        {
+          ok: true,
+          result: {
+            uuid: "Actor.a1.Item.i1",
+            documentName: "Item",
+            command: "actor.item.get",
+            params: { actorId: "a1", itemId: "i1" }
+          }
+        },
+        { ok: true, result: { actorId: "a1", item: { id: "i1", name: "Spear" } } }
+      );
+
+      const result = await runCommand(
+        ["document", "get", "--uuid", "Actor.a1.Item.i1", "--include", "effects", "--json"],
+        sendCommand
+      );
+
+      expect(result.error).toBeNull();
+      expect(calls(sendCommand)).toEqual([
+        { command: "document.resolve", params: { uuid: "Actor.a1.Item.i1" } },
+        { command: "actor.item.get", params: { actorId: "a1", itemId: "i1", include: ["effects"] } }
+      ]);
+      expect(JSON.parse(result.stdout).result.item.name).toBe("Spear");
+    });
+
+    it("reports a UUID that does not resolve as the resolve error, without a second call", async () => {
+      const sendCommand = documentSend({
+        ok: false,
+        error: {
+          code: "UNSUPPORTED_OPERATION",
+          message: "UUID Setting.x cannot be read",
+          details: { uuid: "Setting.x" }
+        }
+      });
+
+      const result = await runCommand(["document", "get", "--uuid", "Setting.x", "--json"], sendCommand);
+
+      expect(result.error).toBeInstanceOf(CommanderError);
+      expect(JSON.parse(result.stdout).error.code).toBe("UNSUPPORTED_OPERATION");
+      expect(calls(sendCommand).map((call) => call.command)).toEqual(["document.resolve"]);
+    });
+  });
+
   it("reads the macro body from --command-stdin", async () => {
     const body = "// piped body\nui.notifications.info('hi');\n";
     const stdin = Readable.from([body]) as Readable & { isTTY?: boolean };
@@ -2930,14 +3025,12 @@ describe("fvtt-world-cli commands", () => {
             {
               path: "worlds/world-1/assets",
               kind: "directory",
-              mediaCategory: "directory",
-              size: null
+              mediaCategory: "directory"
             },
             {
               path: "worlds/world-1/assets/map.webp",
               kind: "file",
-              mediaCategory: "image",
-              size: 2048
+              mediaCategory: "image"
             }
           ]
         }
@@ -2946,8 +3039,8 @@ describe("fvtt-world-cli commands", () => {
 
     expect(result.error).toBeNull();
     expect(result.stdout).toContain("Directory: worlds/world-1");
-    expect(result.stdout).toContain("dir\tworlds/world-1/assets\tdirectory\t-");
-    expect(result.stdout).toContain("file\tworlds/world-1/assets/map.webp\timage\t2048");
+    expect(result.stdout).toContain("dir\tworlds/world-1/assets\tdirectory\n");
+    expect(result.stdout).toContain("file\tworlds/world-1/assets/map.webp\timage\n");
   });
 
   it("threads file list --recursive/--max-depth/--max-entries into params", async () => {
@@ -3000,14 +3093,12 @@ describe("fvtt-world-cli commands", () => {
               path: "worlds/world-1/maps",
               kind: "directory",
               mediaCategory: "directory",
-              size: null,
               depth: 1
             },
             {
               path: "worlds/world-1/maps/dungeon.webp",
               kind: "file",
               mediaCategory: "image",
-              size: 4,
               depth: 2
             }
           ]
@@ -3017,8 +3108,8 @@ describe("fvtt-world-cli commands", () => {
 
     expect(result.error).toBeNull();
     expect(result.stdout).toContain("Directory: worlds/world-1 (recursive)");
-    expect(result.stdout).toContain("dir\td1\tworlds/world-1/maps\tdirectory\t-");
-    expect(result.stdout).toContain("file\td2\tworlds/world-1/maps/dungeon.webp\timage\t4");
+    expect(result.stdout).toContain("dir\td1\tworlds/world-1/maps\tdirectory\n");
+    expect(result.stdout).toContain("file\td2\tworlds/world-1/maps/dungeon.webp\timage\n");
     expect(result.stdout).toContain("skipped\tworlds/world-1/secret\tPermission denied");
     expect(result.stdout).toContain("SKIP LIST TRUNCATED");
     expect(result.stdout).toContain("TRUNCATED at worlds/world-1/maps");

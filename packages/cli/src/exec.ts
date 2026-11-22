@@ -21,22 +21,26 @@ function isApprovalPending(response: CommandResponseEnvelope) {
   return !response.ok && response.error?.code === ERROR_CODES.APPROVAL_PENDING;
 }
 
-export async function executeRemoteCommand({
-  commandName,
-  params,
-  command,
-  dependencies,
-  prepareResult
-}: {
+interface RemoteCommandRequest {
   commandName: string;
   params: Record<string, unknown>;
   command: Command;
   dependencies: CliDependencies;
-  prepareResult?: (result: any) => unknown;
-}) {
+}
+
+interface RemoteCommandOutcome {
+  response: CommandResponseEnvelope;
+  requestParams: Record<string, unknown>;
+}
+
+export async function sendRemoteCommand({
+  commandName,
+  params,
+  command,
+  dependencies
+}: RemoteCommandRequest): Promise<RemoteCommandOutcome> {
   const clientConfig = getCommandConfig(command, dependencies);
   const globalOptions = command.optsWithGlobals();
-  const outputJson = Boolean(globalOptions.json);
 
   const withDryRun =
     Boolean(globalOptions.dryRun) && isWriteCommand(commandName) ? { ...params, dryRun: true } : params;
@@ -78,11 +82,22 @@ export async function executeRemoteCommand({
     });
   }
 
-  if (response.ok && prepareResult) {
-    response = { ...response, result: prepareResult(response.result) };
-  }
+  return { response, requestParams };
+}
 
-  if (outputJson) {
+export function printRemoteResponse({
+  commandName,
+  outcome,
+  command,
+  dependencies
+}: {
+  commandName: string;
+  outcome: RemoteCommandOutcome;
+  command: Command;
+  dependencies: CliDependencies;
+}) {
+  const { response, requestParams } = outcome;
+  if (command.optsWithGlobals().json) {
     write(dependencies.stdout, `${JSON.stringify(response, null, 2)}\n`);
   } else if (response.ok) {
     const requestOffset = typeof requestParams.offset === "number" ? requestParams.offset : 0;
@@ -104,6 +119,21 @@ export async function executeRemoteCommand({
       response.error?.message ?? "Remote command failed"
     );
   }
+}
+
+export async function executeRemoteCommand({
+  commandName,
+  params,
+  command,
+  dependencies,
+  prepareResult
+}: RemoteCommandRequest & { prepareResult?: (result: any) => unknown }) {
+  const outcome = await sendRemoteCommand({ commandName, params, command, dependencies });
+  const response =
+    outcome.response.ok && prepareResult
+      ? { ...outcome.response, result: prepareResult(outcome.response.result) }
+      : outcome.response;
+  printRemoteResponse({ commandName, outcome: { ...outcome, response }, command, dependencies });
 }
 
 interface ExecBatchSession {
