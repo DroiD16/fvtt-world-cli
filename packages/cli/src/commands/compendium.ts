@@ -82,6 +82,10 @@ export function registerCompendium({ program, dependencies }: RegistrationContex
       .command("get")
       .requiredOption("--pack <pack>", "Compendium pack id")
       .requiredOption("--entry-id <entryId>", "Compendium entry id")
+      .addHelpText(
+        "after",
+        "\nA UUID Compendium.<scope>.<pack>.<Type>.<entryId> splits into --pack <scope>.<pack> and --entry-id <entryId>."
+      )
   ).action(async function getCompendiumEntry(options: CompendiumGetOptions) {
     await executeRemoteCommand({
       commandName: "compendium.get",
