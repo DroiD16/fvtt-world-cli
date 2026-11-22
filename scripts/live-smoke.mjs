@@ -4687,6 +4687,427 @@ async function runSceneImageCoverage(summary, { actorId, stamp, isV14, gmControl
   }
 }
 
+const PLACEABLE_COLLECTIONS = Object.freeze({
+  token: "tokens",
+  tile: "tiles",
+  sound: "sounds",
+  wall: "walls",
+  note: "notes",
+  drawing: "drawings",
+  light: "lights",
+  template: "templates",
+  region: "regions",
+  level: "levels",
+  behavior: "behaviors"
+});
+
+function placeableGetCommands() {
+  return COMMAND_NAMES.filter(
+    (command) => /^scene\.[a-z]+\.get$/.test(command) || command === "scene.region.behavior.get"
+  );
+}
+
+async function runPlaceableSourceCoverage(summary, { sceneId, regionId, gmControlUrl }) {
+  for (const command of placeableGetCommands()) {
+    const path = command.split(".").slice(1, -1);
+    const name = path.at(-1);
+    const collection = PLACEABLE_COLLECTIONS[name];
+    if (!collection) {
+      markAndPush(summary, `${command}(stored source coverage has a collection for the family)`, false, {
+        command
+      });
+      continue;
+    }
+    const parentArgs = ["--scene-id", sceneId, ...(name === "behavior" ? ["--region-id", regionId] : [])];
+    const list = runFoundryctl(["scene", ...path, "list", ...parentArgs]);
+    const rows = list.response?.result?.[`${name === "behavior" ? "behaviors" : collection}`] ?? [];
+    const id = rows[0]?.id ?? null;
+    if (!isCommandSuccess(list) || !id) {
+      summary.notes.push(
+        `${command}: no ${name} on the scratch scene of this Foundry version (${list.response?.error?.code ?? "empty list"}); stored source keys not compared`
+      );
+      continue;
+    }
+    const got = runFoundryctl(["scene", ...path, "get", ...parentArgs, `--${name}-id`, id]);
+    const getKeys = Object.keys(got.response?.result?.[name] ?? {});
+    const sourceKeys =
+      (await evaluateInGmPage(
+        gmControlUrl,
+        `const scene = game.scenes.get(${JSON.stringify(sceneId)});
+         const parent = ${name === "behavior"} ? scene.regions.get(${JSON.stringify(regionId)}) : scene;
+         return Object.entries(parent.${collection}.get(${JSON.stringify(id)}).toObject()).filter(([, value]) => value !== undefined).map(([key]) => key);`
+      )) ?? [];
+    const expected = sourceKeys.filter((key) => key !== "_stats" && !(name === "token" && key === "delta"));
+    const missing = expected.filter((key) => !getKeys.includes(key));
+    const provenanceOk =
+      !sourceKeys.includes("_stats") ||
+      (getKeys.includes("compendiumSource") && getKeys.includes("duplicateSource"));
+    markAndPush(
+      summary,
+      `${command}(returns every key of the stored source)`,
+      isCommandSuccess(got) && sourceKeys.length > 0 && missing.length === 0 && provenanceOk,
+      { missing, provenanceOk, sourceKeys, ...summarizeCommand(got) }
+    );
+    if (name === "token") {
+      const withDelta = runFoundryctl([
+        "scene",
+        "token",
+        "get",
+        ...parentArgs,
+        "--token-id",
+        id,
+        "--include",
+        "delta"
+      ]);
+      markAndPush(
+        summary,
+        "scene.token.get(delta only with --include delta)",
+        !getKeys.includes("delta") && Object.hasOwn(withDelta.response?.result?.token ?? {}, "delta"),
+        summarizeCommand(withDelta)
+      );
+    }
+  }
+}
+
+async function runUiParityCoverage(summary, { actorId, stamp, isV14, gmControlUrl }) {
+  if (!gmControlUrl) {
+    summary.notes.push(
+      "UI parity coverage (stored placeable keys, clone source and author, nested effect ids, stopped playlist clones) skipped: run with --gm-control or --gm-client-cmd"
+    );
+    return;
+  }
+  let sceneId = null;
+  const playlistIds = [];
+  const itemIds = [];
+  try {
+    sceneId =
+      expectOk(
+        summary,
+        "scene.create(UI parity scratch)",
+        runFoundryctl([
+          "scene",
+          "create",
+          "--name",
+          `Smoke Parity Scene ${stamp}`,
+          "--width",
+          "1200",
+          "--height",
+          "800"
+        ])
+      )?.scene?.id ?? null;
+    if (sceneId) {
+      const sceneArgs = ["--scene-id", sceneId];
+      const regionId =
+        expectOk(
+          summary,
+          "scene.region.create(UI parity scratch)",
+          runFoundryctl([
+            "scene",
+            "region",
+            "create",
+            ...sceneArgs,
+            "--data-json",
+            JSON.stringify({
+              name: "Parity Region",
+              shapes: [{ type: "rectangle", x: 0, y: 0, width: 100, height: 100 }]
+            })
+          ])
+        )?.region?.id ?? null;
+      const placeables = [
+        ["token", ["--actor-id", actorId, "--x", "300", "--y", "300"]],
+        ["tile", ["--width", "100", "--height", "100"]],
+        [
+          "sound",
+          ["--path", "sounds/combat/general-fight.ogg", "--x", "200", "--y", "200", "--radius", "10"]
+        ],
+        ["wall", ["--data-json", JSON.stringify({ c: [100, 100, 400, 100] })]],
+        [
+          "note",
+          [
+            "--data-json",
+            JSON.stringify({ x: 500, y: 500, text: "Parity Pin", texture: { src: "icons/svg/book.svg" } })
+          ]
+        ],
+        [
+          "drawing",
+          ["--data-json", JSON.stringify({ x: 100, y: 100, shape: { type: "r", width: 200, height: 120 } })]
+        ],
+        ["light", ["--data-json", JSON.stringify({ x: 600, y: 400, config: { dim: 30, bright: 15 } })]],
+        ...(isV14
+          ? []
+          : [["template", ["--data-json", JSON.stringify({ t: "circle", x: 600, y: 600, distance: 20 })]]])
+      ];
+      const createdIds = {};
+      for (const [family, args] of placeables) {
+        createdIds[family] =
+          expectOk(
+            summary,
+            `scene.${family}.create(UI parity scratch)`,
+            runFoundryctl(["scene", family, "create", ...sceneArgs, ...args])
+          )?.[family]?.id ?? null;
+      }
+      const behaviorId = regionId
+        ? (expectOk(
+            summary,
+            "scene.region.behavior.create(UI parity scratch)",
+            runFoundryctl([
+              "scene",
+              "region",
+              "behavior",
+              "create",
+              ...sceneArgs,
+              "--region-id",
+              regionId,
+              "--type",
+              "pauseGame",
+              "--name",
+              "Parity Pause"
+            ])
+          )?.behavior?.id ?? null)
+        : null;
+
+      await runPlaceableSourceCoverage(summary, { sceneId, regionId, gmControlUrl });
+
+      if (createdIds.wall) {
+        const wallClone = runFoundryctl([
+          "scene",
+          "wall",
+          "clone",
+          ...sceneArgs,
+          "--wall-id",
+          createdIds.wall
+        ]);
+        markAndPush(
+          summary,
+          "scene.wall.clone(a type without _stats clones)",
+          isCommandSuccess(wallClone) &&
+            Boolean(wallClone.response.result.wall?.id) &&
+            wallClone.response.result.wall.id !== createdIds.wall,
+          summarizeCommand(wallClone)
+        );
+      }
+      if (behaviorId) {
+        const behaviorClone = runFoundryctl([
+          "scene",
+          "region",
+          "behavior",
+          "clone",
+          ...sceneArgs,
+          "--region-id",
+          regionId,
+          "--behavior-id",
+          behaviorId
+        ]);
+        const expectedSource = `Scene.${sceneId}.Region.${regionId}.RegionBehavior.${behaviorId}`;
+        markAndPush(
+          summary,
+          "scene.region.behavior.clone(duplicateSource names the source behavior)",
+          behaviorClone.response?.result?.behavior?.duplicateSource === expectedSource,
+          { expectedSource, ...summarizeCommand(behaviorClone) }
+        );
+      }
+      if (createdIds.drawing) {
+        const otherAuthor = await evaluateInGmPage(
+          gmControlUrl,
+          `const user = game.users.find((u) => !u.isGM);
+           if (!user) return null;
+           const drawing = game.scenes.get(${JSON.stringify(sceneId)}).drawings.get(${JSON.stringify(createdIds.drawing)});
+           await drawing.update({ author: user.id });
+           return drawing._source.author === user.id ? user.id : null;`
+        );
+        if (otherAuthor) {
+          const drawingClone = runFoundryctl([
+            "scene",
+            "drawing",
+            "clone",
+            ...sceneArgs,
+            "--drawing-id",
+            createdIds.drawing
+          ]);
+          markAndPush(
+            summary,
+            "scene.drawing.clone(keeps the source author)",
+            drawingClone.response?.result?.drawing?.author === otherAuthor,
+            { otherAuthor, ...summarizeCommand(drawingClone) }
+          );
+        } else {
+          summary.notes.push(
+            "scene.drawing.clone author: no non-GM user, or the author change did not store; not compared"
+          );
+        }
+      }
+    }
+
+    const effectId = "parityEffect0001";
+    const nested = expectOk(
+      summary,
+      "actor.item.create(nested effect with an _id)",
+      runFoundryctl([
+        "actor",
+        "item",
+        "create",
+        "--actor-id",
+        actorId,
+        "--name",
+        `Smoke Parity Item ${stamp}`,
+        "--type",
+        "loot",
+        "--data-json",
+        JSON.stringify({ effects: [{ _id: effectId, name: "Parity Effect" }] })
+      ])
+    );
+    const nestedItemId = nested?.item?.id ?? null;
+    if (nestedItemId) itemIds.push(nestedItemId);
+    const nestedRead = nestedItemId
+      ? runFoundryctl(["actor", "item", "get", "--actor-id", actorId, "--item-id", nestedItemId]).response
+          ?.result?.item
+      : null;
+    markAndPush(
+      summary,
+      "actor.item.create(nested effect keeps its _id)",
+      (nestedRead?.effects ?? []).map((effect) => effect.id).join(",") === effectId,
+      { effects: (nestedRead?.effects ?? []).map((effect) => effect.id) }
+    );
+    expectErr(
+      summary,
+      "actor.item.create(two nested effects with one _id → INVALID_PARAMS)",
+      runFoundryctl([
+        "actor",
+        "item",
+        "create",
+        "--actor-id",
+        actorId,
+        "--name",
+        `Smoke Parity Twin ${stamp}`,
+        "--type",
+        "loot",
+        "--data-json",
+        JSON.stringify({
+          effects: [
+            { _id: effectId, name: "A" },
+            { _id: effectId, name: "B" }
+          ]
+        })
+      ]),
+      ERROR_CODES.INVALID_PARAMS
+    );
+
+    const packItem = await evaluateInGmPage(
+      gmControlUrl,
+      `for (const pack of game.packs.filter((p) => p.documentName === "Item")) {
+         const index = await pack.getIndex({ fields: ["effects"] });
+         const entry = index.find((e) => Array.isArray(e.effects) && e.effects.length > 0);
+         if (entry) return { pack: pack.collection, id: entry._id, effectIds: entry.effects.map((e) => e._id) };
+       }
+       return null;`
+    );
+    if (packItem) {
+      const imported = expectOk(
+        summary,
+        "actor.item.import-from-compendium(item with effects)",
+        runFoundryctl([
+          "actor",
+          "item",
+          "import-from-compendium",
+          "--actor-id",
+          actorId,
+          "--pack",
+          packItem.pack,
+          "--entry-id",
+          packItem.id
+        ])
+      );
+      const importedId = imported?.item?.id ?? null;
+      if (importedId) itemIds.push(importedId);
+      const importedRead = importedId
+        ? runFoundryctl(["actor", "item", "get", "--actor-id", actorId, "--item-id", importedId]).response
+            ?.result?.item
+        : null;
+      const importedEffectIds = (importedRead?.effects ?? []).map((effect) => effect.id);
+      markAndPush(
+        summary,
+        "actor.item.import-from-compendium(nested effects keep their pack ids)",
+        JSON.stringify([...importedEffectIds].sort()) === JSON.stringify([...packItem.effectIds].sort()),
+        { packItem, importedEffectIds }
+      );
+    } else {
+      summary.notes.push(
+        "actor.item.import-from-compendium nested effect ids: no Item pack entry with effects in this world"
+      );
+    }
+
+    const playlist = expectOk(
+      summary,
+      "playlist.create(playing, UI parity scratch)",
+      runFoundryctl([
+        "playlist",
+        "create",
+        "--name",
+        `Smoke Parity Playlist ${stamp}`,
+        "--playing",
+        "true",
+        "--sounds-json",
+        JSON.stringify([{ path: "sounds/combat/general-fight.ogg", playing: true, volume: 0 }])
+      ])
+    )?.playlist;
+    if (playlist?.id) {
+      playlistIds.push(playlist.id);
+      const playlistClone = runFoundryctl(["playlist", "clone", "--playlist-id", playlist.id]);
+      const clone = playlistClone.response?.result?.playlist ?? null;
+      if (clone?.id) playlistIds.push(clone.id);
+      markAndPush(
+        summary,
+        "playlist.clone(the copy and its sounds are stopped)",
+        clone?.playing === false &&
+          (clone?.sounds ?? []).length > 0 &&
+          clone.sounds.every((sound) => sound.playing === false),
+        { playing: clone?.playing, sounds: (clone?.sounds ?? []).map((sound) => sound.playing) }
+      );
+      const soundId = playlist.sounds?.[0]?.id ?? null;
+      if (soundId) {
+        const soundClone = runFoundryctl([
+          "playlist",
+          "sound",
+          "clone",
+          "--playlist-id",
+          playlist.id,
+          "--sound-id",
+          soundId
+        ]);
+        markAndPush(
+          summary,
+          "playlist.sound.clone(the copy is stopped)",
+          soundClone.response?.result?.sound?.playing === false,
+          summarizeCommand(soundClone)
+        );
+      }
+    }
+  } finally {
+    for (const id of playlistIds) {
+      runFoundryctl(["playlist", "update", "--playlist-id", id, "--playing", "false"]);
+      expectOk(
+        summary,
+        "playlist.delete(UI parity scratch)",
+        runFoundryctl(["playlist", "delete", "--playlist-id", id])
+      );
+    }
+    for (const id of itemIds) {
+      expectOk(
+        summary,
+        "actor.item.delete(UI parity scratch)",
+        runFoundryctl(["actor", "item", "delete", "--actor-id", actorId, "--item-id", id])
+      );
+    }
+    if (sceneId) {
+      expectOk(
+        summary,
+        "scene.delete(UI parity scratch)",
+        runFoundryctl(["scene", "delete", "--scene-id", sceneId, "--force"])
+      );
+    }
+  }
+}
+
 function runExtendedCoverage(
   summary,
   { actorId, targetSceneId, targetSceneActive, gmUserId, stamp, worldId, isV14 = false }
@@ -4926,19 +5347,15 @@ function runExtendedCoverage(
       }
       markAndPush(
         summary,
-        "item.clone(compendiumSource and duplicateSource reported, both null on a bridge clone)",
+        "item.clone(duplicateSource names the source item, compendiumSource null)",
         Boolean(itemClone?.item) &&
           Object.hasOwn(itemClone.item, "compendiumSource") &&
-          Object.hasOwn(itemClone.item, "duplicateSource") &&
           itemClone.item.compendiumSource === null &&
-          itemClone.item.duplicateSource === null,
+          itemClone.item.duplicateSource === `Item.${createdItemId}`,
         {
           compendiumSource: itemClone?.item?.compendiumSource,
           duplicateSource: itemClone?.item?.duplicateSource
         }
-      );
-      summary.notes.push(
-        "duplicateSource: the live run checks that world reads report the field; a non-null value (set only by Foundry's own duplicate action) is covered by unit tests only"
       );
 
       const ampersandDescription = `<p>Smoke A & B ${stamp}</p>`;
@@ -15655,6 +16072,12 @@ function runExtendedCoverage(
         liveFamilies.push(spec.family);
         const expectedSource = `Compendium.${pack.id}.${spec.documentName}.${entryId}`;
         const importedName = `Smoke Import ${spec.family} ${stamp}`;
+        const idFlag = `--${spec.family === "cards" ? "cards" : spec.family}-id`;
+        const entryIdTaken = isCommandSuccess(runFoundryctl([spec.family, "get", idFlag, entryId]));
+        const keptId = entryIdTaken ? null : entryId;
+        const packOwnership =
+          runFoundryctl(["compendium", "get", "--pack", pack.id, "--entry-id", entryId]).response?.result
+            ?.document?.ownership ?? null;
 
         const previewArgs = [
           spec.family,
@@ -15675,14 +16098,15 @@ function runExtendedCoverage(
         const previewDoc = preview?.[spec.resultKey] ?? null;
         markAndPush(
           summary,
-          `${spec.family}.import-from-compendium(dry-run previews the merge, mints no id)`,
+          `${spec.family}.import-from-compendium(dry-run previews the merge with the id the import keeps)`,
           preview?.dryRun === true &&
-            previewDoc?.id === null &&
-            previewDoc?._id === null &&
+            previewDoc?.id === keptId &&
+            previewDoc?._id === keptId &&
             previewDoc?.name === importedName &&
             previewDoc?.compendiumSource === expectedSource,
           {
             dryRun: preview?.dryRun,
+            entryIdTaken,
             id: previewDoc?.id,
             name: previewDoc?.name,
             compendiumSource: previewDoc?.compendiumSource
@@ -15745,9 +16169,14 @@ function runExtendedCoverage(
             doc?._id === importedId,
           { compendiumSource: doc?.compendiumSource, expected: expectedSource, id: importedId }
         );
+        markAndPush(
+          summary,
+          `${spec.family}.import-from-compendium(keeps the entry's id unless the world already uses it)`,
+          entryIdTaken ? Boolean(importedId) && importedId !== entryId : importedId === entryId,
+          { entryId, entryIdTaken, id: importedId }
+        );
 
         if (importedId) {
-          const idFlag = `--${spec.family === "cards" ? "cards" : spec.family}-id`;
           const reread = expectOk(
             summary,
             `${spec.family}.get(after import)`,
@@ -15760,6 +16189,41 @@ function runExtendedCoverage(
             rereadDoc?.compendiumSource === expectedSource,
             { compendiumSource: rereadDoc?.compendiumSource, expected: expectedSource }
           );
+          const storedOwnership = rereadDoc?.ownership ?? null;
+          const packEntries = Object.entries(packOwnership ?? {});
+          const ownershipKept =
+            storedOwnership?.[gmUserId] === 3 &&
+            (isV14
+              ? (packOwnership?.default ?? 0) === (storedOwnership?.default ?? 0)
+              : packEntries.every(([key, level]) => key === gmUserId || storedOwnership?.[key] === level));
+          markAndPush(
+            summary,
+            `${spec.family}.import-from-compendium(keeps the entry's ownership)`,
+            ownershipKept,
+            {
+              packOwnership,
+              storedOwnership,
+              discriminating:
+                JSON.stringify(packOwnership) !== JSON.stringify({ default: 0, [gmUserId]: 3 }) &&
+                JSON.stringify(packOwnership) !== JSON.stringify({ default: 0 })
+            }
+          );
+
+          if (spec.family === "item" && !entryIdTaken) {
+            const again = expectOk(
+              summary,
+              "item.import-from-compendium(again, while the world holds the entry's id)",
+              runFoundryctl(["item", "import-from-compendium", "--pack", pack.id, "--entry-id", entryId])
+            );
+            const againId = again?.item?.id ?? null;
+            if (againId) spec.cleanup.push(againId);
+            markAndPush(
+              summary,
+              "item.import-from-compendium(a taken id gets a new one)",
+              Boolean(againId) && againId !== entryId,
+              { entryId, id: againId }
+            );
+          }
 
           if (spec.family === "scene") {
             markAndPush(
@@ -17550,6 +18014,13 @@ async function main() {
     });
 
     await runSceneImageCoverage(summary, {
+      actorId: options.actorId,
+      stamp,
+      isV14,
+      gmControlUrl: options.gmControlUrl
+    });
+
+    await runUiParityCoverage(summary, {
       actorId: options.actorId,
       stamp,
       isV14,
