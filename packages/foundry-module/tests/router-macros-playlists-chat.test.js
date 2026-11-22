@@ -886,7 +886,7 @@ describe("macro execution", () => {
       timeoutMs: 5,
       indeterminate: true
     });
-    expect(response.error.message).toContain("keeps running");
+    expect(response.error.message).toContain("--macro-timeout-ms");
     expect(chatListenerCount()).toBe(0);
   });
 

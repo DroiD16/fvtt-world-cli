@@ -12,7 +12,9 @@ import {
   createMacroUpdateParams,
   resolveMacroCommandBody
 } from "../params.js";
+import { DEFAULT_REQUEST_TIMEOUT_MS } from "../bridge/session-store.js";
 import { executeRemoteCommand } from "../exec.js";
+import { AWAIT_FLOOR_MARGIN_MS } from "../park-polling.js";
 import { parseIdList, parsePositiveInt } from "../parse.js";
 import { addMacroFieldOptions } from "./field-options.js";
 import {
@@ -175,7 +177,7 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
     .addOption(
       new Option(
         "--macro-timeout-ms <ms>",
-        `How long the GM client waits for the macro, in ms (default ${MACRO_EXECUTE_TIMEOUT_DEFAULT_MS}, max ${MACRO_EXECUTE_TIMEOUT_MAX_MS}). Raise the global --timeout-ms above it, or the CLI stops waiting before MACRO_TIMEOUT can be reported.`
+        `How long the GM client waits for the macro, in ms (default ${MACRO_EXECUTE_TIMEOUT_DEFAULT_MS}, max ${MACRO_EXECUTE_TIMEOUT_MAX_MS}). The CLI waits ${AWAIT_FLOOR_MARGIN_MS / 1000} s longer; the daemon's forward timeout (bridge serve --request-timeout-ms, default ${DEFAULT_REQUEST_TIMEOUT_MS}) still applies.`
       ).argParser(parsePositiveInt)
     )
     .addHelpText(

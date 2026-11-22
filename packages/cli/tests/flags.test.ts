@@ -1330,6 +1330,35 @@ describe("fvtt-world-cli commands", () => {
       expect(call).not.toHaveProperty("timeoutMs");
     });
 
+    it.each([
+      [["macro", "execute", "--macro-id", "m1", "--macro-timeout-ms", "100000"], 105000],
+      [
+        ["--timeout-ms", "200000", "macro", "execute", "--macro-id", "m1", "--macro-timeout-ms", "100000"],
+        200000
+      ],
+      [["macro", "execute", "--macro-id", "m1", "--macro-timeout-ms", "50000"], undefined]
+    ])(
+      "waits for %j at least as long as the macro timeout plus a margin",
+      async (argv, expectedTimeoutMs) => {
+        const sendCommand = vi.fn(async () => ({
+          protocolVersion: "1.0",
+          type: "command.response",
+          id: "req-1",
+          ok: true,
+          result: {}
+        }));
+
+        const result = await runCommand(argv, sendCommand as unknown as SendCommandMock);
+
+        expect(result.error).toBeNull();
+        const call = (sendCommand as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<
+          string,
+          unknown
+        >;
+        expect(call.timeoutMs).toBe(expectedTimeoutMs);
+      }
+    );
+
     it.each(["0", "-1", "1.5", "abc"])("rejects --timeout-ms %p as INVALID_ARGUMENT", async (badValue) => {
       const result = await runCommandWithBaseArgs(
         ["node", "fvtt-world-cli", "--timeout-ms", badValue, "scene", "get", "--scene-id", "s1"],

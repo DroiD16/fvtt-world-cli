@@ -1985,7 +1985,7 @@ command macro execute
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene the token belongs to (required with --token-id)
   opt --token-id <tokenId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token the macro receives as its `token` (needs --scene-id)
   opt --args-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra scope values as a JSON object, reachable as `scope` in the macro
-  opt --macro-timeout-ms <ms> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=How long the GM client waits for the macro, in ms (default 30000, max 300000). Raise the global --timeout-ms above it, or the CLI stops waiting before MACRO_TIMEOUT can be reported.
+  opt --macro-timeout-ms <ms> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=How long the GM client waits for the macro, in ms (default 30000, max 300000). The CLI waits 5 s longer; the daemon's forward timeout (bridge serve --request-timeout-ms, default 120000) still applies.
 
 command macro import-from-compendium
   aliases=[]
