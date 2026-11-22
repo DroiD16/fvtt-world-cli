@@ -51,8 +51,6 @@ export function sanitizeEmbeddedData(data, { preserveNestedBehaviorIds = false }
   return rest;
 }
 
-export const AUTHOR_BEARING_EMBEDDED_TYPES = Object.freeze(new Set(["Drawing", "MeasuredTemplate", "Note"]));
-
 export function sanitizeEffectData(data) {
   return canonicalizeFilePathFields(stripProtectedMeta(data), "ActiveEffect");
 }

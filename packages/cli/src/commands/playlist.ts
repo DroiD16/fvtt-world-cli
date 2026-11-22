@@ -107,6 +107,9 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
     });
   addPlaylistFieldOptions(
     addIdempotencyKeyOption(playlist.command("clone"))
+      .description(
+        "Copy a playlist with its sounds; the copy and its sounds are stopped unless --playing true"
+      )
       .requiredOption("--playlist-id <playlistId>", "Source playlist id")
       .option("--name <name>", "Name override for the clone"),
     "clone"
@@ -258,6 +261,7 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
     });
   addPlaylistSoundFieldOptions(
     addIdempotencyKeyOption(playlistSound.command("clone"))
+      .description("Copy a sound within its playlist; the copy is stopped unless --playing true")
       .requiredOption("--playlist-id <playlistId>", "Playlist id")
       .requiredOption("--sound-id <soundId>", "Source sound id"),
     "clone"

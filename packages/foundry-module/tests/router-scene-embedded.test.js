@@ -1450,24 +1450,28 @@ describe("command router", () => {
     expect(missing.error.message).toContain("scene.note.list");
   });
 
-  it("scene.note.clone reassigns author to the current GM session user (v14 Note has the field)", async () => {
+  it("scene.note.clone keeps the source author and ignores an author in the patch", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
     const originalUserId = globalThis.game.user.id;
     globalThis.game.user.id = "gm-current";
     try {
       const scene = /** @type {any} */ (globalThis.game.scenes.get("scene-1"));
-      const note = scene.notes.get("note-quest");
-
-      expect(note.author).toBe("user-1");
-      const cloneSpy = vi.spyOn(note, "clone");
+      const source = scene.notes.get("note-quest");
+      const sourceAuthor = source.author;
+      const cloneSpy = vi.spyOn(source, "clone");
 
       const response = await router.route(
-        createRequest("scene.note.clone", { sceneId: "scene-1", noteId: "note-quest", patch: { x: 5 } })
+        createRequest("scene.note.clone", {
+          sceneId: "scene-1",
+          noteId: "note-quest",
+          patch: { x: 5, author: "gm-current" }
+        })
       );
       expect(response.ok).toBe(true);
       const overrides = /** @type {any} */ (cloneSpy.mock.calls[0][0]);
-      expect(overrides.author).toBe("gm-current");
+      expect(overrides).not.toHaveProperty("author");
+      expect(sourceAuthor).not.toBe("gm-current");
       cloneSpy.mockRestore();
     } finally {
       globalThis.game.user.id = originalUserId;
@@ -1662,29 +1666,29 @@ describe("command router", () => {
     createSpy.mockRestore();
   });
 
-  it("scene.drawing.clone reassigns author to the current GM session user (not the source author)", async () => {
+  it("scene.drawing.clone keeps the source author and ignores an author in the patch", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
     const originalUserId = globalThis.game.user.id;
     globalThis.game.user.id = "gm-current";
     try {
       const scene = /** @type {any} */ (globalThis.game.scenes.get("scene-1"));
-      const drawing = scene.drawings.get("drawing-rect");
-      const cloneSpy = vi.spyOn(drawing, "clone");
+      const source = scene.drawings.get("drawing-rect");
+      const sourceAuthor = source.author;
+      const cloneSpy = vi.spyOn(source, "clone");
 
       const response = await router.route(
         createRequest("scene.drawing.clone", {
           sceneId: "scene-1",
           drawingId: "drawing-rect",
-          patch: { x: 5 }
+          patch: { x: 5, author: "gm-current" }
         })
       );
       expect(response.ok).toBe(true);
-
       const overrides = /** @type {any} */ (cloneSpy.mock.calls[0][0]);
-      expect(overrides.author).toBe("gm-current");
-
-      expect(response.result.drawing.author).toBe("gm-current");
+      expect(overrides).not.toHaveProperty("author");
+      expect(response.result.drawing.author).toBe(sourceAuthor);
+      expect(sourceAuthor).not.toBe("gm-current");
       cloneSpy.mockRestore();
     } finally {
       globalThis.game.user.id = originalUserId;
@@ -1944,27 +1948,29 @@ describe("command router", () => {
     createSpy.mockRestore();
   });
 
-  it("scene.template.clone reassigns author to the current GM session user (not the source author)", async () => {
+  it("scene.template.clone keeps the source author and ignores an author in the patch", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
     const originalUserId = globalThis.game.user.id;
     globalThis.game.user.id = "gm-current";
     try {
       const scene = /** @type {any} */ (globalThis.game.scenes.get("scene-1"));
-      const template = scene.templates.get("template-fireball");
-      const cloneSpy = vi.spyOn(template, "clone");
+      const source = scene.templates.get("template-fireball");
+      const sourceAuthor = source.author;
+      const cloneSpy = vi.spyOn(source, "clone");
 
       const response = await router.route(
         createRequest("scene.template.clone", {
           sceneId: "scene-1",
           templateId: "template-fireball",
-          patch: { x: 5 }
+          patch: { x: 5, author: "gm-current" }
         })
       );
       expect(response.ok).toBe(true);
       const overrides = /** @type {any} */ (cloneSpy.mock.calls[0][0]);
-      expect(overrides.author).toBe("gm-current");
-      expect(response.result.template.author).toBe("gm-current");
+      expect(overrides).not.toHaveProperty("author");
+      expect(response.result.template.author).toBe(sourceAuthor);
+      expect(sourceAuthor).not.toBe("gm-current");
       cloneSpy.mockRestore();
     } finally {
       globalThis.game.user.id = originalUserId;

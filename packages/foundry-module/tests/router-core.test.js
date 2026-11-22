@@ -1824,7 +1824,26 @@ describe("command router", () => {
       expect(response.result.item._id).toBeNull();
       expect(response.result.item.name).toBe("Copy");
 
-      expect(item.clone).toHaveBeenCalledWith({ name: "Copy" }, { save: false });
+      expect(item.clone).toHaveBeenCalledWith({ name: "Copy" }, { save: false, addSource: false });
+    });
+
+    it("records the clone source only for a document whose schema has _stats, on preview and commit", async () => {
+      const router = connectedRouter();
+      const item = globalThis.game.items.get("item-1");
+      item.schema = { has: (field) => field === "_stats" };
+
+      await router.route(
+        createRequest("item.clone", { itemId: "item-1", patch: { name: "Copy" }, dryRun: true })
+      );
+      await router.route(createRequest("item.clone", { itemId: "item-1", patch: { name: "Copy" } }));
+      item.schema = { has: () => false };
+      await router.route(createRequest("item.clone", { itemId: "item-1", patch: { name: "Copy" } }));
+
+      expect(item.clone.mock.calls.map(([, context]) => context)).toEqual([
+        { save: false, addSource: true },
+        { save: true, render: true, addSource: true },
+        { save: true, render: true, addSource: false }
+      ]);
     });
 
     it("clone dry-run applies `-=key` deletions (matching a real Document#clone's performDeletions)", async () => {
@@ -1853,7 +1872,10 @@ describe("command router", () => {
       expect(response.result.item.system.weight).toBe(3);
       expect(response.result.item.id).toBeNull();
 
-      expect(doc.clone).toHaveBeenCalledWith({ system: { "-=damage": null } }, { save: false });
+      expect(doc.clone).toHaveBeenCalledWith(
+        { system: { "-=damage": null } },
+        { save: false, addSource: false }
+      );
     });
 
     it("clone dry-run tolerates legacy-invalid UNTOUCHED source (previews at save:false, not strict:true)", async () => {
@@ -1874,7 +1896,7 @@ describe("command router", () => {
       expect(response.result.dryRun).toBe(true);
       expect(response.result.item.name).toBe("Copy");
       expect(response.result.item.id).toBeNull();
-      expect(doc.clone).toHaveBeenCalledWith({ name: "Copy" }, { save: false });
+      expect(doc.clone).toHaveBeenCalledWith({ name: "Copy" }, { save: false, addSource: false });
     });
 
     it("create (item.create): dry-run returns the would-be doc (defaults applied, id null) in the item key, no preview/echo, no Item.create", async () => {

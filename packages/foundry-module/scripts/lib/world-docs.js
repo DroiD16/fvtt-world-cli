@@ -133,15 +133,17 @@ export async function cloneDocument(document, patch = {}, { dryRun = false } = {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Foundry document clone API is not available");
   }
 
+  const addSource = document.schema?.has?.("_stats") === true;
+
   if (dryRun) {
-    const preview = await document.clone(patch ?? {}, { save: false });
+    const preview = await document.clone(patch ?? {}, { save: false, addSource });
     if (!preview) {
       throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Document clone returned no preview");
     }
     return preview;
   }
 
-  const result = await document.clone(patch, { save: true, render: true });
+  const result = await document.clone(patch, { save: true, render: true, addSource });
   const clone = Array.isArray(result) ? (result[0] ?? null) : result;
   if (!clone) {
     throw createReturnedNothingError("Document clone");

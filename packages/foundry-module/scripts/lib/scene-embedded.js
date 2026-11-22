@@ -10,7 +10,7 @@ import {
 
 import { hasSceneLevels } from "./foundry-capabilities.js";
 import { getActorById, getGame, getSceneById } from "./game-collections.js";
-import { AUTHOR_BEARING_EMBEDDED_TYPES, payloadKeyField, sanitizeEmbeddedData } from "./sanitize.js";
+import { payloadKeyField, sanitizeEmbeddedData } from "./sanitize.js";
 import {
   assertRegionBehaviorsAllowed,
   assertRegionBehaviorsSuppliedAsArray
@@ -365,13 +365,6 @@ export async function cloneSceneEmbedded(
   if (type === "Region") {
     assertRegionBehaviorsSuppliedAsArray(patch);
     assertRegionBehaviorsAllowed(patch?.behaviors, document);
-  }
-
-  if (AUTHOR_BEARING_EMBEDDED_TYPES.has(type)) {
-    const userId = getGame().user?.id;
-    if (userId) {
-      overrides.author = userId;
-    }
   }
 
   return cloneDocument(document, overrides, { dryRun });
