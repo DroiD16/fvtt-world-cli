@@ -56,21 +56,32 @@ async function setStatus({ actor, params, subject, coordinates }) {
     return { ...result, changed: false };
   }
 
-  await actor.toggleStatusEffect(params.statusId, {
-    active: params.active,
-    overlay: params.overlay === true
-  });
-  if (Boolean(actor.statuses?.has?.(params.statusId)) !== params.active) {
-    throw createBridgeError(
+  const unconfirmed = (/** @type {string} */ outcome, /** @type {Record<string, unknown>} */ extra = {}) =>
+    createBridgeError(
       ERROR_CODES.INTERNAL_ERROR,
-      `${subject}: status ${params.statusId} is still ${params.active ? "inactive" : "active"} after Foundry's status toggle, so the requested state could not be confirmed. The toggle may have changed effects anyway: a game system can handle the status its own way, and the toggle removes only an effect that carries this status alone. details.effects lists the effects that still carry it. Re-read the actor before retrying; a retry may change the status again.`,
+      `${subject}: ${outcome}, so the requested state of status ${params.statusId} could not be confirmed. The toggle may have changed effects anyway: a game system can handle the status its own way, and the toggle removes only an effect that carries this status alone. details.effects lists the effects that still carry it. Re-read the actor before retrying; a retry may change the status again.`,
       {
         ...coordinates,
         statusId: params.statusId,
         active: params.active,
         effects: effectsCarrying(actor, params.statusId),
-        indeterminate: true
+        indeterminate: true,
+        ...extra
       }
+    );
+  try {
+    await actor.toggleStatusEffect(params.statusId, {
+      active: params.active,
+      overlay: params.overlay === true
+    });
+  } catch (error) {
+    throw unconfirmed("Foundry's status toggle threw", {
+      cause: error instanceof Error ? error.message : String(error)
+    });
+  }
+  if (Boolean(actor.statuses?.has?.(params.statusId)) !== params.active) {
+    throw unconfirmed(
+      `status ${params.statusId} is still ${params.active ? "inactive" : "active"} after Foundry's status toggle`
     );
   }
 

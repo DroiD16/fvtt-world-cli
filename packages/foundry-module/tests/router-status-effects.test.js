@@ -143,6 +143,29 @@ describe("status effect commands", () => {
     });
   });
 
+  it("reports a toggle that wrote and then threw as indeterminate, keeping its error", async () => {
+    actor.allApplicableEffects = () => [
+      { id: "cover-new", name: "Cover", parent: actor, statuses: actor.statuses }
+    ];
+    actor.toggleStatusEffect = vi.fn(async (statusId) => {
+      actor.statuses.add(statusId);
+      throw new Error("could not delete the previous cover effect");
+    });
+
+    const response = await router.route(
+      createRequest("actor.status.set", { actorId: "actor-1", statusId: "prone", active: true })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.details).toMatchObject({
+      statusId: "prone",
+      indeterminate: true,
+      cause: "could not delete the previous cover effect",
+      effects: [{ id: "cover-new" }]
+    });
+  });
+
   it("sets a placed token's status on the token's actor and says whether it is the world actor", async () => {
     const response = await router.route(
       createRequest("scene.token.status.set", {
