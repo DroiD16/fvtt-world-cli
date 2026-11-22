@@ -510,7 +510,7 @@ command scene token item create
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system payload as JSON object
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra item fields (e.g. flags, effects) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command scene token item update
   aliases=[]
@@ -523,7 +523,7 @@ command scene token item update
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New item sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system patch as JSON object
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra item patch fields (e.g. flags) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command scene token item clone
   aliases=[]
@@ -1570,7 +1570,7 @@ command item create
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system payload as JSON object
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra item fields (e.g. flags) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command item update
   aliases=[]
@@ -1583,7 +1583,7 @@ command item update
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New item sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system patch as JSON object
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra item patch fields (e.g. flags) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command item clone
   aliases=[]
@@ -2142,7 +2142,7 @@ command playlist sound create
   opt --volume <volume> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Volume (linear 0–1)
   opt --fade <fade> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Fade duration (ms)
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort order
-  opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Full/extra sound data as a JSON object (merged last)
+  opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra sound fields as a JSON object, merged last; the schema's data fields map to the flags above, so --path is required here too
 
 command playlist sound update
   aliases=[]
@@ -2884,7 +2884,7 @@ command chat
 
 command chat list
   aliases=[]
-  summary=
+  summary=List chat messages, newest first
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
 
@@ -2978,7 +2978,7 @@ command actor create
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Actor sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Actor system payload as JSON object
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra actor fields (e.g. flags, prototypeToken) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command actor update
   aliases=[]
@@ -2991,7 +2991,7 @@ command actor update
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New actor sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Actor system patch as JSON object
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra actor patch fields (e.g. flags, prototypeToken) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command actor clone
   aliases=[]
@@ -3083,7 +3083,7 @@ command actor item create
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system payload as JSON object
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra item fields (e.g. flags, effects) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command actor item update
   aliases=[]
@@ -3095,7 +3095,7 @@ command actor item update
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New item sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system patch as JSON object
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra item patch fields (e.g. flags) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command actor item get
   aliases=[]
@@ -3128,7 +3128,7 @@ command actor item import-from-compendium
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort override
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system override as JSON object
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra override fields as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command actor item delete
   aliases=[]

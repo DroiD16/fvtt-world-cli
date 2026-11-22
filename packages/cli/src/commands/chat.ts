@@ -18,17 +18,16 @@ export function registerChat({ program, dependencies }: RegistrationContext) {
     "\nResult key (--json): .result.message (single/write) / .result.messages[] (list)."
   );
 
-  addPaginationOptions(chat.command("list")).action(async function listChat(options: {
-    limit?: number;
-    offset?: number;
-  }) {
-    await executeRemoteCommand({
-      commandName: "chat.list",
-      params: { ...paginationParams(options) },
-      command: this,
-      dependencies
-    });
-  });
+  addPaginationOptions(chat.command("list").description("List chat messages, newest first")).action(
+    async function listChat(options: { limit?: number; offset?: number }) {
+      await executeRemoteCommand({
+        commandName: "chat.list",
+        params: { ...paginationParams(options) },
+        command: this,
+        dependencies
+      });
+    }
+  );
   chat
     .command("get")
     .requiredOption("--message-id <messageId>", "Chat message id")

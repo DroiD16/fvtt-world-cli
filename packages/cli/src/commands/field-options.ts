@@ -77,10 +77,13 @@ export function addReservedIncludeOption(
   command: Command,
   presence: "in the result" | "on this command"
 ): Command {
-  return command.option(
-    "--include <fields>",
-    `Reserved (allowed: flags, effects) — both are always present ${presence}, so this option currently has no effect`,
-    parseIncludeFields
+  return command.addOption(
+    new Option(
+      "--include <fields>",
+      `Reserved (allowed: flags, effects) — both are always present ${presence}, so this option currently has no effect`
+    )
+      .argParser(parseIncludeFields)
+      .hideHelp()
   );
 }
 

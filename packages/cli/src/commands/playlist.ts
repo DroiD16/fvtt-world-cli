@@ -224,7 +224,10 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
       .requiredOption("--path <path>", "Audio file path"),
     "create"
   )
-    .option("--data-json <json>", "Full/extra sound data as a JSON object (merged last)")
+    .option(
+      "--data-json <json>",
+      "Extra sound fields as a JSON object, merged last; the schema's data fields map to the flags above, so --path is required here too"
+    )
     .action(async function createPlaylistSoundCommand(
       options: PlaylistSoundFieldOptions & { playlistId: string; path: string; dataJson?: string }
     ) {
