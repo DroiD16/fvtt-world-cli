@@ -48,15 +48,18 @@ export function planOwnershipWrite(target, { defaultLevel, users } = {}) {
     }
   }
 
-  return { ownership, patch: removesStoredEntry ? replaceOwnershipPatch(ownership) : { ownership } };
-}
+  if (!removesStoredEntry) {
+    return { ownership, patch: { ownership } };
+  }
 
-// A merge update cannot delete a user's entry. Foundry's own ownership dialog replaces the whole
-// map instead, and Foundry 14 rejects a deletion operator inside the ownership field.
-/** @param {Record<string, number>} ownership */
-function replaceOwnershipPatch(ownership) {
+  // A merge update cannot delete a user's entry. Foundry's own ownership dialog replaces the whole
+  // map instead, and Foundry 14 rejects a deletion operator inside the ownership field.
   const ForcedReplacement = /** @type {any} */ (globalThis).foundry?.data?.operators?.ForcedReplacement;
-  return typeof ForcedReplacement?.create === "function"
-    ? { ownership: ForcedReplacement.create(ownership) }
-    : { "==ownership": ownership };
+  return {
+    ownership,
+    patch:
+      typeof ForcedReplacement?.create === "function"
+        ? { ownership: ForcedReplacement.create(ownership) }
+        : { "==ownership": ownership }
+  };
 }
