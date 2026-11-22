@@ -1506,7 +1506,7 @@ describe("command router", () => {
         {
           name: "Bless",
           img: "worlds/world-1/art/glow #1.png",
-          _id: "spoofed",
+          _id: "blessEffect00001",
           _stats: { hacked: true },
           ownership: { default: 3 }
         }
