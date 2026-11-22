@@ -10,6 +10,7 @@ import { registerCombat } from "./commands/combat.js";
 import { registerCompendium } from "./commands/compendium.js";
 import { registerConfig } from "./commands/config.js";
 import { registerDiscovery } from "./commands/discovery.js";
+import { registerDocument } from "./commands/document.js";
 import { registerExec } from "./commands/exec.js";
 import { registerFile } from "./commands/file.js";
 import { registerFolder } from "./commands/folder.js";
@@ -96,6 +97,7 @@ export function createProgram(partialDependencies: Partial<CliDependencies> = {}
   registerUser({ program, dependencies });
   registerSetting({ program, dependencies });
   registerCompendium({ program, dependencies });
+  registerDocument({ program, dependencies });
   registerFolder({ program, dependencies });
   registerFile({ program, dependencies });
   registerGame({ program, dependencies });

@@ -185,6 +185,10 @@ version; [Foundry compatibility](compatibility.md) lists them.
 World document reads carry `compendiumSource` and `duplicateSource`, hoisted from Foundry's
 `_stats` and `null` when absent.
 
+`document.resolve` reads no document. It returns the canonical `uuid`, the `documentName`, and the
+family `get` command with the `params` that read the document. `document get` in the CLI sends
+that command as a second request, so its permission, approval and result shape apply unchanged.
+
 `include: ["prepared"]` adds `prepared.system`, the live `system` data after the game system
 computed its derived values. Prepared values are derived: writing them back stores them as source.
 Nested documents appear as `{ documentName, id, uuid }`, keyed collections as objects keyed by id

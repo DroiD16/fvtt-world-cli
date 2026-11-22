@@ -2192,6 +2192,85 @@ describe("fvtt-world-cli commands", () => {
     expect(sendCommand).not.toHaveBeenCalled();
   });
 
+  describe("document get --uuid", () => {
+    function documentSend(
+      resolution: Record<string, unknown>,
+      target: Record<string, unknown> = { ok: true, result: {} }
+    ) {
+      return vi.fn(async (request: { command: string }) => ({
+        protocolVersion: PROTOCOL_VERSION,
+        type: "command.response",
+        id: "req-1",
+        ...(request.command === "document.resolve" ? resolution : target)
+      })) as unknown as SendCommandMock;
+    }
+    const calls = (sendCommand: SendCommandMock) =>
+      (sendCommand as unknown as { mock: { calls: any[][] } }).mock.calls.map(([request]) => ({
+        command: request.command,
+        params: request.params
+      }));
+
+    it("resolves the UUID, then runs the resolved get command with --include", async () => {
+      const sendCommand = documentSend(
+        {
+          ok: true,
+          result: {
+            uuid: "Actor.a1.Item.i1",
+            documentName: "Item",
+            command: "actor.item.get",
+            params: { actorId: "a1", itemId: "i1" }
+          }
+        },
+        { ok: true, result: { actorId: "a1", item: { id: "i1", name: "Spear" } } }
+      );
+
+      const result = await runCommand(
+        ["document", "get", "--uuid", "Actor.a1.Item.i1", "--include", "effects", "--json"],
+        sendCommand
+      );
+
+      expect(result.error).toBeNull();
+      expect(calls(sendCommand)).toEqual([
+        { command: "document.resolve", params: { uuid: "Actor.a1.Item.i1" } },
+        { command: "actor.item.get", params: { actorId: "a1", itemId: "i1", include: ["effects"] } }
+      ]);
+      expect(JSON.parse(result.stdout).result.item.name).toBe("Spear");
+    });
+
+    it("refuses an --include the resolved command does not take, before reading it", async () => {
+      const sendCommand = documentSend({
+        ok: true,
+        result: { uuid: "Macro.m1", documentName: "Macro", command: "macro.get", params: { macroId: "m1" } }
+      });
+
+      const result = await runCommand(
+        ["document", "get", "--uuid", "Macro.m1", "--include", "flags"],
+        sendCommand
+      );
+
+      expect(result.error).toBeInstanceOf(CommanderError);
+      expect((result.error as CommanderError).message).toContain("macro.get");
+      expect(calls(sendCommand).map((call) => call.command)).toEqual(["document.resolve"]);
+    });
+
+    it("reports a UUID that does not resolve as the resolve error, without a second call", async () => {
+      const sendCommand = documentSend({
+        ok: false,
+        error: {
+          code: "UNSUPPORTED_OPERATION",
+          message: "UUID Setting.x cannot be read",
+          details: { uuid: "Setting.x" }
+        }
+      });
+
+      const result = await runCommand(["document", "get", "--uuid", "Setting.x", "--json"], sendCommand);
+
+      expect(result.error).toBeInstanceOf(CommanderError);
+      expect(JSON.parse(result.stdout).error.code).toBe("UNSUPPORTED_OPERATION");
+      expect(calls(sendCommand).map((call) => call.command)).toEqual(["document.resolve"]);
+    });
+  });
+
   it("reads the macro body from --command-stdin", async () => {
     const body = "// piped body\nui.notifications.info('hi');\n";
     const stdin = Readable.from([body]) as Readable & { isTTY?: boolean };

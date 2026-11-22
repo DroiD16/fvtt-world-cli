@@ -365,6 +365,7 @@ export const DEFAULT_COMMAND_PROFILE = deepFreeze({
   "world.audit-files": "allow",
   "world.references": "allow",
   "world.search": "allow",
+  "document.resolve": "allow",
   "approval.await": "allow",
   "approval.cancel": "allow",
   "policy.snapshot": "allow"

@@ -119,9 +119,10 @@ guess a command name or parameter.
 2. `fvtt-world-cli schema <command>` shows the exact request parameters, required fields, enums,
    and whether unknown fields are accepted; `fvtt-world-cli <command path> --help` maps flags.
 3. Locate targets with the narrowest query: a family `list --name <substring> --limit <n>` when
-   the family is known, `world.search` when it is not, `compendium.index` for one pack. Page with
-   `limit`/`offset` until `hasMore` is false. List and search rows are lean discovery projections,
-   never the basis of a write.
+   the family is known, `world.search` when it is not, `compendium.index` for one pack, and
+   `document get --uuid <uuid>` for a UUID such as `Actor.<id>` or `Compendium.<pack>.<Type>.<id>`.
+   Page with `limit`/`offset` until `hasMore` is false. List and search rows are lean discovery
+   projections, never the basis of a write.
 4. `get` the complete target before mutating and work from the returned ids.
 5. Build the smallest valid patch. Nested objects merge recursively; plain arrays replace
    wholesale; dotted paths reach permitted leaves; `{"-=key": null}` deletes a permitted key, and

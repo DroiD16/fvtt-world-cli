@@ -3449,6 +3449,21 @@ command compendium get-many
   opt --ids <list> | parser=parseIdList | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Comma-separated entry ids (atomic: all must exist)
   opt --include <fields> | parser=parseCompendiumIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields to include (allowed: effects)
 
+command document
+  aliases=[]
+  summary=Read a document by its Foundry UUID
+
+command document resolve
+  aliases=[]
+  summary=Map a UUID to its canonical form and the family get command and parameters that read it
+  opt --uuid <uuid> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Document UUID, such as Actor.<id> or Compendium.<pack>.<Type>.<id>
+
+command document get
+  aliases=[]
+  summary=Read a document by UUID: resolve it, then run the family get command it maps to
+  opt --uuid <uuid> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Document UUID, such as Actor.<id> or Compendium.<pack>.<Type>.<id>
+  opt --include <fields> | parser=<anonymous> | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Comma-separated extra fields, as the resolved get command accepts them
+
 command folder
   aliases=[]
   summary=Foundry folder commands

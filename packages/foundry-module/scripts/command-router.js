@@ -24,6 +24,7 @@ import { createChatHandlers } from "./handlers/chat.js";
 import { createCombatHandlers } from "./handlers/combats.js";
 import { createCompendiumHandlers } from "./handlers/compendium.js";
 import { createCompendiumImportHandlers } from "./handlers/compendium-imports.js";
+import { createDocumentHandlers } from "./handlers/documents.js";
 import { createItemEffectHandlers } from "./handlers/item-effects.js";
 import { createSceneTokenEffectHandlers } from "./handlers/scene-token-effects.js";
 import { createFileHandlers } from "./handlers/files.js";
@@ -152,6 +153,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {}, o
     ...createChatHandlers(),
     ...createCombatHandlers(),
     ...createCompendiumHandlers(),
+    ...createDocumentHandlers(),
     ...createFolderHandlers(),
     ...createGameHandlers(),
     ...createImageHandlers(),

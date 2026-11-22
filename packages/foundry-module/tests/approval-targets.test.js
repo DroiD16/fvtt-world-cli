@@ -40,12 +40,13 @@ const UNRESOLVED_ID_PARAMETERS = [
 ];
 
 // Families whose commands address no world document: the approval plumbing, compendium sources,
-// managed files, the policy layer, world settings, and world-wide queries. A family in neither this
+// UUID lookups, managed files, the policy layer, world settings, and world-wide queries. A family in neither this
 // set nor the resolver's node map would reach the GM with no target summary at all.
 const DOCUMENT_FREE_FAMILIES = [
   "approval",
   "canvas",
   "compendium",
+  "document",
   "file",
   "game",
   "image",

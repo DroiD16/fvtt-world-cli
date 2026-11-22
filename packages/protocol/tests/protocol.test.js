@@ -2636,7 +2636,7 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 65 approve-listed, 8 denied and 289 self-running commands in a registry of 362", () => {
+    it("counts 65 approve-listed, 8 denied and 290 self-running commands in a registry of 363", () => {
       const bucket = (behavior) =>
         COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
@@ -2648,10 +2648,10 @@ describe("protocol contract", () => {
           allow: bucket("allow")
         },
         "the totals moved: re-check the default-policy prose in docs/commands.md and docs/security.md (they name the buckets, not the counts) in the same change"
-      ).toEqual({ commands: 362, approve: 65, deny: 8, allow: 289 });
+      ).toEqual({ commands: 363, approve: 65, deny: 8, allow: 290 });
     });
 
-    it("leaves 357 governed commands in 20 top-level groups once the exempt ones are removed", () => {
+    it("leaves 358 governed commands in 21 top-level groups once the exempt ones are removed", () => {
       const exempt = new Set(POLICY_EXEMPT_COMMANDS);
       const governed = COMMAND_NAMES.filter((command) => !exempt.has(command));
 
@@ -2661,7 +2661,7 @@ describe("protocol contract", () => {
           groups: new Set(governed.map((command) => command.split(".")[0])).size
         },
         "the window totals moved: the permissions window renders one section per top-level group, so re-check its rendering assumptions in the same change"
-      ).toEqual({ governed: 357, groups: 20 });
+      ).toEqual({ governed: 358, groups: 21 });
     });
 
     it("cannot be mutated in place", () => {

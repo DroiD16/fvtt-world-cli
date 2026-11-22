@@ -1421,6 +1421,14 @@ export const RENDERERS = registerRenderers([
       ...listFooterLines(result, result.entries.length, offset)
     ].join("\n");
   }),
+  detailRenderer("document.resolve", (result) =>
+    [
+      `uuid: ${result.uuid}`,
+      `document: ${result.documentName}`,
+      `command: ${result.command}`,
+      `params: ${JSON.stringify(result.params ?? {})}`
+    ].join("\n")
+  ),
   detailRenderer("file.stat", (result) => renderFileEntryDetails(result.entry ?? {})),
   detailRenderer("file.size", (result) =>
     [`path: ${renderDataPath(result.path)}`, `size: ${renderFileSize(result.size)} bytes`].join("\n")

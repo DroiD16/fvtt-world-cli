@@ -1897,6 +1897,18 @@ var compendiumCommands = {
   })
 };
 
+// packages/protocol/src/schemas/document.js
+var documentCommands = {
+  "document.resolve": cmd({
+    type: "object",
+    required: ["uuid"],
+    properties: {
+      uuid: { type: "string", minLength: 1 }
+    },
+    additionalProperties: false
+  })
+};
+
 // packages/protocol/src/schemas/file.js
 var dataPathSchema = {
   type: "string",
@@ -5254,6 +5266,7 @@ var COMMAND_DEFINITIONS = deepFreeze(
     actorCompendiumImportCommands,
     worldAuditCommands,
     worldSearchCommands,
+    documentCommands,
     approvalCommands
   ])
 );
@@ -5972,6 +5985,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "world.audit-files": "allow",
   "world.references": "allow",
   "world.search": "allow",
+  "document.resolve": "allow",
   "approval.await": "allow",
   "approval.cancel": "allow",
   "policy.snapshot": "allow"

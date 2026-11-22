@@ -2809,6 +2809,98 @@ function runStatusEffectCoverage(summary, { stamp, created, actorId }) {
       tokenOff?.changed === true,
     { tokenOn, worldActorPrevious: worldActorAfter.response?.result?.previous ?? null, tokenOff }
   );
+
+  const tokenEffectId =
+    expectOk(
+      summary,
+      "scene.token.effect.create(UUID fixture)",
+      runFoundryctl([
+        "scene",
+        "token",
+        "effect",
+        "create",
+        "--scene-id",
+        sceneId,
+        "--token-id",
+        tokenId,
+        "--name",
+        `Smoke UUID Effect ${stamp}`
+      ])
+    )?.effect?.id ?? null;
+  if (!tokenEffectId) return;
+  const syntheticUuid = `Scene.${sceneId}.Token.${tokenId}.Actor.${scratchActorId}.ActiveEffect.${tokenEffectId}`;
+  const syntheticResolve = runFoundryctl(["document", "resolve", "--uuid", syntheticUuid]);
+  const syntheticGet = runFoundryctl(["document", "get", "--uuid", syntheticUuid]);
+  markAndPush(
+    summary,
+    "document.resolve(synthetic token actor effect → scene.token.effect.get)",
+    syntheticResolve.response?.ok === true &&
+      syntheticResolve.response.result?.uuid === syntheticUuid &&
+      syntheticResolve.response.result?.command === "scene.token.effect.get" &&
+      syntheticResolve.response.result?.params?.effectId === tokenEffectId &&
+      syntheticGet.response?.result?.effect?.id === tokenEffectId,
+    { resolve: summarizeCommand(syntheticResolve), get: summarizeCommand(syntheticGet) }
+  );
+}
+
+function runDocumentUuidCoverage(summary, { stamp, actorId }) {
+  const resolveRun = runFoundryctl(["document", "resolve", "--uuid", `Actor.${actorId}`]);
+  const getRun = runFoundryctl(["document", "get", "--uuid", `Actor.${actorId}`, "--include", "items"]);
+  markAndPush(
+    summary,
+    "document.resolve + document get(world actor → actor.get)",
+    resolveRun.response?.ok === true &&
+      resolveRun.response.result?.uuid === `Actor.${actorId}` &&
+      resolveRun.response.result?.command === "actor.get" &&
+      resolveRun.response.result?.params?.actorId === actorId &&
+      getRun.response?.ok === true &&
+      getRun.response.result?.actor?.id === actorId &&
+      Array.isArray(getRun.response.result.actor.items),
+    { resolve: summarizeCommand(resolveRun), get: summarizeCommand(getRun) }
+  );
+  expectErr(
+    summary,
+    "document.resolve(missing actor → ACTOR_NOT_FOUND)",
+    runFoundryctl(["document", "resolve", "--uuid", `Actor.${createMissingId("actor", stamp)}`]),
+    "ACTOR_NOT_FOUND"
+  );
+  expectErr(
+    summary,
+    "document.resolve(setting → UNSUPPORTED_OPERATION)",
+    runFoundryctl(["document", "resolve", "--uuid", "Setting.smokeSettingId00"]),
+    "UNSUPPORTED_OPERATION"
+  );
+
+  const packs = runFoundryctl(["compendium", "list", "--limit", "500"]).response?.result?.packs ?? [];
+  for (const pack of packs) {
+    if (!pack?.id || !pack?.type) continue;
+    const entryId = runFoundryctl(["compendium", "index", "--pack", pack.id, "--limit", "1"]).response?.result
+      ?.entries?.[0]?.id;
+    if (!entryId) continue;
+    const canonical = `Compendium.${pack.id}.${pack.type}.${entryId}`;
+    const legacy = runFoundryctl(["document", "resolve", "--uuid", `Compendium.${pack.id}.${entryId}`]);
+    const entry = runFoundryctl(["document", "get", "--uuid", canonical]);
+    markAndPush(
+      summary,
+      "document.resolve(legacy compendium UUID → canonical, compendium.get)",
+      legacy.response?.ok === true &&
+        legacy.response.result?.uuid === canonical &&
+        legacy.response.result?.command === "compendium.get" &&
+        legacy.response.result?.params?.entryId === entryId &&
+        entry.response?.ok === true,
+      { legacy: summarizeCommand(legacy), get: summarizeCommand(entry) }
+    );
+    expectErr(
+      summary,
+      "document.resolve(document inside a compendium entry → UNSUPPORTED_OPERATION)",
+      runFoundryctl(["document", "resolve", "--uuid", `${canonical}.ActiveEffect.${entryId}`]),
+      "UNSUPPORTED_OPERATION"
+    );
+    return;
+  }
+  summary.notes.push(
+    "document.resolve: this world has no compendium entry, so compendium UUIDs were not resolved on this run"
+  );
 }
 
 function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created, actorId }) {
@@ -4615,6 +4707,7 @@ function runExtendedCoverage(
     runSceneLevelCoverage(summary, { stamp, worldId, isV14, created, actorId });
     runListFilterCoverage(summary, { stamp, created, actorId });
     runStatusEffectCoverage(summary, { stamp, created, actorId });
+    runDocumentUuidCoverage(summary, { stamp, actorId });
 
     const sceneCreate = expectOk(
       summary,
