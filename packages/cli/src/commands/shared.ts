@@ -205,7 +205,9 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
     }: { commandName: keyof typeof IMPORT_PATCH_FLAGS; noun: string; packExample: string }
   ) {
     const command = addIdempotencyKeyOption(group.command("import-from-compendium"))
-      .description(`Import a compendium ${noun} into the world (provenance is reported as compendiumSource)`)
+      .description(
+        `Import a compendium ${noun} into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)`
+      )
       .requiredOption("--pack <pack>", `Compendium pack id (e.g. ${packExample})`)
       .requiredOption("--entry-id <entryId>", "Compendium entry id")
       .option("--folder <folder>", "Destination folder id")

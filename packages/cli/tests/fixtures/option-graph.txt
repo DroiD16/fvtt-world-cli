@@ -1500,7 +1500,7 @@ command scene region behavior executable clone
 
 command scene import-from-compendium
   aliases=[]
-  summary=Import a compendium scene into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium scene into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. dnd5e.scenes)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -1605,7 +1605,7 @@ command item delete
 
 command item import-from-compendium
   aliases=[]
-  summary=Import a compendium item into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium item into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. dnd5e.items)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -1882,7 +1882,7 @@ command journal show
 
 command journal import-from-compendium
   aliases=[]
-  summary=Import a compendium journal entry into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium journal entry into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. dnd5e.rules)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -1989,7 +1989,7 @@ command macro execute
 
 command macro import-from-compendium
   aliases=[]
-  summary=Import a compendium macro into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium macro into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. mymodule.macros)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -2199,7 +2199,7 @@ command playlist sound stop
 
 command playlist import-from-compendium
   aliases=[]
-  summary=Import a compendium playlist into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium playlist into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. mymodule.playlists)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -2392,7 +2392,7 @@ command table result delete
 
 command table import-from-compendium
   aliases=[]
-  summary=Import a compendium roll table into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium roll table into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. dnd5e.tables)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -2634,7 +2634,7 @@ command cards card delete
 
 command cards import-from-compendium
   aliases=[]
-  summary=Import a compendium card stack into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium card stack into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. mymodule.decks)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -3014,7 +3014,7 @@ command actor delete
 
 command actor import-from-compendium
   aliases=[]
-  summary=
+  summary=Import a compendium actor into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. dnd5e.monsters)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id

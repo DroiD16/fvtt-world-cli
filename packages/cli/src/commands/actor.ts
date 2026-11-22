@@ -201,6 +201,9 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
       });
     });
   addIdempotencyKeyOption(actor.command("import-from-compendium"))
+    .description(
+      "Import a compendium actor into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)"
+    )
     .requiredOption("--pack <pack>", "Compendium pack id (e.g. dnd5e.monsters)")
     .requiredOption("--entry-id <entryId>", "Compendium entry id")
     .option("--folder <folder>", "Destination folder id")

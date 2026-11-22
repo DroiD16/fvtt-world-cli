@@ -54,13 +54,13 @@ export function resolveWorldDocumentClass(type) {
   return WORLD_DOCUMENT_COLLECTIONS[type]().documentClass ?? globalThis[type];
 }
 
-export async function createWorldDocument(type, data) {
+export async function createWorldDocument(type, data, { keepId = false } = {}) {
   const DocumentClass = resolveWorldDocumentClass(type);
   if (!DocumentClass?.create) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, `Foundry ${type} document class is not available`);
   }
 
-  const document = await DocumentClass.create(data, { render: true });
+  const document = await DocumentClass.create(data, { render: true, ...(keepId ? { keepId } : {}) });
   if (!document) {
     throw createReturnedNothingError(`${type}.create`);
   }

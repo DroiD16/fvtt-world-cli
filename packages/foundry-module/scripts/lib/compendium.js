@@ -123,10 +123,11 @@ export async function importWorldDocumentFromCompendium(
     );
   }
 
+  const keepId = !collection.has(source.id);
   const normalized = collection.fromCompendium(source, {
-    keepId: false,
+    keepId,
     clearFolder: true,
-    clearOwnership: true
+    clearOwnership: false
   });
 
   const importData = typeof normalizeSource === "function" ? normalizeSource(normalized) : normalized;
@@ -149,7 +150,7 @@ export async function importWorldDocumentFromCompendium(
     return preview;
   }
 
-  return createWorldDocument(documentName, merged);
+  return createWorldDocument(documentName, merged, { keepId });
 }
 
 function mergeImportOverrides(importData, overrides) {
