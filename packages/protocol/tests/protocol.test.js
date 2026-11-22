@@ -702,6 +702,7 @@ const MUTATION_BASES = Object.freeze({
   "scene.token.item.delete": { sceneId: "scene-1", tokenId: "tok-1", itemId: "item-1" },
   "scene.token.item.clone": { sceneId: "scene-1", tokenId: "tok-1", itemId: "item-1" },
   "scene.token.effect.create": { sceneId: "scene-1", tokenId: "tok-1", data: { name: "Aura" } },
+  "scene.token.status.set": { sceneId: "scene-1", tokenId: "tok-1", statusId: "prone", active: true },
   "scene.token.effect.update": {
     sceneId: "scene-1",
     tokenId: "tok-1",
@@ -930,6 +931,7 @@ const MUTATION_BASES = Object.freeze({
   "file.delete": { path: "worlds/w/fvtt-world-cli/x.txt" },
   "file.move": { from: "worlds/w/fvtt-world-cli/a.txt", to: "worlds/w/fvtt-world-cli/b.txt" },
   "actor.ownership.set": { actorId: "actor-1", default: 2 },
+  "actor.status.set": { actorId: "actor-1", statusId: "prone", active: false },
   "item.ownership.set": { itemId: "item-1", default: 0 },
   "scene.ownership.set": { sceneId: "scene-1", users: { "user-1": 3 } },
   "macro.ownership.set": { macroId: "macro-1", default: 1 },
@@ -2634,7 +2636,7 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 65 approve-listed, 8 denied and 287 self-running commands in a registry of 360", () => {
+    it("counts 65 approve-listed, 8 denied and 289 self-running commands in a registry of 362", () => {
       const bucket = (behavior) =>
         COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
@@ -2646,10 +2648,10 @@ describe("protocol contract", () => {
           allow: bucket("allow")
         },
         "the totals moved: re-check the default-policy prose in docs/commands.md and docs/security.md (they name the buckets, not the counts) in the same change"
-      ).toEqual({ commands: 360, approve: 65, deny: 8, allow: 287 });
+      ).toEqual({ commands: 362, approve: 65, deny: 8, allow: 289 });
     });
 
-    it("leaves 355 governed commands in 20 top-level groups once the exempt ones are removed", () => {
+    it("leaves 357 governed commands in 20 top-level groups once the exempt ones are removed", () => {
       const exempt = new Set(POLICY_EXEMPT_COMMANDS);
       const governed = COMMAND_NAMES.filter((command) => !exempt.has(command));
 
@@ -2659,7 +2661,7 @@ describe("protocol contract", () => {
           groups: new Set(governed.map((command) => command.split(".")[0])).size
         },
         "the window totals moved: the permissions window renders one section per top-level group, so re-check its rendering assumptions in the same change"
-      ).toEqual({ governed: 355, groups: 20 });
+      ).toEqual({ governed: 357, groups: 20 });
     });
 
     it("cannot be mutated in place", () => {
@@ -6191,6 +6193,29 @@ describe("protocol contract", () => {
     });
   });
 
+  describe("status effect writes", () => {
+    it("requires the status id and the requested state, and takes an optional overlay", () => {
+      for (const { command, scope } of [
+        { command: "actor.status.set", scope: { actorId: "actor-1" } },
+        { command: "scene.token.status.set", scope: { sceneId: "scene-1", tokenId: "tok-1" } }
+      ]) {
+        expectValid(command, { ...scope, statusId: "prone", active: true, overlay: true });
+        expectRejected(command, { ...scope, statusId: "prone" }, "$.params.active is required");
+        expectRejected(command, { ...scope, active: true }, "$.params.statusId is required");
+        expectRejected(
+          command,
+          { ...scope, statusId: "prone", active: "yes" },
+          "$.params.active must be boolean"
+        );
+        expectRejected(
+          command,
+          { ...scope, statusId: "", active: true },
+          "$.params.statusId must be at least"
+        );
+      }
+    });
+  });
+
   describe("world list filters", () => {
     const FOLDER_FILTERED_LISTS = [
       "actor.list",
@@ -7062,6 +7087,7 @@ describe("protocol contract", () => {
       "scene.token.effect.update",
       "scene.token.effect.delete",
       "scene.token.effect.clone",
+      "scene.token.status.set",
       "scene.token.item.effect.create",
       "scene.token.item.effect.update",
       "scene.token.item.effect.delete",
@@ -7229,6 +7255,7 @@ describe("protocol contract", () => {
       "file.delete",
       "file.move",
 
+      "actor.status.set",
       "actor.ownership.set",
       "item.ownership.set",
       "scene.ownership.set",

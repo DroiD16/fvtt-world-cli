@@ -43,3 +43,15 @@ export function effectListPrefix(command: string, result: any): string[] {
   }
   return [`actor: ${result.actorId ?? "unknown"}`];
 }
+
+export function renderStatusSetResult(result: any) {
+  const target = result.tokenId
+    ? `token ${result.tokenId} (scene: ${result.sceneId})`
+    : `actor ${result.actorId ?? "unknown"}`;
+  const state = (active: unknown) => (active ? "active" : "inactive");
+  return [
+    `${target}: status ${result.statusId} ${state(result.active)}`,
+    `previous: ${state(result.previous)}`,
+    `changed: ${result.changed === true}`
+  ].join("\n");
+}

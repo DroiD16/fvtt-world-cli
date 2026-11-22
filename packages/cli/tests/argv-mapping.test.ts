@@ -1219,6 +1219,30 @@ describe("fvtt-world-cli commands", () => {
     [["table", "reset", "--table-id", "tbl-1"], "table.reset", { tableId: "tbl-1" }],
     [["actor", "list"], "actor.list", {}],
     [
+      ["actor", "status", "set", "--actor-id", "actor-1", "--status-id", "prone", "--active", "true"],
+      "actor.status.set",
+      { actorId: "actor-1", statusId: "prone", active: true }
+    ],
+    [
+      [
+        "scene",
+        "token",
+        "status",
+        "set",
+        "--scene-id",
+        "scene-1",
+        "--token-id",
+        "tok-1",
+        "--status-id",
+        "dead",
+        "--active",
+        "false",
+        "--overlay"
+      ],
+      "scene.token.status.set",
+      { sceneId: "scene-1", tokenId: "tok-1", statusId: "dead", active: false, overlay: true }
+    ],
+    [
       ["actor", "list", "--folder", "fold-1", "--type", "npc", "--offset", "2"],
       "actor.list",
       { folder: "fold-1", offset: 2, type: "npc" }

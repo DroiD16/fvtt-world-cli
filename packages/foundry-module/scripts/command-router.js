@@ -55,6 +55,7 @@ import { createSceneTokenHandlers } from "./handlers/scene-tokens.js";
 import { createSceneHandlers } from "./handlers/scenes.js";
 import { createSearchHandlers } from "./handlers/search.js";
 import { createSettingHandlers } from "./handlers/settings.js";
+import { createStatusEffectHandlers } from "./handlers/status-effects.js";
 import { createPolicyHandlers } from "./handlers/policy.js";
 import { createSystemHandlers } from "./handlers/system.js";
 import { createTableHandlers, withQueuedTableOwnership } from "./handlers/tables.js";
@@ -146,6 +147,7 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {}, o
     ...createActorItemEffectHandlers(),
     ...createItemEffectHandlers(),
     ...createSceneTokenEffectHandlers(),
+    ...createStatusEffectHandlers(),
     ...createCardsHandlers(),
     ...createChatHandlers(),
     ...createCombatHandlers(),

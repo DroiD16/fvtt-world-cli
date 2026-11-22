@@ -33,7 +33,8 @@ import {
   effectListPrefix,
   renderAppliedEffectLine,
   renderEffectDetails,
-  renderEffectSummaryLine
+  renderEffectSummaryLine,
+  renderStatusSetResult
 } from "./effects.js";
 import {
   renderDataPath,
@@ -1204,6 +1205,7 @@ export const RENDERERS = registerRenderers([
   ),
   deleteRenderer("scene.token.delete", "token", { suffix: sceneSuffix }),
   detailRenderer("scene.token.restore-delta", (result) => renderTokenDeltaRestore(result)),
+  detailRenderer(["actor.status.set", "scene.token.status.set"], (result) => renderStatusSetResult(result)),
   listRenderer("scene.token.item.list", {
     key: "items",
     empty: "No items found.",

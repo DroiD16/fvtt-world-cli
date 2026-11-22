@@ -4,6 +4,7 @@ import type { CliDependencies } from "../deps.js";
 import { executeRemoteCommand } from "../exec.js";
 import { folderField, numberField, optionalPatch, stringField } from "../params.js";
 import {
+  parseBoolean,
   parseIdList,
   parseJsonObject,
   parseJsonObjectArray,
@@ -81,6 +82,32 @@ export function worldListParams(options: WorldListOptions): Record<string, strin
     ...nameFilterParams(options),
     ...(options.folder !== undefined ? { folder: options.folder } : {}),
     ...paginationParams(options)
+  };
+}
+
+export interface StatusSetOptions {
+  statusId: string;
+  active: boolean;
+  overlay?: boolean;
+}
+
+export function addStatusSetOptions(command: Command): Command {
+  return command
+    .description("Turn one configured status effect on or off, as the token HUD does")
+    .requiredOption("--status-id <statusId>", "Status id from CONFIG.statusEffects (e.g. prone)")
+    .requiredOption("--active <active>", "Requested state (true|false)", parseBoolean)
+    .option("--overlay", "Show the status as the token's large overlay icon when it is turned on")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.previous and .result.changed report the state before the call and whether it changed. An unknown status id lists the valid ones in .error.details.validStatusIds. A game system can attach its own behaviour to a status, such as dnd5e's exhaustion levels or its mutually exclusive cover statuses."
+    );
+}
+
+export function statusSetParams(options: StatusSetOptions) {
+  return {
+    statusId: options.statusId,
+    active: options.active,
+    ...(options.overlay ? { overlay: true } : {})
   };
 }
 

@@ -346,6 +346,11 @@ var folderFilteredListSchema = {
   properties: { ...nameFilterProperty, ...folderFilterProperty, ...paginationProperties },
   additionalProperties: false
 };
+var statusSetProperties = {
+  statusId: { type: "string", minLength: 1 },
+  active: { type: "boolean" },
+  overlay: { type: "boolean" }
+};
 var dryRunProperty = {
   dryRun: { type: "boolean" }
 };
@@ -772,6 +777,19 @@ var actorCommands = {
         patch: actorPatchSchema,
         ...dryRunProperty,
         ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "actor.status.set": cmd(
+    {
+      type: "object",
+      required: ["actorId", "statusId", "active"],
+      properties: {
+        actorId: { type: "string", minLength: 1 },
+        ...statusSetProperties,
+        ...dryRunProperty
       },
       additionalProperties: false
     },
@@ -3707,6 +3725,19 @@ var sceneEmbeddedCommands = {
     createSchema: effectCreateSchema,
     patchSchema: effectPatchSchema
   }),
+  "scene.token.status.set": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "tokenId", "statusId", "active"],
+      properties: {
+        ...sceneTokenScopeProperties,
+        ...statusSetProperties,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
   "scene.token.effect.list": cmd({
     type: "object",
     required: ["sceneId", "tokenId"],
@@ -5624,6 +5655,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "scene.token.item.effect.create-many": "allow",
   "scene.token.item.effect.update-many": "allow",
   "scene.token.item.effect.delete-many": "approve",
+  "scene.token.status.set": "allow",
   "scene.token.effect.list": "allow",
   "scene.token.effect.applied": "allow",
   "scene.token.effect.get": "allow",
@@ -5869,6 +5901,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "actor.update": "allow",
   "actor.delete": "approve",
   "actor.clone": "allow",
+  "actor.status.set": "allow",
   "actor.ownership.set": "allow",
   "actor.item.list": "allow",
   "actor.item.create": "allow",

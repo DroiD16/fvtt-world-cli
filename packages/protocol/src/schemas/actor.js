@@ -19,7 +19,8 @@ import {
   nameFilterProperty,
   nullableStringSchema,
   paginationProperties,
-  patchFrom
+  patchFrom,
+  statusSetProperties
 } from "./shared.js";
 
 const actorDataSchema = {
@@ -110,6 +111,19 @@ export const actorCommands = {
         patch: actorPatchSchema,
         ...dryRunProperty,
         ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "actor.status.set": cmd(
+    {
+      type: "object",
+      required: ["actorId", "statusId", "active"],
+      properties: {
+        actorId: { type: "string", minLength: 1 },
+        ...statusSetProperties,
+        ...dryRunProperty
       },
       additionalProperties: false
     },

@@ -91,7 +91,9 @@ import {
 } from "./field-options.js";
 import {
   type RegistrationContext,
+  type StatusSetOptions,
   type WorldListOptions,
+  addStatusSetOptions,
   addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
@@ -99,6 +101,7 @@ import {
   addPaginationOptions,
   nameFilterParams,
   paginationParams,
+  statusSetParams,
   worldListParams
 } from "./shared.js";
 import { write } from "../deps.js";
@@ -1884,6 +1887,22 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     commandName: "scene.import-from-compendium",
     noun: "scene",
     packExample: "dnd5e.scenes"
+  });
+
+  addStatusSetOptions(
+    sceneToken
+      .command("status")
+      .description("Placed-token status effects (conditions) on the token's actor")
+      .command("set")
+      .requiredOption("--scene-id <sceneId>", "Scene id")
+      .requiredOption("--token-id <tokenId>", "Token id")
+  ).action(async function setTokenStatus(options: StatusSetOptions & { sceneId: string; tokenId: string }) {
+    await executeRemoteCommand({
+      commandName: "scene.token.status.set",
+      params: { sceneId: options.sceneId, tokenId: options.tokenId, ...statusSetParams(options) },
+      command: this,
+      dependencies
+    });
   });
 
   const sceneTokenEffect = sceneToken

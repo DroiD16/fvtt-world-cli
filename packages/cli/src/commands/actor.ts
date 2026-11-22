@@ -27,6 +27,8 @@ import {
 } from "./field-options.js";
 import {
   type RegistrationContext,
+  type StatusSetOptions,
+  addStatusSetOptions,
   type WorldListOptions,
   addWorldListOptions,
   createSharedRegistrars,
@@ -35,6 +37,7 @@ import {
   addPaginationOptions,
   nameFilterParams,
   paginationParams,
+  statusSetParams,
   worldListParams
 } from "./shared.js";
 import { write } from "../deps.js";
@@ -221,6 +224,21 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
         dependencies
       });
     });
+
+  addStatusSetOptions(
+    actor
+      .command("status")
+      .description("Actor status effects (conditions)")
+      .command("set")
+      .requiredOption("--actor-id <actorId>", "Actor id")
+  ).action(async function setActorStatus(options: StatusSetOptions & { actorId: string }) {
+    await executeRemoteCommand({
+      commandName: "actor.status.set",
+      params: { actorId: options.actorId, ...statusSetParams(options) },
+      command: this,
+      dependencies
+    });
+  });
 
   const actorItem = actor.command("item").description("Foundry actor embedded item commands");
   registerBatchWriteCommands(actorItem, {

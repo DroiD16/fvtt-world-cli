@@ -91,6 +91,12 @@ export const folderFilteredListSchema = {
   additionalProperties: false
 };
 
+export const statusSetProperties = {
+  statusId: { type: "string", minLength: 1 },
+  active: { type: "boolean" },
+  overlay: { type: "boolean" }
+};
+
 export const dryRunProperty = {
   dryRun: { type: "boolean" }
 };

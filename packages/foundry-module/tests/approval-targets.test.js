@@ -17,9 +17,11 @@ import { createCollection, createDocument, installFakeFoundry } from "./helpers/
 const ID_PARAMETER_PATTERN = /^(?:.+Ids?|from|to)$/;
 
 // The ids a summary carries as descriptor text instead of as a resolved document target: an entry in
-// a compendium, which lies outside the world document graph, and the opaque approval correlation id.
-// A new command whose id is missing here has no resolved target.
+// a compendium, which lies outside the world document graph, a configured status effect, and the
+// opaque approval correlation id. A new command whose id is missing here has no resolved target.
 const UNRESOLVED_ID_PARAMETERS = [
+  "actor.status.set statusId",
+  "scene.token.status.set statusId",
   "actor.import-from-compendium entryId",
   "image.show userIds",
   "journal.show userIds",

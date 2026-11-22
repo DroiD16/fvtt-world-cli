@@ -2631,6 +2631,186 @@ function runListFilterCoverage(summary, { stamp, created, actorId }) {
   );
 }
 
+function runStatusEffectCoverage(summary, { stamp, created, actorId }) {
+  const actorType = expectOk(
+    summary,
+    "actor.get(fixture type for status effects)",
+    runFoundryctl(["actor", "get", "--actor-id", actorId])
+  )?.actor?.type;
+  if (typeof actorType !== "string") return;
+  const scratchActorId =
+    expectOk(
+      summary,
+      "actor.create(status effect scratch, unlinked prototype)",
+      runFoundryctl([
+        "actor",
+        "create",
+        "--name",
+        `Smoke Status ${stamp}`,
+        "--type",
+        actorType,
+        "--data-json",
+        JSON.stringify({ prototypeToken: { actorLink: false } })
+      ])
+    )?.actor?.id ?? null;
+  if (!scratchActorId) return;
+  created.actors.push(scratchActorId);
+
+  const setStatus = (statusId, active, extra = []) =>
+    runFoundryctl([
+      "actor",
+      "status",
+      "set",
+      "--actor-id",
+      scratchActorId,
+      "--status-id",
+      statusId,
+      "--active",
+      String(active),
+      ...extra
+    ]);
+  const unknown = setStatus(`smoke-no-such-status-${stamp}`, true);
+  const validStatusIds = unknown.response?.error?.details?.validStatusIds;
+  markAndPush(
+    summary,
+    "actor.status.set(unknown status → INVALID_PARAMS listing the configured ids)",
+    isExpectedError(unknown, "INVALID_PARAMS") && Array.isArray(validStatusIds) && validStatusIds.length > 0,
+    { ...summarizeCommand(unknown), validStatusIds }
+  );
+  if (!Array.isArray(validStatusIds) || validStatusIds.length === 0) return;
+  const statusId = validStatusIds.includes("prone") ? "prone" : validStatusIds[0];
+
+  const preview = runFoundryctl([
+    "--dry-run",
+    "actor",
+    "status",
+    "set",
+    "--actor-id",
+    scratchActorId,
+    "--status-id",
+    statusId,
+    "--active",
+    "true"
+  ]);
+  const on = expectOk(summary, "actor.status.set(on)", setStatus(statusId, true));
+  const onAgain = expectOk(summary, "actor.status.set(on again)", setStatus(statusId, true));
+  const effectsOn = expectOk(
+    summary,
+    "actor.effect.list(after status on)",
+    runFoundryctl(["actor", "effect", "list", "--actor-id", scratchActorId])
+  );
+  markAndPush(
+    summary,
+    "actor.status.set(preview, write, then a no-op; the status effect exists)",
+    preview.response?.ok === true &&
+      preview.response.result?.dryRun === true &&
+      preview.response.result?.previous === false &&
+      preview.response.result?.changed === true &&
+      on?.previous === false &&
+      on?.changed === true &&
+      onAgain?.previous === true &&
+      onAgain?.changed === false &&
+      (effectsOn?.total ?? 0) >= 1,
+    { statusId, preview: preview.response?.result ?? null, on, onAgain, effects: effectsOn?.total ?? null }
+  );
+  const off = expectOk(summary, "actor.status.set(off)", setStatus(statusId, false));
+  const offAgain = expectOk(summary, "actor.status.set(off again)", setStatus(statusId, false));
+  markAndPush(
+    summary,
+    "actor.status.set(off removes the status, then a no-op)",
+    off?.previous === true &&
+      off?.changed === true &&
+      offAgain?.previous === false &&
+      offAgain?.changed === false,
+    { off, offAgain }
+  );
+
+  const sceneId =
+    expectOk(
+      summary,
+      "scene.create(status effect scratch)",
+      runFoundryctl([
+        "scene",
+        "create",
+        "--name",
+        `Smoke Status Scene ${stamp}`,
+        "--width",
+        "1000",
+        "--height",
+        "800"
+      ])
+    )?.scene?.id ?? null;
+  if (!sceneId) return;
+  created.scenes.push(sceneId);
+  const tokenId =
+    expectOk(
+      summary,
+      "scene.token.create(status effect scratch)",
+      runFoundryctl(["scene", "token", "create", "--scene-id", sceneId, "--actor-id", scratchActorId])
+    )?.token?.id ?? null;
+  if (!tokenId) return;
+  const tokenOn = expectOk(
+    summary,
+    "scene.token.status.set(on, overlay)",
+    runFoundryctl([
+      "scene",
+      "token",
+      "status",
+      "set",
+      "--scene-id",
+      sceneId,
+      "--token-id",
+      tokenId,
+      "--status-id",
+      statusId,
+      "--active",
+      "true",
+      "--overlay"
+    ])
+  );
+  const worldActorAfter = runFoundryctl([
+    "--dry-run",
+    "actor",
+    "status",
+    "set",
+    "--actor-id",
+    scratchActorId,
+    "--status-id",
+    statusId,
+    "--active",
+    "true"
+  ]);
+  const tokenOff = expectOk(
+    summary,
+    "scene.token.status.set(off)",
+    runFoundryctl([
+      "scene",
+      "token",
+      "status",
+      "set",
+      "--scene-id",
+      sceneId,
+      "--token-id",
+      tokenId,
+      "--status-id",
+      statusId,
+      "--active",
+      "false"
+    ])
+  );
+  markAndPush(
+    summary,
+    "scene.token.status.set(unlinked token's own actor, world actor untouched)",
+    tokenOn?.actorLink === false &&
+      tokenOn?.mutatesWorldActor === false &&
+      tokenOn?.changed === true &&
+      worldActorAfter.response?.result?.previous === false &&
+      tokenOff?.previous === true &&
+      tokenOff?.changed === true,
+    { tokenOn, worldActorPrevious: worldActorAfter.response?.result?.previous ?? null, tokenOff }
+  );
+}
+
 function runSceneLevelCoverage(summary, { stamp, worldId, isV14, created, actorId }) {
   const folder = expectOk(
     summary,
@@ -4434,6 +4614,7 @@ function runExtendedCoverage(
   try {
     runSceneLevelCoverage(summary, { stamp, worldId, isV14, created, actorId });
     runListFilterCoverage(summary, { stamp, created, actorId });
+    runStatusEffectCoverage(summary, { stamp, created, actorId });
 
     const sceneCreate = expectOk(
       summary,

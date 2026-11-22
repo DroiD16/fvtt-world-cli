@@ -642,6 +642,19 @@ command scene token item effect delete
   opt --item-id <itemId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Item id
   opt --effect-id <effectId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Effect id
 
+command scene token status
+  aliases=[]
+  summary=Placed-token status effects (conditions) on the token's actor
+
+command scene token status set
+  aliases=[]
+  summary=Turn one configured status effect on or off, as the token HUD does
+  opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Scene id
+  opt --token-id <tokenId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Token id
+  opt --status-id <statusId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Status id from CONFIG.statusEffects (e.g. prone)
+  opt --active <active> | parser=parseBoolean | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Requested state (true|false)
+  opt --overlay | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Show the status as the token's large overlay icon when it is turned on
+
 command scene token effect
   aliases=[]
   summary=Placed-token ActiveEffect commands (protocol scene.token.effect.*)
@@ -3012,6 +3025,18 @@ command actor import-from-compendium
   opt --token-img <tokenImg> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Prototype token texture override (the placed token's image)
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort override
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra override fields as a JSON object (merged into updateData)
+
+command actor status
+  aliases=[]
+  summary=Actor status effects (conditions)
+
+command actor status set
+  aliases=[]
+  summary=Turn one configured status effect on or off, as the token HUD does
+  opt --actor-id <actorId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Actor id
+  opt --status-id <statusId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Status id from CONFIG.statusEffects (e.g. prone)
+  opt --active <active> | parser=parseBoolean | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Requested state (true|false)
+  opt --overlay | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Show the status as the token's large overlay icon when it is turned on
 
 command actor item
   aliases=[]
