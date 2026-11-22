@@ -16697,6 +16697,30 @@ async function main() {
       entry: statEntry
     });
 
+    const sizeRun = runFoundryctl(["file", "size", "--path", remotePath]);
+    markAndPush(
+      summary,
+      "file.size(HEAD Content-Length equals the uploaded byte count)",
+      Boolean(
+        sizeRun.response?.ok &&
+        sizeRun.response.result?.path === remotePath &&
+        sizeRun.response.result?.size === expectedBuffer.length
+      ),
+      { ...summarizeCommand(sizeRun), expectedSize: expectedBuffer.length }
+    );
+    expectErr(
+      summary,
+      "file.size(missing file → FILE_NOT_FOUND)",
+      runFoundryctl(["file", "size", "--path", `${testDir}/missing-${stamp}.txt`]),
+      "FILE_NOT_FOUND"
+    );
+    expectErr(
+      summary,
+      "file.size(directory → INVALID_PARAMS)",
+      runFoundryctl(["file", "size", "--path", testDir]),
+      "INVALID_PARAMS"
+    );
+
     const readTextRun = runFoundryctl(["file", "read", "--path", remotePath, "--encoding", "text"]);
     const readTextOk = Boolean(
       readTextRun.response?.ok &&

@@ -854,6 +854,43 @@ function encodeDataPathForFetch(path) {
   return path.split("/").map(encodeDataPathSegment).join("/");
 }
 
+export async function sizeDataFile(path) {
+  const normalizedPath = normalizeFilePath(path);
+  const entry = await statDataPath(normalizedPath);
+  if (entry.kind !== "file") {
+    throw createInvalidParamsError("$.params.path must reference a file");
+  }
+
+  if (typeof globalThis.fetch !== "function") {
+    throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Fetch API is not available", {
+      path: normalizedPath
+    });
+  }
+
+  const response = await globalThis.fetch(encodeDataPathForFetch(entry.path), {
+    method: "HEAD",
+    cache: "no-store"
+  });
+  if (response.status === 404) {
+    throw createBridgeError(
+      ERROR_CODES.FILE_NOT_FOUND,
+      `Path ${normalizedPath} was not found; use file.list to discover valid paths`,
+      { path: normalizedPath, message: `HTTP 404 for HEAD ${normalizedPath}` }
+    );
+  }
+
+  const declared = response.ok ? response.headers.get("content-length") : null;
+  if (typeof declared !== "string" || !/^\d+$/.test(declared.trim())) {
+    throw createBridgeError(
+      ERROR_CODES.INTERNAL_ERROR,
+      `The server that serves ${normalizedPath} answered a HEAD request without a usable Content-Length, so its size is unknown; a proxy in front of Foundry may strip that header. file.read returns the content and its measured size`,
+      { path: normalizedPath, status: response.status, contentLength: declared ?? null }
+    );
+  }
+
+  return { path: entry.path, size: Number(declared.trim()) };
+}
+
 export async function readDataFile(
   path,
   encoding,

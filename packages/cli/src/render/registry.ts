@@ -1420,6 +1420,9 @@ export const RENDERERS = registerRenderers([
     ].join("\n");
   }),
   detailRenderer("file.stat", (result) => renderFileEntryDetails(result.entry ?? {})),
+  detailRenderer("file.size", (result) =>
+    [`path: ${renderDataPath(result.path)}`, `size: ${renderFileSize(result.size)} bytes`].join("\n")
+  ),
   detailRenderer("file.read", (result) =>
     [
       `path: ${renderDataPath(result.file?.path)}`,

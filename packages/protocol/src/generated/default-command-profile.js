@@ -327,6 +327,7 @@ export const DEFAULT_COMMAND_PROFILE = deepFreeze({
   "actor.item.effect.delete-many": "approve",
   "file.list": "allow",
   "file.stat": "allow",
+  "file.size": "allow",
   "file.read": "allow",
   "file.mkdir": "allow",
   "file.upload": "allow",

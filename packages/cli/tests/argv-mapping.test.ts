@@ -41,6 +41,7 @@ describe("fvtt-world-cli commands", () => {
     ],
     [["file", "list"], "file.list", { path: "" }],
     [["file", "stat"], "file.stat", { path: "" }],
+    [["file", "size", "--path", "worlds/world-1/a.webp"], "file.size", { path: "worlds/world-1/a.webp" }],
     [
       ["file", "read", "--path", "worlds/world-1/readme.txt", "--encoding", "text"],
       "file.read",

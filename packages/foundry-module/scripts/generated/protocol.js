@@ -1954,6 +1954,14 @@ var fileCommands = {
     },
     additionalProperties: false
   }),
+  "file.size": cmd({
+    type: "object",
+    required: ["path"],
+    properties: {
+      path: nonEmptyDataPathSchema
+    },
+    additionalProperties: false
+  }),
   "file.read": cmd({
     type: "object",
     required: ["path", "encoding"],
@@ -5895,6 +5903,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "actor.item.effect.delete-many": "approve",
   "file.list": "allow",
   "file.stat": "allow",
+  "file.size": "allow",
   "file.read": "allow",
   "file.mkdir": "allow",
   "file.upload": "allow",

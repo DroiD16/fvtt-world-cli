@@ -3486,6 +3486,11 @@ command file stat
   summary=
   opt --path <path> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default="" | help=Data-relative file or directory path
 
+command file size
+  aliases=[]
+  summary=Report a file's size in bytes, as the Content-Length the server sends for an HTTP HEAD request
+  opt --path <path> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Data-relative file path
+
 command file read
   aliases=[]
   summary=Read a file's content; a file over the upload limit (system info: limits.uploadBytes) or about 383 MiB returns PAYLOAD_TOO_LARGE
