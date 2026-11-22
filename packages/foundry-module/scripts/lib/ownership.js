@@ -27,20 +27,13 @@ export function assertKnownOwnershipUsers(users) {
 
 /**
  * @param {any} target
- * @returns {Record<string, number>}
- */
-function readStoredOwnership(target) {
-  const source = typeof target?.toObject === "function" ? target.toObject() : null;
-  return { ...(source?.ownership ?? target?.ownership ?? {}) };
-}
-
-/**
- * @param {any} target
  * @param {{ defaultLevel?: number, users?: Record<string, number | null> }} [patch]
  * @returns {{ ownership: Record<string, number>, patch: Record<string, any> }}
  */
 export function planOwnershipWrite(target, { defaultLevel, users } = {}) {
-  const stored = readStoredOwnership(target);
+  const source = typeof target?.toObject === "function" ? target.toObject() : null;
+  /** @type {Record<string, number>} */
+  const stored = { ...(source?.ownership ?? target?.ownership ?? {}) };
   const ownership = { ...stored };
   if (defaultLevel !== undefined) {
     ownership.default = defaultLevel;

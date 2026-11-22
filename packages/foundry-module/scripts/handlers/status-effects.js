@@ -4,17 +4,15 @@ import { getSceneTokenActor } from "../lib/embedded-items.js";
 import { createBridgeError } from "../lib/errors.js";
 import { getActorById } from "../lib/game-collections.js";
 
-function configuredStatusIds() {
-  const configured = /** @type {any} */ (globalThis).CONFIG?.statusEffects;
-  const entries = Array.isArray(configured) ? configured : Object.values(configured ?? {});
-  return [...new Set(entries.map((entry) => entry?.id).filter((id) => typeof id === "string"))];
-}
-
 /**
  * @param {string} statusId
  */
 function assertConfiguredStatus(statusId) {
-  const validStatusIds = configuredStatusIds();
+  const configured = /** @type {any} */ (globalThis).CONFIG?.statusEffects;
+  const entries = Array.isArray(configured) ? configured : Object.values(configured ?? {});
+  const validStatusIds = [
+    ...new Set(entries.map((entry) => entry?.id).filter((id) => typeof id === "string"))
+  ];
   if (!validStatusIds.includes(statusId)) {
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,

@@ -64,7 +64,7 @@ export const UUID_ROUTES = Object.freeze({
   User: { command: "user.get", idFields: ["userId"] }
 });
 
-export const COMPENDIUM_ENTRY_COMMAND = "compendium.get";
+const COMPENDIUM_ENTRY_COMMAND = "compendium.get";
 
 /** @type {Readonly<Record<string, string>>} */
 const NOT_FOUND_CODES = Object.freeze({

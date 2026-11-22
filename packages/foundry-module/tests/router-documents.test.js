@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { createCommandRouter } from "../scripts/command-router.js";
 import { COMMAND_DEFINITIONS, COMMAND_NAMES, ERROR_CODES } from "../scripts/generated/protocol.js";
-import { COMPENDIUM_ENTRY_COMMAND, UUID_ROUTES } from "../scripts/lib/document-uuid.js";
+import { UUID_ROUTES } from "../scripts/lib/document-uuid.js";
 
 import { createRequest, installFakeFoundry } from "./helpers/fake-foundry.js";
 
@@ -122,7 +122,7 @@ describe("document.resolve", () => {
     expect(response.result).toEqual({
       uuid: "Compendium.world.test-monsters.Actor.entry-1",
       documentName: "Actor",
-      command: COMPENDIUM_ENTRY_COMMAND,
+      command: "compendium.get",
       params: { pack: "world.test-monsters", entryId: "entry-1" }
     });
   });
@@ -141,7 +141,7 @@ describe("document.resolve", () => {
     expect(redirected.result).toEqual({
       uuid: "Compendium.world.test-items.Item.spell-1",
       documentName: "Item",
-      command: COMPENDIUM_ENTRY_COMMAND,
+      command: "compendium.get",
       params: { pack: "world.test-items", entryId: "spell-1" }
     });
   });
@@ -208,10 +208,7 @@ describe("document.resolve", () => {
   });
 
   it("routes every family get command in the registry, with exactly the parameters it requires", () => {
-    const routed = new Set([
-      ...Object.values(UUID_ROUTES).map((route) => route.command),
-      COMPENDIUM_ENTRY_COMMAND
-    ]);
+    const routed = new Set([...Object.values(UUID_ROUTES).map((route) => route.command), "compendium.get"]);
     const getCommands = COMMAND_NAMES.filter((command) => command.endsWith(".get"));
 
     expect(
@@ -223,7 +220,7 @@ describe("document.resolve", () => {
         [...required].sort()
       );
     }
-    expect([...COMMAND_DEFINITIONS[COMPENDIUM_ENTRY_COMMAND].paramsSchema.required].sort()).toEqual([
+    expect([...COMMAND_DEFINITIONS["compendium.get"].paramsSchema.required].sort()).toEqual([
       "entryId",
       "pack"
     ]);
