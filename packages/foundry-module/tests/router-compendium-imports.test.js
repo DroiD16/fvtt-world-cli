@@ -833,6 +833,10 @@ describe("command router", () => {
     expect(item.system).toEqual({ damage: "1d8" });
     expect(item.flags).toEqual({ mymod: { forged: true } });
     expect(item.effects.map((e) => e.name)).toEqual(["Sharpened"]);
+    const [, createdItems] = globalThis.game.actors
+      .get("actor-1")
+      .createEmbeddedDocuments.mock.calls.find(([type]) => type === "Item");
+    expect(createdItems[0].effects.map((effect) => effect._id)).toEqual(["eff-src"]);
 
     expect(item.img).toBe("compendium/longsword.png");
 

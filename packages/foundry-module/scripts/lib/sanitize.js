@@ -27,6 +27,8 @@ const PROTECTED_META_FIELDS = Object.freeze(new Set(["_id", "_stats", "ownership
 
 const EMBEDDED_AUTHOR_FIELDS = Object.freeze(new Set(["author", "user"]));
 
+const PROVENANCE_STATS_FIELDS = Object.freeze(["compendiumSource", "duplicateSource", "exportSource"]);
+
 // @param {Record<string, any> | null | undefined} data
 export function stripProtectedMeta(data) {
   return omitFields(data, PROTECTED_META_FIELDS);
@@ -55,9 +57,30 @@ export function sanitizeEffectData(data) {
   return canonicalizeFilePathFields(stripProtectedMeta(data), "ActiveEffect");
 }
 
+/** @param {unknown} stats */
+function provenanceStats(stats) {
+  if (!stats || typeof stats !== "object" || Array.isArray(stats)) return null;
+  const kept = Object.fromEntries(
+    PROVENANCE_STATS_FIELDS.filter((key) => Object.hasOwn(stats, key)).map((key) => [key, stats[key]])
+  );
+  return Object.keys(kept).length > 0 ? kept : null;
+}
+
+export function sanitizeEffectCreateData(data) {
+  const sanitized = sanitizeEffectData(data);
+  const stats = provenanceStats(data?._stats);
+  return stats ? { ...sanitized, _stats: stats } : sanitized;
+}
+
 export function sanitizeEmbeddedItemData(data) {
   if (!data || !Array.isArray(data.effects)) {
     return data;
   }
-  return { ...data, effects: data.effects.map((effect) => sanitizeEffectData(effect)) };
+  return {
+    ...data,
+    effects: data.effects.map((effect) => {
+      const sanitized = sanitizeEffectCreateData(effect);
+      return effect?._id != null ? { _id: effect._id, ...sanitized } : sanitized;
+    })
+  };
 }
