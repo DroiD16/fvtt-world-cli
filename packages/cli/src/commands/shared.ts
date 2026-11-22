@@ -99,7 +99,7 @@ export function addStatusSetOptions(command: Command): Command {
     .option("--overlay", "Show the status as the token's large overlay icon when it is turned on")
     .addHelpText(
       "after",
-      "\nResult key (--json): .result.previous and .result.changed report the state before the call and whether it changed. An unknown status id lists the valid ones in .error.details.validStatusIds. A game system can attach its own behaviour to a status, such as dnd5e's exhaustion levels or its mutually exclusive cover statuses."
+      "\nResult key (--json): .result.previous and .result.changed report the state before the call and whether it changed. An unknown status id lists the valid ones in .error.details.validStatusIds. With dnd5e, exhaustion goes up one level each time this command calls Foundry's toggle, --active false included."
     );
 }
 

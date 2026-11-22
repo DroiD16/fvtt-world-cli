@@ -70,12 +70,13 @@ async function setStatus({ actor, params, subject, coordinates }) {
   if (Boolean(actor.statuses?.has?.(params.statusId)) !== params.active) {
     throw createBridgeError(
       ERROR_CODES.INTERNAL_ERROR,
-      `${subject}: status ${params.statusId} is still ${params.active ? "inactive" : "active"} after Foundry's status toggle. The toggle removes only an effect that carries this status alone or the status's own effect; details.effects lists the effects that still carry it, which an effect command can change. A game system or module may also have intercepted the toggle`,
+      `${subject}: status ${params.statusId} is still ${params.active ? "inactive" : "active"} after Foundry's status toggle, so the requested state could not be confirmed. The toggle may have changed effects anyway: a game system can handle the status its own way, and the toggle removes only an effect that carries this status alone. details.effects lists the effects that still carry it. Re-read the actor before retrying; a retry may change the status again.`,
       {
         ...coordinates,
         statusId: params.statusId,
         active: params.active,
-        effects: effectsCarrying(actor, params.statusId)
+        effects: effectsCarrying(actor, params.statusId),
+        indeterminate: true
       }
     );
   }

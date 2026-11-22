@@ -112,7 +112,7 @@ describe("status effect commands", () => {
     expect(response.error.details.validStatusIds).toEqual(["prone", "blinded"]);
   });
 
-  it("reports a status the toggle could not remove with the effects that still carry it", async () => {
+  it("reports a status the toggle left active as indeterminate, with the effects that still carry it", async () => {
     installStatusToggle(actor, { removable: false });
     actor.statuses.add("prone");
     actor.allApplicableEffects = () => [
@@ -130,6 +130,7 @@ describe("status effect commands", () => {
       actorId: "actor-1",
       statusId: "prone",
       active: false,
+      indeterminate: true,
       effects: [
         {
           id: "multi",
