@@ -80,14 +80,10 @@ export const nameFilteredListSchema = {
   additionalProperties: false
 };
 
-export const folderFilterProperty = {
-  folder: { type: "string", minLength: 1 }
-};
-
 export const folderFilteredListSchema = {
   type: "object",
   required: [],
-  properties: { ...nameFilterProperty, ...folderFilterProperty, ...paginationProperties },
+  properties: { ...nameFilterProperty, folder: { type: "string", minLength: 1 }, ...paginationProperties },
   additionalProperties: false
 };
 

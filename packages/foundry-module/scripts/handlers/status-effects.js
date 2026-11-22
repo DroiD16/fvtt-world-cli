@@ -46,13 +46,6 @@ function effectsCarrying(actor, statusId) {
  */
 async function setStatus({ actor, params, subject, coordinates }) {
   assertConfiguredStatus(params.statusId);
-  if (typeof actor.toggleStatusEffect !== "function") {
-    throw createBridgeError(
-      ERROR_CODES.UNSUPPORTED_OPERATION,
-      "This Foundry core has no Actor#toggleStatusEffect, so status effects cannot be set",
-      coordinates
-    );
-  }
 
   const previous = Boolean(actor.statuses?.has?.(params.statusId));
   const result = { ...coordinates, statusId: params.statusId, active: params.active, previous };

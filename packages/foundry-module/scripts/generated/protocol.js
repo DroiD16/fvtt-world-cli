@@ -337,13 +337,10 @@ var nameFilteredListSchema = {
   properties: { ...nameFilterProperty, ...paginationProperties },
   additionalProperties: false
 };
-var folderFilterProperty = {
-  folder: { type: "string", minLength: 1 }
-};
 var folderFilteredListSchema = {
   type: "object",
   required: [],
-  properties: { ...nameFilterProperty, ...folderFilterProperty, ...paginationProperties },
+  properties: { ...nameFilterProperty, folder: { type: "string", minLength: 1 }, ...paginationProperties },
   additionalProperties: false
 };
 var statusSetProperties = {

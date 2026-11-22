@@ -106,7 +106,7 @@ export function filterByFolder(documents, folderId, documentName) {
   }
 
   const folder = getFolderById(folderId);
-  const folderType = folder.type ?? folder.toObject?.().type ?? null;
+  const folderType = folder.type ?? null;
   if (folderType !== documentName) {
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
