@@ -46,6 +46,10 @@ interface ActorListOptions extends WorldListOptions {
   type?: string;
 }
 
+interface ActorStatusSetOptions extends StatusSetOptions {
+  actorId: string;
+}
+
 interface ActorItemGetOptions {
   actorId: string;
   itemId: string;
@@ -231,7 +235,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
       .description("Actor status effects (conditions)")
       .command("set")
       .requiredOption("--actor-id <actorId>", "Actor id")
-  ).action(async function setActorStatus(options: StatusSetOptions & { actorId: string }) {
+  ).action(async function setActorStatus(options: ActorStatusSetOptions) {
     await executeRemoteCommand({
       commandName: "actor.status.set",
       params: { actorId: options.actorId, ...statusSetParams(options) },

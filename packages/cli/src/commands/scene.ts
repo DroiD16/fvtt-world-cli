@@ -106,6 +106,11 @@ import {
 } from "./shared.js";
 import { write } from "../deps.js";
 
+interface TokenStatusSetOptions extends StatusSetOptions {
+  sceneId: string;
+  tokenId: string;
+}
+
 interface SceneLevelScopeOptions {
   sceneId: string;
 }
@@ -1896,7 +1901,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
       .command("set")
       .requiredOption("--scene-id <sceneId>", "Scene id")
       .requiredOption("--token-id <tokenId>", "Token id")
-  ).action(async function setTokenStatus(options: StatusSetOptions & { sceneId: string; tokenId: string }) {
+  ).action(async function setTokenStatus(options: TokenStatusSetOptions) {
     await executeRemoteCommand({
       commandName: "scene.token.status.set",
       params: { sceneId: options.sceneId, tokenId: options.tokenId, ...statusSetParams(options) },

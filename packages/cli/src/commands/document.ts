@@ -4,7 +4,7 @@ import { executeRemoteCommand, printRemoteResponse, sendRemoteCommand } from "..
 import { parseCsvList } from "../parse.js";
 import type { RegistrationContext } from "./shared.js";
 
-interface DocumentGetOptions {
+interface DocumentUuidOptions {
   uuid: string;
   include?: string[];
 }
@@ -20,7 +20,7 @@ export function registerDocument({ program, dependencies }: RegistrationContext)
     .command("resolve")
     .description("Map a UUID to its canonical form and the family get command and parameters that read it")
     .requiredOption("--uuid <uuid>", "Document UUID, such as Actor.<id> or Compendium.<pack>.<Type>.<id>")
-    .action(async function resolveDocument(this: Command, options: { uuid: string }) {
+    .action(async function resolveDocument(this: Command, options: DocumentUuidOptions) {
       await executeRemoteCommand({
         commandName: "document.resolve",
         params: { uuid: options.uuid },
@@ -42,7 +42,7 @@ export function registerDocument({ program, dependencies }: RegistrationContext)
       "after",
       "\nThe result, its key and its errors are those of the resolved command (document resolve --uuid shows which). A token's synthetic actor (Scene.<id>.Token.<id>.Actor.<id>) reads as its token. A UUID of a document embedded in a compendium entry, a relative UUID, a setting, or a document type with no get command returns UNSUPPORTED_OPERATION."
     )
-    .action(async function getDocument(this: Command, options: DocumentGetOptions) {
+    .action(async function getDocument(this: Command, options: DocumentUuidOptions) {
       const resolution = await sendRemoteCommand({
         commandName: "document.resolve",
         params: { uuid: options.uuid },

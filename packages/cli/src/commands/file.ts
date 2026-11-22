@@ -12,6 +12,10 @@ import {
   paginationParams
 } from "./shared.js";
 
+interface FileSizeOptions {
+  path: string;
+}
+
 export function registerFile({ program, dependencies }: RegistrationContext) {
   const file = program.command("file").description("Foundry data source file commands");
   file.addHelpText(
@@ -72,7 +76,7 @@ export function registerFile({ program, dependencies }: RegistrationContext) {
       "Report a file's size in bytes, as the Content-Length the server sends for an HTTP HEAD request"
     )
     .requiredOption("--path <path>", "Data-relative file path")
-    .action(async function sizeFile(options: { path: string }) {
+    .action(async function sizeFile(options: FileSizeOptions) {
       await executeRemoteCommand({
         commandName: "file.size",
         params: { path: options.path },
