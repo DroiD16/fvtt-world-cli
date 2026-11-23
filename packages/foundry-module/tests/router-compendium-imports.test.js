@@ -722,7 +722,7 @@ describe("command router", () => {
     expect(globalThis.JournalEntry.create.mock.calls.at(-1)[0].ownership).toEqual({ default: 2 });
   });
 
-  it("macro.import-from-compendium keeps the pack's macro author, as Foundry's own import does", async () => {
+  it("macro.import-from-compendium passes the pack macro's author to Foundry's create", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
     const response = await router.route(
