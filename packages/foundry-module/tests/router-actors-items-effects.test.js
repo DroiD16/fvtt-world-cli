@@ -197,7 +197,7 @@ describe("command router", () => {
     expect(worldItemNames).not.toContain("Poisoned Dagger");
   });
 
-  it("refuses two nested effects with the same _id on every item create route, dry runs included", async () => {
+  it("refuses two nested effects with the same _id on actor item create, create-many and import and token item create, dry runs included", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
     const actor = globalThis.game.actors.get("actor-1");
     const deltaActor = globalThis.game.scenes.get("scene-1").tokens.get("token-a").actor;
@@ -217,7 +217,15 @@ describe("command router", () => {
       ["actor.item.create-many", { actorId: "actor-1", data: [data] }],
       ["actor.item.create-many", { actorId: "actor-1", data: [data], dryRun: true }],
       ["scene.token.item.create", { sceneId: "scene-1", tokenId: "token-a", data }],
-      ["scene.token.item.create", { sceneId: "scene-1", tokenId: "token-a", data, dryRun: true }]
+      ["scene.token.item.create", { sceneId: "scene-1", tokenId: "token-a", data, dryRun: true }],
+      [
+        "actor.item.import-from-compendium",
+        { actorId: "actor-1", pack: "world.test-items", entryId: "it-twin" }
+      ],
+      [
+        "actor.item.import-from-compendium",
+        { actorId: "actor-1", pack: "world.test-items", entryId: "it-twin", dryRun: true }
+      ]
     ];
     actor.createEmbeddedDocuments.mockClear();
     deltaActor.createEmbeddedDocuments.mockClear();

@@ -3872,6 +3872,19 @@ export function installFakeFoundry() {
           system: {}
         });
       }
+      if (id === "it-twin") {
+        return makePackEntry("world.test-items", "Item", {
+          _id: "it-twin",
+          name: "Twin",
+          type: "weapon",
+          system: {},
+          effects: [
+            { _id: "twinEffect000001", name: "A" },
+            { _id: "otherEffect00001", name: "B" },
+            { _id: "twinEffect000001", name: "C" }
+          ]
+        });
+      }
       if (id === "it-full") {
         return makePackEntry("world.test-items", "Item", {
           _id: "it-full",
