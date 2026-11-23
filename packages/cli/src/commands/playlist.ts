@@ -23,7 +23,8 @@ import {
   addPaginationOptions,
   nameFilterParams,
   paginationParams,
-  worldListParams
+  worldListParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 
 export function registerPlaylist({ program, dependencies }: RegistrationContext) {
@@ -125,6 +126,7 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
     });
   playlist
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--playlist-id <playlistId>", "Playlist id")
     .action(async function deletePlaylist(options: { playlistId: string }) {
       await executeRemoteCommand({
@@ -277,6 +279,7 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
     });
   playlistSound
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--playlist-id <playlistId>", "Playlist id")
     .requiredOption("--sound-id <soundId>", "Sound id")
     .action(async function deletePlaylistSound(options: { playlistId: string; soundId: string }) {

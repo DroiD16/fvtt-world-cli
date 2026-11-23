@@ -24,7 +24,8 @@ import {
   addPaginationOptions,
   nameFilterParams,
   paginationParams,
-  worldListParams
+  worldListParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 import { write } from "../deps.js";
 
@@ -181,6 +182,8 @@ export function registerCards({ program, dependencies }: RegistrationContext) {
       });
     });
 
+  const CARDS_ACTION_RESULT_KEY_HELP =
+    "\nResult key (--json): .result.cardsId, .result.complete, .result.mutation, .result.reconciliation and .result.chatNotification; shuffle adds .result.shuffle, reset .result.recall, and deal/draw/pass .result.from and .result.to[]. There is no .result.cards.";
   const cardsActionHelp =
     "\nEvery action verb returns four markers: `complete`, `mutation` (committed/partial/unknown/" +
     "not-executed), `reconciliation` (confirmed/best-effort/not-executed) and `chatNotification`." +
@@ -204,6 +207,7 @@ export function registerCards({ program, dependencies }: RegistrationContext) {
   cards.addHelpText("after", cardsActionHelp);
 
   addIdempotencyKeyOption(cards.command("shuffle"))
+    .addHelpText("after", CARDS_ACTION_RESULT_KEY_HELP)
     .description("Randomize the sort order of every card in a stack (Foundry's Cards#shuffle).")
     .requiredOption("--cards-id <cardsId>", "Card stack id")
     .option("--no-chat", "Suppress Foundry's chat notification")
@@ -225,6 +229,7 @@ export function registerCards({ program, dependencies }: RegistrationContext) {
     });
 
   addIdempotencyKeyOption(cards.command("reset"))
+    .addHelpText("after", CARDS_ACTION_RESULT_KEY_HELP)
     .description(
       "Recall a stack (Foundry's Cards#recall). A DECK pulls its cards back out of EVERY other stack; a HAND/PILE pushes its cards back to their origin decks. Run with --dry-run to see every affected stack first."
     )
@@ -245,6 +250,7 @@ export function registerCards({ program, dependencies }: RegistrationContext) {
 
   cards
     .command("deal")
+    .addHelpText("after", CARDS_ACTION_RESULT_KEY_HELP)
     .description(
       "Deal cards FROM --cards-id TO each --to stack (each receives --count). Requires --idempotency-key: a retry deals ANOTHER batch." +
         " NEVER use this to give dealt cards BACK: `deal` has no return-to-origin branch, so dealing a card into a stack that already holds its id" +
@@ -292,6 +298,7 @@ export function registerCards({ program, dependencies }: RegistrationContext) {
 
   cards
     .command("draw")
+    .addHelpText("after", CARDS_ACTION_RESULT_KEY_HELP)
     .description(
       "Draw cards INTO --cards-id FROM --from. NOTE THE INVERSION: here --cards-id is the DESTINATION. Requires --idempotency-key."
     )
@@ -334,6 +341,7 @@ export function registerCards({ program, dependencies }: RegistrationContext) {
 
   cards
     .command("pass")
+    .addHelpText("after", CARDS_ACTION_RESULT_KEY_HELP)
     .description(
       "Pass NAMED cards FROM --cards-id TO --to. No --how (you name the cards) and no availability check. Requires --idempotency-key."
     )
@@ -496,6 +504,7 @@ export function registerCards({ program, dependencies }: RegistrationContext) {
     });
   card
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--cards-id <cardsId>", "Card stack id")
     .requiredOption("--card-id <cardId>", "Card id")
     .action(async function deleteCard2(options: { cardsId: string; cardId: string }) {

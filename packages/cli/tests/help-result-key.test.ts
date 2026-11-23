@@ -50,7 +50,23 @@ describe("Result key help", () => {
     ["scene token item get", ".result.item"],
     ["scene token effect get", ".result.effect"],
     ["scene region behavior get", ".result.behavior"],
-    ["scene region behavior executable create", ".result.behavior"]
+    ["scene region behavior executable create", ".result.behavior"],
+    ["actor update-many", ".result.outcomes[]"],
+    ["scene token create-many", ".result.outcomes[]"],
+    ["item effect delete-many", ".result.outcomes[]"],
+    ["actor delete", ".result.deleted"],
+    ["scene wall delete", ".result.deleted"],
+    ["chat delete", ".result.deleted"],
+    ["macro execute", ".result.returned"],
+    ["system reload", ".result.reloading"],
+    ["scene activate", ".result.wasActive"],
+    ["scene token restore-delta", ".result.discarded"],
+    ["actor effect applied", ".result.effects[]"],
+    ["journal show", ".result.dispatched"],
+    ["chat flush", ".result.remaining"],
+    ["cards deal", ".result.cardsId"],
+    ["actor item list", ".result.items[]"],
+    ["scene wall list", ".result.<type>s[]"]
   ])("shows the key %s returns in its first result key line", (path, key) => {
     const leaf = leaves.find((entry) => entry.path === path);
     expect(leaf, path).toBeDefined();

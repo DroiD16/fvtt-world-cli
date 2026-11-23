@@ -24,7 +24,8 @@ import {
   addPaginationOptions,
   nameFilterParams,
   paginationParams,
-  worldListParams
+  worldListParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 
 export function registerTable({ program, dependencies }: RegistrationContext) {
@@ -130,6 +131,7 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
     });
   table
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--table-id <tableId>", "Roll table id")
     .action(async function deleteTable(options: { tableId: string }) {
       await executeRemoteCommand({
@@ -307,6 +309,7 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
     });
   tableResult
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--table-id <tableId>", "Roll table id")
     .requiredOption("--result-id <resultId>", "Result (row) id")
     .action(async function deleteTableResult(options: { tableId: string; resultId: string }) {

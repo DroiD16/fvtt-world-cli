@@ -38,7 +38,8 @@ import {
   nameFilterParams,
   paginationParams,
   statusSetParams,
-  worldListParams
+  worldListParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 import { write } from "../deps.js";
 
@@ -71,7 +72,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
   const actor = program.command("actor").description("Foundry actor commands");
   actor.addHelpText(
     "afterAll",
-    "\nResult key (--json): .result.actor (single/write) / .result.actors[] (list, get-many). Embedded items at .result.item; effects at .result.effect."
+    "\nResult key (--json): .result.actor (single/write) / .result.actors[] (list, get-many). Embedded items at .result.item / .result.items[]; effects at .result.effect / .result.effects[]."
   );
 
   registerBatchWriteCommands(actor, {
@@ -190,6 +191,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     });
   actor
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--actor-id <actorId>", "Actor id")
     .option("--force", "Allow deleting an actor referenced by tokens")
     .action(async function deleteActorCommand(options: { actorId: string; force?: boolean }) {
@@ -397,6 +399,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
   });
   actorItem
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--actor-id <actorId>", "Actor id")
     .requiredOption("--item-id <itemId>", "Item id")
     .action(async function deleteActorItem(options: { actorId: string; itemId: string }) {
@@ -427,7 +430,10 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     });
   });
   addPaginationOptions(
-    actorEffect.command("applied").requiredOption("--actor-id <actorId>", "Actor id")
+    actorEffect
+      .command("applied")
+      .addHelpText("after", "\nResult key (--json): .result.effects[] (+ .result.actorId, total/hasMore).")
+      .requiredOption("--actor-id <actorId>", "Actor id")
   ).action(async function listAppliedActorEffects(options: {
     actorId: string;
     limit?: number;
@@ -509,6 +515,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     });
   actorEffect
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--actor-id <actorId>", "Actor id")
     .requiredOption("--effect-id <effectId>", "Effect id")
     .action(async function deleteActorEffect(options: { actorId: string; effectId: string }) {
@@ -640,6 +647,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     });
   actorItemEffect
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--actor-id <actorId>", "Actor id")
     .requiredOption("--item-id <itemId>", "Item id")
     .requiredOption("--effect-id <effectId>", "Effect id")

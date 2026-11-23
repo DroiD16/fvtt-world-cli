@@ -37,6 +37,7 @@ export function registerSystem({ program, dependencies }: RegistrationContext) {
     });
   system
     .command("reload")
+    .addHelpText("after", "\nResult key (--json): .result.reloading.")
     .description(
       "Reload the GM browser page. The bridge drops and reconnects on its own; pair it with a setting whose row reports requiresReload"
     )

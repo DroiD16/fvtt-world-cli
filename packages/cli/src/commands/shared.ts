@@ -85,6 +85,9 @@ export function worldListParams(options: WorldListOptions): Record<string, strin
   };
 }
 
+export const DELETE_RESULT_KEY_HELP =
+  "\nResult key (--json): .result.id and .result.deleted, with the parent ids alongside.";
+
 export interface StatusSetOptions {
   statusId: string;
   active: boolean;
@@ -301,7 +304,10 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
     const scopeSpec = BATCH_SCOPES[scope];
     const scopeOption = (command: Command) => {
       for (const { flag, help } of scopeSpec) command.requiredOption(flag, help);
-      return command;
+      return command.addHelpText(
+        "after",
+        "\nResult key (--json): .result.complete and .result.outcomes[] ({index, id, status} per element), plus .result.failure on a partial commit."
+      );
     };
 
     const scopeParams = (options: Record<string, unknown>) =>

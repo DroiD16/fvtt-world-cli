@@ -25,7 +25,8 @@ import {
   type RegistrationContext,
   addIdempotencyKeyOption,
   addPaginationOptions,
-  paginationParams
+  paginationParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 import { write } from "../deps.js";
 
@@ -511,6 +512,7 @@ export function registerCombat({ program, dependencies }: RegistrationContext) {
     });
   combatant
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--combat-id <combatId>", "Combat id")
     .requiredOption("--combatant-id <combatantId>", "Combatant id")
     .action(async function deleteCombatant(options: { combatId: string; combatantId: string }) {
@@ -627,6 +629,7 @@ export function registerCombat({ program, dependencies }: RegistrationContext) {
     });
   combatGroup
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--combat-id <combatId>", "Combat id")
     .requiredOption("--group-id <groupId>", "Combatant group id")
     .action(async function deleteCombatantGroup(options: { combatId: string; groupId: string }) {

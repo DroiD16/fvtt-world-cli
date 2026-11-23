@@ -30,7 +30,8 @@ import {
   addPaginationOptions,
   nameFilterParams,
   paginationParams,
-  worldListParams
+  worldListParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 import { write } from "../deps.js";
 
@@ -193,6 +194,7 @@ export function registerJournal({ program, dependencies }: RegistrationContext) 
     });
   journal
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--journal-id <journalId>", "Journal id")
     .action(async function deleteJournal(options: { journalId: string }) {
       await executeRemoteCommand({
@@ -272,6 +274,7 @@ export function registerJournal({ program, dependencies }: RegistrationContext) 
     });
   journalPage
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--journal-id <journalId>", "Journal id")
     .requiredOption("--page-id <pageId>", "Page id")
     .action(async function deleteJournalPage(options: JournalPageTargetOptions) {
@@ -369,6 +372,7 @@ export function registerJournal({ program, dependencies }: RegistrationContext) 
     });
   journalCategory
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--journal-id <journalId>", "Journal id")
     .requiredOption("--category-id <categoryId>", "Category id")
     .action(async function deleteJournalCategory(options: { journalId: string; categoryId: string }) {
@@ -382,6 +386,10 @@ export function registerJournal({ program, dependencies }: RegistrationContext) 
 
   journal
     .command("show")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.journalId, .result.userIds, .result.activeUserIds, .result.inactiveUserIds and .result.dispatched."
+    )
     .description("Open a journal entry in other users' browsers (a broadcast, not a mutation)")
     .requiredOption("--journal-id <journalId>", "Journal entry id")
     .addOption(

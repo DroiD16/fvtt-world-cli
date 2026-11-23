@@ -23,7 +23,8 @@ import {
   addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
-  worldListParams
+  worldListParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 import { write } from "../deps.js";
 
@@ -156,6 +157,7 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
     });
   macro
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--macro-id <macroId>", "Macro id")
     .action(async function deleteMacro(options: { macroId: string }) {
       await executeRemoteCommand({
@@ -182,7 +184,8 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
     )
     .addHelpText(
       "after",
-      `\nA return value node with no JSON form (a function, an own accessor, a circular reference) comes back as {"$unserializable": "<reason>"} and is listed in .result.returnedOmissions (at most ${SERIALIZE_OMISSIONS_MAX} entries); a return value over the size limits is dropped and explained in .result.returnedOmitted.`
+      `\nResult key (--json): .result.returned (the macro's return value), .result.macroId, .result.type, .result.chatMessageIds and .result.chatCapture.` +
+        `\nA return value node with no JSON form (a function, an own accessor, a circular reference) comes back as {"$unserializable": "<reason>"} and is listed in .result.returnedOmissions (at most ${SERIALIZE_OMISSIONS_MAX} entries); a return value over the size limits is dropped and explained in .result.returnedOmitted.`
     )
     .action(async function executeMacroCommand(options: {
       macroId: string;
