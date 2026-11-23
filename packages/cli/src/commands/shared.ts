@@ -102,7 +102,7 @@ export function addStatusSetOptions(command: Command): Command {
     .option("--overlay", "Show the status as the token's large overlay icon when it is turned on")
     .addHelpText(
       "after",
-      "\nResult key (--json): .result.previous and .result.changed report the state before the call and whether it changed. An unknown status id lists the valid ones in .error.details.validStatusIds. With dnd5e 6 on Foundry 14, exhaustion goes up one level each time this command calls Foundry's toggle, --active false included."
+      "\nResult key (--json): .result.previous and .result.changed report the state before the call and whether it changed. An unknown status id lists the valid ones in .error.details.validStatusIds; a toggle that does not reach the requested state is indeterminate, and .error.details.effects lists the effects still carrying the status. With dnd5e 6 on Foundry 14, exhaustion goes up one level each time this command calls Foundry's toggle, --active false included."
     );
 }
 
