@@ -150,13 +150,8 @@ export async function updateActorItem(actorId, itemId, patch, { dryRun = false }
 /** @param {Record<string, any>} data */
 export function prepareEmbeddedItemCreateData(data) {
   const prepared = sanitizeEmbeddedItemData(canonicalizeFilePathFields(data, "Item"));
-  assertNestedEffectIdsUnique(prepared?.effects);
-  return prepared;
-}
-
-/** @param {unknown} effects */
-function assertNestedEffectIdsUnique(effects) {
-  if (!Array.isArray(effects)) return;
+  const effects = prepared?.effects;
+  if (!Array.isArray(effects)) return prepared;
   const firstIndexById = new Map();
   effects.forEach((effect, index) => {
     const id = effect?._id;
@@ -172,6 +167,7 @@ function assertNestedEffectIdsUnique(effects) {
     }
     firstIndexById.set(id, index);
   });
+  return prepared;
 }
 
 /** @param {Record<string, any>} patch */

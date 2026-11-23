@@ -932,30 +932,29 @@ export async function readDataFile(
   const bytes = new Uint8Array(buffer);
   ensureReadSize(bytes.byteLength, normalizedPath, readLimitBytes);
 
+  let content;
+  if (encoding === "text") {
+    try {
+      content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `${normalizedPath} is not UTF-8 text, so a text read would replace its bytes; read it with encoding base64`,
+        { path: normalizedPath, encoding: "text" }
+      );
+    }
+  } else {
+    content = toBase64(bytes);
+  }
+
   return {
     file: {
       ...createEntry(normalizedPath, "file", response.headers.get("content-type")),
       size: bytes.byteLength
     },
     encoding,
-    content: encoding === "text" ? decodeUtf8Text(bytes, normalizedPath) : toBase64(bytes)
+    content
   };
-}
-
-/**
- * @param {Uint8Array} bytes
- * @param {string} path
- */
-function decodeUtf8Text(bytes, path) {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    throw createBridgeError(
-      ERROR_CODES.INVALID_PARAMS,
-      `${path} is not UTF-8 text, so a text read would replace its bytes; read it with encoding base64`,
-      { path, encoding: "text" }
-    );
-  }
 }
 
 export async function mkdirDataPath(path, { dryRun = false } = {}) {

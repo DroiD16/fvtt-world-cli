@@ -55,19 +55,14 @@ export function sanitizeEffectData(data) {
   return canonicalizeFilePathFields(stripProtectedMeta(data), "ActiveEffect");
 }
 
-/** @param {unknown} stats */
-function provenanceStats(stats) {
-  if (!stats || typeof stats !== "object" || Array.isArray(stats)) return null;
-  const kept = Object.fromEntries(
-    PROVENANCE_STATS_FIELDS.filter((key) => Object.hasOwn(stats, key)).map((key) => [key, stats[key]])
-  );
-  return Object.keys(kept).length > 0 ? kept : null;
-}
-
 export function sanitizeEffectCreateData(data) {
   const sanitized = sanitizeEffectData(data);
-  const stats = provenanceStats(data?._stats);
-  return stats ? { ...sanitized, _stats: stats } : sanitized;
+  const stats = data?._stats;
+  if (!stats || typeof stats !== "object" || Array.isArray(stats)) return sanitized;
+  const provenance = Object.fromEntries(
+    PROVENANCE_STATS_FIELDS.filter((key) => Object.hasOwn(stats, key)).map((key) => [key, stats[key]])
+  );
+  return Object.keys(provenance).length > 0 ? { ...sanitized, _stats: provenance } : sanitized;
 }
 
 export function sanitizeEmbeddedItemData(data) {
