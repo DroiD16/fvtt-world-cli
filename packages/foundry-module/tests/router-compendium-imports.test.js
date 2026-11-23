@@ -188,6 +188,49 @@ describe("command router", () => {
     expect(second.result.actor.id).not.toBe("arch1");
   });
 
+  it("lets only one of two concurrent imports of an entry keep its id", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const create = globalThis.Actor.create;
+    /** @type {(value?: unknown) => void} */
+    let releaseFirst = () => {};
+    const firstCreateHeld = new Promise((resolve) => {
+      releaseFirst = resolve;
+    });
+    const realCreate = create.getMockImplementation();
+    create.mockImplementationOnce(async (data, options) => {
+      await firstCreateHeld;
+      return realCreate(data, options);
+    });
+    const importArch = () =>
+      router.route(
+        createRequest("actor.import-from-compendium", { pack: "world.test-monsters", entryId: "arch1" })
+      );
+
+    const first = importArch();
+    await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    const second = await importArch();
+    releaseFirst();
+    const firstResult = await first;
+
+    expect(firstResult.result.actor.id).toBe("arch1");
+    expect(second.ok).toBe(true);
+    expect(second.result.actor.id).not.toBe("arch1");
+    expect(create.mock.calls[1][0]._id).toBeUndefined();
+  });
+
+  it("mints a new id when the world holds the entry's id as an invalid document", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    globalThis.game.actors.invalidDocumentIds = new Set(["arch1"]);
+
+    const response = await router.route(
+      createRequest("actor.import-from-compendium", { pack: "world.test-monsters", entryId: "arch1" })
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.result.actor.id).not.toBe("arch1");
+    expect(globalThis.Actor.create.mock.calls.at(-1)[0]._id).toBeUndefined();
+  });
+
   it("rejects a patch carrying protected meta at the PROTOCOL layer (the closed import patch)", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
