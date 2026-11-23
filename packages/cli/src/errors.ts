@@ -175,7 +175,10 @@ export function planLocalError(
     }
 
     let mapped: string = CLI_ERROR_CODES.INVALID_ARGUMENT;
-    if (/missingMandatory|missingRequired|optionMissing|missingArgument/i.test(code)) {
+    if (
+      /missingMandatory|missingRequired|optionMissing|missingArgument/i.test(code) ||
+      code === "fvtt-world-cli.settingIdentity"
+    ) {
       mapped = CLI_ERROR_CODES.MISSING_REQUIRED_OPTION;
     } else if (/unknownOption/i.test(code)) {
       mapped = CLI_ERROR_CODES.UNKNOWN_OPTION;

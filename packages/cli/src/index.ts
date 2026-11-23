@@ -1,7 +1,12 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { type CliDependencies, resolveDependencies, suppressCommanderStderr } from "./deps.js";
+import {
+  type CliDependencies,
+  ignoreClosedPipe,
+  resolveDependencies,
+  suppressCommanderStderr
+} from "./deps.js";
 import { planCliErrorOutput } from "./errors.js";
 import { createProgram } from "./program.js";
 
@@ -34,6 +39,8 @@ function argvWantsJson(argv: readonly string[]) {
 
 export async function executeCli(argv = process.argv, partialDependencies: Partial<CliDependencies> = {}) {
   const base = resolveDependencies(partialDependencies);
+  const releaseStdout = ignoreClosedPipe(base.stdout);
+  const releaseStderr = ignoreClosedPipe(base.stderr);
 
   let commanderWroteStderr = false;
   const dependencies: CliDependencies = {
@@ -53,6 +60,10 @@ export async function executeCli(argv = process.argv, partialDependencies: Parti
   let resolvedJsonMode = argvWantsJson(argv);
   program.hook("preAction", (_thisCommand, actionCommand) => {
     resolvedJsonMode = Boolean(actionCommand.optsWithGlobals().json);
+    if (actionCommand.name() === "serve" && actionCommand.parent?.name() === "bridge") {
+      releaseStdout();
+      releaseStderr();
+    }
   });
 
   if (resolvedJsonMode) {

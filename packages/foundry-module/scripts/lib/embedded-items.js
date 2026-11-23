@@ -149,7 +149,25 @@ export async function updateActorItem(actorId, itemId, patch, { dryRun = false }
 
 /** @param {Record<string, any>} data */
 export function prepareEmbeddedItemCreateData(data) {
-  return sanitizeEmbeddedItemData(canonicalizeFilePathFields(data, "Item"));
+  const prepared = sanitizeEmbeddedItemData(canonicalizeFilePathFields(data, "Item"));
+  const effects = prepared?.effects;
+  if (!Array.isArray(effects)) return prepared;
+  const firstIndexById = new Map();
+  effects.forEach((effect, index) => {
+    const id = effect?._id;
+    if (id == null) return;
+    if (firstIndexById.has(id)) {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `effects ${firstIndexById.get(id)} and ${index} of the item both carry _id ${JSON.stringify(id)}. ` +
+          `Foundry keeps only one of two sibling effects with the same _id and drops the other without an ` +
+          `error. Give each effect its own _id, or leave _id out so Foundry assigns one. Nothing was written`,
+        { field: "effects", duplicateEntryId: id, indexes: [firstIndexById.get(id), index] }
+      );
+    }
+    firstIndexById.set(id, index);
+  });
+  return prepared;
 }
 
 /** @param {Record<string, any>} patch */

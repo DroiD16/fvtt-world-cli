@@ -12,11 +12,15 @@ import {
   paginationParams
 } from "./shared.js";
 
+interface FileSizeOptions {
+  path: string;
+}
+
 export function registerFile({ program, dependencies }: RegistrationContext) {
   const file = program.command("file").description("Foundry data source file commands");
   file.addHelpText(
-    "after",
-    "\nResult key (--json): .result.entries[] (list), .result.entry (stat), .result.content (read; also .result.file), .result.directory (mkdir), .result.file (upload/delete/move; delete also .result.deleted/.result.exists; move also .result.from)."
+    "afterAll",
+    "\nResult key (--json): .result.entries[] (list), .result.entry (stat), .result.size (size), .result.content (read; also .result.file), .result.directory (mkdir), .result.file (upload/delete/move; delete also .result.deleted/.result.exists; move also .result.from)."
   );
   addPaginationOptions(
     file
@@ -67,6 +71,20 @@ export function registerFile({ program, dependencies }: RegistrationContext) {
       });
     });
   file
+    .command("size")
+    .description(
+      "Report a file's size in bytes, as the Content-Length the server sends for an HTTP HEAD request"
+    )
+    .requiredOption("--path <path>", "Data-relative file path")
+    .action(async function sizeFile(options: FileSizeOptions) {
+      await executeRemoteCommand({
+        commandName: "file.size",
+        params: { path: options.path },
+        command: this,
+        dependencies
+      });
+    });
+  file
     .command("read")
     .description(
       `Read a file's content; a file over the upload limit (system info: limits.uploadBytes) or about ${Math.floor(READ_ENCODING_CEILING_BYTES / (1024 * 1024))} MiB returns PAYLOAD_TOO_LARGE`
@@ -78,7 +96,7 @@ export function registerFile({ program, dependencies }: RegistrationContext) {
     .addHelpText(
       "after",
       "\nThe CLI's receive limit follows the persisted limit (config set-upload-limit), not bridge serve --upload-limit-bytes; a larger response closes this command's connection." +
-        "\nText escapes control bytes in JSON; read a binary file as base64."
+        "\nText escapes control bytes in JSON and refuses bytes that are not UTF-8 with INVALID_PARAMS; read a binary file as base64."
     )
     .action(async function readFileCommand(options: { path: string; encoding: "text" | "base64" }) {
       await executeRemoteCommand({

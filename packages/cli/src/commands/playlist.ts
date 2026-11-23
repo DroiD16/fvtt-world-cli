@@ -15,19 +15,23 @@ import { parseIdList, parseNumber } from "../parse.js";
 import { addPlaylistFieldOptions, addPlaylistSoundFieldOptions } from "./field-options.js";
 import {
   type RegistrationContext,
+  type WorldListOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
   addNameFilterOption,
   addPaginationOptions,
   nameFilterParams,
-  paginationParams
+  paginationParams,
+  worldListParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 
 export function registerPlaylist({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerCompendiumImport } = createSharedRegistrars(dependencies);
   const playlist = program.command("playlist").description("Foundry playlist commands");
   playlist.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.playlist / .result.playlists[] (list, get-many); sounds at .result.sound / .result.sounds[] (+ .result.playlistId)."
   );
   registerOwnershipSet(playlist, {
@@ -36,16 +40,16 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
     commandName: "playlist.ownership.set",
     noun: "playlist"
   });
-  addNameFilterOption(addPaginationOptions(playlist.command("list"))).action(
-    async function listPlaylists(options: { name?: string; limit?: number; offset?: number }) {
-      await executeRemoteCommand({
-        commandName: "playlist.list",
-        params: { ...nameFilterParams(options), ...paginationParams(options) },
-        command: this,
-        dependencies
-      });
-    }
-  );
+  addWorldListOptions(playlist.command("list")).action(async function listPlaylists(
+    options: WorldListOptions
+  ) {
+    await executeRemoteCommand({
+      commandName: "playlist.list",
+      params: worldListParams(options),
+      command: this,
+      dependencies
+    });
+  });
   playlist
     .command("get")
     .requiredOption("--playlist-id <playlistId>", "Playlist id")
@@ -104,6 +108,7 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
     });
   addPlaylistFieldOptions(
     addIdempotencyKeyOption(playlist.command("clone"))
+      .description("Copy a playlist with its sounds; the copy and its sounds are stopped")
       .requiredOption("--playlist-id <playlistId>", "Source playlist id")
       .option("--name <name>", "Name override for the clone"),
     "clone"
@@ -121,6 +126,7 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
     });
   playlist
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--playlist-id <playlistId>", "Playlist id")
     .action(async function deletePlaylist(options: { playlistId: string }) {
       await executeRemoteCommand({
@@ -221,7 +227,10 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
       .requiredOption("--path <path>", "Audio file path"),
     "create"
   )
-    .option("--data-json <json>", "Full/extra sound data as a JSON object (merged last)")
+    .option(
+      "--data-json <json>",
+      "Extra sound fields as a JSON object, merged last; the schema's data fields map to the flags above, so --path is required here too"
+    )
     .action(async function createPlaylistSoundCommand(
       options: PlaylistSoundFieldOptions & { playlistId: string; path: string; dataJson?: string }
     ) {
@@ -252,6 +261,7 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
     });
   addPlaylistSoundFieldOptions(
     addIdempotencyKeyOption(playlistSound.command("clone"))
+      .description("Copy a sound within its playlist; the copy is stopped unless --playing true")
       .requiredOption("--playlist-id <playlistId>", "Playlist id")
       .requiredOption("--sound-id <soundId>", "Source sound id"),
     "clone"
@@ -269,6 +279,7 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
     });
   playlistSound
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--playlist-id <playlistId>", "Playlist id")
     .requiredOption("--sound-id <soundId>", "Sound id")
     .action(async function deletePlaylistSound(options: { playlistId: string; soundId: string }) {

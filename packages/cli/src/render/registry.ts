@@ -33,7 +33,8 @@ import {
   effectListPrefix,
   renderAppliedEffectLine,
   renderEffectDetails,
-  renderEffectSummaryLine
+  renderEffectSummaryLine,
+  renderStatusSetResult
 } from "./effects.js";
 import {
   renderDataPath,
@@ -1204,6 +1205,7 @@ export const RENDERERS = registerRenderers([
   ),
   deleteRenderer("scene.token.delete", "token", { suffix: sceneSuffix }),
   detailRenderer("scene.token.restore-delta", (result) => renderTokenDeltaRestore(result)),
+  detailRenderer(["actor.status.set", "scene.token.status.set"], (result) => renderStatusSetResult(result)),
   listRenderer("scene.token.item.list", {
     key: "items",
     empty: "No items found.",
@@ -1419,7 +1421,18 @@ export const RENDERERS = registerRenderers([
       ...listFooterLines(result, result.entries.length, offset)
     ].join("\n");
   }),
+  detailRenderer("document.resolve", (result) =>
+    [
+      `uuid: ${result.uuid}`,
+      `document: ${result.documentName}`,
+      `command: ${result.command}`,
+      `params: ${JSON.stringify(result.params ?? {})}`
+    ].join("\n")
+  ),
   detailRenderer("file.stat", (result) => renderFileEntryDetails(result.entry ?? {})),
+  detailRenderer("file.size", (result) =>
+    [`path: ${renderDataPath(result.path)}`, `size: ${renderFileSize(result.size)} bytes`].join("\n")
+  ),
   detailRenderer("file.read", (result) =>
     [
       `path: ${renderDataPath(result.file?.path)}`,
@@ -1450,11 +1463,10 @@ export const RENDERERS = registerRenderers([
 
     return `deleted: ${renderDataPath(result.file?.path)}`;
   }),
-  detailRenderer("file.move", (result) =>
-    [
-      `${result.dryRun ? "would move" : "moved"}: ${renderDataPath(result.from)} -> ${renderDataPath(result.file?.path)}`,
-      `size: ${renderFileSize(result.file?.size)}`
-    ].join("\n")
+  detailRenderer(
+    "file.move",
+    (result) =>
+      `${result.dryRun ? "would move" : "moved"}: ${renderDataPath(result.from)} -> ${renderDataPath(result.file?.path)}`
   )
 ]);
 

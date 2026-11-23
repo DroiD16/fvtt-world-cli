@@ -155,13 +155,29 @@ export function parseOwnershipUsers(value: string) {
   }
   for (const id of ids) {
     const level = (object as Record<string, unknown>)[id];
-    if (typeof level !== "number" || !Number.isInteger(level) || !OWNERSHIP_LEVELS.includes(level)) {
+    if (
+      level !== null &&
+      (typeof level !== "number" || !Number.isInteger(level) || !OWNERSHIP_LEVELS.includes(level))
+    ) {
       throw new InvalidArgumentError(
-        `--users-json values must be ownership levels (0..3, or -1 for journal pages); user ${id} = ${JSON.stringify(level)}`
+        `--users-json values must be ownership levels (0..3, or -1 for journal pages) or null to remove the user's entry; user ${id} = ${JSON.stringify(level)}`
       );
     }
   }
   return object;
+}
+
+export function parseOwnershipUserEntry(value: string, previous: Record<string, number | null> = {}) {
+  const separator = value.lastIndexOf("=");
+  const id = separator === -1 ? "" : value.slice(0, separator).trim();
+  const level = separator === -1 ? "" : value.slice(separator + 1).trim();
+  if (id === "" || level === "") {
+    throw new InvalidArgumentError(`Expected <userId>=<level> or <userId>=default, received ${value}`);
+  }
+  if (Object.hasOwn(previous, id)) {
+    throw new InvalidArgumentError(`--user names user ${id} more than once`);
+  }
+  return { ...previous, [id]: level === "default" ? null : parseOwnershipLevel(level) };
 }
 
 export function parseJsonValue(value: string, label: string) {
@@ -204,6 +220,16 @@ export function parseUserPermissions(value: string) {
     }
   }
   return object;
+}
+
+export function parseSettingId(value: string) {
+  const separator = value.indexOf(".");
+  if (separator <= 0 || separator === value.length - 1) {
+    throw new InvalidArgumentError(
+      `Expected a setting id <namespace>.<key>, such as core.chatBubbles, received ${value}`
+    );
+  }
+  return { namespace: value.slice(0, separator), key: value.slice(separator + 1) };
 }
 
 export function parseSettingItems(value: string, label: string) {

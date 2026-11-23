@@ -13,9 +13,9 @@ import {
   cmd,
   compendiumImportSchema,
   dryRunProperty,
+  folderFilteredListSchema,
   freeformObjectSchema,
   idempotencyKeyProperty,
-  nameFilteredListSchema,
   nullableStringSchema,
   patchFrom,
   userIdsProperty
@@ -115,7 +115,7 @@ const scenePatchSchema = patchFrom(sceneCreateSchema, {
 });
 
 export const sceneCommands = {
-  "scene.list": cmd(nameFilteredListSchema),
+  "scene.list": cmd(folderFilteredListSchema),
   "scene.get": cmd(sceneIdSchema),
   "scene.get-many": cmd({
     type: "object",

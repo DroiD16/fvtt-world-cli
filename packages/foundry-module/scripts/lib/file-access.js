@@ -246,17 +246,15 @@ function getMediaCategory(path, kind, mimeType = null) {
 /**
  * @param {string} path
  * @param {"file" | "directory"} kind
- * @param {number | null} [size]
  * @param {string | null} [mimeType]
  */
-function createEntry(path, kind, size = null, mimeType = null) {
+function createEntry(path, kind, mimeType = null) {
   const name = getName(path);
   return {
     path,
     name,
     extension: kind === "file" ? getExtension(name) : "",
     kind,
-    size: Number.isFinite(size) ? size : null,
     mediaCategory: getMediaCategory(path, kind, mimeType)
   };
 }
@@ -352,14 +350,7 @@ function normalizeBrowseEntries(result, directoryPath) {
   for (const file of files) {
     const path = resolveListedPath(file, directoryPath);
     if (path) {
-      entries.push(
-        createEntry(
-          path,
-          "file",
-          typeof file?.size === "number" ? file.size : null,
-          typeof file?.mimeType === "string" ? file.mimeType : null
-        )
-      );
+      entries.push(createEntry(path, "file", typeof file?.mimeType === "string" ? file.mimeType : null));
     }
   }
 
@@ -863,25 +854,19 @@ function encodeDataPathForFetch(path) {
   return path.split("/").map(encodeDataPathSegment).join("/");
 }
 
-export async function readDataFile(
-  path,
-  encoding,
-  { uploadLimitBytes = DEFAULT_UPLOAD_SIZE_LIMIT_BYTES } = {}
-) {
-  const readLimitBytes = effectiveReadLimitBytes(uploadLimitBytes);
-  const normalizedPath = normalizeFilePath(path);
-  const entry = await statDataPath(normalizedPath);
-  if (entry.kind !== "file") {
-    throw createInvalidParamsError("$.params.path must reference a file");
-  }
-
+/**
+ * @param {string} entryPath
+ * @param {string} normalizedPath
+ * @param {RequestInit} [init]
+ */
+async function fetchDataFile(entryPath, normalizedPath, init) {
   if (typeof globalThis.fetch !== "function") {
     throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Fetch API is not available", {
       path: normalizedPath
     });
   }
 
-  const response = await globalThis.fetch(encodeDataPathForFetch(entry.path));
+  const response = await globalThis.fetch(encodeDataPathForFetch(entryPath), init);
   if (!response.ok) {
     if (response.status === 404) {
       throw createBridgeError(
@@ -901,6 +886,43 @@ export async function readDataFile(
     });
   }
 
+  return response;
+}
+
+export async function sizeDataFile(path) {
+  const normalizedPath = normalizeFilePath(path);
+  const entry = await statDataPath(normalizedPath);
+  if (entry.kind !== "file") {
+    throw createInvalidParamsError("$.params.path must reference a file");
+  }
+
+  const response = await fetchDataFile(entry.path, normalizedPath, { method: "HEAD", cache: "no-store" });
+  const declared = response.headers.get("content-length");
+  if (typeof declared !== "string" || !/^\d+$/.test(declared.trim())) {
+    throw createBridgeError(
+      ERROR_CODES.INTERNAL_ERROR,
+      `The server that serves ${normalizedPath} answered a HEAD request without a usable Content-Length, so its size is unknown; a proxy in front of Foundry may strip that header. file.read returns the content and its measured size`,
+      { path: normalizedPath, status: response.status, contentLength: declared ?? null }
+    );
+  }
+
+  return { path: entry.path, size: Number(declared.trim()) };
+}
+
+export async function readDataFile(
+  path,
+  encoding,
+  { uploadLimitBytes = DEFAULT_UPLOAD_SIZE_LIMIT_BYTES } = {}
+) {
+  const readLimitBytes = effectiveReadLimitBytes(uploadLimitBytes);
+  const normalizedPath = normalizeFilePath(path);
+  const entry = await statDataPath(normalizedPath);
+  if (entry.kind !== "file") {
+    throw createInvalidParamsError("$.params.path must reference a file");
+  }
+
+  const response = await fetchDataFile(entry.path, normalizedPath);
+
   const declaredSize = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredSize)) {
     ensureReadSize(declaredSize, normalizedPath, readLimitBytes);
@@ -910,10 +932,28 @@ export async function readDataFile(
   const bytes = new Uint8Array(buffer);
   ensureReadSize(bytes.byteLength, normalizedPath, readLimitBytes);
 
+  let content;
+  if (encoding === "text") {
+    try {
+      content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `${normalizedPath} is not UTF-8 text, so a text read would replace its bytes; read it with encoding base64`,
+        { path: normalizedPath, encoding: "text" }
+      );
+    }
+  } else {
+    content = toBase64(bytes);
+  }
+
   return {
-    file: createEntry(normalizedPath, "file", bytes.byteLength, response.headers.get("content-type")),
+    file: {
+      ...createEntry(normalizedPath, "file", response.headers.get("content-type")),
+      size: bytes.byteLength
+    },
     encoding,
-    content: encoding === "text" ? new TextDecoder().decode(bytes) : toBase64(bytes)
+    content
   };
 }
 
@@ -963,7 +1003,10 @@ export async function uploadDataFile(
   const canonicalPath = canonicalizeDataPath(literalPath);
   if (dryRun) {
     return {
-      file: createEntry(canonicalPath, "file", bytes.byteLength, inferMimeType(canonicalPath, mimeType)),
+      file: {
+        ...createEntry(canonicalPath, "file", inferMimeType(canonicalPath, mimeType)),
+        size: bytes.byteLength
+      },
       dryRun: true
     };
   }
@@ -1002,7 +1045,7 @@ export async function uploadDataFile(
 
   const storedPath = normalizeFilePath(response.path);
   return {
-    file: createEntry(storedPath, "file", bytes.byteLength, inferMimeType(storedPath, mimeType))
+    file: { ...createEntry(storedPath, "file", inferMimeType(storedPath, mimeType)), size: bytes.byteLength }
   };
 }
 
@@ -1148,7 +1191,7 @@ export async function moveDataFile(from, to, { dryRun = false } = {}) {
 
   if (dryRun) {
     return {
-      file: createEntry(canonicalTo, "file", sourceEntry.size, inferMimeType(canonicalTo, null)),
+      file: createEntry(canonicalTo, "file", inferMimeType(canonicalTo, null)),
       from: canonicalFrom,
       dryRun: true
     };

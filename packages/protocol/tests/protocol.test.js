@@ -702,6 +702,7 @@ const MUTATION_BASES = Object.freeze({
   "scene.token.item.delete": { sceneId: "scene-1", tokenId: "tok-1", itemId: "item-1" },
   "scene.token.item.clone": { sceneId: "scene-1", tokenId: "tok-1", itemId: "item-1" },
   "scene.token.effect.create": { sceneId: "scene-1", tokenId: "tok-1", data: { name: "Aura" } },
+  "scene.token.status.set": { sceneId: "scene-1", tokenId: "tok-1", statusId: "prone", active: true },
   "scene.token.effect.update": {
     sceneId: "scene-1",
     tokenId: "tok-1",
@@ -930,6 +931,7 @@ const MUTATION_BASES = Object.freeze({
   "file.delete": { path: "worlds/w/fvtt-world-cli/x.txt" },
   "file.move": { from: "worlds/w/fvtt-world-cli/a.txt", to: "worlds/w/fvtt-world-cli/b.txt" },
   "actor.ownership.set": { actorId: "actor-1", default: 2 },
+  "actor.status.set": { actorId: "actor-1", statusId: "prone", active: false },
   "item.ownership.set": { itemId: "item-1", default: 0 },
   "scene.ownership.set": { sceneId: "scene-1", users: { "user-1": 3 } },
   "macro.ownership.set": { macroId: "macro-1", default: 1 },
@@ -2634,7 +2636,7 @@ describe("protocol contract", () => {
       expect(DEFAULT_COMMAND_PROFILE["actor.get"]).toBe("allow");
     });
 
-    it("counts 65 approve-listed, 8 denied and 286 self-running commands in a registry of 359", () => {
+    it("counts 65 approve-listed, 8 denied and 290 self-running commands in a registry of 363", () => {
       const bucket = (behavior) =>
         COMMAND_NAMES.filter((command) => DEFAULT_COMMAND_PROFILE[command] === behavior).length;
 
@@ -2646,10 +2648,10 @@ describe("protocol contract", () => {
           allow: bucket("allow")
         },
         "the totals moved: re-check the default-policy prose in docs/commands.md and docs/security.md (they name the buckets, not the counts) in the same change"
-      ).toEqual({ commands: 359, approve: 65, deny: 8, allow: 286 });
+      ).toEqual({ commands: 363, approve: 65, deny: 8, allow: 290 });
     });
 
-    it("leaves 354 governed commands in 20 top-level groups once the exempt ones are removed", () => {
+    it("leaves 358 governed commands in 21 top-level groups once the exempt ones are removed", () => {
       const exempt = new Set(POLICY_EXEMPT_COMMANDS);
       const governed = COMMAND_NAMES.filter((command) => !exempt.has(command));
 
@@ -2659,7 +2661,7 @@ describe("protocol contract", () => {
           groups: new Set(governed.map((command) => command.split(".")[0])).size
         },
         "the window totals moved: the permissions window renders one section per top-level group, so re-check its rendering assumptions in the same change"
-      ).toEqual({ governed: 354, groups: 20 });
+      ).toEqual({ governed: 358, groups: 21 });
     });
 
     it("cannot be mutated in place", () => {
@@ -3914,7 +3916,7 @@ describe("protocol contract", () => {
       const props = /** @type {any} */ (COMMAND_DEFINITIONS["table.ownership.set"].paramsSchema.properties);
       expect(props.tableId).toEqual({ type: "string", minLength: 1 });
       expect(props.default.enum).toEqual([0, 1, 2, 3]);
-      expect(props.users.additionalProperties.enum).toEqual([0, 1, 2, 3]);
+      expect(props.users.additionalProperties.enum).toEqual([0, 1, 2, 3, null]);
 
       expect(props.pageId).toBeUndefined();
       expect(validate("table.ownership.set", { tableId: "t-1", default: 2 }).ok).toBe(true);
@@ -6191,6 +6193,60 @@ describe("protocol contract", () => {
     });
   });
 
+  describe("status effect writes", () => {
+    it("requires the status id and the requested state, and takes an optional overlay", () => {
+      for (const { command, scope } of [
+        { command: "actor.status.set", scope: { actorId: "actor-1" } },
+        { command: "scene.token.status.set", scope: { sceneId: "scene-1", tokenId: "tok-1" } }
+      ]) {
+        expectValid(command, { ...scope, statusId: "prone", active: true, overlay: true });
+        expectRejected(command, { ...scope, statusId: "prone" }, "$.params.active is required");
+        expectRejected(command, { ...scope, active: true }, "$.params.statusId is required");
+        expectRejected(
+          command,
+          { ...scope, statusId: "prone", active: "yes" },
+          "$.params.active must be boolean"
+        );
+        expectRejected(
+          command,
+          { ...scope, statusId: "", active: true },
+          "$.params.statusId must be at least"
+        );
+      }
+    });
+  });
+
+  describe("world list filters", () => {
+    const FOLDER_FILTERED_LISTS = [
+      "actor.list",
+      "item.list",
+      "journal.list",
+      "macro.list",
+      "playlist.list",
+      "scene.list",
+      "table.list",
+      "cards.list"
+    ];
+
+    it("accepts a folder id on every world list whose documents live in folders", () => {
+      const declaring = COMMAND_NAMES.filter(
+        (command) => COMMAND_DEFINITIONS[command].paramsSchema.properties?.folder && command.endsWith(".list")
+      );
+      expect(declaring.sort()).toEqual([...FOLDER_FILTERED_LISTS].sort());
+      for (const command of FOLDER_FILTERED_LISTS) {
+        expectValid(command, { folder: "fold-1", name: "x", limit: 1, offset: 0 });
+        expectRejected(command, { folder: "" }, "$.params.folder must be at least 1 characters long");
+      }
+      expectRejected("user.list", { folder: "fold-1" }, "$.params.folder is not allowed");
+    });
+
+    it("accepts an actor type only on actor.list", () => {
+      expectValid("actor.list", { type: "npc", folder: "fold-1" });
+      expectRejected("actor.list", { type: "" }, "$.params.type must be at least 1 characters long");
+      expectRejected("item.list", { type: "loot" }, "$.params.type is not allowed");
+    });
+  });
+
   describe("dryRun mutation param", () => {
     it("declares dryRun on every mutation command and accepts dryRun:true alongside valid params", () => {
       for (const command of WRITE_COMMANDS) {
@@ -7031,6 +7087,7 @@ describe("protocol contract", () => {
       "scene.token.effect.update",
       "scene.token.effect.delete",
       "scene.token.effect.clone",
+      "scene.token.status.set",
       "scene.token.item.effect.create",
       "scene.token.item.effect.update",
       "scene.token.item.effect.delete",
@@ -7198,6 +7255,7 @@ describe("protocol contract", () => {
       "file.delete",
       "file.move",
 
+      "actor.status.set",
       "actor.ownership.set",
       "item.ownership.set",
       "scene.ownership.set",
@@ -7680,14 +7738,29 @@ describe("protocol contract", () => {
       for (const command of OWNERSHIP_SET_COMMANDS.filter((c) => c !== "journal.ownership.set")) {
         const props = COMMAND_DEFINITIONS[command].paramsSchema.properties;
         expect(props.default.enum, `${command} default enum`).toEqual([0, 1, 2, 3]);
-        expect(props.users.additionalProperties.enum, `${command} users level enum`).toEqual([0, 1, 2, 3]);
+        expect(props.users.additionalProperties.enum, `${command} users level enum`).toEqual([
+          0,
+          1,
+          2,
+          3,
+          null
+        ]);
+      }
+    });
+
+    it("accepts null as a user's level to remove that user's entry, and no other non-level value", () => {
+      for (const command of OWNERSHIP_SET_COMMANDS) {
+        const idField = ID_FIELD[command];
+        expectValid(command, { [idField]: "x", users: { u1: null } });
+        expectRejected(command, { [idField]: "x", users: { u1: "default" } }, "$.params.users.u1 must be");
+        expectRejected(command, { [idField]: "x", default: null }, "$.params.default must be");
       }
     });
 
     it("pins the journal ownership.set level enum to -1..3 (page INHERIT) + pageId", () => {
       const props = /** @type {any} */ (COMMAND_DEFINITIONS["journal.ownership.set"].paramsSchema.properties);
       expect(props.default.enum).toEqual([-1, 0, 1, 2, 3]);
-      expect(props.users.additionalProperties.enum).toEqual([-1, 0, 1, 2, 3]);
+      expect(props.users.additionalProperties.enum).toEqual([-1, 0, 1, 2, 3, null]);
       expect(props.pageId).toEqual({ type: "string", minLength: 1 });
     });
 

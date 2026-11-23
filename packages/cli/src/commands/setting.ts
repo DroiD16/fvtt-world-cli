@@ -1,9 +1,15 @@
 import { SERIALIZE_OMISSIONS_MAX } from "@fvtt-world-cli/protocol";
-import { Option } from "commander";
+import { Command, Option } from "commander";
 
-import { createSettingSetParams, resolveSettingItems } from "../params.js";
+import {
+  type SettingIdentityOptions,
+  type SettingSetOptions,
+  createSettingSetParams,
+  resolveSettingIdentity,
+  resolveSettingItems
+} from "../params.js";
 import { executeRemoteCommand } from "../exec.js";
-import { parseIdList, parseJsonValue, parseSettingItems } from "../parse.js";
+import { parseIdList, parseJsonValue, parseSettingId, parseSettingItems } from "../parse.js";
 import {
   type RegistrationContext,
   addNameFilterOption,
@@ -12,15 +18,34 @@ import {
   paginationParams
 } from "./shared.js";
 
+function addSettingIdentityOptions(command: Command): Command {
+  return command
+    .option("--namespace <namespace>", 'Setting namespace (e.g. "core" or a module id)')
+    .option("--key <key>", "Setting key within the namespace")
+    .addOption(
+      new Option(
+        "--id <namespace.key>",
+        "The setting as one id, as setting list prints it (e.g. core.chatBubbles); split at the first dot"
+      )
+        .argParser(parseSettingId)
+        .conflicts(["namespace", "key"])
+    );
+}
+
 export function registerSetting({ program, dependencies }: RegistrationContext) {
   const setting = program.command("setting").description("Foundry game settings");
   setting.addHelpText(
-    "after",
+    "afterAll",
     [
       "",
       "Result key (--json): .result.settings[] (list, metadata only; get-many, metadata + value) /",
       ".result.setting (get, metadata + value). A write returns the row's fields directly on .result",
-      "(namespace, key, scope, previous, value, requiresReload, changed) — set-many returns .result.outcomes[].",
+      "(namespace, key, scope, previous, value, requiresReload, changed) — set-many returns .result.outcomes[]."
+    ].join("\n")
+  );
+  setting.addHelpText(
+    "after",
+    [
       "",
       "Only settings REGISTERED IN THIS SESSION are visible: a value still stored in the world by a",
       "disabled/uninstalled module has no registration and reports SETTING_NOT_FOUND.",
@@ -44,18 +69,15 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
       });
     }
   );
-  setting
-    .command("get")
-    .requiredOption("--namespace <namespace>", 'Setting namespace (e.g. "core" or a module id)')
-    .requiredOption("--key <key>", "Setting key within the namespace")
+  addSettingIdentityOptions(setting.command("get"))
     .addHelpText(
       "after",
       `\nA value node with no JSON form (an accessor property, a function, a circular reference) comes back as {"$unserializable": "<reason>"} and is listed in .result.setting.valueOmissions (at most ${SERIALIZE_OMISSIONS_MAX} entries; valueOmissionsTruncated marks a longer list). Such a value is incomplete: writing it back with setting set stores the markers as data.`
     )
-    .action(async function getSetting(options: { namespace: string; key: string }) {
+    .action(async function getSetting(options: SettingIdentityOptions) {
       await executeRemoteCommand({
         commandName: "setting.get",
-        params: { namespace: options.namespace, key: options.key },
+        params: resolveSettingIdentity(options),
         command: this,
         dependencies
       });
@@ -79,11 +101,8 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
         dependencies
       });
     });
-  setting
-    .command("set")
+  addSettingIdentityOptions(setting.command("set"))
     .description("Write one registered setting")
-    .requiredOption("--namespace <namespace>", 'Setting namespace (e.g. "core" or a module id)')
-    .requiredOption("--key <key>", "Setting key within the namespace")
     .requiredOption(
       "--value-json <json>",
       'New value as a JSON literal — true, 42, "text", [..] or {..}; a quoted string stays distinct from a boolean or a number',
@@ -93,7 +112,7 @@ export function registerSetting({ program, dependencies }: RegistrationContext) 
       "after",
       '\nprevious and value report omissions like setting get, in previousOmissions and valueOmissions. {"$unserializable": ...} markers in --value-json are stored as data.'
     )
-    .action(async function setSetting(options: { namespace: string; key: string; valueJson: unknown }) {
+    .action(async function setSetting(options: SettingSetOptions) {
       await executeRemoteCommand({
         commandName: "setting.set",
         params: createSettingSetParams(options),

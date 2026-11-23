@@ -34,9 +34,14 @@ export function registerCanvas({ program, dependencies }: RegistrationContext) {
       "it is scrolled to and how far it is zoomed. Players' views stay where they are. They write no",
       "document themselves; a scene switch runs Foundry's own teardown and redraw, which can save the",
       "GM's fog exploration and tells other clients which scene the GM is on. A position is the canvas",
-      "point at the center of the screen plus the zoom scale, in the same coordinates as document x and y.",
+      "point at the center of the screen plus the zoom scale, in the same coordinates as document x and y."
+    ].join("\n")
+  );
+  canvas.addHelpText(
+    "afterAll",
+    [
       "",
-      "Result keys (--json): .result.sceneId, .result.levelId (v14), .result.position {x, y, scale},",
+      "Result key (--json): .result.sceneId, .result.levelId (v14), .result.position {x, y, scale},",
       ".result.view {x, y, width, height} (the canvas rectangle on screen); capture adds .result.image",
       "{path, mimeType, width, height, sizeBytes} and .result.transform {scale, offsetX, offsetY}",
       "(image pixel = coordinate * scale + offset); pan adds .result.previous; view-scene reports",

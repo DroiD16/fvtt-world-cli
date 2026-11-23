@@ -24,12 +24,17 @@ interface WorldReferencesOptions {
 export function registerWorld({ program, dependencies }: RegistrationContext) {
   const world = program.command("world").description("Foundry world-wide maintenance commands");
   world.addHelpText(
-    "after",
+    "afterAll",
     [
       "",
       "Result key (--json): .result.broken[] (+ .result.checkedRefs / .result.checkedFiles / .result.skipped[], total/hasMore over broken) for audit-files.",
       "Result key (--json): .result.results[] (+ .result.total / .result.hasMore / .result.index) for search.",
-      "Result key (--json): .result.references[] (+ .result.target / .result.total / .result.hasMore / .result.scannedDocuments / .result.selfReferences / .result.scopes) for references.",
+      "Result key (--json): .result.references[] (+ .result.target / .result.total / .result.hasMore / .result.scannedDocuments / .result.selfReferences / .result.scopes) for references."
+    ].join("\n")
+  );
+  world.addHelpText(
+    "after",
+    [
       "",
       "search: results are SECTIONED — world rows first, then pack rows, each ranked among itself.",
       "`score` is comparable only WITHIN a section (the two corpora are separate indexes), so compare",

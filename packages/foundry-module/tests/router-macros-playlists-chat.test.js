@@ -257,6 +257,43 @@ describe("command router", () => {
     expect(deleteResponse.result).toMatchObject({ id: newSoundId, deleted: true });
   });
 
+  it("clones a playlist and a sound stopped unless the patch sets playing", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const playlist = /** @type {any} */ (globalThis.game.playlists.get("playlist-1"));
+    const sound = playlist.sounds.get("sound-1");
+    const playlistSource = playlist.toObject();
+    vi.spyOn(playlist, "toObject").mockReturnValue({
+      ...playlistSource,
+      playing: true,
+      sounds: (playlistSource.sounds ?? []).map((entry) => ({ ...entry, playing: true }))
+    });
+
+    for (const dryRun of [false, true]) {
+      await router.route(createRequest("playlist.clone", { playlistId: "playlist-1", dryRun }));
+      await router.route(
+        createRequest("playlist.sound.clone", { playlistId: "playlist-1", soundId: "sound-1", dryRun })
+      );
+    }
+    await router.route(
+      createRequest("playlist.clone", { playlistId: "playlist-1", patch: { playing: true } })
+    );
+    await router.route(
+      createRequest("playlist.sound.clone", {
+        playlistId: "playlist-1",
+        soundId: "sound-1",
+        patch: { playing: true }
+      })
+    );
+
+    const playlistPatches = playlist.clone.mock.calls.map(([patch]) => patch);
+    expect(playlistPatches.map((patch) => patch.playing)).toEqual([false, false, true]);
+    for (const patch of playlistPatches) {
+      expect(patch.sounds.length).toBeGreaterThan(0);
+      expect(patch.sounds.every((entry) => entry.playing === false)).toBe(true);
+    }
+    expect(sound.clone.mock.calls.map(([patch]) => patch.playing)).toEqual([false, false, true]);
+  });
+
   it("derives a PlaylistSound name from path when name is omitted", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
@@ -886,7 +923,7 @@ describe("macro execution", () => {
       timeoutMs: 5,
       indeterminate: true
     });
-    expect(response.error.message).toContain("keeps running");
+    expect(response.error.message).toContain("--macro-timeout-ms");
     expect(chatListenerCount()).toBe(0);
   });
 

@@ -1,3 +1,4 @@
+import { filterByFolder } from "../lib/folders.js";
 import { getPlaylistsCollection } from "../lib/game-collections.js";
 import {
   assertPlaybackMethod,
@@ -53,7 +54,10 @@ function compareSounds(a, b) {
 export function createPlaylistHandlers() {
   return {
     async "playlist.list"(params) {
-      const playlists = filterByName(Array.from(getPlaylistsCollection()), params.name);
+      const playlists = filterByName(
+        filterByFolder(Array.from(getPlaylistsCollection()), params.folder, "Playlist"),
+        params.name
+      );
       const { page, total, hasMore } = paginate(playlists, params);
       return {
         playlists: page.map((playlist) => serializePlaylistSummary(playlist)),
@@ -124,7 +128,12 @@ export function createPlaylistHandlers() {
 
     async "playlist.clone"(params) {
       const playlist = getPlaylistById(params.playlistId);
-      const clone = await cloneDocument(playlist, params.patch ?? {}, { dryRun: isDryRun(params) });
+      const sounds = (playlist.toObject().sounds ?? []).map((sound) => ({ ...sound, playing: false }));
+      const clone = await cloneDocument(
+        playlist,
+        { playing: false, sounds, ...(params.patch ?? {}) },
+        { dryRun: isDryRun(params) }
+      );
       const result = { playlist: serializePlaylist(clone) };
       return isDryRun(params) ? dryRunResponse(result) : result;
     },
@@ -214,8 +223,8 @@ export function createPlaylistHandlers() {
 
     async "playlist.sound.clone"(params) {
       const { sound } = getPlaylistSoundById(params.playlistId, params.soundId);
-      const patch = canonicalizeFilePathFields(params.patch, "PlaylistSound");
-      const clone = await cloneDocument(sound, patch ?? {}, { dryRun: isDryRun(params) });
+      const patch = canonicalizeFilePathFields({ playing: false, ...(params.patch ?? {}) }, "PlaylistSound");
+      const clone = await cloneDocument(sound, patch, { dryRun: isDryRun(params) });
       const result = { playlistId: params.playlistId, sound: serializePlaylistSound(clone) };
       return isDryRun(params) ? dryRunResponse(result) : result;
     },

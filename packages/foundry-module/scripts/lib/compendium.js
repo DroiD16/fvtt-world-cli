@@ -92,6 +92,8 @@ export function assertImportFolderChannelUnambiguous(params, command) {
   );
 }
 
+const IMPORT_IDS_IN_FLIGHT = new Set();
+
 /**
  * @param {string} documentName
  * @param {string} packId
@@ -123,10 +125,15 @@ export async function importWorldDocumentFromCompendium(
     );
   }
 
+  const reservation = `${documentName}.${source.id}`;
+  const keepId =
+    !collection.has(source.id) &&
+    !collection.invalidDocumentIds?.has(source.id) &&
+    !IMPORT_IDS_IN_FLIGHT.has(reservation);
   const normalized = collection.fromCompendium(source, {
-    keepId: false,
+    keepId,
     clearFolder: true,
-    clearOwnership: true
+    clearOwnership: false
   });
 
   const importData = typeof normalizeSource === "function" ? normalizeSource(normalized) : normalized;
@@ -149,7 +156,15 @@ export async function importWorldDocumentFromCompendium(
     return preview;
   }
 
-  return createWorldDocument(documentName, merged);
+  if (!keepId) {
+    return createWorldDocument(documentName, merged);
+  }
+  IMPORT_IDS_IN_FLIGHT.add(reservation);
+  try {
+    return await createWorldDocument(documentName, merged, { keepId });
+  } finally {
+    IMPORT_IDS_IN_FLIGHT.delete(reservation);
+  }
 }
 
 function mergeImportOverrides(importData, overrides) {

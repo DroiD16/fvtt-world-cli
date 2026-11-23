@@ -14,6 +14,10 @@ export function registerExec({ program, dependencies }: RegistrationContext) {
       "--stop-on-error",
       "Abort the batch after the first failing request (its failure line is still emitted)"
     )
+    .addHelpText(
+      "after",
+      '\nEach stdin line is one request, e.g. {"id":"a1","command":"actor.get","params":{"actorId":"<id>"}}: command is a protocol name from `commands`, params follow `schema <command>`, and id is optional. Each response line is the usual envelope plus index and the id.'
+    )
     .action(async function execBatch(this: Command, options: { stdin?: boolean; stopOnError?: boolean }) {
       if (!options.stdin) {
         throw new CommanderError(

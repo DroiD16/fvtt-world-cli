@@ -1,10 +1,11 @@
 import { createInterface } from "node:readline";
 
-import { ERROR_CODES, isWriteCommand } from "@fvtt-world-cli/protocol";
+import { ERROR_CODES, MACRO_EXECUTE_TIMEOUT_DEFAULT_MS, isWriteCommand } from "@fvtt-world-cli/protocol";
 import { Command, CommanderError } from "commander";
 
 import type { CommandResponseEnvelope } from "./transport-util.js";
 import { awaitApprovalOutcome } from "./approval-wait.js";
+import { DEFAULT_CLIENT_TIMEOUT_MS } from "./bridge/session-store.js";
 import { connectDaemonClient, type PersistentDaemonClient } from "./client/send-command.js";
 import { clientMaxPayloadOption, getCommandConfig } from "./config-io.js";
 import { type CliDependencies, write } from "./deps.js";
@@ -15,28 +16,47 @@ import {
   renderProtocolError,
   toTransportErrorEnvelope
 } from "./errors.js";
+import { AWAIT_FLOOR_MARGIN_MS } from "./park-polling.js";
 import { humanizeCommandResult } from "./render/registry.js";
 
 function isApprovalPending(response: CommandResponseEnvelope) {
   return !response.ok && response.error?.code === ERROR_CODES.APPROVAL_PENDING;
 }
 
-export async function executeRemoteCommand({
-  commandName,
-  params,
-  command,
-  dependencies,
-  prepareResult
-}: {
+function clientTimeoutFor(
+  commandName: string,
+  params: Record<string, unknown>,
+  timeoutMs: number | undefined
+) {
+  if (commandName !== "macro.execute") {
+    return timeoutMs;
+  }
+  const macroTimeoutMs =
+    typeof params.timeoutMs === "number" ? params.timeoutMs : MACRO_EXECUTE_TIMEOUT_DEFAULT_MS;
+  const neededMs = macroTimeoutMs + AWAIT_FLOOR_MARGIN_MS;
+  return neededMs > (timeoutMs ?? DEFAULT_CLIENT_TIMEOUT_MS) ? neededMs : timeoutMs;
+}
+
+interface RemoteCommandRequest {
   commandName: string;
   params: Record<string, unknown>;
   command: Command;
   dependencies: CliDependencies;
-  prepareResult?: (result: any) => unknown;
-}) {
+}
+
+interface RemoteCommandOutcome {
+  response: CommandResponseEnvelope;
+  requestParams: Record<string, unknown>;
+}
+
+export async function sendRemoteCommand({
+  commandName,
+  params,
+  command,
+  dependencies
+}: RemoteCommandRequest): Promise<RemoteCommandOutcome> {
   const clientConfig = getCommandConfig(command, dependencies);
   const globalOptions = command.optsWithGlobals();
-  const outputJson = Boolean(globalOptions.json);
 
   const withDryRun =
     Boolean(globalOptions.dryRun) && isWriteCommand(commandName) ? { ...params, dryRun: true } : params;
@@ -45,6 +65,7 @@ export async function executeRemoteCommand({
   const requestParams = typeof idempotencyKey === "string" ? { ...withDryRun, idempotencyKey } : withDryRun;
 
   const timeoutMs = (globalOptions as { timeoutMs?: number }).timeoutMs;
+  const commandTimeoutMs = clientTimeoutFor(commandName, params, timeoutMs);
 
   let response: CommandResponseEnvelope;
   try {
@@ -54,7 +75,8 @@ export async function executeRemoteCommand({
       command: commandName,
       params: requestParams,
       ...clientMaxPayloadOption(dependencies),
-      ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
+      ...(typeof commandTimeoutMs === "number" ? { timeoutMs: commandTimeoutMs } : {}),
+      ...(commandTimeoutMs !== timeoutMs ? { warnTimeout: false } : {})
     });
   } catch (error) {
     response = toTransportErrorEnvelope(error);
@@ -78,11 +100,22 @@ export async function executeRemoteCommand({
     });
   }
 
-  if (response.ok && prepareResult) {
-    response = { ...response, result: prepareResult(response.result) };
-  }
+  return { response, requestParams };
+}
 
-  if (outputJson) {
+export function printRemoteResponse({
+  commandName,
+  outcome,
+  command,
+  dependencies
+}: {
+  commandName: string;
+  outcome: RemoteCommandOutcome;
+  command: Command;
+  dependencies: CliDependencies;
+}) {
+  const { response, requestParams } = outcome;
+  if (command.optsWithGlobals().json) {
     write(dependencies.stdout, `${JSON.stringify(response, null, 2)}\n`);
   } else if (response.ok) {
     const requestOffset = typeof requestParams.offset === "number" ? requestParams.offset : 0;
@@ -106,11 +139,27 @@ export async function executeRemoteCommand({
   }
 }
 
+export async function executeRemoteCommand({
+  commandName,
+  params,
+  command,
+  dependencies,
+  prepareResult
+}: RemoteCommandRequest & { prepareResult?: (result: any) => unknown }) {
+  const outcome = await sendRemoteCommand({ commandName, params, command, dependencies });
+  const response =
+    outcome.response.ok && prepareResult
+      ? { ...outcome.response, result: prepareResult(outcome.response.result) }
+      : outcome.response;
+  printRemoteResponse({ commandName, outcome: { ...outcome, response }, command, dependencies });
+}
+
 interface ExecBatchSession {
   send: (o: {
     command: string;
     params?: Record<string, unknown>;
     timeoutMs?: number;
+    warnTimeout?: boolean;
   }) => Promise<CommandResponseEnvelope>;
   reconnect: () => Promise<void>;
   stderr: CliDependencies["stderr"];
@@ -123,7 +172,6 @@ async function processExecLine(
   rawLine: string,
   dryRun: boolean
 ): Promise<{ id?: string; envelope: CommandResponseEnvelope }> {
-  const timeoutMs = session.timeoutMs;
   let parsedLine: unknown;
   try {
     parsedLine = JSON.parse(rawLine);
@@ -171,6 +219,8 @@ async function processExecLine(
     };
   }
 
+  const timeoutMs = session.timeoutMs;
+  const commandTimeoutMs = clientTimeoutFor(obj.command, params as Record<string, unknown>, timeoutMs);
   const requestParams =
     dryRun && isWriteCommand(obj.command)
       ? { ...(params as Record<string, unknown>), dryRun: true }
@@ -181,7 +231,8 @@ async function processExecLine(
     envelope = await session.send({
       command: obj.command,
       params: requestParams,
-      ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
+      ...(typeof commandTimeoutMs === "number" ? { timeoutMs: commandTimeoutMs } : {}),
+      ...(commandTimeoutMs !== timeoutMs ? { warnTimeout: false } : {})
     });
   } catch (error) {
     return { id: callerId, envelope: toTransportErrorEnvelope(error) };

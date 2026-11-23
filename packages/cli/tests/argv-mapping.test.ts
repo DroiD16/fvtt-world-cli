@@ -12,6 +12,7 @@ describe("fvtt-world-cli commands", () => {
     [["system", "info"], "system.info", {}],
     [["system", "info", "--include", "modules"], "system.info", { include: ["modules"] }],
     [["scene", "list"], "scene.list", {}],
+    [["scene", "list", "--folder", "fold-1", "--limit", "5"], "scene.list", { folder: "fold-1", limit: 5 }],
     [["scene", "get", "--scene-id", "scene-1"], "scene.get", { sceneId: "scene-1" }],
     [
       [
@@ -40,6 +41,8 @@ describe("fvtt-world-cli commands", () => {
     ],
     [["file", "list"], "file.list", { path: "" }],
     [["file", "stat"], "file.stat", { path: "" }],
+    [["document", "resolve", "--uuid", "Actor.a1"], "document.resolve", { uuid: "Actor.a1" }],
+    [["file", "size", "--path", "worlds/world-1/a.webp"], "file.size", { path: "worlds/world-1/a.webp" }],
     [
       ["file", "read", "--path", "worlds/world-1/readme.txt", "--encoding", "text"],
       "file.read",
@@ -63,6 +66,7 @@ describe("fvtt-world-cli commands", () => {
       { from: "worlds/world-1/assets/a.txt", to: "worlds/world-1/assets/b.txt" }
     ],
     [["item", "list"], "item.list", {}],
+    [["item", "list", "--folder", "fold-1"], "item.list", { folder: "fold-1" }],
     [["item", "get", "--item-id", "item-1"], "item.get", { itemId: "item-1" }],
     [
       [
@@ -114,6 +118,11 @@ describe("fvtt-world-cli commands", () => {
       }
     ],
     [["journal", "list"], "journal.list", {}],
+    [
+      ["journal", "list", "--folder", "fold-1", "--name", "lore"],
+      "journal.list",
+      { name: "lore", folder: "fold-1" }
+    ],
     [["journal", "get", "--journal-id", "journal-1"], "journal.get", { journalId: "journal-1" }],
     [
       [
@@ -295,6 +304,7 @@ describe("fvtt-world-cli commands", () => {
     ],
 
     [["macro", "list"], "macro.list", {}],
+    [["macro", "list", "--folder", "fold-1"], "macro.list", { folder: "fold-1" }],
     [["macro", "list", "--name", "heal"], "macro.list", { name: "heal" }],
     [["macro", "get", "--macro-id", "macro-1"], "macro.get", { macroId: "macro-1" }],
     [
@@ -332,8 +342,10 @@ describe("fvtt-world-cli commands", () => {
     [["macro", "get-many", "--ids", "macro-1, macro-2 ,"], "macro.get-many", { ids: ["macro-1", "macro-2"] }],
     [["macro", "delete", "--macro-id", "macro-1"], "macro.delete", { macroId: "macro-1" }],
     [["playlist", "get-many", "--ids", "pl-1,pl-2"], "playlist.get-many", { ids: ["pl-1", "pl-2"] }],
+    [["playlist", "list", "--folder", "fold-1"], "playlist.list", { folder: "fold-1" }],
 
     [["table", "list", "--name", "loot"], "table.list", { name: "loot" }],
+    [["table", "list", "--folder", "fold-1"], "table.list", { folder: "fold-1" }],
     [["table", "get", "--table-id", "tbl-1"], "table.get", { tableId: "tbl-1" }],
     [["table", "get-many", "--ids", "tbl-1, tbl-2 ,"], "table.get-many", { ids: ["tbl-1", "tbl-2"] }],
     [
@@ -373,6 +385,7 @@ describe("fvtt-world-cli commands", () => {
     ],
 
     [["cards", "list", "--name", "deck"], "cards.list", { name: "deck" }],
+    [["cards", "list", "--folder", "fold-1"], "cards.list", { folder: "fold-1" }],
     [["cards", "get", "--cards-id", "crd-1"], "cards.get", { cardsId: "crd-1" }],
     [["cards", "get-many", "--ids", "crd-1, crd-2 ,"], "cards.get-many", { ids: ["crd-1", "crd-2"] }],
     [
@@ -1206,6 +1219,35 @@ describe("fvtt-world-cli commands", () => {
     ],
     [["table", "reset", "--table-id", "tbl-1"], "table.reset", { tableId: "tbl-1" }],
     [["actor", "list"], "actor.list", {}],
+    [
+      ["actor", "status", "set", "--actor-id", "actor-1", "--status-id", "prone", "--active", "true"],
+      "actor.status.set",
+      { actorId: "actor-1", statusId: "prone", active: true }
+    ],
+    [
+      [
+        "scene",
+        "token",
+        "status",
+        "set",
+        "--scene-id",
+        "scene-1",
+        "--token-id",
+        "tok-1",
+        "--status-id",
+        "dead",
+        "--active",
+        "false",
+        "--overlay"
+      ],
+      "scene.token.status.set",
+      { sceneId: "scene-1", tokenId: "tok-1", statusId: "dead", active: false, overlay: true }
+    ],
+    [
+      ["actor", "list", "--folder", "fold-1", "--type", "npc", "--offset", "2"],
+      "actor.list",
+      { folder: "fold-1", offset: 2, type: "npc" }
+    ],
     [["actor", "get", "--actor-id", "actor-1"], "actor.get", { actorId: "actor-1" }],
 
     [["actor", "get-many", "--ids", "actor-1, actor-2 ,"], "actor.get-many", { ids: ["actor-1", "actor-2"] }],
@@ -3250,6 +3292,21 @@ describe("fvtt-world-cli commands", () => {
       "setting.get",
       { namespace: "my-module", key: "apiKey" }
     ],
+    [
+      ["setting", "get", "--id", "core.chatBubbles"],
+      "setting.get",
+      { namespace: "core", key: "chatBubbles" }
+    ],
+    [
+      ["setting", "get", "--id", "my-module.client.theme"],
+      "setting.get",
+      { namespace: "my-module", key: "client.theme" }
+    ],
+    [
+      ["setting", "set", "--id", "core.chatBubbles", "--value-json", "true"],
+      "setting.set",
+      { namespace: "core", key: "chatBubbles", value: true }
+    ],
 
     [
       ["setting", "get-many", "--ids", "core.chatBubbles, my-module.apiKey"],
@@ -3367,13 +3424,13 @@ describe("fvtt-world-cli commands", () => {
         "--args-json",
         '{"dc":15}',
         "--macro-timeout-ms",
-        "120000"
+        "50000"
       ],
       "macro.execute",
       {
         macroId: "macro-1",
         scope: { actorId: "actor-1", sceneId: "scene-1", tokenId: "token-1", args: { dc: 15 } },
-        timeoutMs: 120000
+        timeoutMs: 50000
       }
     ],
     [
@@ -3586,6 +3643,53 @@ describe("fvtt-world-cli commands", () => {
       ["journal", "ownership", "set", "--journal-id", "j-1", "--page-id", "p-1", "--default", "-1"],
       "journal.ownership.set",
       { journalId: "j-1", pageId: "p-1", default: -1 }
+    ],
+    [
+      [
+        "actor",
+        "ownership",
+        "set",
+        "--actor-id",
+        "actor-1",
+        "--user",
+        "player-1=3",
+        "--user",
+        "player-2=default"
+      ],
+      "actor.ownership.set",
+      { actorId: "actor-1", users: { "player-1": 3, "player-2": null } }
+    ],
+    [
+      [
+        "journal",
+        "ownership",
+        "set",
+        "--journal-id",
+        "j-1",
+        "--page-id",
+        "p-1",
+        "--user",
+        "player-1=-1",
+        "--user",
+        "player-2=default"
+      ],
+      "journal.ownership.set",
+      { journalId: "j-1", pageId: "p-1", users: { "player-1": -1, "player-2": null } }
+    ],
+    [
+      ["item", "ownership", "set", "--item-id", "item-1", "--users-json", '{"player-1":null}'],
+      "item.ownership.set",
+      { itemId: "item-1", users: { "player-1": null } }
+    ],
+    [
+      ["item", "ownership", "set", "--item-id", "item-1", "--user", "default=default"],
+      "item.ownership.set",
+      { itemId: "item-1", users: { default: null } }
+    ],
+    [
+      ["item", "ownership", "set", "--item-id", "item-1", "--users-json", '{"default":null}'],
+      "item.ownership.set",
+      { itemId: "item-1", users: { default: null } }
     ]
   ])("serializes %j to %s", async (argv, expectedCommand, expectedParams) => {
     const sendCommand = vi.fn(async () => ({

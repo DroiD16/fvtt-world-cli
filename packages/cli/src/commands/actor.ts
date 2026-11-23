@@ -27,14 +27,29 @@ import {
 } from "./field-options.js";
 import {
   type RegistrationContext,
+  type StatusSetOptions,
+  addStatusSetOptions,
+  type WorldListOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
   addNameFilterOption,
   addPaginationOptions,
   nameFilterParams,
-  paginationParams
+  paginationParams,
+  statusSetParams,
+  worldListParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 import { write } from "../deps.js";
+
+interface ActorListOptions extends WorldListOptions {
+  type?: string;
+}
+
+interface ActorStatusSetOptions extends StatusSetOptions {
+  actorId: string;
+}
 
 interface ActorItemGetOptions {
   actorId: string;
@@ -56,8 +71,8 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerBatchWriteCommands } = createSharedRegistrars(dependencies);
   const actor = program.command("actor").description("Foundry actor commands");
   actor.addHelpText(
-    "after",
-    "\nResult key (--json): .result.actor (single/write) / .result.actors[] (list, get-many). Embedded items at .result.item; effects at .result.effect."
+    "afterAll",
+    "\nResult key (--json): .result.actor (single/write) / .result.actors[] (list, get-many). Embedded items at .result.item / .result.items[]; effects at .result.effect / .result.effects[]."
   );
 
   registerBatchWriteCommands(actor, {
@@ -73,18 +88,19 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     commandName: "actor.ownership.set",
     noun: "actor"
   });
-  addNameFilterOption(addPaginationOptions(actor.command("list"))).action(async function listActors(options: {
-    name?: string;
-    limit?: number;
-    offset?: number;
-  }) {
-    await executeRemoteCommand({
-      commandName: "actor.list",
-      params: { ...nameFilterParams(options), ...paginationParams(options) },
-      command: this,
-      dependencies
+  addWorldListOptions(actor.command("list"))
+    .option("--type <type>", "Only actors of this exact type (e.g. character, npc)")
+    .action(async function listActors(options: ActorListOptions) {
+      await executeRemoteCommand({
+        commandName: "actor.list",
+        params: {
+          ...worldListParams(options),
+          ...(options.type !== undefined ? { type: options.type } : {})
+        },
+        command: this,
+        dependencies
+      });
     });
-  });
   addActorIncludeOption(actor.command("get").requiredOption("--actor-id <actorId>", "Actor id")).action(
     async function getActor(options: { actorId: string; include?: string[] }) {
       await executeRemoteCommand({
@@ -175,6 +191,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     });
   actor
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--actor-id <actorId>", "Actor id")
     .option("--force", "Allow deleting an actor referenced by tokens")
     .action(async function deleteActorCommand(options: { actorId: string; force?: boolean }) {
@@ -186,6 +203,9 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
       });
     });
   addIdempotencyKeyOption(actor.command("import-from-compendium"))
+    .description(
+      "Import a compendium actor into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)"
+    )
     .requiredOption("--pack <pack>", "Compendium pack id (e.g. dnd5e.monsters)")
     .requiredOption("--entry-id <entryId>", "Compendium entry id")
     .option("--folder <folder>", "Destination folder id")
@@ -213,6 +233,21 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
         dependencies
       });
     });
+
+  addStatusSetOptions(
+    actor
+      .command("status")
+      .description("Actor status effects (conditions)")
+      .command("set")
+      .requiredOption("--actor-id <actorId>", "Actor id")
+  ).action(async function setActorStatus(options: ActorStatusSetOptions) {
+    await executeRemoteCommand({
+      commandName: "actor.status.set",
+      params: { actorId: options.actorId, ...statusSetParams(options) },
+      command: this,
+      dependencies
+    });
+  });
 
   const actorItem = actor.command("item").description("Foundry actor embedded item commands");
   registerBatchWriteCommands(actorItem, {
@@ -364,6 +399,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
   });
   actorItem
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--actor-id <actorId>", "Actor id")
     .requiredOption("--item-id <itemId>", "Item id")
     .action(async function deleteActorItem(options: { actorId: string; itemId: string }) {
@@ -394,7 +430,10 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     });
   });
   addPaginationOptions(
-    actorEffect.command("applied").requiredOption("--actor-id <actorId>", "Actor id")
+    actorEffect
+      .command("applied")
+      .addHelpText("after", "\nResult key (--json): .result.effects[] (+ .result.actorId, total/hasMore).")
+      .requiredOption("--actor-id <actorId>", "Actor id")
   ).action(async function listAppliedActorEffects(options: {
     actorId: string;
     limit?: number;
@@ -476,6 +515,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     });
   actorEffect
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--actor-id <actorId>", "Actor id")
     .requiredOption("--effect-id <effectId>", "Effect id")
     .action(async function deleteActorEffect(options: { actorId: string; effectId: string }) {
@@ -607,6 +647,7 @@ export function registerActor({ program, dependencies }: RegistrationContext) {
     });
   actorItemEffect
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--actor-id <actorId>", "Actor id")
     .requiredOption("--item-id <itemId>", "Item id")
     .requiredOption("--effect-id <effectId>", "Effect id")

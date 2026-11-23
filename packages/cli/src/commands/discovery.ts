@@ -79,6 +79,10 @@ export function registerDiscovery({ program, dependencies }: RegistrationContext
   program
     .command("commands")
     .description("List discoverable protocol commands and whether each mutates world state")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result[] holds {command, mutation, approval?} entries and .policy sits beside .result. With .policy.applied true the list follows the command policy of the GM client holding the bridge: a denied command is left out, so an absent command is denied or unknown, and approval: true marks one that waits for the GM. With .policy.applied false it is the full static registry."
+    )
     .action(async function listCommands(this: Command) {
       const json = Boolean(this.optsWithGlobals().json);
       const discovery = await discoverPolicy(this, dependencies);
@@ -139,6 +143,10 @@ export function registerDiscovery({ program, dependencies }: RegistrationContext
     .command("schema")
     .description("Print the parameter JSON schema for a protocol command")
     .argument("<command>", "Protocol command name, e.g. scene.update")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.paramsSchema, with .result.command and .result.mutation. Without --json the schema prints as text."
+    )
     .action(function commandSchema(commandName: string) {
       if (!isKnownCommand(commandName)) {
         throw new InvalidArgumentError(`Unknown command: ${commandName}`);

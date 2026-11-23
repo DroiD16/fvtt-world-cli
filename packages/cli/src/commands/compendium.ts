@@ -33,7 +33,7 @@ function addCompendiumIncludeOption(command: Command): Command {
 export function registerCompendium({ program, dependencies }: RegistrationContext) {
   const compendium = program.command("compendium").description("Foundry compendium pack commands (read)");
   compendium.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.packs[] (list), .result.entries[] (index), .result.document (get — Foundry's raw source object plus id, compendiumSource and duplicateSource), .result.entries[] (get-many — one get result per requested id, in request order)."
   );
   addPaginationOptions(compendium.command("list")).action(async function listCompendiums(options: {
@@ -82,6 +82,10 @@ export function registerCompendium({ program, dependencies }: RegistrationContex
       .command("get")
       .requiredOption("--pack <pack>", "Compendium pack id")
       .requiredOption("--entry-id <entryId>", "Compendium entry id")
+      .addHelpText(
+        "after",
+        "\nA UUID Compendium.<scope>.<pack>.<Type>.<entryId> splits into --pack <scope>.<pack> and --entry-id <entryId>."
+      )
   ).action(async function getCompendiumEntry(options: CompendiumGetOptions) {
     await executeRemoteCommand({
       commandName: "compendium.get",

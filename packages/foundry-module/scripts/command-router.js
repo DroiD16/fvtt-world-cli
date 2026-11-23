@@ -24,6 +24,7 @@ import { createChatHandlers } from "./handlers/chat.js";
 import { createCombatHandlers } from "./handlers/combats.js";
 import { createCompendiumHandlers } from "./handlers/compendium.js";
 import { createCompendiumImportHandlers } from "./handlers/compendium-imports.js";
+import { createDocumentHandlers } from "./handlers/documents.js";
 import { createItemEffectHandlers } from "./handlers/item-effects.js";
 import { createSceneTokenEffectHandlers } from "./handlers/scene-token-effects.js";
 import { createFileHandlers } from "./handlers/files.js";
@@ -55,6 +56,7 @@ import { createSceneTokenHandlers } from "./handlers/scene-tokens.js";
 import { createSceneHandlers } from "./handlers/scenes.js";
 import { createSearchHandlers } from "./handlers/search.js";
 import { createSettingHandlers } from "./handlers/settings.js";
+import { createStatusEffectHandlers } from "./handlers/status-effects.js";
 import { createPolicyHandlers } from "./handlers/policy.js";
 import { createSystemHandlers } from "./handlers/system.js";
 import { createTableHandlers, withQueuedTableOwnership } from "./handlers/tables.js";
@@ -146,10 +148,12 @@ export function createCommandRouter({ bridgeClient, approvalStoreOptions = {}, o
     ...createActorItemEffectHandlers(),
     ...createItemEffectHandlers(),
     ...createSceneTokenEffectHandlers(),
+    ...createStatusEffectHandlers(),
     ...createCardsHandlers(),
     ...createChatHandlers(),
     ...createCombatHandlers(),
     ...createCompendiumHandlers(),
+    ...createDocumentHandlers(),
     ...createFolderHandlers(),
     ...createGameHandlers(),
     ...createImageHandlers(),

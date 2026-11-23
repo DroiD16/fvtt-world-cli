@@ -80,6 +80,19 @@ export const nameFilteredListSchema = {
   additionalProperties: false
 };
 
+export const folderFilteredListSchema = {
+  type: "object",
+  required: [],
+  properties: { ...nameFilterProperty, folder: { type: "string", minLength: 1 }, ...paginationProperties },
+  additionalProperties: false
+};
+
+export const statusSetProperties = {
+  statusId: { type: "string", minLength: 1 },
+  active: { type: "boolean" },
+  overlay: { type: "boolean" }
+};
+
 export const dryRunProperty = {
   dryRun: { type: "boolean" }
 };

@@ -15,6 +15,7 @@ import {
   sceneScopeProperties,
   sceneTokenItemScopeProperties,
   sceneTokenScopeProperties,
+  statusSetProperties,
   tokenIncludeProperty,
   tokenDeltaIncludeProperty
 } from "./shared.js";
@@ -715,6 +716,19 @@ export const sceneEmbeddedCommands = {
     createSchema: effectCreateSchema,
     patchSchema: effectPatchSchema
   }),
+  "scene.token.status.set": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "tokenId", "statusId", "active"],
+      properties: {
+        ...sceneTokenScopeProperties,
+        ...statusSetProperties,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
   "scene.token.effect.list": cmd({
     type: "object",
     required: ["sceneId", "tokenId"],

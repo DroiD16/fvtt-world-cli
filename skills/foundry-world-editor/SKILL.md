@@ -19,11 +19,12 @@ fvtt-world-cli system info --json
 ```
 
 Proceed only when `.result.bridge.status` is `connected`, and verify the reported world and GM are
-the intended targets. If `system info` answers at all, a daemon is running; use it. Start
-`fvtt-world-cli bridge serve` only when the daemon is unreachable, as a persistent background
-process (it does not daemonize itself), and leave it running for the whole session. If no bridge
-connects, a GM must have the target world open in a browser with the `fvtt-world-cli` module
-enabled and paired.
+the intended targets. When the task depends on installed modules or their versions,
+`system info --include modules` lists them with versions and active state. If `system info`
+answers at all, a daemon is running; use it. Start `fvtt-world-cli bridge serve` only when the
+daemon is unreachable, as a persistent background process (it does not daemonize itself), and
+leave it running for the whole session. If no bridge connects, a GM must have the target world
+open in a browser with the `fvtt-world-cli` module enabled and paired.
 
 Pairing is a first-run trust decision that needs the human: ask the GM to open Module Settings →
 Authorization, name the browser in the `Browser label` field, and choose Pair; run
@@ -87,6 +88,8 @@ An unlinked token keeps its own overrides, which edits to its world actor never 
 editing an actor that has placed tokens, read its tokens' overrides
 (`scene token get --include delta,prepared`) and tell the user which tokens the edit will not
 change.
+Turn a status effect such as `prone` on or off with `actor status set` or
+`scene token status set`, not with `actor effect create`.
 After placing or moving placeables, check the result with `scene snapshot --out <file>.png` and
 open the image: it draws the scene's documents over the map and writes nothing.
 `scene thumbnail generate` only sets a scene's thumbnail; each call rewrites `thumb` and leaves an
@@ -115,11 +118,12 @@ guess a command name or parameter.
    approvals. Dotted protocol names map to spaced CLI subcommands, such as `actor.item.update` to
    `actor item update`.
 2. `fvtt-world-cli schema <command>` shows the exact request parameters, required fields, enums,
-   and whether unknown fields are accepted; `fvtt-world-cli <command path> --help` maps flags.
+   and whether unknown fields are accepted; `fvtt-world-cli <command path> --help` maps flags and
+   names the result key.
 3. Locate targets with the narrowest query: a family `list --name <substring> --limit <n>` when
-   the family is known, `world.search` when it is not, `compendium.index` for one pack. Page with
-   `limit`/`offset` until `hasMore` is false. List and search rows are lean discovery projections,
-   never the basis of a write.
+   the family is known, `world.search` when it is not, `compendium.index` for one pack, and
+   `document get --uuid <uuid>` for a UUID. Page with `limit`/`offset` until `hasMore` is false.
+   List and search rows are lean discovery projections, never the basis of a write.
 4. `get` the complete target before mutating and work from the returned ids.
 5. Build the smallest valid patch. Nested objects merge recursively; plain arrays replace
    wholesale; dotted paths reach permitted leaves; `{"-=key": null}` deletes a permitted key, and
@@ -157,8 +161,9 @@ details}}`, alongside `protocolVersion`, `type`, and the correlation `id` (echoi
 Documents live under a type-named key inside `result` that varies between commands but is stable
 for each one. `id` is the public identifier; a `_id` mirror may accompany it. Values requested
 through `include` flags may be derived or version-dependent. Write them back only when the
-update schema explicitly accepts them. Actor reads return `itemCount` in place of owned items; add
-`--include items` when the task needs them, or use `actor item list` and `actor item get`.
+update schema explicitly accepts them. Actor reads return `itemCount` and scene reads `counts` per
+placeable type in place of the embedded documents; add `--include items` when the task needs the
+items, or use `actor item list` and `actor item get`, and read placeables with `scene <type> list`.
 Stored `system` holds authored inputs only. Computed game values (armor class, skill totals,
 attack bonus, save DC) are in `.prepared.system` with `--include prepared`: `actor get` for the
 actor, `actor item get` or `scene token item get` for an item.

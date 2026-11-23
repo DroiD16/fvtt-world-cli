@@ -16,11 +16,16 @@ import {
 export function registerUser({ program, dependencies }: RegistrationContext) {
   const user = program.command("user").description("Foundry user commands");
   user.addHelpText(
-    "after",
+    "afterAll",
     [
       "",
       "Result key (--json): .result.user (get, create, update) / .result.users[] (list). `delete`,",
-      "`role set` and `permissions set` return their fields directly on .result.",
+      "`role set` and `permissions set` return their fields directly on .result."
+    ].join("\n")
+  );
+  user.addHelpText(
+    "after",
+    [
       "",
       "No user command accepts a password: Foundry sends passwords in the clear and hashes them",
       "server-side, so account credentials stay outside the bridge. Neither `role set` nor `delete`",

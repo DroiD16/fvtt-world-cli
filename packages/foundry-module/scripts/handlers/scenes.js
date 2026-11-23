@@ -1,4 +1,5 @@
 import { BATCH_GET_MAX_IDS, ERROR_CODES } from "../generated/protocol.js";
+import { filterByFolder } from "../lib/folders.js";
 import { getSceneById, getScenesCollection } from "../lib/game-collections.js";
 import { assertInitialLevelExists, assertSceneLevelsFieldsSupported } from "../lib/scene-embedded.js";
 import {
@@ -34,7 +35,10 @@ function assertScenePatch(scene, patch) {
 export function createSceneHandlers() {
   return {
     async "scene.list"(params) {
-      const scenes = filterByName(Array.from(getScenesCollection()), params.name);
+      const scenes = filterByName(
+        filterByFolder(Array.from(getScenesCollection()), params.folder, "Scene"),
+        params.name
+      );
       const { page, total, hasMore } = paginate(scenes, params);
       return {
         scenes: page.map((scene) => serializeScene(scene)),

@@ -5,6 +5,7 @@ import {
   mkdirDataPath,
   moveDataFile,
   readDataFile,
+  sizeDataFile,
   statDataPath,
   uploadDataFile
 } from "../lib/file-access.js";
@@ -26,6 +27,10 @@ export function createFileHandlers() {
       return {
         entry: await statDataPath(params.path)
       };
+    },
+
+    async "file.size"(params) {
+      return sizeDataFile(params.path);
     },
 
     async "file.read"(params, context) {

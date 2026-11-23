@@ -1,4 +1,5 @@
 import { BATCH_GET_MAX_IDS, ERROR_CODES } from "../generated/protocol.js";
+import { filterByFolder } from "../lib/folders.js";
 import { getItemById, getItemsCollection } from "../lib/game-collections.js";
 import {
   cloneDocument,
@@ -38,7 +39,10 @@ export function createItemHandlers() {
     }),
 
     async "item.list"(params) {
-      const items = filterByName(Array.from(getItemsCollection()), params.name);
+      const items = filterByName(
+        filterByFolder(Array.from(getItemsCollection()), params.folder, "Item"),
+        params.name
+      );
       const { page, total, hasMore } = paginate(items, params);
       return {
         items: page.map((item) => serializeItemSummary(item)),

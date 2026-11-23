@@ -118,8 +118,8 @@ describe("command router", () => {
     expect(response.ok).toBe(true);
     const a = response.result.actor;
 
-    expect(a.id).toBe("actor-created");
-    expect(a._id).toBe("actor-created");
+    expect(a.id).toBe("arch1");
+    expect(a._id).toBe("arch1");
 
     expect(a.itemCount).toBe(2);
     expect(a).not.toHaveProperty("items");
@@ -135,12 +135,13 @@ describe("command router", () => {
 
     expect(globalThis.game.actors.fromCompendium).toHaveBeenCalledWith(
       expect.objectContaining({ documentName: "Actor" }),
-      { keepId: false, clearFolder: true, clearOwnership: true }
+      { keepId: true, clearFolder: true, clearOwnership: false }
     );
 
-    const created = globalThis.Actor.create.mock.calls.at(-1)[0];
+    const [created, createOptions] = globalThis.Actor.create.mock.calls.at(-1);
+    expect(createOptions).toMatchObject({ keepId: true });
     expect(created.folder).toBe("folder-actors-test");
-    expect(created._id).toBeUndefined();
+    expect(created._id).toBe("arch1");
     expect(created._stats.compendiumSource).toBe("Compendium.world.test-monsters.Actor.arch1");
 
     expect(created.sort).toBeUndefined();
@@ -159,16 +160,74 @@ describe("command router", () => {
     expect(created.folder).toBeUndefined();
   });
 
-  it("forces keepId:false so a repeated import mints a fresh id (no silent replace)", async () => {
+  it("keeps the compendium id while it is free and mints a fresh one once the world holds it", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const importArch = (dryRun) =>
+      router.route(
+        createRequest("actor.import-from-compendium", {
+          pack: "world.test-monsters",
+          entryId: "arch1",
+          dryRun
+        })
+      );
 
-    await router.route(
+    const preview = await importArch(true);
+    expect(preview.result.actor.id).toBe("arch1");
+    const first = await importArch(false);
+    expect(first.result.actor.id).toBe("arch1");
+    const [firstData, firstOptions] = globalThis.Actor.create.mock.calls.at(-1);
+    expect(firstData._id).toBe("arch1");
+    expect(firstOptions).toMatchObject({ keepId: true });
+
+    const second = await importArch(false);
+    expect(second.ok).toBe(true);
+    expect(globalThis.game.actors.fromCompendium.mock.calls.at(-1)[1]).toMatchObject({ keepId: false });
+    const [secondData, secondOptions] = globalThis.Actor.create.mock.calls.at(-1);
+    expect(secondData._id).toBeUndefined();
+    expect(secondOptions).not.toHaveProperty("keepId");
+    expect(second.result.actor.id).not.toBe("arch1");
+  });
+
+  it("lets only one of two concurrent imports of an entry keep its id", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const create = globalThis.Actor.create;
+    /** @type {(value?: unknown) => void} */
+    let releaseFirst = () => {};
+    const firstCreateHeld = new Promise((resolve) => {
+      releaseFirst = resolve;
+    });
+    const realCreate = create.getMockImplementation();
+    create.mockImplementationOnce(async (data, options) => {
+      await firstCreateHeld;
+      return realCreate(data, options);
+    });
+    const importArch = () =>
+      router.route(
+        createRequest("actor.import-from-compendium", { pack: "world.test-monsters", entryId: "arch1" })
+      );
+
+    const first = importArch();
+    await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    const second = await importArch();
+    releaseFirst();
+    const firstResult = await first;
+
+    expect(firstResult.result.actor.id).toBe("arch1");
+    expect(second.ok).toBe(true);
+    expect(second.result.actor.id).not.toBe("arch1");
+    expect(create.mock.calls[1][0]._id).toBeUndefined();
+  });
+
+  it("mints a new id when the world holds the entry's id as an invalid document", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    globalThis.game.actors.invalidDocumentIds = new Set(["arch1"]);
+
+    const response = await router.route(
       createRequest("actor.import-from-compendium", { pack: "world.test-monsters", entryId: "arch1" })
     );
 
-    const options = globalThis.game.actors.fromCompendium.mock.calls.at(-1)[1];
-    expect(options).toMatchObject({ keepId: false });
-
+    expect(response.ok).toBe(true);
+    expect(response.result.actor.id).not.toBe("arch1");
     expect(globalThis.Actor.create.mock.calls.at(-1)[0]._id).toBeUndefined();
   });
 
@@ -390,7 +449,7 @@ describe("command router", () => {
   });
 
   it.each(Object.keys(WORLD_IMPORT_FIXTURES))(
-    "%s imports the pack entry, preserves provenance, mints a fresh id and clears the pack folder/sort",
+    "%s imports the pack entry, preserves provenance and ownership, keeps the free id and clears the pack folder/sort",
     async (command) => {
       const fixture = WORLD_IMPORT_FIXTURES[command];
       const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
@@ -418,13 +477,14 @@ describe("command router", () => {
       expect(document._stats, "raw _stats must never be exposed").toBeUndefined();
 
       expect(fixture.collection().fromCompendium).toHaveBeenCalledWith(expect.anything(), {
-        keepId: false,
+        keepId: true,
         clearFolder: true,
-        clearOwnership: true
+        clearOwnership: false
       });
 
       const created = fixture.createSpy().mock.calls.at(-1)[0];
-      expect(created._id).toBeUndefined();
+      expect(created._id).toBe(fixture.entryId);
+      expect(document.id).toBe(fixture.entryId);
       expect(created.folder).toBeUndefined();
       expect(created.sort).toBeUndefined();
       expect(created._stats.compendiumSource).toBe(document.compendiumSource);
@@ -432,7 +492,7 @@ describe("command router", () => {
   );
 
   it.each(Object.keys(WORLD_IMPORT_FIXTURES))(
-    "%s applies the folder param and the patch, and a dry run previews the REAL merge with a null id",
+    "%s applies the folder param and the patch, and a dry run previews the REAL merge with the kept id",
     async (command) => {
       const fixture = WORLD_IMPORT_FIXTURES[command];
       const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
@@ -450,8 +510,8 @@ describe("command router", () => {
       expect(preview.ok, JSON.stringify(preview.error ?? null)).toBe(true);
       expect(preview.result.dryRun).toBe(true);
       const previewDoc = preview.result[fixture.resultKey];
-      expect(previewDoc.id, "a dry run must never fabricate (or echo) an id").toBeNull();
-      expect(previewDoc._id).toBeNull();
+      expect(previewDoc.id).toBe(fixture.entryId);
+      expect(previewDoc._id).toBe(fixture.entryId);
       expect(previewDoc.name).toBe("Renamed By Patch");
       if (fixture.folderReadable !== false) {
         expect(previewDoc.folder).toBe(folderId);
@@ -651,7 +711,18 @@ describe("command router", () => {
     expect(packOnly.error.code).toBe("COMPENDIUM_NOT_FOUND");
   });
 
-  it("macro.import-from-compendium resets the macro author to the GM (the raw-clearOwnership trap)", async () => {
+  it("journal.import-from-compendium keeps the pack entry's ownership", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+
+    const response = await router.route(
+      createRequest("journal.import-from-compendium", { pack: "world.test-journals", entryId: "jrn-src" })
+    );
+
+    expect(response.ok, JSON.stringify(response.error ?? null)).toBe(true);
+    expect(globalThis.JournalEntry.create.mock.calls.at(-1)[0].ownership).toEqual({ default: 2 });
+  });
+
+  it("macro.import-from-compendium passes the pack macro's author to Foundry's create", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
     const response = await router.route(
@@ -664,8 +735,7 @@ describe("command router", () => {
     expect(response.ok).toBe(true);
 
     const created = globalThis.Macro.create.mock.calls.at(-1)[0];
-    expect(created.author).toBe(globalThis.game.user.id);
-    expect(created.author).not.toBe("packauthor000001");
+    expect(created.author).toBe("packauthor000001");
 
     expect(created.command).toBe("console.log('from the pack');");
   });
@@ -833,6 +903,10 @@ describe("command router", () => {
     expect(item.system).toEqual({ damage: "1d8" });
     expect(item.flags).toEqual({ mymod: { forged: true } });
     expect(item.effects.map((e) => e.name)).toEqual(["Sharpened"]);
+    const [, createdItems] = globalThis.game.actors
+      .get("actor-1")
+      .createEmbeddedDocuments.mock.calls.find(([type]) => type === "Item");
+    expect(createdItems[0].effects.map((effect) => effect._id)).toEqual(["eff-src"]);
 
     expect(item.img).toBe("compendium/longsword.png");
 

@@ -90,6 +90,14 @@ export const fileCommands = {
     },
     additionalProperties: false
   }),
+  "file.size": cmd({
+    type: "object",
+    required: ["path"],
+    properties: {
+      path: nonEmptyDataPathSchema
+    },
+    additionalProperties: false
+  }),
   "file.read": cmd({
     type: "object",
     required: ["path", "encoding"],

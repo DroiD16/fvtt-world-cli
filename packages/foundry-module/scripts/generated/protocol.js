@@ -337,6 +337,17 @@ var nameFilteredListSchema = {
   properties: { ...nameFilterProperty, ...paginationProperties },
   additionalProperties: false
 };
+var folderFilteredListSchema = {
+  type: "object",
+  required: [],
+  properties: { ...nameFilterProperty, folder: { type: "string", minLength: 1 }, ...paginationProperties },
+  additionalProperties: false
+};
+var statusSetProperties = {
+  statusId: { type: "string", minLength: 1 },
+  active: { type: "boolean" },
+  overlay: { type: "boolean" }
+};
 var dryRunProperty = {
   dryRun: { type: "boolean" }
 };
@@ -560,7 +571,7 @@ function ownershipUsersSchema(levelSchema) {
     type: "object",
     required: [],
     properties: {},
-    additionalProperties: levelSchema,
+    additionalProperties: { type: [levelSchema.type, "null"], enum: [...levelSchema.enum, null] },
     minProperties: 1
   };
 }
@@ -694,7 +705,10 @@ var actorDataSchema = {
 };
 var actorPatchSchema = patchFrom(actorDataSchema, { omit: ["type"] });
 var actorCommands = {
-  "actor.list": cmd(nameFilteredListSchema),
+  "actor.list": cmd({
+    ...folderFilteredListSchema,
+    properties: { ...folderFilteredListSchema.properties, type: { type: "string", minLength: 1 } }
+  }),
   "actor.get": cmd({
     type: "object",
     required: ["actorId"],
@@ -760,6 +774,19 @@ var actorCommands = {
         patch: actorPatchSchema,
         ...dryRunProperty,
         ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "actor.status.set": cmd(
+    {
+      type: "object",
+      required: ["actorId", "statusId", "active"],
+      properties: {
+        actorId: { type: "string", minLength: 1 },
+        ...statusSetProperties,
+        ...dryRunProperty
       },
       additionalProperties: false
     },
@@ -1218,7 +1245,7 @@ var cardsIdSchema = {
   additionalProperties: false
 };
 var cardsCommands = {
-  "cards.list": cmd(nameFilteredListSchema),
+  "cards.list": cmd(folderFilteredListSchema),
   "cards.get": cmd(cardsIdSchema),
   "cards.get-many": cmd({
     type: "object",
@@ -1867,6 +1894,18 @@ var compendiumCommands = {
   })
 };
 
+// packages/protocol/src/schemas/document.js
+var documentCommands = {
+  "document.resolve": cmd({
+    type: "object",
+    required: ["uuid"],
+    properties: {
+      uuid: { type: "string", minLength: 1 }
+    },
+    additionalProperties: false
+  })
+};
+
 // packages/protocol/src/schemas/file.js
 var dataPathSchema = {
   type: "string",
@@ -1939,6 +1978,14 @@ var fileCommands = {
     required: ["path"],
     properties: {
       path: dataPathSchema
+    },
+    additionalProperties: false
+  }),
+  "file.size": cmd({
+    type: "object",
+    required: ["path"],
+    properties: {
+      path: nonEmptyDataPathSchema
     },
     additionalProperties: false
   }),
@@ -2128,7 +2175,7 @@ var imageCommands = {
 
 // packages/protocol/src/schemas/item.js
 var itemCommands = {
-  "item.list": cmd(nameFilteredListSchema),
+  "item.list": cmd(folderFilteredListSchema),
   "item.get": cmd({
     type: "object",
     required: ["itemId"],
@@ -2456,7 +2503,7 @@ var journalClonePatchSchema = {
   minProperties: 1
 };
 var journalCommands = {
-  "journal.list": cmd(nameFilteredListSchema),
+  "journal.list": cmd(folderFilteredListSchema),
   "journal.get": cmd(journalIdSchema),
   "journal.get-many": cmd({
     type: "object",
@@ -2690,7 +2737,7 @@ var macroIdSchema = {
   additionalProperties: false
 };
 var macroCommands = {
-  "macro.list": cmd(nameFilteredListSchema),
+  "macro.list": cmd(folderFilteredListSchema),
   "macro.get": cmd(macroIdSchema),
   "macro.get-many": cmd({
     type: "object",
@@ -2831,7 +2878,7 @@ var playlistIdSchema = {
   additionalProperties: false
 };
 var playlistCommands = {
-  "playlist.list": cmd(nameFilteredListSchema),
+  "playlist.list": cmd(folderFilteredListSchema),
   "playlist.get": cmd(playlistIdSchema),
   "playlist.get-many": cmd({
     type: "object",
@@ -3687,6 +3734,19 @@ var sceneEmbeddedCommands = {
     createSchema: effectCreateSchema,
     patchSchema: effectPatchSchema
   }),
+  "scene.token.status.set": cmd(
+    {
+      type: "object",
+      required: ["sceneId", "tokenId", "statusId", "active"],
+      properties: {
+        ...sceneTokenScopeProperties,
+        ...statusSetProperties,
+        ...dryRunProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
   "scene.token.effect.list": cmd({
     type: "object",
     required: ["sceneId", "tokenId"],
@@ -4711,7 +4771,7 @@ var scenePatchSchema = patchFrom(sceneCreateSchema, {
   prepend: { initialLevel: nullableStringSchema }
 });
 var sceneCommands = {
-  "scene.list": cmd(nameFilteredListSchema),
+  "scene.list": cmd(folderFilteredListSchema),
   "scene.get": cmd(sceneIdSchema),
   "scene.get-many": cmd({
     type: "object",
@@ -5030,7 +5090,7 @@ var tableDrawSchema = {
 };
 var TABLE_MUTATION_OUTCOMES = deepFreeze(["committed", "unknown", "not-executed"]);
 var tableCommands = {
-  "table.list": cmd(nameFilteredListSchema),
+  "table.list": cmd(folderFilteredListSchema),
   "table.get": cmd(tableIdSchema),
   "table.get-many": cmd({
     type: "object",
@@ -5203,6 +5263,7 @@ var COMMAND_DEFINITIONS = deepFreeze(
     actorCompendiumImportCommands,
     worldAuditCommands,
     worldSearchCommands,
+    documentCommands,
     approvalCommands
   ])
 );
@@ -5604,6 +5665,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "scene.token.item.effect.create-many": "allow",
   "scene.token.item.effect.update-many": "allow",
   "scene.token.item.effect.delete-many": "approve",
+  "scene.token.status.set": "allow",
   "scene.token.effect.list": "allow",
   "scene.token.effect.applied": "allow",
   "scene.token.effect.get": "allow",
@@ -5849,6 +5911,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "actor.update": "allow",
   "actor.delete": "approve",
   "actor.clone": "allow",
+  "actor.status.set": "allow",
   "actor.ownership.set": "allow",
   "actor.item.list": "allow",
   "actor.item.create": "allow",
@@ -5883,6 +5946,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "actor.item.effect.delete-many": "approve",
   "file.list": "allow",
   "file.stat": "allow",
+  "file.size": "allow",
   "file.read": "allow",
   "file.mkdir": "allow",
   "file.upload": "allow",
@@ -5918,6 +5982,7 @@ var DEFAULT_COMMAND_PROFILE = deepFreeze({
   "world.audit-files": "allow",
   "world.references": "allow",
   "world.search": "allow",
+  "document.resolve": "allow",
   "approval.await": "allow",
   "approval.cancel": "allow",
   "policy.snapshot": "allow"

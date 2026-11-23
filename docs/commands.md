@@ -35,6 +35,7 @@ Use these families to narrow your search, then check their help for supported op
 | Organize content and access | `folder`, `*.ownership.set`, `user` |
 | Manage chat and settings | `chat`, `setting` |
 | Find content, references, or missing assets | `world.search`, `world.references`, `world.audit-files` |
+| Read a document from its UUID | `document get --uuid` |
 | Read packs or import world documents | `compendium`, supported `*.import-from-compendium` commands |
 | Manage assets | `file` |
 | Control playback and gameplay | Actions within `playlist`, `table`, `cards`, `combat`, `scene`, and `game` |
@@ -161,8 +162,8 @@ Use `--json` for automation. World commands return `ok: true` with `result`, or 
 an `error` containing a code, message, and optional details. Failures exit non-zero. Branch on
 `error.code`, not the message text. See the [response examples](protocol.md#request-and-response-example).
 
-Results use command-specific keys such as `actor`, `items`, or `outcomes`. Use returned document
-`id` fields to address later commands.
+Results use command-specific keys such as `actor`, `items`, or `outcomes`; each command's help names
+its key. Use returned document `id` fields to address later commands.
 
 ### Reading collections and documents
 

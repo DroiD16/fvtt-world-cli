@@ -40,6 +40,21 @@ export function write(stream: IoStreams["stdout"], value: string) {
   stream.write(value);
 }
 
+export function ignoreClosedPipe(stream: IoStreams["stdout"]): () => void {
+  if (!("on" in stream) || typeof stream.on !== "function") {
+    return () => {};
+  }
+  const onError = (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EPIPE") {
+      throw error;
+    }
+  };
+  stream.on("error", onError);
+  return () => {
+    stream.off("error", onError);
+  };
+}
+
 export function applyExitOverride(command: Command) {
   command.exitOverride();
   for (const sub of command.commands) {

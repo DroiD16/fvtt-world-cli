@@ -6,10 +6,10 @@ import {
   compendiumImportSchema,
   deepFreeze,
   dryRunProperty,
+  folderFilteredListSchema,
   freeformObjectSchema,
   idempotencyKeyProperty,
   nameFilterProperty,
-  nameFilteredListSchema,
   nullableStringSchema,
   paginationProperties,
   patchFrom
@@ -99,7 +99,7 @@ const tableDrawSchema = {
 export const TABLE_MUTATION_OUTCOMES = deepFreeze(["committed", "unknown", "not-executed"]);
 
 export const tableCommands = {
-  "table.list": cmd(nameFilteredListSchema),
+  "table.list": cmd(folderFilteredListSchema),
   "table.get": cmd(tableIdSchema),
   "table.get-many": cmd({
     type: "object",

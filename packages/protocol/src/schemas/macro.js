@@ -5,9 +5,9 @@ import {
   cmd,
   compendiumImportSchema,
   dryRunProperty,
+  folderFilteredListSchema,
   freeformObjectSchema,
   idempotencyKeyProperty,
-  nameFilteredListSchema,
   nullableStringSchema,
   patchFrom
 } from "./shared.js";
@@ -61,7 +61,7 @@ const macroIdSchema = {
 };
 
 export const macroCommands = {
-  "macro.list": cmd(nameFilteredListSchema),
+  "macro.list": cmd(folderFilteredListSchema),
   "macro.get": cmd(macroIdSchema),
   "macro.get-many": cmd({
     type: "object",

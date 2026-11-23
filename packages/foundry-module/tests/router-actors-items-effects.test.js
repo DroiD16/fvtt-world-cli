@@ -58,7 +58,7 @@ describe("command router", () => {
     expect(updateResponse.result.item.system.armor).toBe(3);
   });
 
-  it("creates an actor embedded item carrying flags and nested effects (nested meta stripped, origin kept)", async () => {
+  it("creates an actor embedded item with nested effects that keep their _id and provenance but no other metadata", async () => {
     const router = createCommandRouter({
       bridgeClient: { getStatus: () => ({ status: "connected" }) }
     });
@@ -77,8 +77,8 @@ describe("command router", () => {
               transfer: true,
               origin: "Item.abc",
 
-              _id: "spoofed",
-              _stats: { hacked: true },
+              _id: "blessEffect00001",
+              _stats: { compendiumSource: "Compendium.x.y.Item.z", createdTime: 1, lastModifiedBy: "u1" },
               ownership: { default: 3 }
             }
           ]
@@ -96,8 +96,8 @@ describe("command router", () => {
     expect(created.flags).toEqual({ ddbimporter: { id: 1 } });
 
     const nestedEffect = created.effects[0];
-    expect(nestedEffect).not.toHaveProperty("_id");
-    expect(nestedEffect).not.toHaveProperty("_stats");
+    expect(nestedEffect._id).toBe("blessEffect00001");
+    expect(nestedEffect._stats).toEqual({ compendiumSource: "Compendium.x.y.Item.z" });
     expect(nestedEffect).not.toHaveProperty("ownership");
     expect(nestedEffect.origin).toBe("Item.abc");
     expect(nestedEffect.transfer).toBe(true);
@@ -195,6 +195,54 @@ describe("command router", () => {
 
     const worldItemNames = Array.from(worldActor.items).map((it) => it.name);
     expect(worldItemNames).not.toContain("Poisoned Dagger");
+  });
+
+  it("refuses two nested effects with the same _id on actor item create, create-many and import and token item create, dry runs included", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const actor = globalThis.game.actors.get("actor-1");
+    const deltaActor = globalThis.game.scenes.get("scene-1").tokens.get("token-a").actor;
+    const data = {
+      name: "Twin",
+      type: "weapon",
+      effects: [
+        { _id: "twinEffect000001", name: "A" },
+        { _id: "otherEffect00001", name: "B" },
+        { _id: "twinEffect000001", name: "C" }
+      ]
+    };
+    /** @type {[string, Record<string, unknown>][]} */
+    const requests = [
+      ["actor.item.create", { actorId: "actor-1", data }],
+      ["actor.item.create", { actorId: "actor-1", data, dryRun: true }],
+      ["actor.item.create-many", { actorId: "actor-1", data: [data] }],
+      ["actor.item.create-many", { actorId: "actor-1", data: [data], dryRun: true }],
+      ["scene.token.item.create", { sceneId: "scene-1", tokenId: "token-a", data }],
+      ["scene.token.item.create", { sceneId: "scene-1", tokenId: "token-a", data, dryRun: true }],
+      [
+        "actor.item.import-from-compendium",
+        { actorId: "actor-1", pack: "world.test-items", entryId: "it-twin" }
+      ],
+      [
+        "actor.item.import-from-compendium",
+        { actorId: "actor-1", pack: "world.test-items", entryId: "it-twin", dryRun: true }
+      ]
+    ];
+    actor.createEmbeddedDocuments.mockClear();
+    deltaActor.createEmbeddedDocuments.mockClear();
+
+    for (const [command, params] of requests) {
+      const response = await router.route(createRequest(command, params));
+      const label = `${command}${params.dryRun ? " dry run" : ""}`;
+      expect(response.ok, label).toBe(false);
+      expect(response.error.code, label).toBe("INVALID_PARAMS");
+      expect(response.error.details, label).toMatchObject({
+        field: "effects",
+        duplicateEntryId: "twinEffect000001",
+        indexes: [0, 2]
+      });
+    }
+    expect(actor.createEmbeddedDocuments).not.toHaveBeenCalled();
+    expect(deltaActor.createEmbeddedDocuments).not.toHaveBeenCalled();
   });
 
   it("returns actor-not-found for actor embedded item commands", async () => {
@@ -890,7 +938,7 @@ describe("command router", () => {
       }
     );
 
-    it("strips _id/_stats/ownership from a create/update payload while preserving origin", async () => {
+    it("keeps only provenance from _stats on create and strips _id/_stats/ownership otherwise, preserving origin", async () => {
       const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 
       const actor = globalThis.game.actors.get("actor-1");
@@ -900,7 +948,13 @@ describe("command router", () => {
           data: {
             name: "Sanitized",
             _id: "bogus",
-            _stats: { hacked: true },
+            _stats: {
+              hacked: true,
+              createdTime: 1,
+              compendiumSource: "Compendium.a.b.ActiveEffect.c",
+              duplicateSource: null,
+              exportSource: { worldId: "w", uuid: "Actor.x.ActiveEffect.y", coreVersion: "13", systemId: "s" }
+            },
             ownership: { default: 3 },
             origin: "Item.keepme"
           }
@@ -910,7 +964,11 @@ describe("command router", () => {
 
       const [, createdEntries] = actor.createEmbeddedDocuments.mock.calls.at(-1);
       expect(createdEntries[0]).not.toHaveProperty("_id");
-      expect(createdEntries[0]).not.toHaveProperty("_stats");
+      expect(createdEntries[0]._stats).toEqual({
+        compendiumSource: "Compendium.a.b.ActiveEffect.c",
+        duplicateSource: null,
+        exportSource: { worldId: "w", uuid: "Actor.x.ActiveEffect.y", coreVersion: "13", systemId: "s" }
+      });
       expect(createdEntries[0]).not.toHaveProperty("ownership");
       expect(createdEntries[0].origin).toBe("Item.keepme");
       const effectId = createResponse.result.effect.id;
@@ -921,7 +979,7 @@ describe("command router", () => {
           effectId,
           patch: {
             _id: "spoofed",
-            _stats: { hacked: true },
+            _stats: { hacked: true, compendiumSource: "Compendium.a.b.ActiveEffect.c" },
             ownership: { default: 3 },
             origin: "Item.updated"
           }
@@ -1479,7 +1537,9 @@ describe("actor.item batch writes", () => {
         {
           name: "Longsword",
           type: "weapon",
-          effects: [{ name: "Bless", _id: "spoofed", _stats: { hacked: true }, ownership: { default: 3 } }]
+          effects: [
+            { name: "Bless", _id: "blessEffect00001", _stats: { hacked: true }, ownership: { default: 3 } }
+          ]
         }
       ]
     });
@@ -1494,7 +1554,7 @@ describe("actor.item batch writes", () => {
     const [, payloads, options] = actor.createEmbeddedDocuments.mock.calls.find(([type]) => type === "Item");
     expect(options).toMatchObject({ keepId: true });
     expect(payloads[0].img).toBe("worlds/world-1/art/torch%20light.png");
-    expect(payloads[1].effects[0]).not.toHaveProperty("_id");
+    expect(payloads[1].effects[0]._id).toBe("blessEffect00001");
     expect(payloads[1].effects[0]).not.toHaveProperty("_stats");
     expect(payloads[1].effects[0]).not.toHaveProperty("ownership");
     for (const outcome of response.result.outcomes) {

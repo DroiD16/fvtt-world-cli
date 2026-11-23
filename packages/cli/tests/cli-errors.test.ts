@@ -305,6 +305,23 @@ describe("fvtt-world-cli commands", () => {
       expect(stderr.read()).toBe("");
     });
 
+    it("reports a setting named by neither --id nor the namespace/key pair as MISSING_REQUIRED_OPTION", async () => {
+      const stdout = createWritableBuffer();
+      const stderr = createWritableBuffer();
+
+      const exitCode = await executeCli(
+        ["node", "fvtt-world-cli", "--json", "setting", "get", "--namespace", "core"],
+        {
+          stdout,
+          stderr,
+          sendCommand: okMock()
+        }
+      );
+
+      expect(exitCode).toBe(2);
+      expect(JSON.parse(stdout.read()).error.code).toBe("MISSING_REQUIRED_OPTION");
+    });
+
     it("routes commander parse errors to stderr with empty stdout in human mode", async () => {
       const stdout = createWritableBuffer();
       const stderr = createWritableBuffer();

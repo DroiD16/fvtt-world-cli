@@ -91,14 +91,26 @@ import {
 } from "./field-options.js";
 import {
   type RegistrationContext,
+  type StatusSetOptions,
+  type WorldListOptions,
+  addStatusSetOptions,
+  addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
   addNameFilterOption,
   addPaginationOptions,
   nameFilterParams,
-  paginationParams
+  paginationParams,
+  statusSetParams,
+  worldListParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 import { write } from "../deps.js";
+
+interface TokenStatusSetOptions extends StatusSetOptions {
+  sceneId: string;
+  tokenId: string;
+}
 
 interface SceneLevelScopeOptions {
   sceneId: string;
@@ -179,8 +191,8 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     createSharedRegistrars(dependencies);
   const scene = program.command("scene").description("Foundry scene commands");
   scene.addHelpText(
-    "after",
-    "\nResult key (--json): .result.scene (single/write) / .result.scenes[] (list). Embedded placeables nest under .result.<type> (e.g. .result.token, .result.wall) plus .result.sceneId. Action verbs: .result.thumbnail (thumbnail generate — the persisted asset path is .result.thumbnail.storedPath, the file stat-able value; .thumbnail.thumb is the generated data URL and only with --include-thumb) and .result.clearedCount + .result.confirmation (fog reset — confirmation is observed / nothing-to-observe / not-dispatched; reset:true alone is not proof of an observed reset), both alongside .result.sceneId."
+    "afterAll",
+    "\nResult key (--json): .result.scene (single/write) / .result.scenes[] (list, get-many); get and get-many carry counts (placeables per type), and scene <type> list reads the placeables. Placeables nest under .result.<type> / .result.<type>s[] (e.g. .result.token, .result.walls[]) with .result.sceneId; a token's items and effects at .result.item / .result.items[] and .result.effect / .result.effects[]."
   );
   registerOwnershipSet(scene, {
     idFlag: "--scene-id <sceneId>",
@@ -188,14 +200,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     commandName: "scene.ownership.set",
     noun: "scene"
   });
-  addNameFilterOption(addPaginationOptions(scene.command("list"))).action(async function listScenes(options: {
-    name?: string;
-    limit?: number;
-    offset?: number;
-  }) {
+  addWorldListOptions(scene.command("list")).action(async function listScenes(options: WorldListOptions) {
     await executeRemoteCommand({
       commandName: "scene.list",
-      params: { ...nameFilterParams(options), ...paginationParams(options) },
+      params: worldListParams(options),
       command: this,
       dependencies
     });
@@ -270,6 +278,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   scene
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .option("--force", "Allow deleting the active scene")
     .action(async function deleteScene(options: { sceneId: string; force?: boolean }) {
@@ -283,6 +292,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
 
   scene
     .command("activate")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.sceneId, .result.active, .result.wasActive and .result.changed."
+    )
     .description("Make a scene the active one for the whole world (a no-op reports changed:false)")
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .action(async function activateScene(options: { sceneId: string }) {
@@ -295,6 +308,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   scene
     .command("pull-users")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.sceneId, .result.userIds, .result.skippedUserIds and .result.dispatched."
+    )
     .description(
       "Pull users' views to a scene (a broadcast, not a mutation: only currently ONLINE users are reachable and nothing can be confirmed afterwards)"
     )
@@ -332,7 +349,8 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     )
     .addHelpText(
       "after",
-      "\n.thumbnail.outputWidth and .outputHeight are read from the rendered image itself. They can exceed" +
+      "\nResult key (--json): .result.thumbnail; the stored asset path is .result.thumbnail.storedPath, and .thumbnail.thumb (the generated data URL) comes only with --include-thumb." +
+        "\n.thumbnail.outputWidth and .outputHeight are read from the rendered image itself. They can exceed" +
         "\n--width and --height: Foundry renders at the GM client's pixel ratio when its core setting for" +
         "\npixel-ratio resolution scaling is on. A dry run reports them as null."
     )
@@ -404,7 +422,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
         "the core grid-based templates setting on, Foundry fits templates to grid cells; the snapshot still",
         "draws the plain shape.",
         "",
-        "Result keys (--json): .result.image {path, mimeType, width, height, sizeBytes},",
+        "Result key (--json): .result.image {path, mimeType, width, height, sizeBytes},",
         ".result.transform {scale, offsetX, offsetY} (image pixel = coordinate * scale + offset),",
         ".result.view {x, y, width, height} (the canvas rectangle the image covers), .result.layers,",
         ".result.levelId (v14), .result.partialRender (true when Foundry v13 drew only part of the tiles)."
@@ -430,6 +448,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
   sceneFog
     .command("reset")
     .requiredOption("--scene-id <sceneId>", "Scene id (must be the scene the GM client is viewing)")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.clearedCount and .result.confirmation (observed, nothing-to-observe or not-dispatched); reset:true alone does not prove an observed reset."
+    )
     .action(async function resetSceneFog(options: { sceneId: string }) {
       await executeRemoteCommand({
         commandName: "scene.fog.reset",
@@ -544,6 +566,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneToken
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--token-id <tokenId>", "Token id")
     .action(async function deleteSceneToken(options: { sceneId: string; tokenId: string }) {
@@ -557,6 +580,10 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
 
   sceneToken
     .command("restore-delta")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.sceneId, .result.tokenId, .result.changed and .result.discarded."
+    )
     .description(
       "Discard every token-level override of an unlinked token (items, effects, system data, name, …) so it follows its world actor again"
     )
@@ -727,6 +754,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneTokenItem
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--token-id <tokenId>", "Token id")
     .requiredOption("--item-id <itemId>", "Item id")
@@ -883,6 +911,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneTokenItemEffect
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--token-id <tokenId>", "Token id")
     .requiredOption("--item-id <itemId>", "Item id")
@@ -981,6 +1010,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneTile
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--tile-id <tileId>", "Tile id")
     .action(async function deleteSceneTile(options: { sceneId: string; tileId: string }) {
@@ -1069,6 +1099,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneSound
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--sound-id <soundId>", "Sound id")
     .action(async function deleteSceneSound(options: { sceneId: string; soundId: string }) {
@@ -1152,6 +1183,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneWall
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--wall-id <wallId>", "Wall id")
     .action(async function deleteSceneWall(options: { sceneId: string; wallId: string }) {
@@ -1216,9 +1248,9 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
         dependencies
       });
     });
-  addSceneLevelTargetOptions(sceneLevel.command("delete")).action(async function deleteSceneLevel(
-    options: SceneLevelTargetOptions
-  ) {
+  addSceneLevelTargetOptions(
+    sceneLevel.command("delete").addHelpText("after", DELETE_RESULT_KEY_HELP)
+  ).action(async function deleteSceneLevel(options: SceneLevelTargetOptions) {
     await executeRemoteCommand({
       commandName: "scene.level.delete",
       params: { sceneId: options.sceneId, levelId: options.levelId },
@@ -1290,6 +1322,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneNote
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--note-id <noteId>", "Note id")
     .action(async function deleteSceneNote(options: { sceneId: string; noteId: string }) {
@@ -1372,6 +1405,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneDrawing
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--drawing-id <drawingId>", "Drawing id")
     .action(async function deleteSceneDrawing(options: { sceneId: string; drawingId: string }) {
@@ -1459,6 +1493,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneLight
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--light-id <lightId>", "Light id")
     .action(async function deleteSceneLight(options: { sceneId: string; lightId: string }) {
@@ -1541,6 +1576,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneTemplate
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--template-id <templateId>", "Template id")
     .action(async function deleteSceneTemplate(options: { sceneId: string; templateId: string }) {
@@ -1633,6 +1669,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneRegion
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--region-id <regionId>", "Region id")
     .action(async function deleteSceneRegion(options: { sceneId: string; regionId: string }) {
@@ -1654,9 +1691,12 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     .command("behavior")
     .description("Region-embedded behavior commands (what a region DOES when it fires)");
   sceneRegionBehavior.addHelpText(
+    "afterAll",
+    "\nResult key (--json): .result.behavior (single/write) / .result.behaviors[] (list), with .result.sceneId and .result.regionId alongside."
+  );
+  sceneRegionBehavior.addHelpText(
     "after",
-    "\nResult key (--json): .result.behavior (single/write) / .result.behaviors[] (list), with .result.sceneId and .result.regionId alongside." +
-      '\nA behavior name may legitimately be BLANK (Foundry then displays the localized type label): pass --name "" to author one; the CLI prints it as (blank).' +
+    '\nA behavior name may legitimately be BLANK (Foundry then displays the localized type label): pass --name "" to author one; the CLI prints it as (blank).' +
       "\n--type is CREATE-ONLY, so update/clone have no --type. If a --patch-json carries a `type` key it is refused even when it restates the current type: drop the key and resend (an unchanged type is a no-op for Foundry). On this family changing a behavior's type is impossible — for that, create the new behavior and delete the old one." +
       "\nThe code-executing types executeScript and executeMacro are REFUSED on THIS family whenever you supply them, and every patch on an existing one is refused too (even --disabled). executeScript is refused everywhere — it runs its source in every connected player's browser. For executeMacro use `scene region behavior executable`; delete removes either type." +
       "\nclone with NO patch flags IS allowed on any behavior — note that cloning a code-executing one mints a NEW self-arming auto-trigger, so audit the region afterwards."
@@ -1782,6 +1822,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneRegionBehavior
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--region-id <regionId>", "Region id")
     .requiredOption("--behavior-id <behaviorId>", "Behavior id")
@@ -1887,6 +1928,22 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     packExample: "dnd5e.scenes"
   });
 
+  addStatusSetOptions(
+    sceneToken
+      .command("status")
+      .description("Placed-token status effects (conditions) on the token's actor")
+      .command("set")
+      .requiredOption("--scene-id <sceneId>", "Scene id")
+      .requiredOption("--token-id <tokenId>", "Token id")
+  ).action(async function setTokenStatus(options: TokenStatusSetOptions) {
+    await executeRemoteCommand({
+      commandName: "scene.token.status.set",
+      params: { sceneId: options.sceneId, tokenId: options.tokenId, ...statusSetParams(options) },
+      command: this,
+      dependencies
+    });
+  });
+
   const sceneTokenEffect = sceneToken
     .command("effect")
     .description("Placed-token ActiveEffect commands (protocol scene.token.effect.*)");
@@ -1925,6 +1982,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
   addPaginationOptions(
     sceneTokenEffect
       .command("applied")
+      .addHelpText("after", "\nResult key (--json): .result.effects[] (+ .result.actorLink, total/hasMore).")
       .requiredOption("--scene-id <sceneId>", "Scene id")
       .requiredOption("--token-id <tokenId>", "Token id")
   ).action(async function listAppliedSceneTokenEffects(options: {
@@ -2023,6 +2081,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     });
   sceneTokenEffect
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--scene-id <sceneId>", "Scene id")
     .requiredOption("--token-id <tokenId>", "Token id")
     .requiredOption("--effect-id <effectId>", "Effect id")

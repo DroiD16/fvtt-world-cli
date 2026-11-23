@@ -11,15 +11,16 @@ import {
   compendiumImportSchema,
   dryRunProperty,
   emptyScopeProperties,
+  folderFilteredListSchema,
   freeformObjectSchema,
   idempotencyKeyProperty,
   includeProperty,
   itemGetIncludeProperty,
   nameFilterProperty,
-  nameFilteredListSchema,
   nullableStringSchema,
   paginationProperties,
-  patchFrom
+  patchFrom,
+  statusSetProperties
 } from "./shared.js";
 
 const actorDataSchema = {
@@ -41,7 +42,10 @@ const actorDataSchema = {
 const actorPatchSchema = patchFrom(actorDataSchema, { omit: ["type"] });
 
 export const actorCommands = {
-  "actor.list": cmd(nameFilteredListSchema),
+  "actor.list": cmd({
+    ...folderFilteredListSchema,
+    properties: { ...folderFilteredListSchema.properties, type: { type: "string", minLength: 1 } }
+  }),
   "actor.get": cmd({
     type: "object",
     required: ["actorId"],
@@ -107,6 +111,19 @@ export const actorCommands = {
         patch: actorPatchSchema,
         ...dryRunProperty,
         ...idempotencyKeyProperty
+      },
+      additionalProperties: false
+    },
+    { mutation: true }
+  ),
+  "actor.status.set": cmd(
+    {
+      type: "object",
+      required: ["actorId", "statusId", "active"],
+      properties: {
+        actorId: { type: "string", minLength: 1 },
+        ...statusSetProperties,
+        ...dryRunProperty
       },
       additionalProperties: false
     },

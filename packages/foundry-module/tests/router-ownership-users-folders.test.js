@@ -237,6 +237,87 @@ describe("user + ownership axis", () => {
     expect(actor.update).toHaveBeenCalledWith({ ownership: expected }, expect.anything());
   });
 
+  it("removes a user's entry by replacing the whole map, and confirms the key is gone", async () => {
+    const response = await router.route(
+      createRequest("actor.ownership.set", {
+        actorId: "actor-own",
+        users: { "player-1": null, "player-2": 1 }
+      })
+    );
+
+    expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
+    expect(actor.update).toHaveBeenCalledWith(
+      { "==ownership": { default: 0, "player-2": 1 } },
+      expect.anything()
+    );
+    expect(response.result.actor.ownership).toEqual({ default: 0, "player-2": 1 });
+  });
+
+  it("previews a removal without writing, and treats removing an absent entry as a no-op merge", async () => {
+    const dryRun = await router.route(
+      createRequest("actor.ownership.set", {
+        actorId: "actor-own",
+        users: { "player-1": null },
+        dryRun: true
+      })
+    );
+    expect(dryRun.ok).toBe(true);
+    expect(dryRun.result.dryRun).toBe(true);
+    expect(dryRun.result.actor.ownership).toEqual({ default: 0 });
+    expect(actor.update).not.toHaveBeenCalled();
+    expect(actor.ownership).toEqual({ default: 0, "player-1": 2 });
+
+    const absent = await router.route(
+      createRequest("actor.ownership.set", { actorId: "actor-own", users: { "player-2": null } })
+    );
+    expect(absent.ok, JSON.stringify(absent.error ?? {})).toBe(true);
+    expect(absent.result.actor.ownership).toEqual({ default: 0, "player-1": 2 });
+    expect(actor.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ "==ownership": expect.anything() }),
+      expect.anything()
+    );
+  });
+
+  it("removes the stale entry of a deleted user, while a level for an unknown user stays refused", async () => {
+    actor.ownership = { default: 0, "player-1": 2, "deleted-user": 3 };
+
+    const removed = await router.route(
+      createRequest("actor.ownership.set", { actorId: "actor-own", users: { "deleted-user": null } })
+    );
+    const level = await router.route(
+      createRequest("actor.ownership.set", { actorId: "actor-own", users: { "deleted-user": 1 } })
+    );
+
+    expect(removed.ok, JSON.stringify(removed.error ?? {})).toBe(true);
+    expect(removed.result.actor.ownership).toEqual({ default: 0, "player-1": 2 });
+    expect(level.ok).toBe(false);
+    expect(level.error.details.invalidUserIds).toEqual(["deleted-user"]);
+  });
+
+  it('refuses to remove the default entry that --user default=default and --users-json {"default":null} send', async () => {
+    const response = await router.route(
+      createRequest("actor.ownership.set", { actorId: "actor-own", users: { default: null } })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(response.error.details.invalidUserIds).toEqual(["default"]);
+    expect(actor.update).not.toHaveBeenCalled();
+  });
+
+  it("reports a removal that did not land instead of confirming it", async () => {
+    actor.update = vi.fn(async () => actor);
+
+    const response = await router.route(
+      createRequest("actor.ownership.set", { actorId: "actor-own", users: { "player-1": null } })
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    expect(response.error.details.fields).toEqual(["ownership"]);
+    expect(actor.ownership).toEqual({ default: 0, "player-1": 2 });
+  });
+
   it("shared ownership.set distinguishes a vetoed falsy update from a legitimate empty diff", async () => {
     worldItem.update = vi.fn(async () => undefined);
 
@@ -355,6 +436,23 @@ describe("user + ownership axis", () => {
     expect(page.ownership).toEqual(expected);
 
     expect(journal.update).not.toHaveBeenCalled();
+  });
+
+  it("journal.ownership.set on a page tells a removed entry apart from INHERIT (-1)", async () => {
+    journalPage.ownership = { default: -1, "player-1": 3, "player-2": 1 };
+
+    const response = await router.route(
+      createRequest("journal.ownership.set", {
+        journalId: "journal-own",
+        pageId: "page-1",
+        users: { "player-1": null, "player-2": -1 }
+      })
+    );
+
+    expect(response.ok, JSON.stringify(response.error ?? {})).toBe(true);
+    const expected = { default: -1, "player-2": -1 };
+    expect(journalPage.update).toHaveBeenCalledWith({ "==ownership": expected }, expect.anything());
+    expect(response.result.journal.pages.find((p) => p.id === "page-1").ownership).toEqual(expected);
   });
 
   it("journal.ownership.set entry-level rejects INHERIT (-1)", async () => {
@@ -513,6 +611,48 @@ describe("folder management", () => {
   afterEach(() => {
     delete globalThis.game;
     vi.restoreAllMocks();
+  });
+
+  it("lists only a folder's direct contents, filtered before pagination", async () => {
+    const response = await router.route(createRequest("actor.list", { folder: "fb", limit: 5 }));
+    expect(response.ok).toBe(true);
+    expect(response.result.actors.map((actor) => actor.id)).toEqual(["act-in-b"]);
+    expect(response.result).toMatchObject({ total: 1, hasMore: false });
+
+    const paged = await router.route(createRequest("actor.list", { folder: "fa", limit: 1, offset: 0 }));
+    expect(paged.result.actors.map((actor) => actor.id)).toEqual(["act-token"]);
+    expect(paged.result.total).toBe(1);
+
+    const scenesInFolder = await router.route(createRequest("scene.list", { folder: "fs" }));
+    expect(scenesInFolder.result.scenes.map((scene) => scene.id)).toEqual(["sc-active"]);
+
+    const decks = await router.route(createRequest("cards.list", { folder: "fcards-empty" }));
+    expect(decks.result).toMatchObject({ cards: [], total: 0 });
+  });
+
+  it("combines the actor type filter with the folder and name filters", async () => {
+    actors.set(createDocument("act-pc", { name: "Goblin Hero", type: "character", folder: "fb" }));
+
+    const byType = await router.route(createRequest("actor.list", { type: "character" }));
+    expect(byType.result.actors.map((actor) => actor.id)).toEqual(["act-pc"]);
+
+    const combined = await router.route(
+      createRequest("actor.list", { folder: "fb", type: "npc", name: "gob" })
+    );
+    expect(combined.result.actors.map((actor) => actor.id)).toEqual(["act-in-b"]);
+  });
+
+  it("refuses an unknown folder and a folder of another document type", async () => {
+    const missing = await router.route(createRequest("actor.list", { folder: "nope" }));
+    expect(missing.ok).toBe(false);
+    expect(missing.error.code).toBe(ERROR_CODES.FOLDER_NOT_FOUND);
+    expect(missing.error.details).toEqual({ folderId: "nope" });
+
+    const wrongType = await router.route(createRequest("actor.list", { folder: "fi" }));
+    expect(wrongType.ok).toBe(false);
+    expect(wrongType.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(wrongType.error.details).toEqual({ folder: "fi", folderType: "Item", documentName: "Actor" });
+    expect(wrongType.error.message).toContain("folder.list --type Actor");
   });
 
   it("folder.get returns the full projection with children counts", async () => {

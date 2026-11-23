@@ -4,10 +4,10 @@ import {
   cmd,
   compendiumImportSchema,
   dryRunProperty,
+  folderFilteredListSchema,
   freeformObjectSchema,
   idempotencyKeyProperty,
   nameFilterProperty,
-  nameFilteredListSchema,
   nullableStringSchema,
   paginationProperties,
   patchFrom
@@ -76,7 +76,7 @@ const playlistIdSchema = {
 };
 
 export const playlistCommands = {
-  "playlist.list": cmd(nameFilteredListSchema),
+  "playlist.list": cmd(folderFilteredListSchema),
   "playlist.get": cmd(playlistIdSchema),
   "playlist.get-many": cmd({
     type: "object",

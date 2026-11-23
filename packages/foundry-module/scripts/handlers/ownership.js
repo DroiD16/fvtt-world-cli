@@ -7,7 +7,7 @@ import {
   getMacroById,
   getSceneById
 } from "../lib/game-collections.js";
-import { assertKnownOwnershipUsers, mergeOwnershipPatch } from "../lib/ownership.js";
+import { assertKnownOwnershipUsers, planOwnershipWrite } from "../lib/ownership.js";
 import { getPlaylistById } from "../lib/playlist-docs.js";
 import { getTableById } from "../lib/table-docs.js";
 import { applyConfirmedUpdate, assertRequestedWriteStorable } from "../lib/write-confirmation.js";
@@ -29,7 +29,7 @@ function assertOwnershipPatchPresent(params) {
   if (params.default === undefined && params.users === undefined) {
     throw createBridgeError(
       ERROR_CODES.INVALID_PARAMS,
-      "ownership.set requires at least one of `default` (a level) or `users` (a userId->level map)",
+      "ownership.set requires at least one of `default` (a level) or `users` (a userId->level map, null removes the user's entry)",
       {}
     );
   }
@@ -43,23 +43,23 @@ function makeOwnershipSetHandler({ idField, getDoc, serialize, resultKey, docume
     const doc = getDoc(params[idField]);
     assertOwnershipPatchPresent(params);
     assertKnownOwnershipUsers(params.users);
-    const merged = mergeOwnershipPatch(doc, { defaultLevel: params.default, users: params.users });
+    const planned = planOwnershipWrite(doc, { defaultLevel: params.default, users: params.users });
 
     if (isDryRun(params)) {
       await assertRequestedWriteStorable({
         document: doc,
-        patch: { ownership: merged },
+        patch: planned.patch,
         subject: `${documentName} ${doc.id ?? params[idField]}`,
         details: { [idField]: doc.id ?? params[idField] }
       });
       const preview = serialize(doc, { ownership: true, flags: true, provenance: true });
-      preview.ownership = merged;
+      preview.ownership = planned.ownership;
       return dryRunResponse({ [resultKey]: preview });
     }
 
     await applyConfirmedUpdate({
       document: doc,
-      patch: { ownership: merged },
+      patch: planned.patch,
       write: (payload) => doc.update(payload, { diff: true, render: true }),
       subject: `${documentName} ${doc.id ?? params[idField]}`,
       hookName,
@@ -158,12 +158,12 @@ export function createOwnershipHandlers() {
         );
       }
 
-      const merged = mergeOwnershipPatch(target, { defaultLevel: params.default, users: params.users });
+      const planned = planOwnershipWrite(target, { defaultLevel: params.default, users: params.users });
 
       if (isDryRun(params)) {
         await assertRequestedWriteStorable({
           document: target,
-          patch: { ownership: merged },
+          patch: planned.patch,
           subject:
             params.pageId !== undefined
               ? `Journal page ${params.pageId} of journal ${params.journalId}`
@@ -179,17 +179,17 @@ export function createOwnershipHandlers() {
             (page) => page.id === params.pageId || page._id === params.pageId
           );
           if (previewPage) {
-            previewPage.ownership = merged;
+            previewPage.ownership = planned.ownership;
           }
         } else {
-          preview.ownership = merged;
+          preview.ownership = planned.ownership;
         }
         return dryRunResponse({ journal: preview });
       }
 
       await applyConfirmedUpdate({
         document: target,
-        patch: { ownership: merged },
+        patch: planned.patch,
         write: (payload) => target.update(payload, { diff: true, render: true }),
         subject:
           params.pageId !== undefined
