@@ -168,6 +168,10 @@ export function registerCards({ program, dependencies }: RegistrationContext) {
       "Delete a card stack. Foundry RECALLS it first (Cards#_preDelete), so this also mutates OTHER stacks and posts one unsuppressible chat notification — run with --dry-run to see the full affected set."
     )
     .requiredOption("--cards-id <cardsId>", "Card stack id")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.id, .result.deleted, .result.recall (every affected stack and card id) and .result.chatNotification."
+    )
     .action(async function deleteCards(options: { cardsId: string }) {
       await executeRemoteCommand({
         commandName: "cards.delete",

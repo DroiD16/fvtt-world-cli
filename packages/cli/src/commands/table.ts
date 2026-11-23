@@ -38,13 +38,6 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
     "afterAll",
     `\nResult key (--json): .result.table / .result.tables[] (list, get-many); ${TABLE_RESULT_KEY_HELP}.`
   );
-  table.addHelpText(
-    "after",
-    "\nAction verbs differ: `table draw` has NO .result.table — read .result.results[] (the drawn rows," +
-      " each carrying its own owning tableId) plus .result.complete/.mutation/.roll/.availableBefore/" +
-      ".availableAfter/.chatMessages (and .failure on a partial commit); `table reset` returns" +
-      " .result.table plus .result.tableId/.reset/.changedCount."
-  );
   registerOwnershipSet(table, {
     idFlag: "--table-id <tableId>",
     idKey: "tableId",
@@ -151,6 +144,10 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
     .command("draw")
     .description("Draw one or more results from a roll table (Foundry's own RollTable#draw)")
     .requiredOption("--table-id <tableId>", "Roll table id")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.results[] (the drawn rows, each carrying its own owning tableId; there is NO .result.table) plus .result.complete/.mutation/.roll/.availableBefore/.availableAfter/.chatMessages (and .failure on a partial commit)."
+    )
     .requiredOption(
       "--idempotency-key <key>",
       "REQUIRED: client-supplied key so a retried draw returns the original result instead of drawing again. Reuse the SAME key across retries of one draw."
@@ -194,6 +191,7 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
   addIdempotencyKeyOption(table.command("reset"))
     .description("Clear the `drawn` flag on every result of a roll table")
     .requiredOption("--table-id <tableId>", "Roll table id")
+    .addHelpText("after", "\nResult key (--json): .result.table plus .result.tableId/.reset/.changedCount.")
     .action(async function resetTableCommand(options: { tableId: string }) {
       await executeRemoteCommand({
         commandName: "table.reset",
@@ -204,7 +202,7 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
     });
 
   const tableResult = table.command("result").description("Roll-table row (result) commands");
-  tableResult.addHelpText("after", `\nResult key (--json): ${TABLE_RESULT_KEY_HELP}.`);
+  tableResult.addHelpText("afterAll", `\nResult key (--json): ${TABLE_RESULT_KEY_HELP}.`);
   addNameFilterOption(
     addPaginationOptions(
       tableResult

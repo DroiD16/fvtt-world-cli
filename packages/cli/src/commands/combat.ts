@@ -38,15 +38,7 @@ export function registerCombat({ program, dependencies }: RegistrationContext) {
   );
   combat.addHelpText(
     "after",
-    "\n`combat delete` returns" +
-      " .result.id/.result.deleted plus .result.otherActiveCombatIdsBefore/" +
-      '.otherActiveCombatIdsAfter (both EXCLUDE the combat being deleted — they answer "what ELSE' +
-      ' was/is active") and .activatedCombatIds.' +
-      "\nThat activation report is a LOWER BOUND, not a settled answer (.result.activationObservation" +
-      ' = "not-observable-at-return-time"): Foundry dispatches its post-delete activation without' +
-      " awaiting it, so an empty .activatedCombatIds does NOT mean nothing was activated — re-read" +
-      " `combat list` for the settled state." +
-      "\n`combat update --scene` refuses a WELL-FORMED scene id that some combatant does not sit on" +
+    "\n`combat update --scene` refuses a WELL-FORMED scene id that some combatant does not sit on" +
       " (COMBAT_SCENE_MISMATCH); an id still MALFORMED after Foundry's own field cleaning (which" +
       " trims surrounding whitespace) is Foundry's validation error instead (INVALID_PARAMS)." +
       "\nThe turn ORDER is Foundry's own (.result.combat.turns[], sorted by the game system —" +
@@ -121,6 +113,16 @@ export function registerCombat({ program, dependencies }: RegistrationContext) {
   combat
     .command("delete")
     .requiredOption("--combat-id <combatId>", "Combat id")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.id/.result.deleted plus .result.otherActiveCombatIdsBefore/" +
+        '.otherActiveCombatIdsAfter (both EXCLUDE the combat being deleted — they answer "what ELSE' +
+        ' was/is active") and .activatedCombatIds.' +
+        "\nThat activation report is a LOWER BOUND, not a settled answer (.result.activationObservation" +
+        ' = "not-observable-at-return-time"): Foundry dispatches its post-delete activation without' +
+        " awaiting it, so an empty .activatedCombatIds does NOT mean nothing was activated — re-read" +
+        " `combat list` for the settled state."
+    )
     .action(async function deleteCombat(options: { combatId: string }) {
       await executeRemoteCommand({
         commandName: "combat.delete",

@@ -21,10 +21,6 @@ export function registerFolder({ program, dependencies }: RegistrationContext) {
     "afterAll",
     "\nResult key (--json): .result.folder (get/create/update) / .result.folders[] (list). Rows carry both id and _id (Folder is a document)."
   );
-  folder.addHelpText(
-    "after",
-    "\nfolder delete returns .result.folders/.result.contents (deleted/reparented counts + capped ids), .result.counts, .result.complete, .result.deleted; on a partial commit (.result.complete === false) the folder row is removed last, so the folder itself may survive (.result.deleted === false), the .result.*.deleted lists hold only ids observed gone, and any planned deletion still present surfaces under .result.remaining (folders/contents)."
-  );
   addNameFilterOption(
     addPaginationOptions(
       folder
@@ -104,6 +100,10 @@ export function registerFolder({ program, dependencies }: RegistrationContext) {
     });
   addIdempotencyKeyOption(folder.command("delete"))
     .requiredOption("--folder-id <folderId>", "Folder id")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.folders/.result.contents (deleted/reparented counts + capped ids), .result.counts, .result.complete, .result.deleted; on a partial commit (.result.complete === false) the folder row is removed last, so the folder itself may survive (.result.deleted === false), the .result.*.deleted lists hold only ids observed gone, and any planned deletion still present surfaces under .result.remaining (folders/contents)."
+    )
     .option(
       "--delete-subfolders",
       "Delete descendant folders too (default: re-parent them to this folder's parent)"

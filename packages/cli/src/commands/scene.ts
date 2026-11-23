@@ -191,7 +191,7 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
   const scene = program.command("scene").description("Foundry scene commands");
   scene.addHelpText(
     "afterAll",
-    "\nResult key (--json): .result.scene (single/write) / .result.scenes[] (list, get-many); get and get-many carry counts (placeables per type), and scene <type> list reads the placeables. Placeables nest under .result.<type> (e.g. .result.token, .result.wall) with .result.sceneId."
+    "\nResult key (--json): .result.scene (single/write) / .result.scenes[] (list, get-many); get and get-many carry counts (placeables per type), and scene <type> list reads the placeables. Placeables nest under .result.<type> (e.g. .result.token, .result.wall) with .result.sceneId; a token's items and effects at .result.item / .result.effect."
   );
   registerOwnershipSet(scene, {
     idFlag: "--scene-id <sceneId>",
@@ -1666,9 +1666,12 @@ export function registerScene({ program, dependencies }: RegistrationContext) {
     .command("behavior")
     .description("Region-embedded behavior commands (what a region DOES when it fires)");
   sceneRegionBehavior.addHelpText(
+    "afterAll",
+    "\nResult key (--json): .result.behavior (single/write) / .result.behaviors[] (list), with .result.sceneId and .result.regionId alongside."
+  );
+  sceneRegionBehavior.addHelpText(
     "after",
-    "\nResult key (--json): .result.behavior (single/write) / .result.behaviors[] (list), with .result.sceneId and .result.regionId alongside." +
-      '\nA behavior name may legitimately be BLANK (Foundry then displays the localized type label): pass --name "" to author one; the CLI prints it as (blank).' +
+    '\nA behavior name may legitimately be BLANK (Foundry then displays the localized type label): pass --name "" to author one; the CLI prints it as (blank).' +
       "\n--type is CREATE-ONLY, so update/clone have no --type. If a --patch-json carries a `type` key it is refused even when it restates the current type: drop the key and resend (an unchanged type is a no-op for Foundry). On this family changing a behavior's type is impossible — for that, create the new behavior and delete the old one." +
       "\nThe code-executing types executeScript and executeMacro are REFUSED on THIS family whenever you supply them, and every patch on an existing one is refused too (even --disabled). executeScript is refused everywhere — it runs its source in every connected player's browser. For executeMacro use `scene region behavior executable`; delete removes either type." +
       "\nclone with NO patch flags IS allowed on any behavior — note that cloning a code-executing one mints a NEW self-arming auto-trigger, so audit the region afterwards."

@@ -39,4 +39,23 @@ describe("Result key help", () => {
       expect(renderedHelp(command)).toContain("Result key (--json):");
     }
   );
+
+  it.each([
+    ["table draw", ".result.results[]"],
+    ["table reset", ".changedCount"],
+    ["table result get", ".result.result"],
+    ["combat delete", ".result.deleted"],
+    ["folder delete", ".result.contents"],
+    ["cards delete", ".result.recall"],
+    ["scene token item get", ".result.item"],
+    ["scene token effect get", ".result.effect"],
+    ["scene region behavior get", ".result.behavior"],
+    ["scene region behavior executable create", ".result.behavior"]
+  ])("shows the key %s returns in its first result key line", (path, key) => {
+    const leaf = leaves.find((entry) => entry.path === path);
+    expect(leaf, path).toBeDefined();
+    const help = renderedHelp(leaf!.command);
+    const firstLine = help.slice(help.indexOf("Result key (--json):")).split("\n\n")[0];
+    expect(firstLine).toContain(key);
+  });
 });
