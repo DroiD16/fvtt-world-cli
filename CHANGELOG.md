@@ -2,6 +2,43 @@
 
 All notable user-visible changes to fvtt-world-cli will be recorded in this file.
 
+## [1.5.0] - 2026-11-23
+
+### New
+
+- Agents can turn status effects such as prone on and off for actors and tokens.
+- You can give an agent a document's UUID, copied from Foundry or from a link, and it opens that
+  document directly. Compendium entries work too.
+- Agents can list the documents in one folder, and the actors of one type.
+- Agents can check a file's size.
+- A user's access to a document can be reset to the document's default, like "Default" in Foundry's
+  ownership dialog.
+
+### Improvements
+
+- Items added to an actor or imported from a compendium keep their effects linked, so dnd5e
+  activities that apply effects keep working.
+- Copies behave like Foundry's Duplicate: a copied playlist does not start playing, and copied
+  drawings and notes keep their author.
+- Agents see all of a token's or tile's settings when they read it, such as whether a token shows
+  its name and bars.
+- Agents find their way around command results with fewer retries.
+- Long-running macros no longer stop at the CLI's default wait.
+- Reading a file that is not text as text gives a clear error instead of garbled content.
+
+### Changed behavior
+
+- Documents imported from a compendium keep their id and their player permissions, as in Foundry 14.
+  Links between imported scenes, journals and actors keep working. Before, an imported copy got a
+  new id and only the GM could see it.
+- File info no longer includes `size`, which was always empty. `file size` returns it.
+
+### Known limitations
+
+- With dnd5e 6 on Foundry 14, turning exhaustion off raises its level instead, because that is how
+  dnd5e's own toggle works. The agent is told to check the result.
+- Macros that run longer than about two minutes time out.
+
 ## [1.4.0] - 2026-11-13
 
 ### New
