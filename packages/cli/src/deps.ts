@@ -40,36 +40,18 @@ export function write(stream: IoStreams["stdout"], value: string) {
   stream.write(value);
 }
 
-type OutputStream = IoStreams["stdout"];
-
-export interface ClosedPipeGuard {
-  stream: OutputStream;
-  release(): void;
-}
-
-export function guardClosedPipe(stream: OutputStream): ClosedPipeGuard {
+export function ignoreClosedPipe(stream: IoStreams["stdout"]): () => void {
   if (!("on" in stream) || typeof stream.on !== "function") {
-    return { stream, release: () => {} };
+    return () => {};
   }
-  let closed = false;
   const onError = (error: NodeJS.ErrnoException) => {
     if (error.code !== "EPIPE") {
       throw error;
     }
-    closed = true;
   };
   stream.on("error", onError);
-  return {
-    stream: {
-      write(chunk: string) {
-        if (!closed) {
-          stream.write(chunk);
-        }
-      }
-    },
-    release: () => {
-      stream.off("error", onError);
-    }
+  return () => {
+    stream.off("error", onError);
   };
 }
 

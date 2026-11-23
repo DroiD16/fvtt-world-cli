@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 
 import { executeCli } from "../src/index.js";
-import { guardClosedPipe } from "../src/deps.js";
+import { ignoreClosedPipe } from "../src/deps.js";
 import {
   createDefaultTestConfig,
   createInMemoryConfigStore,
@@ -34,21 +34,20 @@ class OpenPipe extends EventEmitter {
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 describe("closed output pipe", () => {
-  it("stops writing to a stream once its reader has gone", async () => {
+  it("ignores EPIPE on the stream itself and stops listening once released", async () => {
     const pipe = new ClosedReaderPipe();
-    const guard = guardClosedPipe(pipe as unknown as NodeJS.WriteStream);
+    const release = ignoreClosedPipe(pipe as unknown as NodeJS.WriteStream);
 
-    guard.stream.write("first");
+    pipe.write("first");
     await settle();
-    guard.stream.write("second");
-    await settle();
-
-    expect(pipe.chunks).toEqual(["first"]);
+    expect(pipe.listenerCount("error")).toBe(1);
+    release();
+    expect(pipe.listenerCount("error")).toBe(0);
   });
 
   it("still raises stream errors other than EPIPE", () => {
     const pipe = new ClosedReaderPipe();
-    guardClosedPipe(pipe as unknown as NodeJS.WriteStream);
+    ignoreClosedPipe(pipe as unknown as NodeJS.WriteStream);
 
     expect(() => pipe.emit("error", pipeError("EIO"))).toThrow("write EIO");
   });
