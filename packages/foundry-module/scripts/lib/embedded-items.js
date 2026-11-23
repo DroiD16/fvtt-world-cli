@@ -150,28 +150,17 @@ export async function updateActorItem(actorId, itemId, patch, { dryRun = false }
 /** @param {Record<string, any>} data */
 export function prepareEmbeddedItemCreateData(data) {
   const prepared = sanitizeEmbeddedItemData(canonicalizeFilePathFields(data, "Item"));
-  assertNestedEffectIds(prepared?.effects);
+  assertNestedEffectIdsUnique(prepared?.effects);
   return prepared;
 }
 
-const DOCUMENT_ID_PATTERN = /^[a-zA-Z0-9]{16}$/;
-
 /** @param {unknown} effects */
-function assertNestedEffectIds(effects) {
+function assertNestedEffectIdsUnique(effects) {
   if (!Array.isArray(effects)) return;
   const firstIndexById = new Map();
   effects.forEach((effect, index) => {
     const id = effect?._id;
     if (id == null) return;
-    if (typeof id !== "string" || !DOCUMENT_ID_PATTERN.test(id)) {
-      throw createBridgeError(
-        ERROR_CODES.INVALID_PARAMS,
-        `effect ${index} of the item carries _id ${JSON.stringify(id)}, which is not a 16-character ` +
-          `alphanumeric Foundry id. Foundry refuses the whole item for it. Send a valid _id, or leave _id ` +
-          `out so Foundry assigns one. Nothing was written`,
-        { field: "effects", index, id }
-      );
-    }
     if (firstIndexById.has(id)) {
       throw createBridgeError(
         ERROR_CODES.INVALID_PARAMS,

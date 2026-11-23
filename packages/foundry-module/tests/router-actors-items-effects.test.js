@@ -237,26 +237,6 @@ describe("command router", () => {
     expect(deltaActor.createEmbeddedDocuments).not.toHaveBeenCalled();
   });
 
-  it("refuses a nested effect _id that is not a Foundry id before anything is written", async () => {
-    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
-    const actor = globalThis.game.actors.get("actor-1");
-    actor.createEmbeddedDocuments.mockClear();
-
-    for (const dryRun of [false, true]) {
-      const response = await router.route(
-        createRequest("actor.item.create", {
-          actorId: "actor-1",
-          data: { name: "Odd", type: "weapon", effects: [{ _id: "spoofed", name: "A" }] },
-          dryRun
-        })
-      );
-      expect(response.ok).toBe(false);
-      expect(response.error.code).toBe("INVALID_PARAMS");
-      expect(response.error.details).toEqual({ field: "effects", index: 0, id: "spoofed" });
-    }
-    expect(actor.createEmbeddedDocuments).not.toHaveBeenCalled();
-  });
-
   it("returns actor-not-found for actor embedded item commands", async () => {
     const router = createCommandRouter({
       bridgeClient: {

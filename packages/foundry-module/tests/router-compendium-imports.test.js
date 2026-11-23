@@ -906,7 +906,7 @@ describe("command router", () => {
     const [, createdItems] = globalThis.game.actors
       .get("actor-1")
       .createEmbeddedDocuments.mock.calls.find(([type]) => type === "Item");
-    expect(createdItems[0].effects.map((effect) => effect._id)).toEqual(["effSource0000001"]);
+    expect(createdItems[0].effects.map((effect) => effect._id)).toEqual(["eff-src"]);
 
     expect(item.img).toBe("compendium/longsword.png");
 

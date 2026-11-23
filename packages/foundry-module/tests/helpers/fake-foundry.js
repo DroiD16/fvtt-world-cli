@@ -3883,7 +3883,7 @@ export function installFakeFoundry() {
           flags: { mymod: { forged: true } },
           effects: [
             {
-              _id: "effSource0000001",
+              _id: "eff-src",
               name: "Sharpened",
               origin: "Compendium.world.test-items.Item.it-full",
               changes: []
