@@ -261,7 +261,7 @@ export function registerPlaylist({ program, dependencies }: RegistrationContext)
     });
   addPlaylistSoundFieldOptions(
     addIdempotencyKeyOption(playlistSound.command("clone"))
-      .description("Copy a sound within its playlist; the copy is stopped")
+      .description("Copy a sound within its playlist; the copy is stopped unless --playing true")
       .requiredOption("--playlist-id <playlistId>", "Playlist id")
       .requiredOption("--sound-id <soundId>", "Source sound id"),
     "clone"

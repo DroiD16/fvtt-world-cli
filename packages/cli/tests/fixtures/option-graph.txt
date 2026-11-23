@@ -2163,7 +2163,7 @@ command playlist sound update
 
 command playlist sound clone
   aliases=[]
-  summary=Copy a sound within its playlist; the copy is stopped
+  summary=Copy a sound within its playlist; the copy is stopped unless --playing true
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --playlist-id <playlistId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Playlist id
   opt --sound-id <soundId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Source sound id
