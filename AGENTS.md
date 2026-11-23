@@ -98,10 +98,10 @@ These are product constraints. Preserve them when adding commands or document fa
 - Scene-embedded documents, ActiveEffects, RegionBehaviors, and any other explicitly open family may
   use passthrough schemas so Foundry can validate system/module data. Every write and preview path for
   an open schema must use the shared sanitizer for the written document's protected metadata and
-  server-controlled authorship before validation, diffing, or dispatch. A family may keep the `_id` of
-  a document nested in a newly created parent only after checking it is unique among its siblings,
-  and may pass a created document's `_stats` only as its provenance keys (`compendiumSource`,
-  `duplicateSource`, `exportSource`).
+  server-controlled authorship before validation, diffing, or dispatch. On create, a family may keep
+  the `_id` of a document nested in the new parent only after checking it is unique among its
+  siblings (updates address existing nested documents by id), and may pass a created document's
+  `_stats` only as its provenance keys (`compendiumSource`, `duplicateSource`, `exportSource`).
 - `ownership` is access policy, not ordinary content. Raw ownership remains outside normal
   create/update payloads; supported ownership changes use dedicated GM-gated commands.
 - CLI-supplied data must not create an arbitrary-code execution path. Keep executable RegionBehavior

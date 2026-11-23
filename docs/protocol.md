@@ -178,9 +178,8 @@ The protocol package exports `REQUEST_SCHEMA` and `COMMAND_RESPONSE_SCHEMA` for 
 
 Document results use type-named keys and expose `id` as the public identifier. A source `_id`
 mirror may accompany it. List responses use smaller projections than single-document reads;
-filters apply before pagination. Previewed documents have no persistent identity: an id observed
-during a preview, including the compendium id a world import preview shows, holds only once the
-committed result reports it. Some result fields depend on the connected Foundry
+filters apply before pagination. Previewed documents have no persistent identity, so an id
+observed during a preview must not be reused. Some result fields depend on the connected Foundry
 version; [Foundry compatibility](compatibility.md) lists them.
 
 World document reads carry `compendiumSource` and `duplicateSource`, hoisted from Foundry's
