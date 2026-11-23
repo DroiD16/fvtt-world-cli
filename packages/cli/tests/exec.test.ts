@@ -10,11 +10,12 @@ import {
   createProtocolError
 } from "@fvtt-world-cli/protocol";
 import { CommanderError } from "commander";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import { createProgram, planCliErrorOutput } from "../src/index.js";
 import { createEmptyConfig } from "../src/config.js";
+import { resetUnsafeClientTimeoutWarningForTests } from "../src/client/send-command.js";
 import { runCommand, type SendCommandMock } from "./helpers/cli-harness.js";
 
 function createTestConfigStore(daemonUrl?: string) {
@@ -179,6 +180,26 @@ describe("fvtt-world-cli exec --stdin", () => {
     daemons.push(daemon);
     return daemon;
   }
+
+  it("waits for a macro.execute line past --timeout-ms and does not warn about the timeout it computed", async () => {
+    const daemon = await fakeDaemon(({ id, command }, socket) => {
+      setTimeout(() => socket.send(JSON.stringify(okResponse(id, command))), 1500);
+      return undefined;
+    });
+    resetUnsafeClientTimeoutWarningForTests();
+    const processStderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const input = `${JSON.stringify({ command: "macro.execute", params: { macroId: "m1", timeoutMs: 120000 } })}\n`;
+
+      const { lines, error } = await runExec(daemon.url, input, [], {}, ["--timeout-ms", "1000"]);
+
+      expect(error).toBeNull();
+      expect(lines.map((line) => line.ok)).toEqual([true]);
+      expect(processStderr.mock.calls.map(([chunk]) => String(chunk)).join("")).not.toContain("--timeout-ms");
+    } finally {
+      processStderr.mockRestore();
+    }
+  });
 
   it("maps N input lines to N ordered output lines over ONE connection", async () => {
     const daemon = await fakeDaemon(({ id, command }) => okResponse(id, command));

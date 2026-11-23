@@ -1331,15 +1331,16 @@ describe("fvtt-world-cli commands", () => {
     });
 
     it.each([
-      [["macro", "execute", "--macro-id", "m1", "--macro-timeout-ms", "100000"], 105000],
+      [["macro", "execute", "--macro-id", "m1", "--macro-timeout-ms", "100000"], 105000, false],
       [
         ["--timeout-ms", "200000", "macro", "execute", "--macro-id", "m1", "--macro-timeout-ms", "100000"],
-        200000
+        200000,
+        undefined
       ],
-      [["macro", "execute", "--macro-id", "m1", "--macro-timeout-ms", "50000"], undefined]
+      [["macro", "execute", "--macro-id", "m1", "--macro-timeout-ms", "50000"], undefined, undefined]
     ])(
       "waits for %j at least as long as the macro timeout plus a margin",
-      async (argv, expectedTimeoutMs) => {
+      async (argv, expectedTimeoutMs, warnTimeout) => {
         const sendCommand = vi.fn(async () => ({
           protocolVersion: "1.0",
           type: "command.response",
@@ -1356,6 +1357,7 @@ describe("fvtt-world-cli commands", () => {
           unknown
         >;
         expect(call.timeoutMs).toBe(expectedTimeoutMs);
+        expect(call.warnTimeout).toBe(warnTimeout);
       }
     );
 

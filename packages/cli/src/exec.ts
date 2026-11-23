@@ -64,11 +64,8 @@ export async function sendRemoteCommand({
   const idempotencyKey = (command.opts() as { idempotencyKey?: string }).idempotencyKey;
   const requestParams = typeof idempotencyKey === "string" ? { ...withDryRun, idempotencyKey } : withDryRun;
 
-  const timeoutMs = clientTimeoutFor(
-    commandName,
-    params,
-    (globalOptions as { timeoutMs?: number }).timeoutMs
-  );
+  const timeoutMs = (globalOptions as { timeoutMs?: number }).timeoutMs;
+  const commandTimeoutMs = clientTimeoutFor(commandName, params, timeoutMs);
 
   let response: CommandResponseEnvelope;
   try {
@@ -78,7 +75,8 @@ export async function sendRemoteCommand({
       command: commandName,
       params: requestParams,
       ...clientMaxPayloadOption(dependencies),
-      ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
+      ...(typeof commandTimeoutMs === "number" ? { timeoutMs: commandTimeoutMs } : {}),
+      ...(commandTimeoutMs !== timeoutMs ? { warnTimeout: false } : {})
     });
   } catch (error) {
     response = toTransportErrorEnvelope(error);
@@ -161,6 +159,7 @@ interface ExecBatchSession {
     command: string;
     params?: Record<string, unknown>;
     timeoutMs?: number;
+    warnTimeout?: boolean;
   }) => Promise<CommandResponseEnvelope>;
   reconnect: () => Promise<void>;
   stderr: CliDependencies["stderr"];
@@ -220,7 +219,8 @@ async function processExecLine(
     };
   }
 
-  const timeoutMs = clientTimeoutFor(obj.command, params as Record<string, unknown>, session.timeoutMs);
+  const timeoutMs = session.timeoutMs;
+  const commandTimeoutMs = clientTimeoutFor(obj.command, params as Record<string, unknown>, timeoutMs);
   const requestParams =
     dryRun && isWriteCommand(obj.command)
       ? { ...(params as Record<string, unknown>), dryRun: true }
@@ -231,7 +231,8 @@ async function processExecLine(
     envelope = await session.send({
       command: obj.command,
       params: requestParams,
-      ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
+      ...(typeof commandTimeoutMs === "number" ? { timeoutMs: commandTimeoutMs } : {}),
+      ...(commandTimeoutMs !== timeoutMs ? { warnTimeout: false } : {})
     });
   } catch (error) {
     return { id: callerId, envelope: toTransportErrorEnvelope(error) };
