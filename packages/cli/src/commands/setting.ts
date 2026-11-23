@@ -35,12 +35,17 @@ function addSettingIdentityOptions(command: Command): Command {
 export function registerSetting({ program, dependencies }: RegistrationContext) {
   const setting = program.command("setting").description("Foundry game settings");
   setting.addHelpText(
-    "after",
+    "afterAll",
     [
       "",
       "Result key (--json): .result.settings[] (list, metadata only; get-many, metadata + value) /",
       ".result.setting (get, metadata + value). A write returns the row's fields directly on .result",
-      "(namespace, key, scope, previous, value, requiresReload, changed) — set-many returns .result.outcomes[].",
+      "(namespace, key, scope, previous, value, requiresReload, changed) — set-many returns .result.outcomes[]."
+    ].join("\n")
+  );
+  setting.addHelpText(
+    "after",
+    [
       "",
       "Only settings REGISTERED IN THIS SESSION are visible: a value still stored in the world by a",
       "disabled/uninstalled module has no registration and reports SETTING_NOT_FOUND.",

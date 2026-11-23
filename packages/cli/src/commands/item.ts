@@ -25,7 +25,8 @@ import {
   addPaginationOptions,
   nameFilterParams,
   paginationParams,
-  worldListParams
+  worldListParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 import { write } from "../deps.js";
 
@@ -55,8 +56,8 @@ export function registerItem({ program, dependencies }: RegistrationContext) {
     createSharedRegistrars(dependencies);
   const item = program.command("item").description("Foundry world item commands");
   item.addHelpText(
-    "after",
-    "\nResult key (--json): .result.item (single/write) / .result.items[] (list, get-many)."
+    "afterAll",
+    "\nResult key (--json): .result.item (single/write) / .result.items[] (list, get-many); effects at .result.effect / .result.effects[]."
   );
 
   registerBatchWriteCommands(item, {
@@ -177,6 +178,7 @@ export function registerItem({ program, dependencies }: RegistrationContext) {
     });
   item
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--item-id <itemId>", "Item id")
     .action(async function deleteItem(options: { itemId: string }) {
       await executeRemoteCommand({
@@ -277,6 +279,7 @@ export function registerItem({ program, dependencies }: RegistrationContext) {
     });
   itemEffect
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--item-id <itemId>", "Item id")
     .requiredOption("--effect-id <effectId>", "Effect id")
     .action(async function deleteItemEffect(options: { itemId: string; effectId: string }) {

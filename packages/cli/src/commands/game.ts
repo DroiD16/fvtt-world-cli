@@ -5,7 +5,7 @@ import { parseBoolean } from "../parse.js";
 export function registerGame({ program, dependencies }: RegistrationContext) {
   const game = program.command("game").description("Foundry game-state commands");
   game.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.paused, .result.previousPaused and .result.changed (pause)."
   );
   game

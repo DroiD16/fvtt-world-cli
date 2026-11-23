@@ -7,7 +7,7 @@ import {
   writeCommitted
 } from "./write-confirmation.js";
 
-import { omitFields, sanitizeEffectData } from "./sanitize.js";
+import { omitFields, sanitizeEffectCreateData, sanitizeEffectData } from "./sanitize.js";
 import {
   cloneDocument,
   getCreateResult,
@@ -38,7 +38,7 @@ const EFFECT_TRANSFER_FIELD = Object.freeze(new Set(["transfer"]));
  * @param {Record<string, any>} data
  */
 export function prepareEmbeddedEffectCreateData(parent, data) {
-  return coerceEffectTransferForParent(parent, sanitizeEffectData(data));
+  return coerceEffectTransferForParent(parent, sanitizeEffectCreateData(data));
 }
 
 /**

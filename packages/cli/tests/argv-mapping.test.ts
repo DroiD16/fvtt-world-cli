@@ -3424,13 +3424,13 @@ describe("fvtt-world-cli commands", () => {
         "--args-json",
         '{"dc":15}',
         "--macro-timeout-ms",
-        "120000"
+        "50000"
       ],
       "macro.execute",
       {
         macroId: "macro-1",
         scope: { actorId: "actor-1", sceneId: "scene-1", tokenId: "token-1", args: { dc: 15 } },
-        timeoutMs: 120000
+        timeoutMs: 50000
       }
     ],
     [

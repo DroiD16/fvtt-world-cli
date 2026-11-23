@@ -510,7 +510,7 @@ command scene token item create
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system payload as JSON object
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra item fields (e.g. flags, effects) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command scene token item update
   aliases=[]
@@ -523,7 +523,7 @@ command scene token item update
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New item sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system patch as JSON object
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra item patch fields (e.g. flags) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command scene token item clone
   aliases=[]
@@ -1500,7 +1500,7 @@ command scene region behavior executable clone
 
 command scene import-from-compendium
   aliases=[]
-  summary=Import a compendium scene into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium scene into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. dnd5e.scenes)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -1570,7 +1570,7 @@ command item create
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system payload as JSON object
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra item fields (e.g. flags) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command item update
   aliases=[]
@@ -1583,7 +1583,7 @@ command item update
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New item sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system patch as JSON object
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra item patch fields (e.g. flags) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command item clone
   aliases=[]
@@ -1605,7 +1605,7 @@ command item delete
 
 command item import-from-compendium
   aliases=[]
-  summary=Import a compendium item into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium item into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. dnd5e.items)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -1882,7 +1882,7 @@ command journal show
 
 command journal import-from-compendium
   aliases=[]
-  summary=Import a compendium journal entry into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium journal entry into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. dnd5e.rules)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -1985,11 +1985,11 @@ command macro execute
   opt --scene-id <sceneId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Scene the token belongs to (required with --token-id)
   opt --token-id <tokenId> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Token the macro receives as its `token` (needs --scene-id)
   opt --args-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra scope values as a JSON object, reachable as `scope` in the macro
-  opt --macro-timeout-ms <ms> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=How long the GM client waits for the macro, in ms (default 30000, max 300000). Raise the global --timeout-ms above it, or the CLI stops waiting before MACRO_TIMEOUT can be reported.
+  opt --macro-timeout-ms <ms> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=How long the GM client waits for the macro, in ms (default 30000, max 300000). The CLI waits 5 s longer; the daemon's forward timeout (bridge serve --request-timeout-ms, default 120000) still applies.
 
 command macro import-from-compendium
   aliases=[]
-  summary=Import a compendium macro into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium macro into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. mymodule.macros)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -2070,7 +2070,7 @@ command playlist update
 
 command playlist clone
   aliases=[]
-  summary=
+  summary=Copy a playlist with its sounds; the copy and its sounds are stopped
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --playlist-id <playlistId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Source playlist id
   opt --name <name> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Name override for the clone
@@ -2142,7 +2142,7 @@ command playlist sound create
   opt --volume <volume> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Volume (linear 0–1)
   opt --fade <fade> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Fade duration (ms)
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort order
-  opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Full/extra sound data as a JSON object (merged last)
+  opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra sound fields as a JSON object, merged last; the schema's data fields map to the flags above, so --path is required here too
 
 command playlist sound update
   aliases=[]
@@ -2163,7 +2163,7 @@ command playlist sound update
 
 command playlist sound clone
   aliases=[]
-  summary=
+  summary=Copy a sound within its playlist; the copy is stopped unless --playing true
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --playlist-id <playlistId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Playlist id
   opt --sound-id <soundId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Source sound id
@@ -2199,7 +2199,7 @@ command playlist sound stop
 
 command playlist import-from-compendium
   aliases=[]
-  summary=Import a compendium playlist into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium playlist into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. mymodule.playlists)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -2392,7 +2392,7 @@ command table result delete
 
 command table import-from-compendium
   aliases=[]
-  summary=Import a compendium roll table into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium roll table into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. dnd5e.tables)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -2634,7 +2634,7 @@ command cards card delete
 
 command cards import-from-compendium
   aliases=[]
-  summary=Import a compendium card stack into the world (provenance is reported as compendiumSource)
+  summary=Import a compendium card stack into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. mymodule.decks)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -2884,7 +2884,7 @@ command chat
 
 command chat list
   aliases=[]
-  summary=
+  summary=List chat messages, newest first
   opt --limit <n> | parser=parsePositiveInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Maximum number of entries to return
   opt --offset <n> | parser=parseNonNegativeInt | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Number of entries to skip before this page
 
@@ -2978,7 +2978,7 @@ command actor create
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Actor sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Actor system payload as JSON object
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra actor fields (e.g. flags, prototypeToken) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command actor update
   aliases=[]
@@ -2991,7 +2991,7 @@ command actor update
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New actor sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Actor system patch as JSON object
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra actor patch fields (e.g. flags, prototypeToken) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command actor clone
   aliases=[]
@@ -3014,7 +3014,7 @@ command actor delete
 
 command actor import-from-compendium
   aliases=[]
-  summary=
+  summary=Import a compendium actor into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)
   opt --idempotency-key <key> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Client-supplied key so a retried create/upload returns the original result instead of duplicating. Reuse the SAME key across retries of one operation.
   opt --pack <pack> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium pack id (e.g. dnd5e.monsters)
   opt --entry-id <entryId> | parser=- | conflicts=[] | choices=- | required=true | hidden=false | default=- | help=Compendium entry id
@@ -3083,7 +3083,7 @@ command actor item create
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system payload as JSON object
   opt --data-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra item fields (e.g. flags, effects) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command actor item update
   aliases=[]
@@ -3095,7 +3095,7 @@ command actor item update
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=New item sort value
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system patch as JSON object
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra item patch fields (e.g. flags) as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command actor item get
   aliases=[]
@@ -3128,7 +3128,7 @@ command actor item import-from-compendium
   opt --sort <sort> | parser=parseNumber | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Sort override
   opt --system-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Item system override as JSON object
   opt --patch-json <json> | parser=- | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Extra override fields as a JSON object (merged last)
-  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=false | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
+  opt --include <fields> | parser=parseIncludeFields | conflicts=[] | choices=- | required=false | hidden=true | default=- | help=Reserved (allowed: flags, effects) — both are always present in the result, so this option currently has no effect
 
 command actor item delete
   aliases=[]

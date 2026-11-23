@@ -19,7 +19,7 @@ interface FileSizeOptions {
 export function registerFile({ program, dependencies }: RegistrationContext) {
   const file = program.command("file").description("Foundry data source file commands");
   file.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.entries[] (list), .result.entry (stat), .result.size (size), .result.content (read; also .result.file), .result.directory (mkdir), .result.file (upload/delete/move; delete also .result.deleted/.result.exists; move also .result.from)."
   );
   addPaginationOptions(
@@ -96,7 +96,7 @@ export function registerFile({ program, dependencies }: RegistrationContext) {
     .addHelpText(
       "after",
       "\nThe CLI's receive limit follows the persisted limit (config set-upload-limit), not bridge serve --upload-limit-bytes; a larger response closes this command's connection." +
-        "\nText escapes control bytes in JSON; read a binary file as base64."
+        "\nText escapes control bytes in JSON and refuses bytes that are not UTF-8 with INVALID_PARAMS; read a binary file as base64."
     )
     .action(async function readFileCommand(options: { path: string; encoding: "text" | "base64" }) {
       await executeRemoteCommand({

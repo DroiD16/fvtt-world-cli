@@ -5,11 +5,16 @@ import { parseCsvList } from "../parse.js";
 export function registerImage({ program, dependencies }: RegistrationContext) {
   const image = program.command("image").description("Foundry image popout commands");
   image.addHelpText(
-    "after",
+    "afterAll",
     [
       "",
       "Result key (--json): .result.src, .result.title, .result.userIds, .result.activeUserIds,",
-      ".result.inactiveUserIds and .result.dispatched (show).",
+      ".result.inactiveUserIds and .result.dispatched (show)."
+    ].join("\n")
+  );
+  image.addHelpText(
+    "after",
+    [
       "",
       "`--src` takes a path inside Foundry's managed `data` source (e.g. worlds/<worldId>/art/map.webp)",
       "or an http(s) URL. A host filesystem path is refused. Showing an image is a broadcast, not a",

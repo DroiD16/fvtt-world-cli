@@ -85,6 +85,9 @@ export function worldListParams(options: WorldListOptions): Record<string, strin
   };
 }
 
+export const DELETE_RESULT_KEY_HELP =
+  "\nResult key (--json): .result.id and .result.deleted, with the parent ids alongside.";
+
 export interface StatusSetOptions {
   statusId: string;
   active: boolean;
@@ -205,7 +208,9 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
     }: { commandName: keyof typeof IMPORT_PATCH_FLAGS; noun: string; packExample: string }
   ) {
     const command = addIdempotencyKeyOption(group.command("import-from-compendium"))
-      .description(`Import a compendium ${noun} into the world (provenance is reported as compendiumSource)`)
+      .description(
+        `Import a compendium ${noun} into the world, under the entry's id unless the world already uses it (provenance is reported as compendiumSource)`
+      )
       .requiredOption("--pack <pack>", `Compendium pack id (e.g. ${packExample})`)
       .requiredOption("--entry-id <entryId>", "Compendium entry id")
       .option("--folder <folder>", "Destination folder id")
@@ -299,7 +304,10 @@ export function createSharedRegistrars(dependencies: CliDependencies) {
     const scopeSpec = BATCH_SCOPES[scope];
     const scopeOption = (command: Command) => {
       for (const { flag, help } of scopeSpec) command.requiredOption(flag, help);
-      return command;
+      return command.addHelpText(
+        "after",
+        "\nResult key (--json): .result.complete and .result.outcomes[] ({index, id, status} per element), plus .result.failure on a partial commit."
+      );
     };
 
     const scopeParams = (options: Record<string, unknown>) =>

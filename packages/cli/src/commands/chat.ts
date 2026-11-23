@@ -7,28 +7,28 @@ import {
   type RegistrationContext,
   addIdempotencyKeyOption,
   addPaginationOptions,
-  paginationParams
+  paginationParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 import { write } from "../deps.js";
 
 export function registerChat({ program, dependencies }: RegistrationContext) {
   const chat = program.command("chat").description("Foundry chat message commands");
   chat.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.message (single/write) / .result.messages[] (list)."
   );
 
-  addPaginationOptions(chat.command("list")).action(async function listChat(options: {
-    limit?: number;
-    offset?: number;
-  }) {
-    await executeRemoteCommand({
-      commandName: "chat.list",
-      params: { ...paginationParams(options) },
-      command: this,
-      dependencies
-    });
-  });
+  addPaginationOptions(chat.command("list").description("List chat messages, newest first")).action(
+    async function listChat(options: { limit?: number; offset?: number }) {
+      await executeRemoteCommand({
+        commandName: "chat.list",
+        params: { ...paginationParams(options) },
+        command: this,
+        dependencies
+      });
+    }
+  );
   chat
     .command("get")
     .requiredOption("--message-id <messageId>", "Chat message id")
@@ -74,6 +74,10 @@ export function registerChat({ program, dependencies }: RegistrationContext) {
     });
   chat
     .command("flush")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.deleted (the count), .result.count and .result.remaining."
+    )
     .description(
       "Delete the ENTIRE chat log (irreversible). --dry-run reports the message count without deleting anything"
     )
@@ -87,6 +91,7 @@ export function registerChat({ program, dependencies }: RegistrationContext) {
     });
   chat
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--message-id <messageId>", "Chat message id")
     .action(async function deleteChat(options: { messageId: string }) {
       await executeRemoteCommand({

@@ -12,7 +12,7 @@ interface DocumentUuidOptions {
 export function registerDocument({ program, dependencies }: RegistrationContext) {
   const document = program.command("document").description("Read a document by its Foundry UUID");
   document.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.command and .result.params (resolve); get prints the result of the resolved family command."
   );
 

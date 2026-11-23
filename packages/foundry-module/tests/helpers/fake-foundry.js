@@ -280,6 +280,10 @@ function makePreviewConstructor(validatePreview, mutateSource) {
   };
 }
 
+function createdDocumentId(data, options, fallbackId) {
+  return options?.keepId && typeof data?._id === "string" ? data._id : fallbackId;
+}
+
 /** @param {{ create?: Function, validatePreview?: (source: any, context?: any) => (string | null), applyDefaults?: (source: any) => any, cleanSource?: (source: any) => any, mutateSource?: (source: any) => void, prepareSelf?: (document: any) => void, prepareParent?: (document: any, parent: any) => void, previewUpdateSource?: boolean }} [options] */
 export function makeDocumentClass({
   create,
@@ -309,11 +313,12 @@ export function makeDocumentClass({
       mutateSource(source);
     }
     let previewSource = withDefaults;
+    const previewId = typeof source?._id === "string" ? source._id : null;
     const preview = {
       ...withDefaults,
-      id: null,
+      id: previewId,
       toObject() {
-        return { ...previewSource, _id: null };
+        return { ...previewSource, _id: previewId };
       }
     };
     if (previewUpdateSource === true) {
@@ -3867,6 +3872,19 @@ export function installFakeFoundry() {
           system: {}
         });
       }
+      if (id === "it-twin") {
+        return makePackEntry("world.test-items", "Item", {
+          _id: "it-twin",
+          name: "Twin",
+          type: "weapon",
+          system: {},
+          effects: [
+            { _id: "twinEffect000001", name: "A" },
+            { _id: "otherEffect00001", name: "B" },
+            { _id: "twinEffect000001", name: "C" }
+          ]
+        });
+      }
       if (id === "it-full") {
         return makePackEntry("world.test-items", "Item", {
           _id: "it-full",
@@ -3895,6 +3913,7 @@ export function installFakeFoundry() {
       "jrn-src": {
         _id: "jrn-src",
         name: "Saltmarsh Lore",
+        ownership: { default: 2 },
         folder: "pack-folder-journals",
         sort: 3000,
         pages: [
@@ -4164,15 +4183,17 @@ export function installFakeFoundry() {
   globalThis.Item = makeDocumentClass({
     validatePreview: (source) => validateFilePathFieldPreview(source, "img"),
     mutateSource: mutateWorldSourceLikeCore,
-    create: vi.fn(async (data) => createDocument("item-created", data))
+    create: vi.fn(async (data, options) =>
+      createDocument(createdDocumentId(data, options, "item-created"), data)
+    )
   });
 
   delete globalThis.Item.fromCompendium;
 
   globalThis.JournalEntry = makeDocumentClass({
     mutateSource: mutateWorldSourceLikeCore,
-    create: vi.fn(async (data) => {
-      const journalEntry = createJournalDocument("journal-created", data);
+    create: vi.fn(async (data, options) => {
+      const journalEntry = createJournalDocument(createdDocumentId(data, options, "journal-created"), data);
       journals.set(journalEntry);
       return journalEntry;
     })
@@ -4180,8 +4201,8 @@ export function installFakeFoundry() {
   globalThis.Macro = makeDocumentClass({
     validatePreview: (source) => validateFilePathFieldPreview(source, "img"),
     mutateSource: mutateWorldSourceLikeCore,
-    create: vi.fn(async (data) => {
-      const macroDoc = createDocument("macro-created", data);
+    create: vi.fn(async (data, options) => {
+      const macroDoc = createDocument(createdDocumentId(data, options, "macro-created"), data);
       macros.set(macroDoc);
       return macroDoc;
     })
@@ -4190,8 +4211,8 @@ export function installFakeFoundry() {
   globalThis.Scene = makeDocumentClass({
     validatePreview: (source) => validateFilePathFieldPreview(source, "thumb"),
     mutateSource: mutateWorldSourceLikeCore,
-    create: vi.fn(async (data) => {
-      const sceneDoc = createDocument("scene-created", data);
+    create: vi.fn(async (data, options) => {
+      const sceneDoc = createDocument(createdDocumentId(data, options, "scene-created"), data);
       globalThis.game.scenes.set(sceneDoc);
       return sceneDoc;
     })
@@ -4199,8 +4220,8 @@ export function installFakeFoundry() {
 
   globalThis.Playlist = makeDocumentClass({
     mutateSource: mutateWorldSourceLikeCore,
-    create: vi.fn(async (data) => {
-      const playlistDoc = createPlaylistDocument("playlist-created", data);
+    create: vi.fn(async (data, options) => {
+      const playlistDoc = createPlaylistDocument(createdDocumentId(data, options, "playlist-created"), data);
       playlists.set(playlistDoc);
       return playlistDoc;
     })
@@ -4229,8 +4250,8 @@ export function installFakeFoundry() {
         : source,
 
     mutateSource: mutateTableSourceLikeCore,
-    create: vi.fn(async (data) => {
-      const tableDoc = createTableDocument("table-created", data);
+    create: vi.fn(async (data, options) => {
+      const tableDoc = createTableDocument(createdDocumentId(data, options, "table-created"), data);
       tables.set(tableDoc);
       return tableDoc;
     })
@@ -4273,8 +4294,8 @@ export function installFakeFoundry() {
       ownership: { default: 0 },
       flags: {}
     }),
-    create: vi.fn(async (data) => {
-      const stackDoc = createCardsDocument("cards-created", {
+    create: vi.fn(async (data, options) => {
+      const stackDoc = createCardsDocument(createdDocumentId(data, options, "cards-created"), {
         ...data,
 
         cards: (data.cards ?? []).map((card) => ({ ...card, id: undefined, _id: undefined, drawn: false }))
@@ -4286,8 +4307,8 @@ export function installFakeFoundry() {
   globalThis.Actor = makeDocumentClass({
     validatePreview: (source) => validateFilePathFieldPreview(source, "img"),
     mutateSource: mutateWorldSourceLikeCore,
-    create: vi.fn(async (data) => {
-      const actorDoc = createActorDocument("actor-created", data);
+    create: vi.fn(async (data, options) => {
+      const actorDoc = createActorDocument(createdDocumentId(data, options, "actor-created"), data);
       globalThis.game.actors.set(actorDoc);
       return actorDoc;
     })

@@ -52,6 +52,16 @@ function identityFields(document, data) {
   return { id, _id: id };
 }
 
+/**
+ * @param {Record<string, any>} data
+ * @param {string[]} [omitted]
+ */
+function storedFields(data, omitted = []) {
+  const stored = cloneValue(data) ?? {};
+  for (const key of ["_id", "_stats", "ownership", ...omitted]) delete stored[key];
+  return data?._stats === undefined ? stored : { ...stored, ...provenanceFields(data) };
+}
+
 export function provenanceFields(data) {
   return {
     compendiumSource: data?._stats?.compendiumSource ?? null,
@@ -924,18 +934,7 @@ export function serializeScene(
 
 export function serializeLevel(level) {
   const data = documentData(level);
-  return {
-    ...identityFields(level, data),
-    name: data.name ?? null,
-    elevation: cloneValue(data.elevation ?? null),
-    background: cloneValue(data.background ?? null),
-    foreground: cloneValue(data.foreground ?? null),
-    fog: cloneValue(data.fog ?? null),
-    textures: cloneValue(data.textures ?? null),
-    visibility: cloneValue(data.visibility ?? null),
-    sort: data.sort ?? 0,
-    flags: cloneValue(data.flags ?? {})
-  };
+  return { ...identityFields(level, data), ...storedFields(data) };
 }
 
 export function serializeLevelSummary(level) {
@@ -1217,26 +1216,8 @@ export function serializeToken(token, { include } = {}) {
   const withDelta = Array.isArray(include) && include.includes("delta");
   return {
     ...identityFields(token, data),
+    ...storedFields(data, ["delta"]),
     name: tokenName(token, data),
-
-    actorId: data.actorId ?? token.actorId ?? null,
-    actorLink: data.actorLink ?? token.actorLink ?? false,
-    x: data.x ?? token.x ?? 0,
-    y: data.y ?? token.y ?? 0,
-    elevation: data.elevation ?? token.elevation ?? 0,
-    ...levelMembership(data, "level"),
-    rotation: data.rotation ?? token.rotation ?? 0,
-    width: data.width ?? token.width ?? null,
-    height: data.height ?? token.height ?? null,
-    hidden: data.hidden ?? token.hidden ?? false,
-    disposition: data.disposition ?? token.disposition ?? null,
-
-    texture: cloneValue(data.texture ?? null),
-    light: cloneValue(data.light ?? null),
-    sight: cloneValue(data.sight ?? null),
-    bar1: cloneValue(data.bar1 ?? null),
-    bar2: cloneValue(data.bar2 ?? null),
-    flags: cloneValue(data.flags ?? {}),
     ...(withDelta ? { delta: storedTokenDelta(token, data) } : {}),
     ...(withPrepared ? { prepared: buildPreparedToken(token) } : {})
   };
@@ -1264,21 +1245,7 @@ export function serializeTokenSummary(token, { include } = {}) {
 
 export function serializeTile(tile) {
   const data = documentData(tile);
-  return {
-    ...identityFields(tile, data),
-    texture: cloneValue(data.texture ?? null),
-    x: data.x ?? tile.x ?? 0,
-    y: data.y ?? tile.y ?? 0,
-    width: data.width ?? tile.width ?? null,
-    height: data.height ?? tile.height ?? null,
-    rotation: data.rotation ?? tile.rotation ?? 0,
-    elevation: data.elevation ?? tile.elevation ?? 0,
-    ...levelMembership(data, "levels"),
-    sort: data.sort ?? tile.sort ?? 0,
-    hidden: data.hidden ?? tile.hidden ?? false,
-    locked: data.locked ?? tile.locked ?? false,
-    flags: cloneValue(data.flags ?? {})
-  };
+  return { ...identityFields(tile, data), ...storedFields(data) };
 }
 
 export function serializeTileSummary(tile) {
@@ -1296,22 +1263,7 @@ export function serializeTileSummary(tile) {
 
 export function serializeSound(sound) {
   const data = documentData(sound);
-  return {
-    ...identityFields(sound, data),
-    path: data.path ?? sound.path ?? null,
-    x: data.x ?? sound.x ?? 0,
-    y: data.y ?? sound.y ?? 0,
-    radius: data.radius ?? sound.radius ?? 0,
-    elevation: data.elevation ?? sound.elevation ?? 0,
-    ...levelMembership(data, "levels"),
-    volume: data.volume ?? sound.volume ?? null,
-    walls: data.walls ?? sound.walls ?? false,
-    easing: data.easing ?? sound.easing ?? false,
-    repeat: data.repeat ?? sound.repeat ?? false,
-    hidden: data.hidden ?? sound.hidden ?? false,
-    darkness: cloneValue(data.darkness ?? null),
-    flags: cloneValue(data.flags ?? {})
-  };
+  return { ...identityFields(sound, data), ...storedFields(data) };
 }
 
 export function serializeSoundSummary(sound) {
@@ -1329,21 +1281,7 @@ export function serializeSoundSummary(sound) {
 
 export function serializeWall(wall) {
   const data = documentData(wall);
-  return {
-    ...identityFields(wall, data),
-    c: cloneValue(data.c ?? wall.c ?? null),
-    ...levelMembership(data, "levels"),
-    light: data.light ?? wall.light ?? null,
-    sight: data.sight ?? wall.sight ?? null,
-    sound: data.sound ?? wall.sound ?? null,
-    move: data.move ?? wall.move ?? null,
-    dir: data.dir ?? wall.dir ?? null,
-    door: data.door ?? wall.door ?? null,
-    ds: data.ds ?? wall.ds ?? null,
-    doorSound: data.doorSound ?? wall.doorSound ?? null,
-    threshold: cloneValue(data.threshold ?? null),
-    flags: cloneValue(data.flags ?? {})
-  };
+  return { ...identityFields(wall, data), ...storedFields(data) };
 }
 
 export function serializeWallSummary(wall) {
@@ -1360,25 +1298,7 @@ export function serializeWallSummary(wall) {
 
 export function serializeNote(note) {
   const data = documentData(note);
-  return {
-    ...identityFields(note, data),
-    entryId: data.entryId ?? note.entryId ?? null,
-    pageId: data.pageId ?? note.pageId ?? null,
-    x: data.x ?? note.x ?? 0,
-    y: data.y ?? note.y ?? 0,
-    elevation: data.elevation ?? note.elevation ?? 0,
-    ...levelMembership(data, "levels"),
-    sort: data.sort ?? note.sort ?? 0,
-    texture: cloneValue(data.texture ?? null),
-    iconSize: data.iconSize ?? note.iconSize ?? null,
-    text: data.text ?? note.text ?? null,
-    fontFamily: data.fontFamily ?? note.fontFamily ?? null,
-    fontSize: data.fontSize ?? note.fontSize ?? null,
-    textAnchor: data.textAnchor ?? note.textAnchor ?? null,
-    textColor: data.textColor ?? note.textColor ?? null,
-    global: data.global ?? note.global ?? false,
-    flags: cloneValue(data.flags ?? {})
-  };
+  return { ...identityFields(note, data), ...storedFields(data) };
 }
 
 export function serializeNoteSummary(note) {
@@ -1398,36 +1318,7 @@ export function serializeNoteSummary(note) {
 
 export function serializeDrawing(drawing) {
   const data = documentData(drawing);
-  return {
-    ...identityFields(drawing, data),
-
-    name: placeableName(drawing, data),
-    author: drawing.author?.id ?? data.author ?? drawing.author ?? null,
-    shape: cloneValue(data.shape ?? null),
-    x: data.x ?? drawing.x ?? 0,
-    y: data.y ?? drawing.y ?? 0,
-    elevation: data.elevation ?? drawing.elevation ?? 0,
-    ...levelMembership(data, "levels"),
-    sort: data.sort ?? drawing.sort ?? 0,
-    rotation: data.rotation ?? drawing.rotation ?? 0,
-    bezierFactor: data.bezierFactor ?? drawing.bezierFactor ?? 0,
-    fillType: data.fillType ?? drawing.fillType ?? null,
-    fillColor: data.fillColor ?? drawing.fillColor ?? null,
-    fillAlpha: data.fillAlpha ?? drawing.fillAlpha ?? null,
-    strokeWidth: data.strokeWidth ?? drawing.strokeWidth ?? null,
-    strokeColor: data.strokeColor ?? drawing.strokeColor ?? null,
-    strokeAlpha: data.strokeAlpha ?? drawing.strokeAlpha ?? null,
-    texture: data.texture ?? drawing.texture ?? null,
-    text: data.text ?? drawing.text ?? null,
-    fontFamily: data.fontFamily ?? drawing.fontFamily ?? null,
-    fontSize: data.fontSize ?? drawing.fontSize ?? null,
-    textColor: data.textColor ?? drawing.textColor ?? null,
-    textAlpha: data.textAlpha ?? drawing.textAlpha ?? null,
-    hidden: data.hidden ?? drawing.hidden ?? false,
-    locked: data.locked ?? drawing.locked ?? false,
-    interface: data.interface ?? drawing.interface ?? false,
-    flags: cloneValue(data.flags ?? {})
-  };
+  return { ...identityFields(drawing, data), ...storedFields(data), name: placeableName(drawing, data) };
 }
 
 export function serializeDrawingSummary(drawing) {
@@ -1447,21 +1338,7 @@ export function serializeDrawingSummary(drawing) {
 
 export function serializeAmbientLight(light) {
   const data = documentData(light);
-  return {
-    ...identityFields(light, data),
-
-    name: placeableName(light, data),
-    x: data.x ?? light.x ?? 0,
-    y: data.y ?? light.y ?? 0,
-    elevation: data.elevation ?? light.elevation ?? 0,
-    ...levelMembership(data, "levels"),
-    rotation: data.rotation ?? light.rotation ?? 0,
-    walls: data.walls ?? light.walls ?? false,
-    vision: data.vision ?? light.vision ?? false,
-    config: cloneValue(data.config ?? null),
-    hidden: data.hidden ?? light.hidden ?? false,
-    flags: cloneValue(data.flags ?? {})
-  };
+  return { ...identityFields(light, data), ...storedFields(data), name: placeableName(light, data) };
 }
 
 export function serializeAmbientLightSummary(light) {
@@ -1484,24 +1361,7 @@ export function serializeAmbientLightSummary(light) {
 
 export function serializeMeasuredTemplate(template) {
   const data = documentData(template);
-  return {
-    ...identityFields(template, data),
-    author: template.author?.id ?? data.author ?? template.author ?? null,
-    t: data.t ?? template.t ?? null,
-    x: data.x ?? template.x ?? 0,
-    y: data.y ?? template.y ?? 0,
-    elevation: data.elevation ?? template.elevation ?? 0,
-    sort: data.sort ?? template.sort ?? 0,
-    distance: data.distance ?? template.distance ?? 0,
-    direction: data.direction ?? template.direction ?? 0,
-    angle: data.angle ?? template.angle ?? 0,
-    width: data.width ?? template.width ?? 0,
-    borderColor: data.borderColor ?? template.borderColor ?? null,
-    fillColor: data.fillColor ?? template.fillColor ?? null,
-    texture: data.texture ?? template.texture ?? null,
-    hidden: data.hidden ?? template.hidden ?? false,
-    flags: cloneValue(data.flags ?? {})
-  };
+  return { ...identityFields(template, data), ...storedFields(data) };
 }
 
 export function serializeMeasuredTemplateSummary(template) {
@@ -1550,11 +1410,8 @@ export function serializeRegionBehavior(behavior, { knownBehaviorIds = null } = 
   const data = documentData(behavior);
   return {
     ...regionBehaviorIdentityFields(behavior, data, knownBehaviorIds),
-    name: storedRegionBehaviorName(behavior),
-    type: data.type ?? null,
-    disabled: data.disabled ?? false,
-    system: cloneValue(data.system ?? {}),
-    flags: cloneValue(data.flags ?? {})
+    ...storedFields(data),
+    name: storedRegionBehaviorName(behavior)
   };
 }
 
@@ -1578,17 +1435,11 @@ export function serializeRegion(region, { knownBehaviorIds = null } = {}) {
   const behaviors = region.behaviors ? Array.from(region.behaviors) : (data.behaviors ?? []);
   return {
     ...identityFields(region, data),
+    ...storedFields(data),
     name: placeableName(region, data),
-    color: data.color ?? region.color ?? null,
-    shapes: cloneValue(data.shapes ?? region.shapes ?? []),
-    elevation: cloneValue(data.elevation ?? region.elevation ?? null),
-    ...levelMembership(data, "levels"),
-    visibility: data.visibility ?? region.visibility ?? null,
-    locked: data.locked ?? region.locked ?? false,
     behaviors: Array.isArray(behaviors)
       ? behaviors.map((behavior) => serializeRegionBehavior(behavior, { knownBehaviorIds }))
-      : [],
-    flags: cloneValue(data.flags ?? {})
+      : []
   };
 }
 

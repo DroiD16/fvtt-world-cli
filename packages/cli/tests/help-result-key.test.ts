@@ -1,0 +1,77 @@
+import type { Command } from "commander";
+import { describe, expect, it } from "vitest";
+
+import { createProgram } from "../src/index.js";
+import { createWritableBuffer } from "./helpers/cli-harness.js";
+
+const LOCAL_ONLY_COMMANDS = new Set(["config", "auth", "bridge", "skill", "docs", "exec"]);
+
+function leafCommands(command: Command, path: string[] = []): { path: string; command: Command }[] {
+  return command.commands.flatMap((sub) => {
+    const subPath = [...path, sub.name()];
+    return sub.commands.length === 0
+      ? [{ path: subPath.join(" "), command: sub }]
+      : leafCommands(sub, subPath);
+  });
+}
+
+function renderedHelp(command: Command) {
+  let output = "";
+  command.configureOutput({
+    writeOut: (chunk) => {
+      output += chunk;
+    },
+    writeErr: (chunk) => {
+      output += chunk;
+    }
+  });
+  command.outputHelp();
+  return output;
+}
+
+describe("Result key help", () => {
+  const program = createProgram({ stdout: createWritableBuffer(), stderr: createWritableBuffer() });
+  const leaves = leafCommands(program).filter(({ path }) => !LOCAL_ONLY_COMMANDS.has(path.split(" ")[0]));
+
+  it.each(leaves.map(({ path, command }) => [path, command] as const))(
+    "names the result key in the help of %s",
+    (_path, command) => {
+      expect(renderedHelp(command)).toContain("Result key (--json):");
+    }
+  );
+
+  it.each([
+    ["table draw", ".result.results[]"],
+    ["table reset", ".changedCount"],
+    ["table result get", ".result.result"],
+    ["combat delete", ".result.deleted"],
+    ["folder delete", ".result.contents"],
+    ["cards delete", ".result.recall"],
+    ["scene token item get", ".result.item"],
+    ["scene token effect get", ".result.effect"],
+    ["scene region behavior get", ".result.behavior"],
+    ["scene region behavior executable create", ".result.behavior"],
+    ["actor update-many", ".result.outcomes[]"],
+    ["scene token create-many", ".result.outcomes[]"],
+    ["item effect delete-many", ".result.outcomes[]"],
+    ["actor delete", ".result.deleted"],
+    ["scene wall delete", ".result.deleted"],
+    ["chat delete", ".result.deleted"],
+    ["macro execute", ".result.returned"],
+    ["system reload", ".result.reloading"],
+    ["scene activate", ".result.wasActive"],
+    ["scene token restore-delta", ".result.discarded"],
+    ["actor effect applied", ".result.effects[]"],
+    ["journal show", ".result.dispatched"],
+    ["chat flush", ".result.remaining"],
+    ["cards deal", ".result.cardsId"],
+    ["actor item list", ".result.items[]"],
+    ["scene wall list", ".result.<type>s[]"]
+  ])("shows the key %s returns in its first result key line", (path, key) => {
+    const leaf = leaves.find((entry) => entry.path === path);
+    expect(leaf, path).toBeDefined();
+    const help = renderedHelp(leaf!.command);
+    const firstLine = help.slice(help.indexOf("Result key (--json):")).split("\n\n")[0];
+    expect(firstLine).toContain(key);
+  });
+});

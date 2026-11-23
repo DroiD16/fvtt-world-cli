@@ -207,7 +207,7 @@ async function awaitMacro(running, timeoutMs, macroId) {
             `Macro ${macroId} did not finish within ${timeoutMs} ms. The outcome is INDETERMINATE: the macro was ` +
               `not cancelled and keeps running in the GM client, so it may still complete, and anything it has ` +
               `already changed stays changed. Do not retry blindly — read the documents it touches to find out ` +
-              `what landed, and raise timeoutMs only if the macro is legitimately slow`,
+              `what landed, and raise timeoutMs (on the CLI: --macro-timeout-ms) only if the macro is legitimately slow`,
             { macroId, timeoutMs, indeterminate: true }
           )
         ),

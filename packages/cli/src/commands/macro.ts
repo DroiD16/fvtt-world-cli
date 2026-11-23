@@ -12,7 +12,9 @@ import {
   createMacroUpdateParams,
   resolveMacroCommandBody
 } from "../params.js";
+import { DEFAULT_REQUEST_TIMEOUT_MS } from "../bridge/session-store.js";
 import { executeRemoteCommand } from "../exec.js";
+import { AWAIT_FLOOR_MARGIN_MS } from "../park-polling.js";
 import { parseIdList, parsePositiveInt } from "../parse.js";
 import { addMacroFieldOptions } from "./field-options.js";
 import {
@@ -21,7 +23,8 @@ import {
   addWorldListOptions,
   createSharedRegistrars,
   addIdempotencyKeyOption,
-  worldListParams
+  worldListParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 import { write } from "../deps.js";
 
@@ -43,7 +46,7 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
   const { registerOwnershipSet, registerCompendiumImport } = createSharedRegistrars(dependencies);
   const macro = program.command("macro").description("Foundry macro commands");
   macro.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.macro (single/write) / .result.macros[] (list, get-many)."
   );
   registerOwnershipSet(macro, {
@@ -154,6 +157,7 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
     });
   macro
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--macro-id <macroId>", "Macro id")
     .action(async function deleteMacro(options: { macroId: string }) {
       await executeRemoteCommand({
@@ -175,12 +179,13 @@ export function registerMacro({ program, dependencies }: RegistrationContext) {
     .addOption(
       new Option(
         "--macro-timeout-ms <ms>",
-        `How long the GM client waits for the macro, in ms (default ${MACRO_EXECUTE_TIMEOUT_DEFAULT_MS}, max ${MACRO_EXECUTE_TIMEOUT_MAX_MS}). Raise the global --timeout-ms above it, or the CLI stops waiting before MACRO_TIMEOUT can be reported.`
+        `How long the GM client waits for the macro, in ms (default ${MACRO_EXECUTE_TIMEOUT_DEFAULT_MS}, max ${MACRO_EXECUTE_TIMEOUT_MAX_MS}). The CLI waits ${AWAIT_FLOOR_MARGIN_MS / 1000} s longer; the daemon's forward timeout (bridge serve --request-timeout-ms, default ${DEFAULT_REQUEST_TIMEOUT_MS}) still applies.`
       ).argParser(parsePositiveInt)
     )
     .addHelpText(
       "after",
-      `\nA return value node with no JSON form (a function, an own accessor, a circular reference) comes back as {"$unserializable": "<reason>"} and is listed in .result.returnedOmissions (at most ${SERIALIZE_OMISSIONS_MAX} entries); a return value over the size limits is dropped and explained in .result.returnedOmitted.`
+      `\nResult key (--json): .result.returned (the macro's return value), .result.macroId, .result.type, .result.chatMessageIds and .result.chatCapture.` +
+        `\nA return value node with no JSON form (a function, an own accessor, a circular reference) comes back as {"$unserializable": "<reason>"} and is listed in .result.returnedOmissions (at most ${SERIALIZE_OMISSIONS_MAX} entries); a return value over the size limits is dropped and explained in .result.returnedOmitted.`
     )
     .action(async function executeMacroCommand(options: {
       macroId: string;

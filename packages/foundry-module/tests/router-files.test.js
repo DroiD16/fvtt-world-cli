@@ -100,6 +100,29 @@ describe("command router", () => {
     expect(response.result.content).toBe("hello world");
   });
 
+  it("refuses a text read of bytes that are not UTF-8 and still reads them as base64", async () => {
+    const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe]);
+    globalThis.__routerTestState.fetchOverrides.set(
+      "worlds/world-1/readme.txt",
+      createFetchResponse({ ok: true, status: 200, bytes, contentLength: String(bytes.length) })
+    );
+
+    const text = await router.route(
+      createRequest("file.read", { path: "worlds/world-1/readme.txt", encoding: "text" })
+    );
+    const base64 = await router.route(
+      createRequest("file.read", { path: "worlds/world-1/readme.txt", encoding: "base64" })
+    );
+
+    expect(text.ok).toBe(false);
+    expect(text.error.code).toBe("INVALID_PARAMS");
+    expect(text.error.details).toEqual({ path: "worlds/world-1/readme.txt", encoding: "text" });
+    expect(text.error.message).toContain("base64");
+    expect(base64.ok).toBe(true);
+    expect(base64.result.content).toBe(Buffer.from(bytes).toString("base64"));
+  });
+
   it("reports a file's size from the Content-Length of a HEAD request", async () => {
     const router = createCommandRouter({ bridgeClient: { getStatus: () => ({ status: "connected" }) } });
 

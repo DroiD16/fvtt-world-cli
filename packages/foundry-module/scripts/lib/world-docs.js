@@ -54,13 +54,13 @@ export function resolveWorldDocumentClass(type) {
   return WORLD_DOCUMENT_COLLECTIONS[type]().documentClass ?? globalThis[type];
 }
 
-export async function createWorldDocument(type, data) {
+export async function createWorldDocument(type, data, { keepId = false } = {}) {
   const DocumentClass = resolveWorldDocumentClass(type);
   if (!DocumentClass?.create) {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, `Foundry ${type} document class is not available`);
   }
 
-  const document = await DocumentClass.create(data, { render: true });
+  const document = await DocumentClass.create(data, { render: true, ...(keepId ? { keepId } : {}) });
   if (!document) {
     throw createReturnedNothingError(`${type}.create`);
   }
@@ -133,15 +133,17 @@ export async function cloneDocument(document, patch = {}, { dryRun = false } = {
     throw createBridgeError(ERROR_CODES.BRIDGE_NOT_READY, "Foundry document clone API is not available");
   }
 
+  const addSource = document.schema?.has?.("_stats") === true;
+
   if (dryRun) {
-    const preview = await document.clone(patch ?? {}, { save: false });
+    const preview = await document.clone(patch ?? {}, { save: false, addSource });
     if (!preview) {
       throw createBridgeError(ERROR_CODES.INTERNAL_ERROR, "Document clone returned no preview");
     }
     return preview;
   }
 
-  const result = await document.clone(patch, { save: true, render: true });
+  const result = await document.clone(patch, { save: true, render: true, addSource });
   const clone = Array.isArray(result) ? (result[0] ?? null) : result;
   if (!clone) {
     throw createReturnedNothingError("Document clone");

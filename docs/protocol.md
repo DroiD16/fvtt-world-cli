@@ -183,7 +183,9 @@ observed during a preview must not be reused. Some result fields depend on the c
 version; [Foundry compatibility](compatibility.md) lists them.
 
 World document reads carry `compendiumSource` and `duplicateSource`, hoisted from Foundry's
-`_stats` and `null` when absent.
+`_stats` and `null` when absent. Scene-embedded reads return the document's stored source without raw
+`ownership`, with `_stats` hoisted the same way; a token's `delta` comes only with
+`include: ["delta"]`.
 
 `document.resolve` reads no document. It returns the canonical `uuid`, the `documentName`, and the
 family `get` command with the `params` that read the document. `document get` in the CLI sends

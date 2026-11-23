@@ -1,10 +1,11 @@
 import { createInterface } from "node:readline";
 
-import { ERROR_CODES, isWriteCommand } from "@fvtt-world-cli/protocol";
+import { ERROR_CODES, MACRO_EXECUTE_TIMEOUT_DEFAULT_MS, isWriteCommand } from "@fvtt-world-cli/protocol";
 import { Command, CommanderError } from "commander";
 
 import type { CommandResponseEnvelope } from "./transport-util.js";
 import { awaitApprovalOutcome } from "./approval-wait.js";
+import { DEFAULT_CLIENT_TIMEOUT_MS } from "./bridge/session-store.js";
 import { connectDaemonClient, type PersistentDaemonClient } from "./client/send-command.js";
 import { clientMaxPayloadOption, getCommandConfig } from "./config-io.js";
 import { type CliDependencies, write } from "./deps.js";
@@ -15,10 +16,25 @@ import {
   renderProtocolError,
   toTransportErrorEnvelope
 } from "./errors.js";
+import { AWAIT_FLOOR_MARGIN_MS } from "./park-polling.js";
 import { humanizeCommandResult } from "./render/registry.js";
 
 function isApprovalPending(response: CommandResponseEnvelope) {
   return !response.ok && response.error?.code === ERROR_CODES.APPROVAL_PENDING;
+}
+
+function clientTimeoutFor(
+  commandName: string,
+  params: Record<string, unknown>,
+  timeoutMs: number | undefined
+) {
+  if (commandName !== "macro.execute") {
+    return timeoutMs;
+  }
+  const macroTimeoutMs =
+    typeof params.timeoutMs === "number" ? params.timeoutMs : MACRO_EXECUTE_TIMEOUT_DEFAULT_MS;
+  const neededMs = macroTimeoutMs + AWAIT_FLOOR_MARGIN_MS;
+  return neededMs > (timeoutMs ?? DEFAULT_CLIENT_TIMEOUT_MS) ? neededMs : timeoutMs;
 }
 
 interface RemoteCommandRequest {
@@ -49,6 +65,7 @@ export async function sendRemoteCommand({
   const requestParams = typeof idempotencyKey === "string" ? { ...withDryRun, idempotencyKey } : withDryRun;
 
   const timeoutMs = (globalOptions as { timeoutMs?: number }).timeoutMs;
+  const commandTimeoutMs = clientTimeoutFor(commandName, params, timeoutMs);
 
   let response: CommandResponseEnvelope;
   try {
@@ -58,7 +75,8 @@ export async function sendRemoteCommand({
       command: commandName,
       params: requestParams,
       ...clientMaxPayloadOption(dependencies),
-      ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
+      ...(typeof commandTimeoutMs === "number" ? { timeoutMs: commandTimeoutMs } : {}),
+      ...(commandTimeoutMs !== timeoutMs ? { warnTimeout: false } : {})
     });
   } catch (error) {
     response = toTransportErrorEnvelope(error);
@@ -141,6 +159,7 @@ interface ExecBatchSession {
     command: string;
     params?: Record<string, unknown>;
     timeoutMs?: number;
+    warnTimeout?: boolean;
   }) => Promise<CommandResponseEnvelope>;
   reconnect: () => Promise<void>;
   stderr: CliDependencies["stderr"];
@@ -153,7 +172,6 @@ async function processExecLine(
   rawLine: string,
   dryRun: boolean
 ): Promise<{ id?: string; envelope: CommandResponseEnvelope }> {
-  const timeoutMs = session.timeoutMs;
   let parsedLine: unknown;
   try {
     parsedLine = JSON.parse(rawLine);
@@ -201,6 +219,8 @@ async function processExecLine(
     };
   }
 
+  const timeoutMs = session.timeoutMs;
+  const commandTimeoutMs = clientTimeoutFor(obj.command, params as Record<string, unknown>, timeoutMs);
   const requestParams =
     dryRun && isWriteCommand(obj.command)
       ? { ...(params as Record<string, unknown>), dryRun: true }
@@ -211,7 +231,8 @@ async function processExecLine(
     envelope = await session.send({
       command: obj.command,
       params: requestParams,
-      ...(typeof timeoutMs === "number" ? { timeoutMs } : {})
+      ...(typeof commandTimeoutMs === "number" ? { timeoutMs: commandTimeoutMs } : {}),
+      ...(commandTimeoutMs !== timeoutMs ? { warnTimeout: false } : {})
     });
   } catch (error) {
     return { id: callerId, envelope: toTransportErrorEnvelope(error) };

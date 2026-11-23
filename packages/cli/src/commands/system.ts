@@ -9,7 +9,7 @@ interface SystemInfoOptions {
 export function registerSystem({ program, dependencies }: RegistrationContext) {
   const system = program.command("system").description("Foundry bridge system commands");
   system.addHelpText(
-    "after",
+    "afterAll",
     "\nResult key (--json): .result.pong + .result.bridge (ping); .result.foundry.* / .result.system.* / .result.world.* / .result.module.* / .result.moduleCount / .result.activeModuleCount / .result.modules[] (with --include modules) / .result.bridge.* / .result.limits.* (info)."
   );
   system.command("ping").action(async function ping() {
@@ -37,6 +37,7 @@ export function registerSystem({ program, dependencies }: RegistrationContext) {
     });
   system
     .command("reload")
+    .addHelpText("after", "\nResult key (--json): .result.reloading.")
     .description(
       "Reload the GM browser page. The bridge drops and reconnects on its own; pair it with a setting whose row reports requiresReload"
     )

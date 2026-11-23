@@ -932,13 +932,28 @@ export async function readDataFile(
   const bytes = new Uint8Array(buffer);
   ensureReadSize(bytes.byteLength, normalizedPath, readLimitBytes);
 
+  let content;
+  if (encoding === "text") {
+    try {
+      content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      throw createBridgeError(
+        ERROR_CODES.INVALID_PARAMS,
+        `${normalizedPath} is not UTF-8 text, so a text read would replace its bytes; read it with encoding base64`,
+        { path: normalizedPath, encoding: "text" }
+      );
+    }
+  } else {
+    content = toBase64(bytes);
+  }
+
   return {
     file: {
       ...createEntry(normalizedPath, "file", response.headers.get("content-type")),
       size: bytes.byteLength
     },
     encoding,
-    content: encoding === "text" ? new TextDecoder().decode(bytes) : toBase64(bytes)
+    content
   };
 }
 

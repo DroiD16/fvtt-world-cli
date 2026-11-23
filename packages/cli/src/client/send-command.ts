@@ -56,6 +56,7 @@ export interface SendCommandOptions {
   command: string;
   params?: Record<string, unknown>;
   timeoutMs?: number;
+  warnTimeout?: boolean;
 
   maxPayloadBytes?: number;
   signal?: AbortSignal;
@@ -113,10 +114,13 @@ export async function sendCommand({
   command,
   params = {},
   timeoutMs = DEFAULT_CLIENT_TIMEOUT_MS,
+  warnTimeout = true,
   maxPayloadBytes = DEFAULT_WS_MAX_PAYLOAD_BYTES,
   signal
 }: SendCommandOptions) {
-  warnIfClientTimeoutUnsafe(timeoutMs);
+  if (warnTimeout) {
+    warnIfClientTimeoutUnsafe(timeoutMs);
+  }
 
   const built = buildValidatedRequest(command, params);
   if (!built.ok) {
@@ -282,6 +286,7 @@ export interface PersistentDaemonClient {
     command: string;
     params?: Record<string, unknown>;
     timeoutMs?: number;
+    warnTimeout?: boolean;
     signal?: AbortSignal;
   }): Promise<CommandResponseEnvelope>;
   requestControl(options: {
@@ -462,8 +467,10 @@ export async function connectDaemonClient({
   });
 
   return {
-    async send({ command, params = {}, timeoutMs = DEFAULT_CLIENT_TIMEOUT_MS, signal }) {
-      warnIfClientTimeoutUnsafe(timeoutMs);
+    async send({ command, params = {}, timeoutMs = DEFAULT_CLIENT_TIMEOUT_MS, warnTimeout = true, signal }) {
+      if (warnTimeout) {
+        warnIfClientTimeoutUnsafe(timeoutMs);
+      }
 
       if (closedError) {
         throw closedError;

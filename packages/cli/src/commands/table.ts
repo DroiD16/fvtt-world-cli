@@ -24,7 +24,8 @@ import {
   addPaginationOptions,
   nameFilterParams,
   paginationParams,
-  worldListParams
+  worldListParams,
+  DELETE_RESULT_KEY_HELP
 } from "./shared.js";
 
 export function registerTable({ program, dependencies }: RegistrationContext) {
@@ -35,12 +36,8 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
     "rows at .result.result / .result.results[] (+ .result.tableId; rows also ride inside .result.table.results[] on a table read)";
 
   table.addHelpText(
-    "after",
-    `\nResult key (--json): .result.table / .result.tables[] (list, get-many); ${TABLE_RESULT_KEY_HELP}.` +
-      "\nAction verbs differ: `table draw` has NO .result.table — read .result.results[] (the drawn rows," +
-      " each carrying its own owning tableId) plus .result.complete/.mutation/.roll/.availableBefore/" +
-      ".availableAfter/.chatMessages (and .failure on a partial commit); `table reset` returns" +
-      " .result.table plus .result.tableId/.reset/.changedCount."
+    "afterAll",
+    `\nResult key (--json): .result.table / .result.tables[] (list, get-many); ${TABLE_RESULT_KEY_HELP}.`
   );
   registerOwnershipSet(table, {
     idFlag: "--table-id <tableId>",
@@ -134,6 +131,7 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
     });
   table
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--table-id <tableId>", "Roll table id")
     .action(async function deleteTable(options: { tableId: string }) {
       await executeRemoteCommand({
@@ -148,6 +146,10 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
     .command("draw")
     .description("Draw one or more results from a roll table (Foundry's own RollTable#draw)")
     .requiredOption("--table-id <tableId>", "Roll table id")
+    .addHelpText(
+      "after",
+      "\nResult key (--json): .result.results[] (the drawn rows, each carrying its own owning tableId; there is NO .result.table) plus .result.complete/.mutation/.roll/.availableBefore/.availableAfter/.chatMessages (and .failure on a partial commit)."
+    )
     .requiredOption(
       "--idempotency-key <key>",
       "REQUIRED: client-supplied key so a retried draw returns the original result instead of drawing again. Reuse the SAME key across retries of one draw."
@@ -191,6 +193,7 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
   addIdempotencyKeyOption(table.command("reset"))
     .description("Clear the `drawn` flag on every result of a roll table")
     .requiredOption("--table-id <tableId>", "Roll table id")
+    .addHelpText("after", "\nResult key (--json): .result.table plus .result.tableId/.reset/.changedCount.")
     .action(async function resetTableCommand(options: { tableId: string }) {
       await executeRemoteCommand({
         commandName: "table.reset",
@@ -201,7 +204,7 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
     });
 
   const tableResult = table.command("result").description("Roll-table row (result) commands");
-  tableResult.addHelpText("after", `\nResult key (--json): ${TABLE_RESULT_KEY_HELP}.`);
+  tableResult.addHelpText("afterAll", `\nResult key (--json): ${TABLE_RESULT_KEY_HELP}.`);
   addNameFilterOption(
     addPaginationOptions(
       tableResult
@@ -306,6 +309,7 @@ export function registerTable({ program, dependencies }: RegistrationContext) {
     });
   tableResult
     .command("delete")
+    .addHelpText("after", DELETE_RESULT_KEY_HELP)
     .requiredOption("--table-id <tableId>", "Roll table id")
     .requiredOption("--result-id <resultId>", "Result (row) id")
     .action(async function deleteTableResult(options: { tableId: string; resultId: string }) {
