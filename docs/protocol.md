@@ -183,13 +183,14 @@ observed during a preview must not be reused. Some result fields depend on the c
 version; [Foundry compatibility](compatibility.md) lists them.
 
 World document reads carry `compendiumSource` and `duplicateSource`, hoisted from Foundry's
-`_stats` and `null` when absent. Scene-embedded reads return the document's stored source without raw
-`ownership`, with `_stats` hoisted the same way; a token's `delta` comes only with
-`include: ["delta"]`.
+`_stats` and `null` when absent. Scene-embedded reads return the stored source without raw
+`ownership`; region behaviors and levels hoist `_stats` the same way, and a token's `delta` comes
+only with `include: ["delta"]`.
 
-`document.resolve` reads no document. It returns the canonical `uuid`, the `documentName`, and the
-family `get` command with the `params` that read the document. `document get` in the CLI sends
-that command as a second request, so its permission, approval and result shape apply unchanged.
+`document.resolve` returns the canonical `uuid`, the `documentName`, and the family `get` `command`
+and `params` that read the document, not the document itself; it fails when the document is
+missing. A client reads the document with that command as a separate request, under that command's
+permission and approval.
 
 `include: ["prepared"]` adds `prepared.system`, the live `system` data after the game system
 computed its derived values. Prepared values are derived: writing them back stores them as source.
@@ -272,12 +273,11 @@ Parent patches that create embedded entries without `_id`, such as new `behavior
 cannot confirm those creations. A retry may duplicate them. Read the embedded collection first,
 or use a dedicated embedded create command. Dry runs can still preview these patches.
 
+A `*.status.set` toggle that throws or leaves the status short of the requested state is an
+indeterminate `INTERNAL_ERROR`; `details.effects` lists the effects still carrying the status.
+
 After partial or indeterminate errors, read stored state and submit only remaining changes as a
 new operation with a fresh idempotency key if using one.
-
-`*.status.set` reports `previous` and `changed`; a status that misses the requested state after
-Foundry's toggle is an indeterminate `INTERNAL_ERROR` whose `details.effects` lists the effects
-still carrying it.
 
 ### Patch shape checks
 
